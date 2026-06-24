@@ -1,0 +1,17 @@
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.bak
+.env
+.env.*
+!.env.example
+.godot/
+.import/
+export_presets.cfg
+*.translation
+*.import
+build/
+dist/
+exports/
+
