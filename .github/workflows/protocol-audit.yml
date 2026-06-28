@@ -1,0 +1,33 @@
+name: Client Protocol Audit
+
+on:
+  pull_request:
+    paths:
+      - "godot/scripts/gensoulkyo_http_client.gd"
+      - "godot/scripts/battle_network_client_model.gd"
+      - "godot/scripts/network_security_model.gd"
+      - "godot/scripts/protocol_descriptor_model.gd"
+      - "godot/scripts/matchmaking_model.gd"
+      - "godot/scripts/network_match_model.gd"
+      - "godot/scripts/results_service_model.gd"
+      - "godot/i18n/**"
+      - "godot/assets/**"
+      - "godot/themes/**"
+      - "tools/**"
+      - ".github/workflows/protocol-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  client-static-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout SpellKard
+        uses: actions/checkout@v4
+      - name: Run static client checks
+        run: python3 tools/ci_static_checks.py
+      - name: Check whitespace
+        run: git diff --check HEAD

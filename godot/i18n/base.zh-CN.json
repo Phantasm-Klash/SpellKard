@@ -92,6 +92,8 @@
   "ui.menu_section_loadout": "配置",
   "ui.menu_section_local_play": "本地游玩",
   "ui.menu_section_online_play": "在线游玩",
+  "ui.menu_section_pvp": "PVP",
+  "ui.menu_section_boss": "Boss",
   "ui.menu_section_modes": "模式",
   "ui.menu_section_queue": "队列",
   "ui.menu_section_practice": "练习",
