@@ -5,6 +5,7 @@ const TICK_RATE := 60.0
 const FIXED_DELTA := 1.0 / TICK_RATE
 const MAX_FRAME_TICKS := 4
 const DEFAULT_MATCH_SEED := 20260625
+const BASE_LOBBY_STANDEE := "res://themes/base/ui/lobby_standee.svg"
 const BulletMathLib := preload("res://scripts/bullet_math.gd")
 const BulletPatterns := preload("res://scripts/bullet_pattern_library.gd")
 const BulletEngineLib := preload("res://scripts/bullet_engine.gd")
@@ -189,6 +190,7 @@ var ui_panel: PanelContainer = null
 var ui_root_box: HBoxContainer = null
 var ui_home_box: BoxContainer = null
 var ui_home_portrait_panel: PanelContainer = null
+var ui_home_portrait_art: TextureRect = null
 var ui_home_portrait_label: Label = null
 var ui_home_title_label: Label = null
 var ui_home_status_label: Label = null
@@ -1684,6 +1686,60 @@ func _ready_match() -> bool:
 	_update_ui_overlay()
 	return ok
 
+func _settle_local_match_preview() -> Dictionary:
+	if results_service_model == null or matchmaking_model == null:
+		return {"ok": false, "reason": "missing_model"}
+	var mode_id := String(matchmaking_model.get("selected_mode_id"))
+	var result := _build_local_server_result_preview(mode_id)
+	var settlement: Dictionary = results_service_model.apply_server_match_result(result)
+	if bool(settlement.get("ok", false)):
+		if ["queued", "found", "ready", "blocked"].has(String(matchmaking_model.get("queue_status"))):
+			matchmaking_model.cancel_queue()
+		_open_ui_screen("results")
+	_update_ui_overlay()
+	return settlement
+
+func _build_local_server_result_preview(mode_id: String) -> Dictionary:
+	var match_id := "local-preview-%s-%d" % [mode_id, Time.get_ticks_msec()]
+	var score_value := 128000 + int(abs(sin(float(Time.get_ticks_msec()) * 0.001)) * 24000.0)
+	var graze_value := 420 + (score_value % 180)
+	var hit_value := 1 if mode_id == "world_boss" else 0
+	var reward_json: Array[Dictionary] = [
+		{"type": "points", "amount": 120, "source": "match"},
+		{"type": "card_dust", "amount": 35, "source": "match"},
+		{"type": "chest_keys", "amount": 1, "source": "daily"},
+		{"type": "card", "item_id": "focus_lens", "amount": 1, "source": "match"},
+	]
+	if mode_id == "world_boss" or mode_id == "instance_boss":
+		reward_json.append({"type": "chest", "item_id": "local_basic", "amount": 1, "source": "boss"})
+	return {
+		"match_id": match_id,
+		"user_id": String(results_service_model.get("user_id")),
+		"result": "boss_clear" if mode_id == "world_boss" or mode_id == "instance_boss" else "win",
+		"mode_id": mode_id,
+		"score": score_value,
+		"graze_count": graze_value,
+		"hit_count": hit_value,
+		"replay_id": "replay-%s" % match_id,
+		"reward_json": reward_json,
+		"task_progress": [
+			{"task_id": "daily_complete_match", "progress": 1, "target": 1},
+			{"task_id": "daily_graze", "progress": graze_value, "target": 500},
+		],
+		"event_points": {"local_s0": 30},
+		"leaderboard_updates": [
+			{"leaderboard_id": "single_score", "score": score_value, "rank": 42, "percentile": 0.24, "season_id": "local_s0"},
+			{"leaderboard_id": "world_boss_damage", "score": target_damage + 1600, "rank": 18, "percentile": 0.18, "season_id": "local_s0"},
+		],
+		"mode_result": {
+			"rating_code": "C",
+			"rank_score_after": 1240,
+			"percentile_after": 0.28,
+		},
+		"server_authoritative": true,
+		"client_authored_reward": false,
+	}
+
 func _set_network_quality(ping_ms: int, packet_loss: float = 0.0, jitter_ms: int = 0) -> void:
 	if matchmaking_model == null:
 		return
@@ -2419,6 +2475,12 @@ func _dispatch_ui_action(row: Dictionary) -> Dictionary:
 		"run_latency_tests":
 			var latency_report: Dictionary = _run_latency_tests()
 			return _set_ui_action_result(bool(latency_report.get("ok", false)), action, {"scenario_count": int(latency_report.get("scenarios", []).size())})
+		"local_settle_match":
+			var settlement_result: Dictionary = _settle_local_match_preview()
+			return _set_ui_action_result(bool(settlement_result.get("ok", false)), action, {
+				"reason": String(settlement_result.get("reason", "none")),
+				"duplicate": bool(settlement_result.get("duplicate", false)),
+			})
 		"open_chest":
 			var pool_id := String(row.get("pool_id", row.get("id", "local_basic")))
 			var count := int(row.get("open_count", 1))
@@ -4123,11 +4185,23 @@ func _build_ui_home_surface() -> BoxContainer:
 	ui_home_portrait_panel.add_theme_stylebox_override("panel", _ui_portrait_style())
 	if ui_home_portrait_panel.get_parent() == null:
 		home.add_child(ui_home_portrait_panel)
+	ui_home_portrait_art = _ui_bound_node("home_lobby", "PortraitArt") as TextureRect
+	if ui_home_portrait_art == null:
+		ui_home_portrait_art = TextureRect.new()
+		ui_home_portrait_panel.add_child(ui_home_portrait_art)
+	ui_home_portrait_art.name = "UIScreenHomePortraitArt"
+	ui_home_portrait_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	ui_home_portrait_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	ui_home_portrait_art.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ui_home_portrait_art.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	if ResourceLoader.exists(BASE_LOBBY_STANDEE):
+		ui_home_portrait_art.texture = load(BASE_LOBBY_STANDEE)
 	ui_home_portrait_label = _ui_bound_node("home_lobby", "PortraitLabel") as Label
 	if ui_home_portrait_label == null:
 		ui_home_portrait_label = Label.new()
 		ui_home_portrait_panel.add_child(ui_home_portrait_label)
 	ui_home_portrait_label.name = "UIScreenHomePortraitLabel"
+	ui_home_portrait_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui_home_portrait_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	ui_home_portrait_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	ui_home_portrait_label.add_theme_font_size_override("font_size", 20)
@@ -4796,9 +4870,13 @@ func _overview_card_rows(rows: Array[Dictionary], selected: Dictionary) -> Array
 func _visible_overview_card_limit() -> int:
 	var screen_id := String(ui_screen_model.current_screen if ui_screen_model != null else "")
 	match screen_id:
-		"play", "match", "certification", "community", "player_settings":
+		"play", "certification", "community", "player_settings":
 			return mini(4, ui_overview_buttons.size())
+		"match":
+			return mini(5, ui_overview_buttons.size())
 		"network_match":
+			return mini(4, ui_overview_buttons.size())
+		"results":
 			return mini(4, ui_overview_buttons.size())
 		_:
 			return mini(3, ui_overview_buttons.size())
@@ -5044,9 +5122,9 @@ func _is_quick_action_row(row: Dictionary) -> bool:
 			return false
 		return control_id == "nav"
 	match row_id:
-		"cert_queue", "cert_practice", "settings_gamepad_curve", "settings_keybinds", "settings_volume", "settings_resolution", "play_queue_selected", "queue_status", "ready", "cancel", "gensoulkyo_login", "gensoulkyo_create_room", "battle_client_prepare", "battle_client_connect", "battle_client_input_header", "matchmaking_quick", "matchmaking_ranked", "matchmaking_pvp", "matchmaking_boss", "matchmaking_room":
+		"cert_queue", "cert_practice", "settings_gamepad_curve", "settings_keybinds", "settings_volume", "settings_resolution", "play_queue_selected", "queue_status", "ready", "cancel", "gensoulkyo_login", "gensoulkyo_create_room", "battle_client_prepare", "battle_client_connect", "battle_client_input_header", "matchmaking_quick", "matchmaking_ranked", "matchmaking_pvp", "matchmaking_boss", "local_settlement_preview", "matchmaking_room":
 			return true
-	if action in ["advance_queue", "start_certification_queue", "ready_match", "cancel_queue", "battle_client_prepare", "battle_client_connect", "battle_client_input_header", "open_social_link", "invite_friend", "dismiss_announcement", "request_activity_claim", "select_mode", "queue_mode", "open_chest", "save_deck", "save_replay", "run_balance_simulation", "run_latency_tests"]:
+	if action in ["advance_queue", "start_certification_queue", "ready_match", "cancel_queue", "battle_client_prepare", "battle_client_connect", "battle_client_input_header", "open_social_link", "invite_friend", "dismiss_announcement", "request_activity_claim", "select_mode", "queue_mode", "local_settle_match", "open_chest", "save_deck", "save_replay", "run_balance_simulation", "run_latency_tests"]:
 		return true
 	return false
 
@@ -5534,6 +5612,8 @@ func _ui_action_label(action: String) -> String:
 			return localization.text_for("screen.settings.restore_defaults")
 		"request_activity_claim":
 			return localization.text_for("screen.activity.claim_log")
+		"local_settle_match":
+			return localization.text_for("screen.match.local_settlement")
 		"open_chest":
 			return localization.text_for("screen.main.chest")
 		"save_deck":

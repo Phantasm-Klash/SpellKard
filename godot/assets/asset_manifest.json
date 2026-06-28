@@ -1,5 +1,15 @@
 {
   "schema_version": 1,
   "policy": "base package may only include original, CC0/public-domain, permissive open-source, CC-BY with attribution, or explicitly commissioned/authorized assets",
-  "records": []
+  "records": [
+    {
+      "path": "res://themes/base/ui/lobby_standee.svg",
+      "source_url": "self-authored in repository",
+      "author": "gotouhou contributors",
+      "license": "CC-BY-4.0",
+      "modified": false,
+      "modification_notes": "Original vector placeholder for the base lobby standee, licensed via the SpellKard repository license; no third-party or copyrighted source material used.",
+      "imported_at": "2026-06-28"
+    }
+  ]
 }

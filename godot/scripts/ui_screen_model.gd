@@ -331,7 +331,7 @@ func _layout_primary_rows(screen_id: String) -> Array[String]:
 		"display_settings":
 			return ["display_resolution", "display_window_mode", "display_vsync", "display_fps_limit"]
 		"match":
-			return ["matchmaking_quick", "matchmaking_ranked", "matchmaking_pvp", "matchmaking_boss", "matchmaking_room", "queue_status"]
+			return ["matchmaking_quick", "matchmaking_ranked", "matchmaking_pvp", "matchmaking_boss", "local_settlement_preview", "matchmaking_room", "queue_status"]
 		"network_match":
 			return ["gensoulkyo_login", "gensoulkyo_create_room", "gensoulkyo_server_ready", "battle_client_prepare", "battle_client_connect", "battle_client_input_header"]
 		"activity":
@@ -344,6 +344,8 @@ func _layout_primary_rows(screen_id: String) -> Array[String]:
 			return ["promotions_summary", "promotions_social", "link_steam", "link_creator_program"]
 		"collection":
 			return ["collection_deck", "collection_chest", "collection_replay", "collection_workshop"]
+		"results":
+			return ["result", "score_breakdown", "reward", "wallet", "tasks", "events"]
 		_:
 			return []
 
@@ -996,7 +998,22 @@ func _decorate_match_rows(source_rows: Array[Dictionary]) -> Array[Dictionary]:
 			"reconnect_status":
 				row["ui_action"] = "finish_reconnect"
 		rows.append(row)
+	rows.append(_local_settlement_preview_row())
 	return rows
+
+func _local_settlement_preview_row() -> Dictionary:
+	var selected_mode := "certification"
+	var queue_status := "idle"
+	if matchmaking_model != null:
+		selected_mode = String(matchmaking_model.get("selected_mode_id"))
+		queue_status = String(matchmaking_model.get("queue_status"))
+	return {
+		"id": "local_settlement_preview",
+		"label_key": "screen.match.local_settlement",
+		"value": "%s %s" % [selected_mode, queue_status],
+		"enabled": results_service_model != null,
+		"ui_action": "local_settle_match",
+	}
 
 func _decorate_mode_rows(source_rows: Array[Dictionary]) -> Array[Dictionary]:
 	var rows: Array[Dictionary] = []
@@ -1246,6 +1263,8 @@ func _section_for_row(screen_id: String, row: Dictionary) -> String:
 		"match":
 			if row_id == "active_deck":
 				return "loadout"
+			if row_id == "local_settlement_preview":
+				return "results"
 			if row_id.begins_with("matchmaking_"):
 				return "matchmaking"
 			if row_id == "selected_mode" or target_screen == "modes" or action == "select_mode" or row_id.begins_with("mode_"):
@@ -1380,6 +1399,8 @@ func _control_for_row(screen_id: String, row: Dictionary) -> String:
 		match action:
 			"battle_client_prepare", "battle_client_connect", "battle_client_input_header":
 				return "network"
+			"local_settle_match":
+				return "button"
 			"advance_queue", "queue_mode", "start_certification_queue", "ready_match", "begin_network_match", "cancel_queue":
 				return "queue"
 			"select_mode", "select_battle_royale_candidate", "request_boss_transfer":

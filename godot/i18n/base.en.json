@@ -260,6 +260,7 @@
   "screen.match.quick": "Quick Match",
   "screen.match.ranked": "Ranked",
   "screen.match.boss_party": "Boss Party",
+  "screen.match.local_settlement": "Result Preview",
   "screen.match.room_code": "Room Code",
   "screen.match.mode": "Mode",
   "screen.match.network": "Network",

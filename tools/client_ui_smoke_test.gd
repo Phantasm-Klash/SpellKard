@@ -70,6 +70,8 @@ func _run_validation() -> bool:
 		return false
 	if not await _validate_play_pages():
 		return false
+	if not await _validate_result_reward_loop():
+		return false
 	if not await _validate_menu_independence():
 		return false
 	if not await _validate_community_pages():
@@ -112,15 +114,51 @@ func _validate_play_pages() -> bool:
 	if _contains_any(String(snapshot.get("quick_actions_text", "")), _text_keys(["screen.cert.queue", "screen.cert.local_drill", "screen.match.active_deck"])):
 		return _fail("certification quick actions should not duplicate overview %s" % String(snapshot.get("quick_actions_text", "")))
 	snapshot = await _open_snapshot("match")
-	if not _assert_page_health(snapshot, "match", 2, 4):
+	if not _assert_page_health(snapshot, "match", 2, 5):
 		return false
 	if not _contains_all(String(snapshot.get("overview_cards_text", "")), _text_keys(["screen.match.quick", "screen.match.ranked", "screen.mode.pvp_duel", "screen.match.boss_party"])):
 		return _fail("match overview cards invalid %s" % String(snapshot.get("overview_cards_text", "")))
+	if not _contains_all(String(snapshot.get("overview_cards_text", "")), _text_keys(["screen.match.local_settlement"])):
+		return _fail("match overview cards missing settlement loop %s" % String(snapshot.get("overview_cards_text", "")))
 	snapshot = await _open_snapshot("network_match")
 	if not _assert_page_health(snapshot, "network_match", 2, 4):
 		return false
 	if not _contains_all(String(snapshot.get("overview_cards_text", "")), ["Gensoulkyo", "create room"]):
 		return _fail("network match overview cards invalid %s" % String(snapshot.get("overview_cards_text", "")))
+	return true
+
+func _validate_result_reward_loop() -> bool:
+	stage = "result_loop"
+	var snapshot: Dictionary = await _open_snapshot("match")
+	if not _assert_page_health(snapshot, "match_result_loop", 3, 5):
+		return false
+	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 64)
+	var settle_index := _row_index_by_id(rows, "local_settlement_preview")
+	if settle_index < 0:
+		return _fail("match rows missing local settlement preview")
+	main_node.call("_ui_set_cursor", settle_index)
+	await _settle_frames(2)
+	var result: Dictionary = main_node.call("_ui_accept_selected")
+	await _settle_frames(2)
+	if not bool(result.get("ok", false)) or String(result.get("action", "")) != "local_settle_match":
+		return _fail("local settlement action failed %s" % [result])
+	if String(main_node.get("ui_screen_model").current_screen) != "results":
+		return _fail("local settlement should open results screen")
+	snapshot = main_node.call("_ui_overlay_snapshot")
+	if not _assert_page_health(snapshot, "results", 2, 4):
+		return false
+	if not _contains_all(String(snapshot.get("overview_cards_text", "")), _text_keys(["screen.results.result", "screen.results.score", "screen.results.reward", "screen.results.wallet"])):
+		return _fail("results overview cards missing result/reward wallet %s" % String(snapshot.get("overview_cards_text", "")))
+	var result_rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 32)
+	if not _rows_have_ids(result_rows, ["result", "score_breakdown", "reward", "wallet", "tasks", "events", "reward_audit"]):
+		return _fail("results rows missing closed-loop reward data")
+	var reward_row := _row_by_id(result_rows, "reward")
+	var reward_items: Array = reward_row.get("items", [])
+	if reward_items.size() < 4:
+		return _fail("reward row should expose granted items %s" % [reward_row])
+	var wallet_text := String(_row_by_id(result_rows, "wallet").get("value", ""))
+	if not wallet_text.contains("points") or not wallet_text.contains("dust") or not wallet_text.contains("keys"):
+		return _fail("wallet row did not summarize rewards %s" % wallet_text)
 	return true
 
 func _validate_gameplay_view_unobstructed() -> bool:
@@ -420,6 +458,12 @@ func _row_index_by_id(rows: Array[Dictionary], row_id: String) -> int:
 		if String(rows[i].get("id", "")) == row_id:
 			return i
 	return -1
+
+func _row_by_id(rows: Array[Dictionary], row_id: String) -> Dictionary:
+	for row in rows:
+		if String(row.get("id", "")) == row_id:
+			return row
+	return {}
 
 func _text(key: String) -> String:
 	var localization: Variant = main_node.get("localization")
