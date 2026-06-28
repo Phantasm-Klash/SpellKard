@@ -7,6 +7,9 @@ const PAGE_SPECS := {
 		"category": "play",
 		"parent": "",
 		"density": "hero",
+		"visual_asset": "res://themes/base/ui/lobby_standee.svg",
+		"visual_treatment": "portrait_first_original",
+		"state_regions": ["hero_art", "status_strip", "primary_routes"],
 		"primary_row_ids": ["play", "collection", "community", "player_settings"],
 		"secondary_row_ids": ["certification", "deck", "replay", "activity", "friends", "promotions"],
 		"setting_groups": [],
@@ -24,6 +27,9 @@ const PAGE_SPECS := {
 		"category": "play",
 		"parent": "main_menu",
 		"density": "hub",
+		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"visual_treatment": "mode_card_grid",
+		"state_regions": ["navigation", "status_cards", "focus_panel", "overview_cards", "route_rows"],
 		"primary_row_ids": ["play_practice", "play_matchmaking", "play_pvp_duel", "play_world_boss", "play_room", "play_deck"],
 		"secondary_row_ids": ["play_certification_hub", "play_battle_royale", "play_instance_boss", "play_queue_selected"],
 		"setting_groups": [],
@@ -41,6 +47,9 @@ const PAGE_SPECS := {
 		"category": "play",
 		"parent": "main_menu",
 		"density": "hub",
+		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"visual_treatment": "rank_status_cards",
+		"state_regions": ["rating", "queue_action", "rules", "loadout"],
 		"primary_row_ids": ["cert_queue", "cert_practice", "cert_deck", "cert_rules"],
 		"secondary_row_ids": ["cert_rating", "cert_rank", "cert_top30", "cert_stage"],
 		"setting_groups": [],
@@ -58,6 +67,9 @@ const PAGE_SPECS := {
 		"category": "play",
 		"parent": "play",
 		"density": "playfield",
+		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"visual_treatment": "unobstructed_hud_overlay",
+		"state_regions": ["gameplay_hud", "compact_menu", "stage_status"],
 		"primary_row_ids": ["practice_restart", "practice_stage_run", "stage_briefing", "stage_recommended_character"],
 		"secondary_row_ids": ["practice_seed_prev", "practice_seed_next", "practice_power_down", "practice_power_up", "practice_bombs_cycle"],
 		"setting_groups": ["stage", "character", "analysis"],
@@ -75,6 +87,9 @@ const PAGE_SPECS := {
 		"category": "play",
 		"parent": "play",
 		"density": "focused",
+		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"visual_treatment": "queue_status_cards",
+		"state_regions": ["mode_cards", "queue_state", "network_status", "loadout"],
 		"primary_row_ids": ["matchmaking_quick", "matchmaking_ranked", "matchmaking_pvp", "matchmaking_boss", "matchmaking_room", "queue_status"],
 		"secondary_row_ids": ["active_deck", "selected_mode", "network_quality", "ready", "cancel", "reconnect_status"],
 		"setting_groups": [],
@@ -92,6 +107,9 @@ const PAGE_SPECS := {
 		"category": "play",
 		"parent": "play",
 		"density": "focused",
+		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"visual_treatment": "secure_room_status",
+		"state_regions": ["room_actions", "business_transport", "battle_transport", "packet_status"],
 		"primary_row_ids": ["gensoulkyo_login", "gensoulkyo_create_room", "gensoulkyo_server_ready", "battle_client_prepare", "battle_client_connect", "battle_client_input_header"],
 		"secondary_row_ids": ["netsec_summary", "business_transport", "business_auth_sign", "battle_transport", "battle_handshake", "battle_codec_crypto"],
 		"setting_groups": [],
@@ -109,6 +127,9 @@ const PAGE_SPECS := {
 		"category": "play",
 		"parent": "play",
 		"density": "hub",
+		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"visual_treatment": "mode_selector",
+		"state_regions": ["mode_cards", "mode_rules", "mode_status"],
 		"primary_row_ids": ["mode_summary", "certification", "pvp_duel", "battle_royale", "world_boss", "instance_boss"],
 		"secondary_row_ids": ["br_candidates", "world_boss_transfer", "instance_boss_transfer"],
 		"setting_groups": [],
@@ -126,6 +147,9 @@ const PAGE_SPECS := {
 		"category": "collection",
 		"parent": "collection",
 		"density": "collection",
+		"visual_asset": "res://themes/base/ui/collection_card_frame.svg",
+		"visual_treatment": "card_collection_grid",
+		"state_regions": ["deck_stats", "filters", "card_grid", "save_action"],
 		"primary_row_ids": ["deck_stats", "save_deck"],
 		"secondary_row_ids": ["active_deck", "card_filter"],
 		"setting_groups": [],
@@ -143,6 +167,9 @@ const PAGE_SPECS := {
 		"category": "collection",
 		"parent": "collection",
 		"density": "collection",
+		"visual_asset": "res://themes/base/ui/collection_card_frame.svg",
+		"visual_treatment": "chest_pool_cards",
+		"state_regions": ["pool_cards", "probability", "pity", "results"],
 		"primary_row_ids": ["local_basic", "chest_wallet", "chest_result", "chest_audit"],
 		"secondary_row_ids": ["chest_probability", "chest_pity"],
 		"setting_groups": [],
@@ -160,6 +187,9 @@ const PAGE_SPECS := {
 		"category": "collection",
 		"parent": "main_menu",
 		"density": "collection",
+		"visual_asset": "res://themes/base/ui/collection_card_frame.svg",
+		"visual_treatment": "inventory_hub",
+		"state_regions": ["status_cards", "deck", "chest", "replay", "workshop"],
 		"primary_row_ids": ["collection_deck", "collection_chest", "collection_replay"],
 		"secondary_row_ids": ["collection_summary", "collection_workshop"],
 		"setting_groups": [],
@@ -177,6 +207,9 @@ const PAGE_SPECS := {
 		"category": "community",
 		"parent": "main_menu",
 		"density": "hub",
+		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"visual_treatment": "community_notice_board",
+		"state_regions": ["announcements", "friends", "social_links", "promotion_links"],
 		"primary_row_ids": ["community_events", "community_friends", "community_social", "community_promotions"],
 		"secondary_row_ids": ["community_workshop", "announce_architecture", "link_discord"],
 		"setting_groups": [],
@@ -194,6 +227,9 @@ const PAGE_SPECS := {
 		"category": "community",
 		"parent": "community",
 		"density": "hub",
+		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"visual_treatment": "activity_task_board",
+		"state_regions": ["notices", "tasks", "events", "claims"],
 		"primary_row_ids": ["activity_summary", "activity_social", "activity_promotions", "announce_architecture", "activity_task_daily_complete_match", "activity_claim_log"],
 		"secondary_row_ids": ["activity_event_local_s0", "activity_leaderboard_single_score"],
 		"setting_groups": [],
@@ -211,6 +247,9 @@ const PAGE_SPECS := {
 		"category": "community",
 		"parent": "community",
 		"density": "hub",
+		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"visual_treatment": "friend_presence_list",
+		"state_regions": ["presence", "invites", "party_actions"],
 		"primary_row_ids": ["friends_summary", "friends_social", "friend_lumen", "friend_rin"],
 		"secondary_row_ids": ["friends_promotions", "friend_kai"],
 		"setting_groups": [],
@@ -228,6 +267,9 @@ const PAGE_SPECS := {
 		"category": "community",
 		"parent": "community",
 		"density": "hub",
+		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"visual_treatment": "social_link_board",
+		"state_regions": ["announcements", "friends", "social_media", "external_links"],
 		"primary_row_ids": ["social_summary", "announce_architecture", "friend_lumen", "link_discord"],
 		"secondary_row_ids": ["announce_certification", "link_steam", "link_creator_program", "link_github"],
 		"setting_groups": [],
@@ -245,6 +287,9 @@ const PAGE_SPECS := {
 		"category": "community",
 		"parent": "community",
 		"density": "hub",
+		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"visual_treatment": "promotion_link_board",
+		"state_regions": ["store_links", "creator_links", "friend_referrals"],
 		"primary_row_ids": ["promotions_summary", "promotions_social", "link_steam", "link_creator_program"],
 		"secondary_row_ids": ["promotions_friends"],
 		"setting_groups": [],
@@ -262,6 +307,9 @@ const PAGE_SPECS := {
 		"category": "community",
 		"parent": "community",
 		"density": "collection",
+		"visual_asset": "res://themes/base/ui/collection_card_frame.svg",
+		"visual_treatment": "theme_manifest_cards",
+		"state_regions": ["theme_list", "license_notice", "fallback_status"],
 		"primary_row_ids": ["base"],
 		"secondary_row_ids": [],
 		"setting_groups": ["themes"],
@@ -279,6 +327,9 @@ const PAGE_SPECS := {
 		"category": "collection",
 		"parent": "collection",
 		"density": "collection",
+		"visual_asset": "res://themes/base/ui/collection_card_frame.svg",
+		"visual_treatment": "replay_list",
+		"state_regions": ["latest_replay", "replay_rows", "favorite_remove_actions"],
 		"primary_row_ids": ["save_replay", "latest_replay"],
 		"secondary_row_ids": ["favorite_replay", "remove_replay"],
 		"setting_groups": [],
@@ -296,6 +347,9 @@ const PAGE_SPECS := {
 		"category": "settings",
 		"parent": "main_menu",
 		"density": "settings",
+		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"visual_treatment": "settings_control_hub",
+		"state_regions": ["language", "input", "audio", "display", "storage"],
 		"primary_row_ids": ["settings_language", "settings_gamepad_curve", "settings_keybinds", "settings_volume", "settings_resolution", "settings_input"],
 		"secondary_row_ids": ["settings_audio", "settings_display", "settings_save_now", "settings_reload", "settings_restore_defaults", "accessibility"],
 		"setting_groups": ["language", "input", "gamepad", "keybinds", "audio", "volume", "display", "resolution", "accessibility", "storage"],
@@ -313,6 +367,9 @@ const PAGE_SPECS := {
 		"category": "settings",
 		"parent": "player_settings",
 		"density": "settings",
+		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"visual_treatment": "input_control_matrix",
+		"state_regions": ["profile", "gamepad_curve", "speed_preview", "keybinds"],
 		"primary_row_ids": ["input_profile", "gamepad_curve", "gamepad_sensitivity", "binding_shoot"],
 		"secondary_row_ids": ["gamepad_curve_preview", "gamepad_deadzone", "gamepad_vibration", "gamepad_reset_all", "binding_bomb", "binding_focus"],
 		"setting_groups": ["input", "gamepad", "keybinds"],
@@ -330,6 +387,9 @@ const PAGE_SPECS := {
 		"category": "settings",
 		"parent": "player_settings",
 		"density": "settings",
+		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"visual_treatment": "audio_mixer",
+		"state_regions": ["voice", "volume_sliders", "cue_toggles", "reset"],
 		"primary_row_ids": ["audio_voice_locale", "audio_group_master", "audio_group_music", "audio_event_visual_cues"],
 		"secondary_row_ids": ["audio_group_sfx", "audio_group_ui", "audio_group_voice", "audio_graze_audio", "audio_reset_all"],
 		"setting_groups": ["audio", "voice", "volume", "accessibility"],
@@ -347,6 +407,9 @@ const PAGE_SPECS := {
 		"category": "settings",
 		"parent": "player_settings",
 		"density": "settings",
+		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"visual_treatment": "display_option_panel",
+		"state_regions": ["resolution", "window_mode", "frame_sync", "accessibility"],
 		"primary_row_ids": ["display_resolution", "display_window_mode", "display_vsync", "display_fps_limit"],
 		"secondary_row_ids": ["display_screen_shake", "display_background_dim", "display_reset_all", "accessibility", "access_low_flash"],
 		"setting_groups": ["display", "resolution", "accessibility"],
@@ -364,6 +427,9 @@ const PAGE_SPECS := {
 		"category": "settings",
 		"parent": "player_settings",
 		"density": "advanced",
+		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"visual_treatment": "advanced_tool_panel",
+		"state_regions": ["input", "display", "character", "stage", "analysis"],
 		"primary_row_ids": ["input_profile", "display", "character", "stage_select", "pattern_lab", "audio"],
 		"secondary_row_ids": ["bullet_visual", "balance_summary", "latency_summary", "accessibility"],
 		"setting_groups": ["input", "gamepad", "keybinds", "display", "character", "stage", "analysis", "audio", "accessibility"],
@@ -381,6 +447,9 @@ const PAGE_SPECS := {
 		"category": "collection",
 		"parent": "deck",
 		"density": "collection",
+		"visual_asset": "res://themes/base/ui/collection_card_frame.svg",
+		"visual_treatment": "settlement_reward_panel",
+		"state_regions": ["result", "score", "reward", "replay", "retry"],
 		"primary_row_ids": ["result", "score_breakdown", "reward", "save_replay", "retry"],
 		"secondary_row_ids": ["tasks", "events", "leaderboards", "reward_audit"],
 		"setting_groups": [],
@@ -480,7 +549,9 @@ func page_spec(screen_id: String, overrides: Dictionary = {}) -> Dictionary:
 	spec["required_bindings"] = _string_array(scene_contract.get("required_bindings", []))
 	spec["render_slots"] = _string_array(scene_contract.get("render_slots", []))
 	spec["overview_priority_ids"] = _string_array(spec.get("primary_row_ids", []))
+	spec["state_regions"] = _string_array(spec.get("state_regions", []))
 	spec["player_task_groups"] = _player_task_groups(source_screen, spec)
+	spec["asset_license_required"] = not String(spec.get("visual_asset", "")).is_empty()
 	spec["primary_count"] = _string_array(spec.get("primary_row_ids", [])).size()
 	spec["secondary_count"] = _string_array(spec.get("secondary_row_ids", [])).size()
 	spec["setting_group_count"] = _string_array(spec.get("setting_groups", [])).size()
@@ -489,6 +560,7 @@ func page_spec(screen_id: String, overrides: Dictionary = {}) -> Dictionary:
 	spec["player_task_count"] = _string_array(spec.get("player_task_groups", [])).size()
 	spec["required_binding_count"] = _string_array(spec.get("required_bindings", [])).size()
 	spec["render_slot_count"] = _string_array(spec.get("render_slots", [])).size()
+	spec["state_region_count"] = _string_array(spec.get("state_regions", [])).size()
 	return spec
 
 func primary_row_ids(screen_id: String) -> Array[String]:
@@ -547,14 +619,20 @@ func scene_contracts() -> Array[Dictionary]:
 
 func validate_page_scene_map() -> Dictionary:
 	var missing: Array[String] = []
+	var incomplete: Array[String] = []
 	for screen_id in PAGE_SPECS.keys():
-		var scene_id := _scene_id_for_screen(String(screen_id))
+		var screen_text := String(screen_id)
+		var spec := page_spec(screen_text)
+		var scene_id := _scene_id_for_screen(screen_text)
 		var contract := scene_contract(scene_id)
 		if String(contract.get("scene_path", "")).is_empty() or _string_array(contract.get("required_bindings", [])).is_empty():
-			missing.append("%s:%s" % [String(screen_id), scene_id])
+			missing.append("%s:%s" % [screen_text, scene_id])
+		if _string_array(spec.get("primary_row_ids", [])).is_empty() or _string_array(spec.get("player_task_groups", [])).is_empty() or _string_array(spec.get("state_regions", [])).is_empty():
+			incomplete.append(screen_text)
 	return {
-		"ok": missing.is_empty(),
+		"ok": missing.is_empty() and incomplete.is_empty(),
 		"missing": missing,
+		"incomplete": incomplete,
 		"screen_count": PAGE_SPECS.size(),
 		"scene_count": SCENE_CONTRACTS.size(),
 	}

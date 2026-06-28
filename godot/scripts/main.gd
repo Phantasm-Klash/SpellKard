@@ -2881,11 +2881,15 @@ func _ui_overlay_snapshot() -> Dictionary:
 		"page_social_groups": ",".join(_ui_string_array(page_layout.get("social_groups", []))),
 		"page_mode_groups": ",".join(_ui_string_array(page_layout.get("mode_groups", []))),
 		"page_task_groups": ",".join(_ui_string_array(page_layout.get("player_task_groups", []))),
+		"page_state_regions": ",".join(_ui_string_array(page_layout.get("state_regions", []))),
+		"page_visual_asset": String(page_layout.get("visual_asset", "")),
+		"page_visual_treatment": String(page_layout.get("visual_treatment", "")),
 		"page_required_bindings": ",".join(_ui_string_array(page_layout.get("required_bindings", []))),
 		"page_render_slots": ",".join(_ui_string_array(page_layout.get("render_slots", []))),
 		"page_primary_count": int(page_layout.get("primary_count", 0)),
 		"page_secondary_count": int(page_layout.get("secondary_count", 0)),
 		"page_task_count": int(page_layout.get("player_task_count", 0)),
+		"page_state_region_count": int(page_layout.get("state_region_count", 0)),
 		"viewport_size": viewport_size,
 		"home_visible": _is_home_screen() and ui_home_box != null and ui_home_box.visible,
 		"secondary_visible": not _is_home_screen() and ui_root_box != null and ui_root_box.visible,
@@ -3058,6 +3062,9 @@ func _page_experience_summary(rows: Array[Dictionary], selected: Dictionary, pag
 		"selected_section": _row_section_text(selected),
 		"selected_control": _row_control_text(selected),
 		"snapshot": _page_context_snapshot(screen_id),
+		"visual_asset": String(page_layout.get("visual_asset", "")),
+		"visual_treatment": String(page_layout.get("visual_treatment", "")),
+		"state_regions": _ui_string_array(page_layout.get("state_regions", [])),
 	}
 
 func _page_experience_text(summary: Dictionary) -> String:

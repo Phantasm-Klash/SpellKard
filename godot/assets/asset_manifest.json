@@ -10,6 +10,24 @@
       "modified": false,
       "modification_notes": "Original vector placeholder for the base lobby standee, licensed via the SpellKard repository license; no third-party or copyrighted source material used.",
       "imported_at": "2026-06-28"
+    },
+    {
+      "path": "res://themes/base/ui/mode_card_frame.svg",
+      "source_url": "self-authored in repository",
+      "author": "gotouhou contributors",
+      "license": "CC-BY-4.0",
+      "modified": false,
+      "modification_notes": "Original vector placeholder for menu mode/status cards; no third-party or copyrighted source material used.",
+      "imported_at": "2026-06-28"
+    },
+    {
+      "path": "res://themes/base/ui/collection_card_frame.svg",
+      "source_url": "self-authored in repository",
+      "author": "gotouhou contributors",
+      "license": "CC-BY-4.0",
+      "modified": false,
+      "modification_notes": "Original vector placeholder for collection/deck/reward cards; no third-party or copyrighted source material used.",
+      "imported_at": "2026-06-28"
     }
   ]
 }

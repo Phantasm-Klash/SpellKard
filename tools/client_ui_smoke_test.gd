@@ -409,6 +409,10 @@ func _assert_default_language_state() -> bool:
 func _assert_page_health(snapshot: Dictionary, label: String, expected_quick_max: int, expected_overview_max: int) -> bool:
 	if int(snapshot.get("visible_control_overlap_count", 0)) != 0:
 		return _fail("%s visible controls overlap %s" % [label, String(snapshot.get("visible_control_overlaps", ""))])
+	if int(snapshot.get("page_state_region_count", 0)) <= 0 or String(snapshot.get("page_state_regions", "")).is_empty():
+		return _fail("%s missing page state regions %s" % [label, snapshot])
+	if String(snapshot.get("page_visual_asset", "")).is_empty() or String(snapshot.get("page_visual_treatment", "")).is_empty():
+		return _fail("%s missing page visual contract %s" % [label, snapshot])
 	if int(snapshot.get("quick_buttons", 0)) > expected_quick_max:
 		return _fail("%s quick buttons too noisy %s" % [label, snapshot])
 	if expected_overview_max >= 0 and int(snapshot.get("overview_cards", 0)) > expected_overview_max:

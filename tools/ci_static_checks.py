@@ -9,6 +9,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CLIENT_MENU_PAGE_MODEL = ROOT / "godot" / "scripts" / "client_menu_page_model.gd"
+CLIENT_SHELL_MODEL = ROOT / "godot" / "scripts" / "client_shell_model.gd"
 
 
 def load_json(path: Path) -> object:
@@ -170,6 +172,230 @@ def check_assets_manifest() -> list[str]:
     return errors
 
 
+def _extract_const_dict(text: str, const_name: str) -> str | None:
+    marker = f"const {const_name} :="
+    start = text.find(marker)
+    if start < 0:
+        return None
+    brace_start = text.find("{", start)
+    if brace_start < 0:
+        return None
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(brace_start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[brace_start : index + 1]
+    return None
+
+
+def _extract_top_level_keys(dict_text: str) -> set[str]:
+    keys: set[str] = set()
+    index = 0
+    depth = 0
+    in_string = False
+    escaped = False
+    while index < len(dict_text):
+        char = dict_text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            index += 1
+            continue
+        if char == '"':
+            if depth == 1:
+                end = index + 1
+                while end < len(dict_text):
+                    if dict_text[end] == '"' and dict_text[end - 1] != "\\":
+                        break
+                    end += 1
+                after = end + 1
+                while after < len(dict_text) and dict_text[after].isspace():
+                    after += 1
+                if after < len(dict_text) and dict_text[after] == ":":
+                    keys.add(dict_text[index + 1 : end])
+                index = end + 1
+                continue
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+        index += 1
+    return keys
+
+
+def _extract_page_blocks(page_specs_text: str) -> dict[str, str]:
+    pages: dict[str, str] = {}
+    index = 0
+    depth = 0
+    in_string = False
+    escaped = False
+    while index < len(page_specs_text):
+        char = page_specs_text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            index += 1
+            continue
+        if char == '"':
+            if depth == 1:
+                end = index + 1
+                while end < len(page_specs_text):
+                    if page_specs_text[end] == '"' and page_specs_text[end - 1] != "\\":
+                        break
+                    end += 1
+                key = page_specs_text[index + 1 : end]
+                after = end + 1
+                while after < len(page_specs_text) and page_specs_text[after].isspace():
+                    after += 1
+                if after < len(page_specs_text) and page_specs_text[after] == ":":
+                    block_start = page_specs_text.find("{", after)
+                    if block_start >= 0:
+                        block_depth = 0
+                        block_in_string = False
+                        block_escaped = False
+                        for block_end in range(block_start, len(page_specs_text)):
+                            block_char = page_specs_text[block_end]
+                            if block_in_string:
+                                if block_escaped:
+                                    block_escaped = False
+                                elif block_char == "\\":
+                                    block_escaped = True
+                                elif block_char == '"':
+                                    block_in_string = False
+                                continue
+                            if block_char == '"':
+                                block_in_string = True
+                            elif block_char == "{":
+                                block_depth += 1
+                            elif block_char == "}":
+                                block_depth -= 1
+                                if block_depth == 0:
+                                    pages[key] = page_specs_text[block_start : block_end + 1]
+                                    index = block_end + 1
+                                    break
+                        continue
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+        index += 1
+    return pages
+
+
+def _extract_string_value(block: str, field: str) -> str:
+    marker = f'"{field}":'
+    index = block.find(marker)
+    if index < 0:
+        return ""
+    quote = block.find('"', index + len(marker))
+    if quote < 0:
+        return ""
+    end = block.find('"', quote + 1)
+    if end < 0:
+        return ""
+    return block[quote + 1 : end]
+
+
+def _extract_array_values(block: str, field: str) -> list[str]:
+    marker = f'"{field}":'
+    index = block.find(marker)
+    if index < 0:
+        return []
+    open_bracket = block.find("[", index)
+    close_bracket = block.find("]", open_bracket)
+    if open_bracket < 0 or close_bracket < 0:
+        return []
+    raw = block[open_bracket + 1 : close_bracket]
+    return [item.strip().strip('"') for item in raw.split(",") if item.strip()]
+
+
+def check_ui_page_contracts() -> list[str]:
+    errors: list[str] = []
+    text = CLIENT_MENU_PAGE_MODEL.read_text(encoding="utf-8")
+    page_specs_text = _extract_const_dict(text, "PAGE_SPECS")
+    scene_contracts_text = _extract_const_dict(text, "SCENE_CONTRACTS")
+    page_scene_ids_text = _extract_const_dict(text, "PAGE_SCENE_IDS")
+    if page_specs_text is None or scene_contracts_text is None or page_scene_ids_text is None:
+        return ["godot/scripts/client_menu_page_model.gd: missing page contract constants"]
+
+    pages = _extract_page_blocks(page_specs_text)
+    scene_map_keys = _extract_top_level_keys(page_scene_ids_text)
+    if not pages:
+        return ["godot/scripts/client_menu_page_model.gd: PAGE_SPECS did not parse"]
+
+    required_pages = {"main_menu", "play", "collection", "community", "player_settings", "match", "network_match"}
+    missing_required = sorted(required_pages - set(pages))
+    if missing_required:
+        errors.append(f"godot/scripts/client_menu_page_model.gd: missing required pages: {', '.join(missing_required)}")
+
+    manifest = load_json(ROOT / "godot" / "assets" / "asset_manifest.json")
+    manifest_paths = {
+        str(entry.get("path", ""))
+        for entry in manifest.get("records", [])
+        if isinstance(entry, dict)
+    } if isinstance(manifest, dict) else set()
+
+    for page_id, block in pages.items():
+        primary = _extract_array_values(block, "primary_row_ids")
+        state_regions = _extract_array_values(block, "state_regions")
+        visual_asset = _extract_string_value(block, "visual_asset")
+        treatment = _extract_string_value(block, "visual_treatment")
+        if not primary:
+            errors.append(f"PAGE_SPECS[{page_id}]: missing primary_row_ids")
+        if not state_regions:
+            errors.append(f"PAGE_SPECS[{page_id}]: missing state_regions")
+        if not treatment:
+            errors.append(f"PAGE_SPECS[{page_id}]: missing visual_treatment")
+        if visual_asset:
+            if visual_asset not in manifest_paths:
+                errors.append(f"PAGE_SPECS[{page_id}]: visual_asset not registered: {visual_asset}")
+            repo_path = ROOT / ("godot/" + visual_asset.removeprefix("res://"))
+            if not repo_path.exists():
+                errors.append(f"PAGE_SPECS[{page_id}]: visual_asset missing: {visual_asset}")
+        elif page_id in required_pages:
+            errors.append(f"PAGE_SPECS[{page_id}]: missing visual_asset")
+        if page_id not in scene_map_keys:
+            errors.append(f"PAGE_SCENE_IDS: missing page {page_id}")
+
+    shell_text = CLIENT_SHELL_MODEL.read_text(encoding="utf-8")
+    main_rows_start = shell_text.find("func main_menu_rows()")
+    main_rows_end = shell_text.find("func home_dashboard_cards()", main_rows_start)
+    main_rows_text = shell_text[main_rows_start:main_rows_end]
+    for expected in ['"id": "play"', '"id": "collection"', '"id": "community"', '"id": "player_settings"']:
+        if expected not in main_rows_text:
+            errors.append(f"client_shell_model.gd main_menu_rows missing {expected}")
+    for forbidden in ['"id": "certification"', '"id": "deck"', '"id": "replay"', '"id": "settings"']:
+        if forbidden in main_rows_text:
+            errors.append(f"client_shell_model.gd main_menu_rows should not expose {forbidden}")
+    return errors
+
+
 def check_protocol_client_scripts() -> list[str]:
     errors: list[str] = []
     required = (
@@ -221,6 +447,7 @@ def main() -> int:
     errors.extend(check_json_files())
     errors.extend(check_i18n_keys())
     errors.extend(check_assets_manifest())
+    errors.extend(check_ui_page_contracts())
     errors.extend(check_protocol_client_scripts())
     errors.extend(check_boss_pattern_catalog_contract())
     if errors:
