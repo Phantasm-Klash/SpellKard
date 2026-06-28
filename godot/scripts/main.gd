@@ -272,6 +272,8 @@ func _ready() -> void:
 	pattern_lab_model = PatternLabModelLib.new()
 	pattern_lab_model.configure(stage_select_model)
 	boss_spellbook_model = BossSpellbookModelLib.new()
+	if pattern_lab_model.has_method("configure_boss_spellbook"):
+		pattern_lab_model.configure_boss_spellbook(boss_spellbook_model)
 	_refresh_pattern_configs_from_stage()
 	balance_simulation_model = BalanceSimulationModelLib.new()
 	_configure_balance_simulation_model()
@@ -1029,6 +1031,11 @@ func _start_replay_from_recording() -> void:
 func _build_replay_snapshot() -> Dictionary:
 	var snapshot: Dictionary = replay_recorder.build_snapshot(_state_hash())
 	var active_pattern: Dictionary = _active_pattern_config()
+	var spellbook_status: Dictionary = _boss_spellbook_run_status() if boss_spellbook_run_enabled else {}
+	var phase_id := String(spellbook_status.get("phase_id", ""))
+	var phase_preview: Dictionary = {}
+	if boss_spellbook_run_enabled and boss_spellbook_model != null and boss_spellbook_model.has_method("deterministic_phase_preview") and not phase_id.is_empty():
+		phase_preview = boss_spellbook_model.deterministic_phase_preview(boss_spellbook_id, phase_id, practice_seed)
 	snapshot["deck_snapshot"] = deck_builder.active_deck_snapshot() if deck_builder != null else {}
 	snapshot["practice_config"] = {
 		"start_tick": practice_start_tick,
@@ -1036,6 +1043,10 @@ func _build_replay_snapshot() -> Dictionary:
 		"initial_bombs": practice_initial_bombs,
 		"stage_id": String(stage_select_model.selected_stage_id if stage_select_model != null else ""),
 		"pattern_id": String(active_pattern.get("id", "")),
+		"catalog_id": "boss_spellbook" if boss_spellbook_run_enabled else "stage_pattern",
+		"spellbook_id": boss_spellbook_id if boss_spellbook_run_enabled else "",
+		"phase_id": phase_id,
+		"preview_export_id": String(phase_preview.get("export_id", "")),
 	}
 	snapshot["metadata"] = {
 		"saved_at": Time.get_datetime_string_from_system(true, true),
@@ -1046,7 +1057,12 @@ func _build_replay_snapshot() -> Dictionary:
 		"stage_id": String(stage_select_model.selected_stage_id if stage_select_model != null else ""),
 		"pattern_id": String(active_pattern.get("id", "")),
 		"opponent": String(active_pattern.get("id", "local")),
-		"mode": "local_practice",
+		"catalog_id": "boss_spellbook" if boss_spellbook_run_enabled else "stage_pattern",
+		"spellbook_id": boss_spellbook_id if boss_spellbook_run_enabled else "",
+		"phase_id": phase_id,
+		"preview_export_id": String(phase_preview.get("export_id", "")),
+		"preview_signature": String(phase_preview.get("signature", "")),
+		"mode": "boss_spellbook_practice" if boss_spellbook_run_enabled else "local_practice",
 		"result": "practice",
 	}
 	return snapshot
@@ -5937,6 +5953,16 @@ func _format_ui_row(row: Dictionary) -> String:
 			str(row.get("danger_estimate", "")),
 			float(row.get("spawn_rate_per_second", 0.0)),
 			str(row.get("readability_hint", "")),
+		]
+	if row.has("catalog_id") and row.has("phase_id"):
+		return "%s %s/%s timeout %d enrage %d cap %d preview %d" % [
+			label_text,
+			String(row.get("catalog_id", "")),
+			String(row.get("phase_id", "")),
+			int(row.get("timeout_ticks", 0)),
+			int(row.get("enrage_after_ticks", 0)),
+			int(row.get("bullet_cap_per_tick", 0)),
+			int(row.get("max_preview_emit", 0)),
 		]
 	if row.has("pattern_id") and row.has("pattern_type"):
 		return "%s%s %s every %dt count %d speed %.0f" % [

@@ -3,6 +3,7 @@ extends SceneTree
 const StageSelectModel := preload("res://scripts/stage_select_model.gd")
 const BossPatternCatalog := preload("res://scripts/boss_pattern_catalog.gd")
 const BossSpellbookModel := preload("res://scripts/boss_spellbook_model.gd")
+const PatternLabModel := preload("res://scripts/pattern_lab_model.gd")
 
 func _initialize() -> void:
 	var stage_model: RefCounted = StageSelectModel.new()
@@ -20,9 +21,16 @@ func _initialize() -> void:
 		quit(1)
 		return
 	var spellbook_model: RefCounted = BossSpellbookModel.new()
+	var pattern_lab_model: RefCounted = PatternLabModel.new()
+	pattern_lab_model.configure(stage_model, spellbook_model)
 	var spellbooks: Dictionary = spellbook_model.validate_spellbooks()
 	if not bool(spellbooks.get("ok", false)):
 		push_error("Boss spellbooks failed: %s" % [spellbooks])
+		quit(1)
+		return
+	var preview_exports: Dictionary = BossPatternCatalog.validate_spellbook_preview_exports(spellbook_model, pattern_lab_model, 20260625)
+	if not bool(preview_exports.get("ok", false)):
+		push_error("Boss spellbook preview exports failed: %s" % [preview_exports])
 		quit(1)
 		return
 	var requirements: Dictionary = BossPatternCatalog.validate_boss_type_requirements(stage_model, spellbook_model)
@@ -45,7 +53,7 @@ func _initialize() -> void:
 		push_error("Boss pattern performance budgets failed: %s" % [budgets])
 		quit(1)
 		return
-	print("boss_pattern_catalog_check ok: families=%d recipes=%d adapters=%d requirements=%d official_types=%d types=%d emitted=%d behavior_spawns=%d spellbooks=%d phases=%d max_emit=%d max_behavior_spawn=%d max_spellbook_emit=%d" % [
+	print("boss_pattern_catalog_check ok: families=%d recipes=%d adapters=%d requirements=%d official_types=%d types=%d emitted=%d behavior_spawns=%d spellbooks=%d phases=%d previews=%d max_emit=%d max_behavior_spawn=%d max_spellbook_emit=%d" % [
 		BossPatternCatalog.family_rows().size(),
 		int(recipes.get("recipe_count", 0)),
 		int(recipes.get("adapter_count", 0)),
@@ -56,6 +64,7 @@ func _initialize() -> void:
 		(emitters.get("behavior_spawn_types", []) as Array).size(),
 		int(spellbooks.get("spellbook_count", 0)),
 		int(spellbooks.get("phase_count", 0)),
+		int(preview_exports.get("preview_count", 0)),
 		int(budgets.get("max_initial_emit", 0)),
 		int(budgets.get("max_behavior_spawned_per_tick", 0)),
 		int(budgets.get("max_spellbook_emit_per_tick", 0)),

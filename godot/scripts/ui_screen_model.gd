@@ -566,6 +566,8 @@ func _practice_rows() -> Array[Dictionary]:
 	if pattern_lab_model != null:
 		rows.append({"id": "pattern_lab_summary", "label_key": "screen.settings.pattern_lab", "summary": pattern_lab_model.summary(), "enabled": true})
 		rows.append_array(pattern_lab_model.active_rows())
+		if pattern_lab_model.has_method("rows_for_spellbook"):
+			rows.append_array(pattern_lab_model.rows_for_spellbook("original_boss_archive"))
 	return rows
 
 func _match_rows() -> Array[Dictionary]:

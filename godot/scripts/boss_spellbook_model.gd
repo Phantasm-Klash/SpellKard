@@ -5,6 +5,10 @@ const BossPatternCatalogLib := preload("res://scripts/boss_pattern_catalog.gd")
 const BulletMathLib := preload("res://scripts/bullet_math.gd")
 const BulletPatterns := preload("res://scripts/bullet_pattern_library.gd")
 
+const EXPORT_SCHEMA_VERSION := 1
+const DEFAULT_PREVIEW_SEED := 20260625
+const PREVIEW_SAMPLE_TICKS: Array[int] = [0, 28, 56, 84, 112, 140]
+
 var spellbooks: Array[Dictionary] = []
 var spellbook_by_id: Dictionary = {}
 
@@ -48,23 +52,51 @@ func timeline_rows(spellbook_id: String) -> Array[Dictionary]:
 	var start_tick: int = 0
 	for phase in spellbook.get("phases", []):
 		var duration: int = int(phase.get("duration_ticks", 0))
+		var phase_dict: Dictionary = phase as Dictionary
+		var phase_id := String(phase_dict.get("id", ""))
+		var phase_script: Dictionary = _phase_script_for(phase_dict)
+		var preview := deterministic_phase_preview(spellbook_id, phase_id, DEFAULT_PREVIEW_SEED)
 		rows.append({
-			"id": "boss_spell_phase_%s" % String(phase.get("id", "")),
+			"id": "boss_spell_phase_%s" % phase_id,
 			"label_key": "screen.settings.boss_spellbook",
-			"summary": "%s %dt %s" % [String(phase.get("kind", "")), duration, ",".join(_phase_pattern_types(phase))],
+			"summary": "%s %dt %s seed %d cap %d" % [
+				String(phase_dict.get("kind", "")),
+				duration,
+				",".join(_phase_pattern_types(phase_dict)),
+				int(preview.get("seed", DEFAULT_PREVIEW_SEED)),
+				int(phase_script.get("bullet_cap_per_tick", BossPatternCatalogLib.MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK)),
+			],
+			"catalog_id": "boss_spellbook",
 			"spellbook_id": spellbook_id,
-			"phase_id": String(phase.get("id", "")),
-			"phase_kind": String(phase.get("kind", "")),
+			"phase_id": phase_id,
+			"phase_kind": String(phase_dict.get("kind", "")),
 			"start_tick": start_tick,
 			"end_tick": start_tick + duration,
 			"duration_ticks": duration,
-			"pattern_types": _phase_pattern_types(phase),
-			"family_ids": _phase_family_ids(phase),
-			"recipe_id": String(phase.get("recipe_id", "")),
+			"timeout_ticks": int(phase_dict.get("timeout_ticks", 0)),
+			"enrage_after_ticks": int(phase_dict.get("enrage_after_ticks", 0)),
+			"pattern_types": _phase_pattern_types(phase_dict),
+			"family_ids": _phase_family_ids(phase_dict),
+			"recipe_id": String(phase_dict.get("recipe_id", "")),
+			"source_policy": String(spellbook.get("source_policy", "")),
+			"phase_script": phase_script,
+			"script_example_id": String(phase_script.get("id", "")),
+			"deterministic_preview": preview,
+			"preview_export_id": String(preview.get("export_id", "")),
+			"max_preview_emit": int(preview.get("max_emit_per_tick", 0)),
+			"bullet_cap_per_tick": int(phase_script.get("bullet_cap_per_tick", BossPatternCatalogLib.MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK)),
 			"enabled": true,
 		})
 		start_tick += duration
 	return rows
+
+func phase_config(spellbook_id: String, phase_id: String) -> Dictionary:
+	var spellbook := spellbook_config(spellbook_id)
+	for phase in spellbook.get("phases", []):
+		var phase_dict: Dictionary = phase as Dictionary
+		if String(phase_dict.get("id", "")) == phase_id:
+			return phase_dict.duplicate(true)
+	return {}
 
 func total_ticks(spellbook: Dictionary) -> int:
 	var total: int = 0
@@ -126,26 +158,103 @@ func emit_tick(spellbook_id: String, local_tick: int, target: Vector2, spawn_ind
 		next_index += emitted.size()
 	return bullets
 
+func deterministic_phase_preview(spellbook_id: String, phase_id: String, seed: int = DEFAULT_PREVIEW_SEED) -> Dictionary:
+	var phase := phase_config(spellbook_id, phase_id)
+	if phase.is_empty():
+		return {}
+	var phase_script := _phase_script_for(phase)
+	var target: Vector2 = phase_script.get("preview_target", Vector2(480, 600))
+	var phase_offset: int = _phase_start_tick(spellbook_id, phase_id)
+	var samples: Array[Dictionary] = []
+	var max_emit := 0
+	var signature_parts: Array[String] = []
+	for sample_tick in PREVIEW_SAMPLE_TICKS:
+		var local_tick := phase_offset + min(int(sample_tick), max(0, int(phase.get("duration_ticks", 1)) - 1))
+		var emitted: Array[Dictionary] = emit_tick(spellbook_id, local_tick, target, 50000 + local_tick, seed)
+		max_emit = maxi(max_emit, emitted.size())
+		var tick_signature := _bullet_signature(emitted)
+		signature_parts.append("%d:%s" % [sample_tick, tick_signature])
+		samples.append({
+			"phase_tick": int(sample_tick),
+			"local_tick": local_tick,
+			"emit_count": emitted.size(),
+			"signature": tick_signature,
+		})
+	var signature := "|".join(signature_parts)
+	return {
+		"export_schema_version": EXPORT_SCHEMA_VERSION,
+		"export_id": "boss_spellbook_preview_%s_%s_%d" % [spellbook_id, phase_id, seed],
+		"catalog_id": "boss_spellbook",
+		"spellbook_id": spellbook_id,
+		"phase_id": phase_id,
+		"seed": seed,
+		"sample_ticks": PREVIEW_SAMPLE_TICKS.duplicate(),
+		"samples": samples,
+		"signature": signature,
+		"max_emit_per_tick": max_emit,
+		"bullet_cap_per_tick": int(phase_script.get("bullet_cap_per_tick", BossPatternCatalogLib.MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK)),
+		"source_policy": "original_spell_phase_script",
+		"license": String(phase_script.get("license", "")),
+		"provenance": String(phase_script.get("provenance", "")),
+	}
+
+func phase_export_data(spellbook_id: String, seed: int = DEFAULT_PREVIEW_SEED) -> Dictionary:
+	var spellbook := spellbook_config(spellbook_id)
+	if spellbook.is_empty():
+		return {}
+	var phases: Array[Dictionary] = []
+	for phase in spellbook.get("phases", []):
+		var phase_id := String((phase as Dictionary).get("id", ""))
+		phases.append({
+			"phase_id": phase_id,
+			"phase_script": _phase_script_for(phase as Dictionary),
+			"deterministic_preview": deterministic_phase_preview(spellbook_id, phase_id, seed),
+		})
+	return {
+		"export_schema_version": EXPORT_SCHEMA_VERSION,
+		"catalog_id": "boss_spellbook",
+		"spellbook_id": spellbook_id,
+		"seed": seed,
+		"source_policy": String(spellbook.get("source_policy", "")),
+		"license": "SpellKard original metadata; recipe references remain mechanism-only",
+		"provenance": "Generated from BossSpellbookModel phase scripts and deterministic preview samples",
+		"phases": phases,
+	}
+
 func validate_spellbooks() -> Dictionary:
 	var failures: Array[String] = []
 	var catalog_types: Array[String] = BossPatternCatalogLib.all_catalog_pattern_types()
+	var known_recipe_ids := _known_recipe_ids()
 	for spellbook in spellbooks:
 		var phases: Array = spellbook.get("phases", [])
 		if phases.size() < 3:
 			failures.append("too_few_phases:%s" % String(spellbook.get("id", "")))
 		for phase in phases:
 			var phase_dict: Dictionary = phase as Dictionary
+			var phase_id := String(phase_dict.get("id", ""))
+			var phase_script := _phase_script_for(phase_dict)
 			if int(phase_dict.get("duration_ticks", 0)) <= 0:
-				failures.append("bad_duration:%s" % String(phase_dict.get("id", "")))
+				failures.append("bad_duration:%s" % phase_id)
 			if int(phase_dict.get("timeout_ticks", 0)) <= 0:
-				failures.append("missing_timeout:%s" % String(phase_dict.get("id", "")))
+				failures.append("missing_timeout:%s" % phase_id)
 			if int(phase_dict.get("enrage_after_ticks", 0)) <= 0 or (phase_dict.get("enrage", {}) as Dictionary).is_empty():
-				failures.append("missing_enrage:%s" % String(phase_dict.get("id", "")))
+				failures.append("missing_enrage:%s" % phase_id)
+			if int(phase_script.get("timeout_ticks", 0)) != int(phase_dict.get("timeout_ticks", 0)):
+				failures.append("script_timeout_mismatch:%s" % phase_id)
+			if int(phase_script.get("enrage_after_ticks", 0)) != int(phase_dict.get("enrage_after_ticks", 0)):
+				failures.append("script_enrage_mismatch:%s" % phase_id)
+			if int(phase_script.get("bullet_cap_per_tick", 0)) <= 0:
+				failures.append("missing_bullet_cap:%s" % phase_id)
+			if String(phase_script.get("license", "")).is_empty() or String(phase_script.get("provenance", "")).is_empty():
+				failures.append("missing_script_provenance:%s" % phase_id)
 			for pattern_type in _phase_pattern_types(phase_dict):
 				if not catalog_types.has(pattern_type):
 					failures.append("unknown_pattern_type:%s" % pattern_type)
-			if String(phase_dict.get("recipe_id", "")).is_empty():
-				failures.append("missing_recipe:%s" % String(phase_dict.get("id", "")))
+			var recipe_id := String(phase_dict.get("recipe_id", ""))
+			if recipe_id.is_empty():
+				failures.append("missing_recipe:%s" % phase_id)
+			elif not known_recipe_ids.has(recipe_id):
+				failures.append("unknown_recipe:%s" % recipe_id)
 	var emitted_ok: bool = false
 	if not spellbooks.is_empty():
 		var sample: Array[Dictionary] = emit_tick(String(spellbooks[0].get("id", "")), 0, Vector2(480, 600), 100, 20260625)
@@ -157,6 +266,38 @@ func validate_spellbooks() -> Dictionary:
 		"failures": failures,
 		"spellbook_count": spellbooks.size(),
 		"phase_count": _phase_count(),
+	}
+
+func validate_phase_preview_exports(seed: int = DEFAULT_PREVIEW_SEED) -> Dictionary:
+	var failures: Array[String] = []
+	var export_count := 0
+	for spellbook in spellbooks:
+		var spellbook_id := String(spellbook.get("id", ""))
+		var export := phase_export_data(spellbook_id, seed)
+		if String(export.get("license", "")).is_empty() or String(export.get("provenance", "")).is_empty():
+			failures.append("export_missing_provenance:%s" % spellbook_id)
+		for phase in spellbook.get("phases", []):
+			var phase_dict: Dictionary = phase as Dictionary
+			var phase_id := String(phase_dict.get("id", ""))
+			var phase_script := _phase_script_for(phase_dict)
+			var preview_a := deterministic_phase_preview(spellbook_id, phase_id, seed)
+			var preview_b := deterministic_phase_preview(spellbook_id, phase_id, seed)
+			export_count += 1
+			if preview_a.is_empty():
+				failures.append("preview_empty:%s" % phase_id)
+				continue
+			if String(preview_a.get("license", "")).is_empty() or String(preview_a.get("provenance", "")).is_empty():
+				failures.append("preview_missing_provenance:%s" % phase_id)
+			if int(phase_script.get("timeout_ticks", 0)) <= 0 or int(phase_script.get("enrage_after_ticks", 0)) <= 0:
+				failures.append("preview_missing_timeout_enrage:%s" % phase_id)
+			if String(preview_a.get("signature", "")) != String(preview_b.get("signature", "")):
+				failures.append("preview_not_reproducible:%s" % phase_id)
+			if int(preview_a.get("max_emit_per_tick", 0)) > int(preview_a.get("bullet_cap_per_tick", 0)):
+				failures.append("preview_bullet_cap:%s:%d" % [phase_id, int(preview_a.get("max_emit_per_tick", 0))])
+	return {
+		"ok": failures.is_empty(),
+		"failures": failures,
+		"export_count": export_count,
 	}
 
 func _spellbook_pattern_types(spellbook: Dictionary) -> Array[String]:
@@ -203,6 +344,56 @@ func _phase_count() -> int:
 		count += (spellbook.get("phases", []) as Array).size()
 	return count
 
+func _phase_start_tick(spellbook_id: String, phase_id: String) -> int:
+	var cursor := 0
+	var spellbook := spellbook_config(spellbook_id)
+	for phase in spellbook.get("phases", []):
+		var phase_dict: Dictionary = phase as Dictionary
+		if String(phase_dict.get("id", "")) == phase_id:
+			return cursor
+		cursor += int(phase_dict.get("duration_ticks", 0))
+	return 0
+
+func _phase_script_for(phase: Dictionary) -> Dictionary:
+	var script: Dictionary = phase.get("phase_script", {})
+	if not script.is_empty():
+		return script.duplicate(true)
+	return {
+		"id": "script_%s" % String(phase.get("id", "phase")),
+		"script_kind": "interval_pattern_sequence",
+		"timeout_ticks": int(phase.get("timeout_ticks", phase.get("duration_ticks", 0))),
+		"enrage_after_ticks": int(phase.get("enrage_after_ticks", 0)),
+		"bullet_cap_per_tick": BossPatternCatalogLib.MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK,
+		"seed_policy": "match_seed_plus_phase_tick",
+		"license": "SpellKard original phase script",
+		"provenance": "Authored in BossSpellbookModel from mechanism categories only",
+		"preview_target": Vector2(480, 600),
+	}
+
+func _known_recipe_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for recipe in BossPatternCatalogLib.open_source_recipe_rows():
+		ids.append(String(recipe.get("id", "")))
+	return ids
+
+func _bullet_signature(bullets: Array[Dictionary]) -> String:
+	var parts: Array[String] = []
+	for bullet in bullets:
+		var pos: Vector2 = bullet.get("pos", Vector2.ZERO)
+		var vel: Vector2 = bullet.get("vel", Vector2.ZERO)
+		parts.append("%s:%d:%s:%s:%.2f:%.2f:%.2f:%.2f:%.2f" % [
+			String(bullet.get("pattern_id", "")),
+			int(bullet.get("spawn_index", 0)),
+			String(bullet.get("shape", "circle")),
+			String(bullet.get("color_name", "")),
+			pos.x,
+			pos.y,
+			vel.x,
+			vel.y,
+			float(bullet.get("radius", 0.0)),
+		])
+	return "|".join(parts)
+
 func _rebuild_index() -> void:
 	spellbook_by_id.clear()
 	for spellbook in spellbooks:
@@ -222,6 +413,17 @@ func _build_spellbooks() -> Array[Dictionary]:
 					"timeout_ticks": 420,
 					"enrage_after_ticks": 336,
 					"enrage": {"density_multiplier": 1.12, "speed_multiplier": 1.06, "allow_timeout_clear": true},
+					"phase_script": {
+						"id": "script_nonspell_radial_entry",
+						"script_kind": "interval_pattern_sequence",
+						"timeout_ticks": 420,
+						"enrage_after_ticks": 336,
+						"bullet_cap_per_tick": 192,
+						"seed_policy": "match_seed_plus_phase_tick",
+						"license": "SpellKard original phase script",
+						"provenance": "Authored for SpellKard from catalog mechanism categories; no commercial stage data or copied authored pattern scripts",
+						"preview_target": Vector2(480, 600),
+					},
 					"origin": Vector2(480, 116),
 					"motion": {"type": "sinusoid", "period_ticks": 180, "amplitude_x": 80.0, "amplitude_y": 10.0},
 					"family_ids": ["radial", "aimed"],
@@ -241,6 +443,17 @@ func _build_spellbooks() -> Array[Dictionary]:
 					"timeout_ticks": 540,
 					"enrage_after_ticks": 432,
 					"enrage": {"density_multiplier": 1.10, "speed_multiplier": 1.04, "warning_ticks_delta": -6},
+					"phase_script": {
+						"id": "script_spell_laser_field",
+						"script_kind": "warning_laser_field_sequence",
+						"timeout_ticks": 540,
+						"enrage_after_ticks": 432,
+						"bullet_cap_per_tick": 192,
+						"seed_policy": "match_seed_plus_phase_tick",
+						"license": "SpellKard original phase script",
+						"provenance": "Authored for SpellKard from catalog mechanism categories; references are mechanism-only and do not import authored layouts",
+						"preview_target": Vector2(480, 600),
+					},
 					"origin": Vector2(480, 110),
 					"motion": {"type": "ellipse", "period_ticks": 260, "radius_x": 72.0, "radius_y": 18.0},
 					"family_ids": ["laser", "field"],
@@ -265,6 +478,17 @@ func _build_spellbooks() -> Array[Dictionary]:
 					"timeout_ticks": 600,
 					"enrage_after_ticks": 480,
 					"enrage": {"density_multiplier": 1.16, "speed_multiplier": 1.05, "carrier_lifetime_scale": 0.92},
+					"phase_script": {
+						"id": "script_spell_summoner_split",
+						"script_kind": "carrier_split_seeded_sequence",
+						"timeout_ticks": 600,
+						"enrage_after_ticks": 480,
+						"bullet_cap_per_tick": 192,
+						"seed_policy": "match_seed_plus_phase_tick",
+						"license": "SpellKard original phase script",
+						"provenance": "Authored for SpellKard from catalog mechanism categories; seeded placements are deterministic original data",
+						"preview_target": Vector2(480, 600),
+					},
 					"origin": Vector2(480, 124),
 					"motion": {"type": "static"},
 					"family_ids": ["delayed", "field", "random_seeded"],
@@ -291,6 +515,17 @@ func _build_spellbooks() -> Array[Dictionary]:
 					"timeout_ticks": 720,
 					"enrage_after_ticks": 540,
 					"enrage": {"density_multiplier": 1.20, "speed_multiplier": 1.08, "timeout_pressure": true},
+					"phase_script": {
+						"id": "script_last_spell_morph_bounce",
+						"script_kind": "timeout_enrage_last_spell_sequence",
+						"timeout_ticks": 720,
+						"enrage_after_ticks": 540,
+						"bullet_cap_per_tick": 192,
+						"seed_policy": "match_seed_plus_phase_tick",
+						"license": "SpellKard original phase script",
+						"provenance": "Authored for SpellKard from catalog mechanism categories; no third-party assets or copied spell layouts",
+						"preview_target": Vector2(480, 600),
+					},
 					"origin": Vector2(480, 118),
 					"motion": {"type": "sinusoid", "period_ticks": 150, "amplitude_x": 110.0, "period_ticks_y": 210, "amplitude_y": 18.0},
 					"family_ids": ["radial", "field", "laser"],

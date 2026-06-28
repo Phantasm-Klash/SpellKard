@@ -447,6 +447,50 @@ static func validate_performance_budgets(stage_model: RefCounted, spellbook_mode
 		"spellbook_emit_budget": MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK,
 	}
 
+static func validate_spellbook_preview_exports(spellbook_model: RefCounted, pattern_lab_model: RefCounted = null, seed: int = 20260625) -> Dictionary:
+	var failures: Array[String] = []
+	if spellbook_model == null:
+		return {"ok": false, "failures": ["missing_spellbook_model"], "preview_count": 0}
+	for method_name in ["spellbook_ids", "timeline_rows", "deterministic_phase_preview", "phase_export_data"]:
+		if not spellbook_model.has_method(method_name):
+			return {"ok": false, "failures": ["missing_method:%s" % method_name], "preview_count": 0}
+	var preview_count := 0
+	for spellbook_id in spellbook_model.spellbook_ids():
+		var export: Dictionary = spellbook_model.phase_export_data(String(spellbook_id), seed)
+		if String(export.get("license", "")).is_empty() or String(export.get("provenance", "")).is_empty():
+			failures.append("export_missing_provenance:%s" % String(spellbook_id))
+		for row in spellbook_model.timeline_rows(String(spellbook_id)):
+			var phase_id := String((row as Dictionary).get("phase_id", ""))
+			var phase_script: Dictionary = (row as Dictionary).get("phase_script", {})
+			var preview_a: Dictionary = spellbook_model.deterministic_phase_preview(String(spellbook_id), phase_id, seed)
+			var preview_b: Dictionary = spellbook_model.deterministic_phase_preview(String(spellbook_id), phase_id, seed)
+			preview_count += 1
+			if String(phase_script.get("license", "")).is_empty() or String(phase_script.get("provenance", "")).is_empty():
+				failures.append("script_missing_provenance:%s" % phase_id)
+			if int(phase_script.get("timeout_ticks", 0)) <= 0 or int(phase_script.get("enrage_after_ticks", 0)) <= 0:
+				failures.append("script_missing_timeout_enrage:%s" % phase_id)
+			if int(phase_script.get("bullet_cap_per_tick", 0)) <= 0:
+				failures.append("script_missing_bullet_cap:%s" % phase_id)
+			if String(preview_a.get("signature", "")) != String(preview_b.get("signature", "")):
+				failures.append("preview_not_reproducible:%s" % phase_id)
+			if int(preview_a.get("max_emit_per_tick", 0)) > int(preview_a.get("bullet_cap_per_tick", 0)):
+				failures.append("preview_bullet_cap:%s:%d" % [phase_id, int(preview_a.get("max_emit_per_tick", 0))])
+			if pattern_lab_model != null and pattern_lab_model.has_method("rows_for_spellbook_phase"):
+				var lab_rows: Array = pattern_lab_model.rows_for_spellbook_phase("boss_spellbook", phase_id, String(spellbook_id), seed)
+				if lab_rows.is_empty():
+					failures.append("pattern_lab_missing_phase:%s" % phase_id)
+				else:
+					var coverage: Dictionary = lab_rows[0]
+					if String(coverage.get("catalog_id", "")) != "boss_spellbook" or String(coverage.get("phase_id", "")) != phase_id:
+						failures.append("pattern_lab_bad_phase:%s" % phase_id)
+					if String(coverage.get("deterministic_preview_signature", "")).is_empty():
+						failures.append("pattern_lab_missing_preview:%s" % phase_id)
+	return {
+		"ok": failures.is_empty(),
+		"failures": failures,
+		"preview_count": preview_count,
+	}
+
 static func validate_open_source_recipes() -> Dictionary:
 	var failures: Array[String] = []
 	var catalog_types := all_catalog_pattern_types()

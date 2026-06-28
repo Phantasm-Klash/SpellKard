@@ -2,9 +2,14 @@ class_name PatternLabModel
 extends RefCounted
 
 var stage_select_model: RefCounted = null
+var boss_spellbook_model: RefCounted = null
 
-func configure(stage_model: RefCounted) -> void:
+func configure(stage_model: RefCounted, spellbook_model: RefCounted = null) -> void:
 	stage_select_model = stage_model
+	boss_spellbook_model = spellbook_model
+
+func configure_boss_spellbook(spellbook_model: RefCounted) -> void:
+	boss_spellbook_model = spellbook_model
 
 func active_rows() -> Array[Dictionary]:
 	if stage_select_model == null:
@@ -30,6 +35,60 @@ func rows_for_patterns(patterns: Array[Dictionary], selected_pattern_id: String 
 		row["enabled"] = true
 		rows.append(row)
 	return rows
+
+func rows_for_spellbook(spellbook_id: String = "original_boss_archive", seed: int = 20260625) -> Array[Dictionary]:
+	if boss_spellbook_model == null or not boss_spellbook_model.has_method("timeline_rows"):
+		return []
+	var rows: Array[Dictionary] = []
+	for phase_row in boss_spellbook_model.timeline_rows(spellbook_id):
+		rows.append_array(rows_for_spellbook_phase("boss_spellbook", String(phase_row.get("phase_id", "")), spellbook_id, seed))
+	return rows
+
+func rows_for_spellbook_phase(catalog_id: String, phase_id: String, spellbook_id: String = "original_boss_archive", seed: int = 20260625) -> Array[Dictionary]:
+	if catalog_id != "boss_spellbook" or boss_spellbook_model == null:
+		return []
+	if not boss_spellbook_model.has_method("phase_config") or not boss_spellbook_model.has_method("deterministic_phase_preview"):
+		return []
+	var phase: Dictionary = boss_spellbook_model.phase_config(spellbook_id, phase_id)
+	if phase.is_empty():
+		return []
+	var preview: Dictionary = boss_spellbook_model.deterministic_phase_preview(spellbook_id, phase_id, seed)
+	var phase_script: Dictionary = phase.get("phase_script", {})
+	var pattern_rows: Array[Dictionary] = []
+	for pattern in phase.get("patterns", []):
+		var pattern_dict: Dictionary = (pattern as Dictionary).duplicate(true)
+		pattern_dict["id"] = "%s_%s" % [phase_id, String(pattern_dict.get("id", pattern_dict.get("type", "pattern")))]
+		var row := analyze_pattern(pattern_dict)
+		row["id"] = "pattern_lab_%s_%s_%s" % [catalog_id, phase_id, String(pattern_dict.get("id", ""))]
+		row["catalog_id"] = catalog_id
+		row["spellbook_id"] = spellbook_id
+		row["phase_id"] = phase_id
+		row["pattern_id"] = String(pattern_dict.get("id", ""))
+		row["pattern_type"] = String(pattern_dict.get("type", ""))
+		row["label_key"] = "screen.settings.pattern_lab"
+		row["name"] = String(pattern_dict.get("id", ""))
+		row["source_policy"] = "original_spell_phase_script"
+		row["deterministic_preview_signature"] = String(preview.get("signature", ""))
+		row["enabled"] = true
+		pattern_rows.append(row)
+	var coverage_row := _spellbook_phase_coverage_row(catalog_id, spellbook_id, phase, phase_script, preview, pattern_rows)
+	var rows: Array[Dictionary] = [coverage_row]
+	rows.append_array(pattern_rows)
+	return rows
+
+func spellbook_phase_summary(catalog_id: String, phase_id: String, spellbook_id: String = "original_boss_archive", seed: int = 20260625) -> String:
+	var rows := rows_for_spellbook_phase(catalog_id, phase_id, spellbook_id, seed)
+	if rows.is_empty():
+		return "spellbook phase missing"
+	var coverage: Dictionary = rows[0]
+	return "%s/%s timeout %d enrage %d cap %d preview %d" % [
+		String(coverage.get("catalog_id", "")),
+		String(coverage.get("phase_id", "")),
+		int(coverage.get("timeout_ticks", 0)),
+		int(coverage.get("enrage_after_ticks", 0)),
+		int(coverage.get("bullet_cap_per_tick", 0)),
+		int(coverage.get("max_preview_emit", 0)),
+	]
 
 func summary() -> String:
 	var rows: Array[Dictionary] = active_rows()
@@ -67,6 +126,63 @@ func analyze_pattern(pattern: Dictionary) -> Dictionary:
 		"danger_estimate": _danger_band(danger_score),
 		"readability_hint": _readability_hint(pattern_type, density_per_second, speed),
 	}
+
+func _spellbook_phase_coverage_row(catalog_id: String, spellbook_id: String, phase: Dictionary, phase_script: Dictionary, preview: Dictionary, pattern_rows: Array[Dictionary]) -> Dictionary:
+	var density_peak := _peak_band(pattern_rows, "density_estimate", ["low", "medium", "high", "extreme"])
+	var danger_peak := _peak_band(pattern_rows, "danger_estimate", ["low", "medium", "high", "severe"])
+	var families: Array[String] = []
+	for family_id in phase.get("family_ids", []):
+		families.append(String(family_id))
+	return {
+		"id": "pattern_lab_coverage_%s_%s" % [catalog_id, String(phase.get("id", ""))],
+		"catalog_id": catalog_id,
+		"spellbook_id": spellbook_id,
+		"phase_id": String(phase.get("id", "")),
+		"label_key": "screen.settings.pattern_lab",
+		"coverage_kind": "spellbook_phase",
+		"phase_kind": String(phase.get("kind", "")),
+		"pattern_types": _phase_pattern_types(phase),
+		"family_ids": families,
+		"recipe_id": String(phase.get("recipe_id", "")),
+		"source_policy": "original_spell_phase_script",
+		"timeout_ticks": int(phase_script.get("timeout_ticks", phase.get("timeout_ticks", 0))),
+		"enrage_after_ticks": int(phase_script.get("enrage_after_ticks", phase.get("enrage_after_ticks", 0))),
+		"bullet_cap_per_tick": int(phase_script.get("bullet_cap_per_tick", 0)),
+		"preview_export_id": String(preview.get("export_id", "")),
+		"deterministic_preview_signature": String(preview.get("signature", "")),
+		"seed": int(preview.get("seed", 0)),
+		"max_preview_emit": int(preview.get("max_emit_per_tick", 0)),
+		"density_estimate": density_peak,
+		"danger_estimate": danger_peak,
+		"spawn_rate_per_second": _peak_float(pattern_rows, "spawn_rate_per_second"),
+		"readability_hint": "spell_phase_route",
+		"enabled": true,
+	}
+
+func _phase_pattern_types(phase: Dictionary) -> Array[String]:
+	var types: Array[String] = []
+	for pattern in phase.get("patterns", []):
+		var pattern_type := String((pattern as Dictionary).get("type", ""))
+		if not pattern_type.is_empty() and not types.has(pattern_type):
+			types.append(pattern_type)
+	return types
+
+func _peak_band(rows: Array[Dictionary], key: String, order: Array[String]) -> String:
+	var peak := ""
+	var peak_index := -1
+	for row in rows:
+		var value := String(row.get(key, ""))
+		var index := order.find(value)
+		if index > peak_index:
+			peak = value
+			peak_index = index
+	return peak
+
+func _peak_float(rows: Array[Dictionary], key: String) -> float:
+	var peak := 0.0
+	for row in rows:
+		peak = maxf(peak, float(row.get(key, 0.0)))
+	return snappedf(peak, 0.01)
 
 func _active_pattern_id() -> String:
 	if stage_select_model == null:
