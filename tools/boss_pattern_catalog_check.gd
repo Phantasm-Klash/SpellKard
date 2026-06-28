@@ -25,10 +25,23 @@ func _initialize() -> void:
 		push_error("Boss spellbooks failed: %s" % [spellbooks])
 		quit(1)
 		return
-	print("boss_pattern_catalog_check ok: families=%d recipes=%d types=%d spellbooks=%d phases=%d" % [
+	var requirements: Dictionary = BossPatternCatalog.validate_boss_type_requirements(stage_model, spellbook_model)
+	if not bool(requirements.get("ok", false)):
+		push_error("Boss type requirements failed: %s" % [requirements])
+		quit(1)
+		return
+	var emitters: Dictionary = BossPatternCatalog.validate_pattern_emitters(stage_model, 20260625)
+	if not bool(emitters.get("ok", false)):
+		push_error("Boss pattern emitters failed: %s" % [emitters])
+		quit(1)
+		return
+	print("boss_pattern_catalog_check ok: families=%d recipes=%d requirements=%d types=%d emitted=%d behavior_spawns=%d spellbooks=%d phases=%d" % [
 		BossPatternCatalog.family_rows().size(),
 		int(recipes.get("recipe_count", 0)),
+		int(requirements.get("requirement_count", 0)),
 		BossPatternCatalog.all_catalog_pattern_types().size(),
+		int(emitters.get("emitted_type_count", 0)),
+		(emitters.get("behavior_spawn_types", []) as Array).size(),
 		int(spellbooks.get("spellbook_count", 0)),
 		int(spellbooks.get("phase_count", 0)),
 	])
