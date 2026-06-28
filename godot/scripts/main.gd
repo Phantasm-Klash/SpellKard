@@ -1887,6 +1887,13 @@ func _battle_network_build_packet_header(payload_type: String, packet_tick: int,
 	_update_ui_overlay()
 	return header
 
+func _battle_network_build_mode_action(action_type: String, payload: Dictionary = {}, tick: int = 0, action_id: String = "", ack: int = -1) -> Dictionary:
+	if battle_network_client_model == null:
+		return {"ok": false, "reason": "missing"}
+	var action: Dictionary = battle_network_client_model.build_mode_action(action_type, payload, tick, action_id, ack)
+	_update_ui_overlay()
+	return action
+
 func _battle_network_receive_packet_header(header: Dictionary) -> Dictionary:
 	if battle_network_client_model == null:
 		return {"ok": false, "reason": "missing"}
