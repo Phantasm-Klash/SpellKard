@@ -137,6 +137,10 @@ func validate_spellbooks() -> Dictionary:
 			var phase_dict: Dictionary = phase as Dictionary
 			if int(phase_dict.get("duration_ticks", 0)) <= 0:
 				failures.append("bad_duration:%s" % String(phase_dict.get("id", "")))
+			if int(phase_dict.get("timeout_ticks", 0)) <= 0:
+				failures.append("missing_timeout:%s" % String(phase_dict.get("id", "")))
+			if int(phase_dict.get("enrage_after_ticks", 0)) <= 0 or (phase_dict.get("enrage", {}) as Dictionary).is_empty():
+				failures.append("missing_enrage:%s" % String(phase_dict.get("id", "")))
 			for pattern_type in _phase_pattern_types(phase_dict):
 				if not catalog_types.has(pattern_type):
 					failures.append("unknown_pattern_type:%s" % pattern_type)
@@ -215,6 +219,9 @@ func _build_spellbooks() -> Array[Dictionary]:
 					"id": "nonspell_radial_entry",
 					"kind": "nonspell",
 					"duration_ticks": 420,
+					"timeout_ticks": 420,
+					"enrage_after_ticks": 336,
+					"enrage": {"density_multiplier": 1.12, "speed_multiplier": 1.06, "allow_timeout_clear": true},
 					"origin": Vector2(480, 116),
 					"motion": {"type": "sinusoid", "period_ticks": 180, "amplitude_x": 80.0, "amplitude_y": 10.0},
 					"family_ids": ["radial", "aimed"],
@@ -231,6 +238,9 @@ func _build_spellbooks() -> Array[Dictionary]:
 					"id": "spell_laser_field",
 					"kind": "spell",
 					"duration_ticks": 540,
+					"timeout_ticks": 540,
+					"enrage_after_ticks": 432,
+					"enrage": {"density_multiplier": 1.10, "speed_multiplier": 1.04, "warning_ticks_delta": -6},
 					"origin": Vector2(480, 110),
 					"motion": {"type": "ellipse", "period_ticks": 260, "radius_x": 72.0, "radius_y": 18.0},
 					"family_ids": ["laser", "field"],
@@ -252,6 +262,9 @@ func _build_spellbooks() -> Array[Dictionary]:
 					"id": "spell_summoner_split",
 					"kind": "spell",
 					"duration_ticks": 600,
+					"timeout_ticks": 600,
+					"enrage_after_ticks": 480,
+					"enrage": {"density_multiplier": 1.16, "speed_multiplier": 1.05, "carrier_lifetime_scale": 0.92},
 					"origin": Vector2(480, 124),
 					"motion": {"type": "static"},
 					"family_ids": ["delayed", "field", "random_seeded"],
@@ -275,6 +288,9 @@ func _build_spellbooks() -> Array[Dictionary]:
 					"id": "last_spell_morph_bounce",
 					"kind": "last_spell",
 					"duration_ticks": 720,
+					"timeout_ticks": 720,
+					"enrage_after_ticks": 540,
+					"enrage": {"density_multiplier": 1.20, "speed_multiplier": 1.08, "timeout_pressure": true},
 					"origin": Vector2(480, 118),
 					"motion": {"type": "sinusoid", "period_ticks": 150, "amplitude_x": 110.0, "period_ticks_y": 210, "amplitude_y": 18.0},
 					"family_ids": ["radial", "field", "laser"],

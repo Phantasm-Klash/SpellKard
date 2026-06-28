@@ -4,6 +4,10 @@ extends RefCounted
 const BulletEngineLib := preload("res://scripts/bullet_engine.gd")
 const BulletPatterns := preload("res://scripts/bullet_pattern_library.gd")
 
+const MAX_INITIAL_EMIT_BULLETS_PER_PATTERN := 96
+const MAX_BEHAVIOR_SPAWNED_BULLETS_PER_TICK := 96
+const MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK := 192
+
 const BOSS_TYPE_REQUIREMENTS: Array[Dictionary] = [
 	{
 		"id": "aimed_shot",
@@ -57,6 +61,80 @@ const BOSS_TYPE_REQUIREMENTS: Array[Dictionary] = [
 	},
 ]
 
+const OFFICIAL_BOSS_TYPE_COVERAGE: Array[Dictionary] = [
+	{
+		"id": "n_way",
+		"label": "n-way fans",
+		"pattern_types": ["n_way", "burst", "curve_fan", "split_chain"],
+	},
+	{
+		"id": "aimed",
+		"label": "aimed shots and baited lanes",
+		"pattern_types": ["n_way", "burst", "curve_fan", "homing", "delayed_aim_ring", "edge_spawn", "beam_sweep"],
+	},
+	{
+		"id": "rotating_rings",
+		"label": "rotating rings",
+		"pattern_types": ["ring", "gap_ring", "alternating_ring", "morph_ring", "phase_shift_ring", "scale_pulse_ring"],
+	},
+	{
+		"id": "spiral",
+		"label": "spirals and rotating stacks",
+		"pattern_types": ["spiral_stack", "flower", "sine_stream", "snake_stream"],
+	},
+	{
+		"id": "curtain_wall",
+		"label": "curtains, walls, and gates",
+		"pattern_types": ["curtain", "grid_rain", "edge_spawn", "wall_bounce", "gate_lanes"],
+	},
+	{
+		"id": "laser_warning_fire",
+		"label": "laser warning plus fire",
+		"pattern_types": ["laser_curtain", "sweep_laser", "beam_sweep", "rotating_laser", "cross_laser", "extend_laser", "curved_laser", "reflect_laser", "wave_laser"],
+	},
+	{
+		"id": "split_branching",
+		"label": "split and branching carriers",
+		"pattern_types": ["split_chain", "exploding_star", "telegraph_burst", "charge_burst", "trap_marker", "summoner_orbit", "path_emitters", "trail_emitters"],
+	},
+	{
+		"id": "delayed_blossom",
+		"label": "delayed blossom and delayed velocity",
+		"pattern_types": ["blossom", "exploding_star", "stop_release", "boomerang_ring", "delayed_aim_ring", "phase_shift_ring", "orbit_release"],
+	},
+	{
+		"id": "homing",
+		"label": "limited homing",
+		"pattern_types": ["homing"],
+	},
+	{
+		"id": "orbital_lattice",
+		"label": "orbital and lattice releases",
+		"pattern_types": ["orbital", "orbit_release", "summoner_orbit", "path_emitters", "path_follow", "bezier_follow"],
+	},
+	{
+		"id": "stream_weave",
+		"label": "streams and weave lanes",
+		"pattern_types": ["sine_stream", "snake_stream", "curve_fan", "trail_emitters", "gate_lanes"],
+	},
+	{
+		"id": "random_seeded",
+		"label": "deterministic seeded randomness",
+		"pattern_types": ["random_arc", "grid_rain", "edge_spawn", "converge_cloud", "vortex_field", "trap_marker"],
+	},
+	{
+		"id": "phase_script",
+		"label": "multi-phase script",
+		"pattern_types": ["boss_spellbook"],
+	},
+	{
+		"id": "spellcard_timeout_enrage",
+		"label": "spellcard timeout and enrage rules",
+		"pattern_types": ["boss_spellbook"],
+		"requires_spellbook_timeout_enrage": true,
+	},
+]
+
 const FAMILIES: Array[Dictionary] = [
 	{
 		"id": "radial",
@@ -107,6 +185,7 @@ const OPEN_SOURCE_RECIPES: Array[Dictionary] = [
 		"id": "taisei_mechanic_syntax",
 		"project": "Taisei Project",
 		"license": "MIT-compatible open-source project license",
+		"provenance": "public Git repository; mechanism checklist only",
 		"source_url": "https://github.com/taisei-project/taisei",
 		"status": "mechanic_syntax_only",
 		"mapped_pattern_types": ["gap_ring", "spiral_stack", "curve_fan", "beam_sweep", "rotating_laser", "cross_laser", "extend_laser", "curved_laser", "reflect_laser", "wave_laser", "summoner_orbit", "path_emitters", "path_follow", "bezier_follow", "trail_emitters", "accel_ring", "stop_release", "delayed_aim_ring", "orbit_release", "phase_shift_ring", "scale_pulse_ring", "telegraph_burst", "charge_burst", "trap_marker"],
@@ -116,6 +195,7 @@ const OPEN_SOURCE_RECIPES: Array[Dictionary] = [
 		"id": "danmaku_unity_engine_syntax",
 		"project": "DanmakU / Danmokou-style Unity bullet scripting",
 		"license": "MIT-family open-source engine examples",
+		"provenance": "public engine examples; no authored pattern data imported",
 		"source_url": "https://github.com/search?q=DanmakU+danmokou&type=repositories",
 		"status": "engine_concept_only",
 		"mapped_pattern_types": ["morph_ring", "grid_rain", "converge_cloud", "vortex_field", "snake_stream", "edge_spawn", "gate_lanes", "trap_marker"],
@@ -125,10 +205,24 @@ const OPEN_SOURCE_RECIPES: Array[Dictionary] = [
 		"id": "godot_bullet_hell_tooling",
 		"project": "Godot open-source bullet hell tooling",
 		"license": "project-specific open-source licenses; verify before direct asset/code reuse",
+		"provenance": "public tooling references; original SpellKard implementation",
 		"source_url": "https://github.com/search?q=Godot+bullet+hell+engine&type=repositories",
 		"status": "design_reference_only",
 		"mapped_pattern_types": ["wall_bounce", "beam_sweep", "reflect_laser", "alternating_ring", "boomerang_ring"],
 		"notes": "Keep this repo implementation original; use references only for feature checklist ideas such as pooling, shape hit tests, and editor-friendly recipes.",
+	},
+]
+
+const OPEN_SOURCE_ADAPTERS: Array[Dictionary] = [
+	{
+		"id": "mechanic_recipe_adapter_v1",
+		"label": "mechanic syntax adapter",
+		"license": "metadata-only adapter; source project license must be recorded per recipe",
+		"provenance": "SpellKard-authored adapter for mechanism categories and deterministic parameters",
+		"accepted_fields": ["source_project", "source_url", "license", "provenance", "status", "mapped_pattern_types", "parameters"],
+		"required_fields": ["source_project", "source_url", "license", "provenance", "status", "mapped_pattern_types"],
+		"allowed_statuses": ["mechanic_syntax_only", "engine_concept_only", "design_reference_only"],
+		"rejected_material": ["commercial_stage_data", "commercial_character_names", "commercial_audio", "commercial_art", "direct_copy", "authored_pattern_script"],
 	},
 ]
 
@@ -144,9 +238,21 @@ static func open_source_recipe_rows() -> Array[Dictionary]:
 		rows.append((recipe as Dictionary).duplicate(true))
 	return rows
 
+static func open_source_adapter_rows() -> Array[Dictionary]:
+	var rows: Array[Dictionary] = []
+	for adapter in OPEN_SOURCE_ADAPTERS:
+		rows.append((adapter as Dictionary).duplicate(true))
+	return rows
+
 static func boss_type_requirement_rows() -> Array[Dictionary]:
 	var rows: Array[Dictionary] = []
 	for requirement in BOSS_TYPE_REQUIREMENTS:
+		rows.append((requirement as Dictionary).duplicate(true))
+	return rows
+
+static func official_boss_type_rows() -> Array[Dictionary]:
+	var rows: Array[Dictionary] = []
+	for requirement in OFFICIAL_BOSS_TYPE_COVERAGE:
 		rows.append((requirement as Dictionary).duplicate(true))
 	return rows
 
@@ -158,6 +264,30 @@ static func all_catalog_pattern_types() -> Array[String]:
 			if not types.has(type_name):
 				types.append(type_name)
 	return types
+
+static func validate_official_boss_type_coverage(stage_model: RefCounted, spellbook_model: RefCounted = null) -> Dictionary:
+	var failures: Array[String] = []
+	var seen_types := _combined_seen_types(stage_model, spellbook_model)
+	for requirement in OFFICIAL_BOSS_TYPE_COVERAGE:
+		var requirement_id := String(requirement.get("id", ""))
+		var satisfied := false
+		if bool(requirement.get("requires_spellbook_timeout_enrage", false)):
+			satisfied = _spellbook_has_timeout_enrage(spellbook_model)
+		elif requirement_id == "phase_script":
+			satisfied = spellbook_model != null and spellbook_model.has_method("validate_spellbooks") and bool(spellbook_model.validate_spellbooks().get("ok", false))
+		else:
+			for pattern_type in requirement.get("pattern_types", []):
+				if seen_types.has(String(pattern_type)):
+					satisfied = true
+					break
+		if not satisfied:
+			failures.append("missing_official_type:%s" % requirement_id)
+	return {
+		"ok": failures.is_empty(),
+		"failures": failures,
+		"requirement_count": OFFICIAL_BOSS_TYPE_COVERAGE.size(),
+		"seen_types": seen_types,
+	}
 
 static func validate_stage_patterns(stage_model: RefCounted) -> Dictionary:
 	var required_types := all_catalog_pattern_types()
@@ -280,22 +410,107 @@ static func validate_pattern_emitters(stage_model: RefCounted, seed: int = 20260
 		"seed_variant_types": seed_variant_types,
 	}
 
+static func validate_performance_budgets(stage_model: RefCounted, spellbook_model: RefCounted = null, seed: int = 20260625) -> Dictionary:
+	var failures: Array[String] = []
+	var sample_by_type := _stage_sample_by_type(stage_model)
+	var target := Vector2(480, 600)
+	var max_initial_emit := 0
+	var max_behavior_spawned := 0
+	var spawn_index := 7000
+	for pattern_type in all_catalog_pattern_types():
+		if not sample_by_type.has(pattern_type):
+			continue
+		var config: Dictionary = (sample_by_type[pattern_type] as Dictionary).duplicate(true)
+		config["type"] = pattern_type
+		config["origin"] = config.get("origin", Vector2(480, 120))
+		var tick := int(config.get("phase_offset_ticks", 0))
+		var emitted: Array[Dictionary] = BulletPatterns.emit_pattern(config, tick, target, spawn_index, seed)
+		max_initial_emit = maxi(max_initial_emit, emitted.size())
+		if emitted.size() > MAX_INITIAL_EMIT_BULLETS_PER_PATTERN:
+			failures.append("emit_budget:%s:%d" % [pattern_type, emitted.size()])
+		var max_spawned_for_pattern := _max_behavior_spawned_per_tick(emitted, target)
+		max_behavior_spawned = maxi(max_behavior_spawned, max_spawned_for_pattern)
+		if max_spawned_for_pattern > MAX_BEHAVIOR_SPAWNED_BULLETS_PER_TICK:
+			failures.append("behavior_spawn_budget:%s:%d" % [pattern_type, max_spawned_for_pattern])
+		spawn_index += 100
+	var max_spellbook_emit := _max_spellbook_emit_per_tick(spellbook_model, target, seed)
+	if max_spellbook_emit > MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK:
+		failures.append("spellbook_emit_budget:%d" % max_spellbook_emit)
+	return {
+		"ok": failures.is_empty(),
+		"failures": failures,
+		"max_initial_emit": max_initial_emit,
+		"max_behavior_spawned_per_tick": max_behavior_spawned,
+		"max_spellbook_emit_per_tick": max_spellbook_emit,
+		"initial_emit_budget": MAX_INITIAL_EMIT_BULLETS_PER_PATTERN,
+		"behavior_spawn_budget": MAX_BEHAVIOR_SPAWNED_BULLETS_PER_TICK,
+		"spellbook_emit_budget": MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK,
+	}
+
 static func validate_open_source_recipes() -> Dictionary:
 	var failures: Array[String] = []
 	var catalog_types := all_catalog_pattern_types()
+	var allowed_statuses: Array[String] = ["mechanic_syntax_only", "engine_concept_only", "design_reference_only"]
 	for recipe in OPEN_SOURCE_RECIPES:
 		if String(recipe.get("id", "")).is_empty() or String(recipe.get("source_url", "")).is_empty():
 			failures.append("recipe_identity")
-		if String(recipe.get("status", "")) == "direct_copy":
-			failures.append("direct_copy_not_allowed")
+		if String(recipe.get("license", "")).is_empty():
+			failures.append("missing_license:%s" % String(recipe.get("id", "")))
+		if String(recipe.get("provenance", "")).is_empty():
+			failures.append("missing_provenance:%s" % String(recipe.get("id", "")))
+		if not allowed_statuses.has(String(recipe.get("status", ""))):
+			failures.append("unsafe_status:%s" % String(recipe.get("id", "")))
 		for pattern_type in recipe.get("mapped_pattern_types", []):
 			if not catalog_types.has(String(pattern_type)):
 				failures.append("unknown_pattern_type:%s" % String(pattern_type))
+	for adapter in OPEN_SOURCE_ADAPTERS:
+		for required in ["id", "license", "provenance", "required_fields", "allowed_statuses", "rejected_material"]:
+			if not adapter.has(required) or _adapter_field_empty(adapter.get(required, null)):
+				failures.append("adapter_missing_%s:%s" % [required, String(adapter.get("id", ""))])
+		for blocked in ["direct_copy", "commercial_stage_data", "commercial_audio", "commercial_art"]:
+			if not (adapter.get("rejected_material", []) as Array).has(blocked):
+				failures.append("adapter_missing_rejection:%s" % blocked)
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,
 		"recipe_count": OPEN_SOURCE_RECIPES.size(),
+		"adapter_count": OPEN_SOURCE_ADAPTERS.size(),
 	}
+
+static func _combined_seen_types(stage_model: RefCounted, spellbook_model: RefCounted = null) -> Array[String]:
+	var seen_types: Array[String] = []
+	for pattern_type in validate_stage_patterns(stage_model).get("seen_types", []):
+		seen_types.append(String(pattern_type))
+	if spellbook_model != null and spellbook_model.has_method("spellbook_ids") and spellbook_model.has_method("spellbook_config"):
+		for spellbook_id in spellbook_model.spellbook_ids():
+			var spellbook: Dictionary = spellbook_model.spellbook_config(String(spellbook_id))
+			for phase in spellbook.get("phases", []):
+				for pattern in (phase as Dictionary).get("patterns", []):
+					var pattern_type := String((pattern as Dictionary).get("type", ""))
+					if not pattern_type.is_empty() and not seen_types.has(pattern_type):
+						seen_types.append(pattern_type)
+	return seen_types
+
+static func _spellbook_has_timeout_enrage(spellbook_model: RefCounted) -> bool:
+	if spellbook_model == null or not spellbook_model.has_method("spellbook_ids") or not spellbook_model.has_method("spellbook_config"):
+		return false
+	for spellbook_id in spellbook_model.spellbook_ids():
+		var spellbook: Dictionary = spellbook_model.spellbook_config(String(spellbook_id))
+		for phase in spellbook.get("phases", []):
+			var phase_dict: Dictionary = phase as Dictionary
+			var timeout_ticks := int(phase_dict.get("timeout_ticks", phase_dict.get("duration_ticks", 0)))
+			var enrage_after_ticks := int(phase_dict.get("enrage_after_ticks", 0))
+			var enrage: Dictionary = phase_dict.get("enrage", {})
+			if timeout_ticks > 0 and enrage_after_ticks > 0 and not enrage.is_empty():
+				return true
+	return false
+
+static func _adapter_field_empty(value: Variant) -> bool:
+	if value == null:
+		return true
+	if typeof(value) == TYPE_ARRAY:
+		return (value as Array).is_empty()
+	return String(value).is_empty()
 
 static func _stage_sample_by_type(stage_model: RefCounted) -> Dictionary:
 	var samples: Dictionary = {}
@@ -325,6 +540,38 @@ static func _has_behavior_spawn(bullets: Array[Dictionary], target: Vector2) -> 
 		if not (result.get("spawned", []) as Array).is_empty():
 			return true
 	return false
+
+static func _max_behavior_spawned_per_tick(bullets: Array[Dictionary], target: Vector2) -> int:
+	var live: Array[Dictionary] = []
+	for bullet in bullets:
+		live.append((bullet as Dictionary).duplicate(true))
+	var max_spawned := 0
+	for step in range(120):
+		var result: Dictionary = BulletEngineLib.step_bullets(live, target, step, {
+			"allow_hit": false,
+			"remove_on_hit": false,
+			"bounds": Rect2(Vector2(-4096, -4096), Vector2(8192, 8192)),
+		})
+		max_spawned = maxi(max_spawned, (result.get("spawned", []) as Array).size())
+		live.clear()
+		for bullet in result.get("bullets", []):
+			if typeof(bullet) == TYPE_DICTIONARY:
+				live.append(bullet as Dictionary)
+	return max_spawned
+
+static func _max_spellbook_emit_per_tick(spellbook_model: RefCounted, target: Vector2, seed: int) -> int:
+	if spellbook_model == null or not spellbook_model.has_method("spellbook_ids") or not spellbook_model.has_method("emit_tick") or not spellbook_model.has_method("spellbook_config"):
+		return 0
+	var max_emit := 0
+	for spellbook_id in spellbook_model.spellbook_ids():
+		var spellbook: Dictionary = spellbook_model.spellbook_config(String(spellbook_id))
+		var total_ticks := 0
+		for phase in spellbook.get("phases", []):
+			total_ticks += int((phase as Dictionary).get("duration_ticks", 0))
+		for local_tick in range(max(1, total_ticks)):
+			var emitted: Array[Dictionary] = spellbook_model.emit_tick(String(spellbook_id), local_tick, target, 9000 + local_tick, seed)
+			max_emit = maxi(max_emit, emitted.size())
+	return max_emit
 
 static func _has_shaped_laser(bullets: Array[Dictionary]) -> bool:
 	for bullet in bullets:

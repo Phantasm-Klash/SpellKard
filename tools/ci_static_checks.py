@@ -26,6 +26,28 @@ def check_json_files() -> list[str]:
     return errors
 
 
+def check_text_encoding_and_line_endings() -> list[str]:
+    errors: list[str] = []
+    roots = [ROOT / "godot" / "scripts", ROOT / "tools", ROOT / "tests"]
+    suffixes = {".gd", ".py", ".md"}
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in sorted(root.rglob("*")):
+            if not path.is_file() or path.suffix not in suffixes:
+                continue
+            rel = path.relative_to(ROOT).as_posix()
+            try:
+                raw = path.read_bytes()
+                raw.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                errors.append(f"{rel}: must be valid UTF-8: {exc}")
+                continue
+            if b"\r\n" in raw or b"\r" in raw:
+                errors.append(f"{rel}: must use LF line endings")
+    return errors
+
+
 def check_i18n_keys() -> list[str]:
     errors: list[str] = []
     locales = {
@@ -41,6 +63,67 @@ def check_i18n_keys() -> list[str]:
         missing = sorted(all_keys - keys)
         if missing:
             errors.append(f"godot/i18n/{name}: missing keys: {', '.join(missing[:20])}")
+    return errors
+
+
+def check_boss_pattern_catalog_contract() -> list[str]:
+    errors: list[str] = []
+    catalog = ROOT / "godot" / "scripts" / "boss_pattern_catalog.gd"
+    spellbook = ROOT / "godot" / "scripts" / "boss_spellbook_model.gd"
+    catalog_check = ROOT / "tools" / "boss_pattern_catalog_check.gd"
+    for path in [catalog, spellbook, catalog_check]:
+        if not path.exists():
+            errors.append(f"{path.relative_to(ROOT)}: missing")
+            return errors
+
+    catalog_text = catalog.read_text(encoding="utf-8")
+    required_type_tokens = [
+        '"n_way"',
+        '"aimed"',
+        '"rotating_rings"',
+        '"spiral"',
+        '"curtain_wall"',
+        '"laser_warning_fire"',
+        '"split_branching"',
+        '"delayed_blossom"',
+        '"homing"',
+        '"orbital_lattice"',
+        '"stream_weave"',
+        '"random_seeded"',
+        '"phase_script"',
+        '"spellcard_timeout_enrage"',
+    ]
+    for token in required_type_tokens:
+        if token not in catalog_text:
+            errors.append(f"godot/scripts/boss_pattern_catalog.gd: missing Boss type token {token}")
+    for token in [
+        "OPEN_SOURCE_ADAPTERS",
+        '"license"',
+        '"provenance"',
+        '"mechanic_syntax_only"',
+        '"engine_concept_only"',
+        '"design_reference_only"',
+        '"direct_copy"',
+        "MAX_INITIAL_EMIT_BULLETS_PER_PATTERN",
+        "validate_performance_budgets",
+        "validate_official_boss_type_coverage",
+    ]:
+        if token not in catalog_text:
+            errors.append(f"godot/scripts/boss_pattern_catalog.gd: missing catalog contract token {token}")
+
+    spellbook_text = spellbook.read_text(encoding="utf-8")
+    for token in ["timeout_ticks", "enrage_after_ticks", '"enrage"', "missing_timeout", "missing_enrage"]:
+        if token not in spellbook_text:
+            errors.append(f"godot/scripts/boss_spellbook_model.gd: missing timeout/enrage token {token}")
+
+    check_text = catalog_check.read_text(encoding="utf-8")
+    for token in [
+        "validate_official_boss_type_coverage",
+        "validate_performance_budgets",
+        "max_spellbook_emit",
+    ]:
+        if token not in check_text:
+            errors.append(f"tools/boss_pattern_catalog_check.gd: missing catalog check token {token}")
     return errors
 
 
@@ -134,10 +217,12 @@ def check_protocol_client_scripts() -> list[str]:
 
 def main() -> int:
     errors: list[str] = []
+    errors.extend(check_text_encoding_and_line_endings())
     errors.extend(check_json_files())
     errors.extend(check_i18n_keys())
     errors.extend(check_assets_manifest())
     errors.extend(check_protocol_client_scripts())
+    errors.extend(check_boss_pattern_catalog_contract())
     if errors:
         for error in errors:
             print(error, file=sys.stderr)

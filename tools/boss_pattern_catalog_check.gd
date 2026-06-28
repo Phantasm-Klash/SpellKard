@@ -30,19 +30,34 @@ func _initialize() -> void:
 		push_error("Boss type requirements failed: %s" % [requirements])
 		quit(1)
 		return
+	var official_types: Dictionary = BossPatternCatalog.validate_official_boss_type_coverage(stage_model, spellbook_model)
+	if not bool(official_types.get("ok", false)):
+		push_error("Official Boss type coverage failed: %s" % [official_types])
+		quit(1)
+		return
 	var emitters: Dictionary = BossPatternCatalog.validate_pattern_emitters(stage_model, 20260625)
 	if not bool(emitters.get("ok", false)):
 		push_error("Boss pattern emitters failed: %s" % [emitters])
 		quit(1)
 		return
-	print("boss_pattern_catalog_check ok: families=%d recipes=%d requirements=%d types=%d emitted=%d behavior_spawns=%d spellbooks=%d phases=%d" % [
+	var budgets: Dictionary = BossPatternCatalog.validate_performance_budgets(stage_model, spellbook_model, 20260625)
+	if not bool(budgets.get("ok", false)):
+		push_error("Boss pattern performance budgets failed: %s" % [budgets])
+		quit(1)
+		return
+	print("boss_pattern_catalog_check ok: families=%d recipes=%d adapters=%d requirements=%d official_types=%d types=%d emitted=%d behavior_spawns=%d spellbooks=%d phases=%d max_emit=%d max_behavior_spawn=%d max_spellbook_emit=%d" % [
 		BossPatternCatalog.family_rows().size(),
 		int(recipes.get("recipe_count", 0)),
+		int(recipes.get("adapter_count", 0)),
 		int(requirements.get("requirement_count", 0)),
+		int(official_types.get("requirement_count", 0)),
 		BossPatternCatalog.all_catalog_pattern_types().size(),
 		int(emitters.get("emitted_type_count", 0)),
 		(emitters.get("behavior_spawn_types", []) as Array).size(),
 		int(spellbooks.get("spellbook_count", 0)),
 		int(spellbooks.get("phase_count", 0)),
+		int(budgets.get("max_initial_emit", 0)),
+		int(budgets.get("max_behavior_spawned_per_tick", 0)),
+		int(budgets.get("max_spellbook_emit_per_tick", 0)),
 	])
 	quit(0)
