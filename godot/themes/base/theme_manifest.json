@@ -1,0 +1,14 @@
+{
+  "theme_id": "base",
+  "display_name_key": "theme.base.name",
+  "version": "0.1.0",
+  "asset_license": "see res://assets/asset_manifest.json",
+  "replaces": [
+    "text",
+    "sprites",
+    "audio",
+    "ui"
+  ],
+  "content_root": "res://themes/base",
+  "notes": "Original base theme placeholder. Production media must be listed in the asset manifest before import."
+}

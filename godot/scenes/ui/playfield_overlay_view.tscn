@@ -1,0 +1,75 @@
+[gd_scene format=3 uid="uid://spellkard_ui_playfield_overlay"]
+
+[node name="PlayfieldOverlayRoot" type="VBoxContainer"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="GameplayHUDSlot" type="Control" parent="."]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="."]
+layout_mode = 2
+
+[node name="NavPathLabel" type="Label" parent="."]
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="CompactMenuPanel" type="PanelContainer" parent="."]
+layout_mode = 2
+
+[node name="ContentPanel" type="VBoxContainer" parent="CompactMenuPanel"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ShellStatusLabel" type="Label" parent="CompactMenuPanel/ContentPanel"]
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="FocusPanel" type="PanelContainer" parent="CompactMenuPanel/ContentPanel"]
+layout_mode = 2
+
+[node name="PageSummary" type="Label" parent="CompactMenuPanel/ContentPanel"]
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="SectionSummary" type="Label" parent="CompactMenuPanel/ContentPanel"]
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="SectionTabs" type="HBoxContainer" parent="CompactMenuPanel/ContentPanel"]
+layout_mode = 2
+
+[node name="OverviewCards" type="GridContainer" parent="CompactMenuPanel/ContentPanel"]
+layout_mode = 2
+columns = 2
+
+[node name="ControlPreview" type="Label" parent="CompactMenuPanel/ContentPanel"]
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="ControlButtons" type="HBoxContainer" parent="CompactMenuPanel/ContentPanel"]
+layout_mode = 2
+
+[node name="QuickActions" type="HBoxContainer" parent="CompactMenuPanel/ContentPanel"]
+layout_mode = 2
+
+[node name="StatusLabel" type="Label" parent="CompactMenuPanel/ContentPanel"]
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="DetailLabel" type="Label" parent="CompactMenuPanel/ContentPanel"]
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="ContentRows" type="VBoxContainer" parent="CompactMenuPanel/ContentPanel"]
+layout_mode = 2
+
+[node name="HintLabel" type="Label" parent="CompactMenuPanel/ContentPanel"]
+layout_mode = 2
+autowrap_mode = 3

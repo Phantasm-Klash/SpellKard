@@ -1,0 +1,39 @@
+[gd_scene format=3 uid="uid://spellkard_ui_home_lobby"]
+
+[node name="HomeRoot" type="BoxContainer"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="PortraitPanel" type="PanelContainer" parent="."]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="PortraitLabel" type="Label" parent="PortraitPanel"]
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="MenuPanel" type="VBoxContainer" parent="."]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="TitleLabel" type="Label" parent="MenuPanel"]
+layout_mode = 2
+
+[node name="StatusLabel" type="Label" parent="MenuPanel"]
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="DashboardGrid" type="GridContainer" parent="MenuPanel"]
+layout_mode = 2
+columns = 2
+
+[node name="PrimaryButtons" type="VBoxContainer" parent="MenuPanel"]
+layout_mode = 2
+size_flags_vertical = 3
