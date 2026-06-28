@@ -5,6 +5,7 @@
     {
       "path": "res://themes/base/ui/lobby_standee.svg",
       "source_url": "self-authored in repository",
+      "provenance": "self-authored original placeholder",
       "author": "gotouhou contributors",
       "license": "CC-BY-4.0",
       "modified": false,
@@ -14,6 +15,7 @@
     {
       "path": "res://themes/base/ui/mode_card_frame.svg",
       "source_url": "self-authored in repository",
+      "provenance": "self-authored original placeholder",
       "author": "gotouhou contributors",
       "license": "CC-BY-4.0",
       "modified": false,
@@ -23,6 +25,7 @@
     {
       "path": "res://themes/base/ui/collection_card_frame.svg",
       "source_url": "self-authored in repository",
+      "provenance": "self-authored original placeholder",
       "author": "gotouhou contributors",
       "license": "CC-BY-4.0",
       "modified": false,

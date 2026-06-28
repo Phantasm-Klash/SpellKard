@@ -9,7 +9,14 @@ const PAGE_SPECS := {
 		"density": "hero",
 		"visual_asset": "res://themes/base/ui/lobby_standee.svg",
 		"visual_treatment": "portrait_first_original",
+		"standee_asset": "res://themes/base/ui/lobby_standee.svg",
+		"frame_asset": "",
+		"asset_usage": ["standee:home_portrait:res://themes/base/ui/lobby_standee.svg"],
+		"layout_slots": ["portrait_art", "lobby_status", "primary_routes", "safe_margin"],
 		"state_regions": ["hero_art", "status_strip", "primary_routes"],
+		"status_region_ids": ["home_status", "client_summary", "primary_focus"],
+		"focus_action_ids": ["play"],
+		"controller_actions": ["ui_up", "ui_down", "ui_accept", "ui_cancel_back", "focus_action"],
 		"primary_row_ids": ["play", "collection", "community", "player_settings"],
 		"secondary_row_ids": ["certification", "deck", "replay", "activity", "friends", "promotions"],
 		"setting_groups": [],
@@ -29,7 +36,14 @@ const PAGE_SPECS := {
 		"density": "hub",
 		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
 		"visual_treatment": "mode_card_grid",
+		"standee_asset": "",
+		"frame_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"asset_usage": ["frame:mode_cards:res://themes/base/ui/mode_card_frame.svg"],
+		"layout_slots": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "mode_grid", "row_window", "quick_routes"],
 		"state_regions": ["navigation", "status_cards", "focus_panel", "overview_cards", "route_rows"],
+		"status_region_ids": ["status_play", "status_collection", "status_community", "status_settings", "queue_state", "deck_state"],
+		"focus_action_ids": ["play_matchmaking", "play_practice", "play_room"],
+		"controller_actions": ["ui_up", "ui_down", "ui_left_control", "ui_right_control", "ui_accept", "category_tab", "status_card", "focus_action"],
 		"primary_row_ids": ["play_practice", "play_matchmaking", "play_pvp_duel", "play_world_boss", "play_room", "play_deck"],
 		"secondary_row_ids": ["play_certification_hub", "play_battle_royale", "play_instance_boss", "play_queue_selected"],
 		"setting_groups": [],
@@ -189,7 +203,14 @@ const PAGE_SPECS := {
 		"density": "collection",
 		"visual_asset": "res://themes/base/ui/collection_card_frame.svg",
 		"visual_treatment": "inventory_hub",
+		"standee_asset": "",
+		"frame_asset": "res://themes/base/ui/collection_card_frame.svg",
+		"asset_usage": ["frame:collection_cards:res://themes/base/ui/collection_card_frame.svg"],
+		"layout_slots": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "collection_grid", "filter_tabs", "row_window", "quick_routes"],
 		"state_regions": ["status_cards", "deck", "chest", "replay", "workshop"],
+		"status_region_ids": ["status_collection", "deck_state", "chest_state", "replay_state", "workshop_state"],
+		"focus_action_ids": ["collection_deck", "collection_chest", "collection_replay"],
+		"controller_actions": ["ui_up", "ui_down", "ui_left_control", "ui_right_control", "ui_accept", "category_tab", "status_card", "focus_action"],
 		"primary_row_ids": ["collection_deck", "collection_chest", "collection_replay"],
 		"secondary_row_ids": ["collection_summary", "collection_workshop"],
 		"setting_groups": [],
@@ -209,7 +230,14 @@ const PAGE_SPECS := {
 		"density": "hub",
 		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
 		"visual_treatment": "community_notice_board",
+		"standee_asset": "",
+		"frame_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"asset_usage": ["frame:community_notice_cards:res://themes/base/ui/mode_card_frame.svg"],
+		"layout_slots": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "notice_board", "social_tabs", "row_window", "quick_routes"],
 		"state_regions": ["announcements", "friends", "social_links", "promotion_links"],
+		"status_region_ids": ["status_community", "announcement_state", "friend_presence", "promotion_state"],
+		"focus_action_ids": ["community_events", "community_friends", "community_social", "community_promotions"],
+		"controller_actions": ["ui_up", "ui_down", "ui_left_control", "ui_right_control", "ui_accept", "category_tab", "status_card", "focus_action"],
 		"primary_row_ids": ["community_events", "community_friends", "community_social", "community_promotions"],
 		"secondary_row_ids": ["community_workshop", "announce_architecture", "link_discord"],
 		"setting_groups": [],
@@ -349,7 +377,14 @@ const PAGE_SPECS := {
 		"density": "settings",
 		"visual_asset": "res://themes/base/ui/mode_card_frame.svg",
 		"visual_treatment": "settings_control_hub",
+		"standee_asset": "",
+		"frame_asset": "res://themes/base/ui/mode_card_frame.svg",
+		"asset_usage": ["frame:settings_control_cards:res://themes/base/ui/mode_card_frame.svg"],
+		"layout_slots": ["navigation_rail", "category_tabs", "focus_panel", "setting_groups", "control_preview", "control_buttons", "row_window", "quick_routes"],
 		"state_regions": ["language", "input", "audio", "display", "storage"],
+		"status_region_ids": ["input_profile_state", "gamepad_state", "audio_state", "display_state", "storage_state"],
+		"focus_action_ids": ["settings_gamepad_curve", "settings_keybinds", "settings_volume", "settings_resolution"],
+		"controller_actions": ["ui_up", "ui_down", "ui_left_control", "ui_right_control", "ui_accept", "category_tab", "status_card", "focus_action", "capture_binding", "reset_control"],
 		"primary_row_ids": ["settings_language", "settings_gamepad_curve", "settings_keybinds", "settings_volume", "settings_resolution", "settings_input"],
 		"secondary_row_ids": ["settings_audio", "settings_display", "settings_save_now", "settings_reload", "settings_restore_defaults", "accessibility"],
 		"setting_groups": ["language", "input", "gamepad", "keybinds", "audio", "volume", "display", "resolution", "accessibility", "storage"],
@@ -550,6 +585,19 @@ func page_spec(screen_id: String, overrides: Dictionary = {}) -> Dictionary:
 	spec["render_slots"] = _string_array(scene_contract.get("render_slots", []))
 	spec["overview_priority_ids"] = _string_array(spec.get("primary_row_ids", []))
 	spec["state_regions"] = _string_array(spec.get("state_regions", []))
+	spec["status_region_ids"] = _string_array(spec.get("status_region_ids", []))
+	spec["layout_slots"] = _string_array(spec.get("layout_slots", []))
+	spec["controller_actions"] = _string_array(spec.get("controller_actions", []))
+	spec["focus_action_ids"] = _string_array(spec.get("focus_action_ids", []))
+	spec["asset_usage"] = _string_array(spec.get("asset_usage", []))
+	if _string_array(spec.get("status_region_ids", [])).is_empty():
+		spec["status_region_ids"] = _string_array(spec.get("state_regions", []))
+	if _string_array(spec.get("layout_slots", [])).is_empty():
+		spec["layout_slots"] = _string_array(spec.get("render_slots", []))
+	if _string_array(spec.get("controller_actions", [])).is_empty():
+		spec["controller_actions"] = ["ui_up", "ui_down", "ui_accept", "ui_cancel_back"]
+	if _string_array(spec.get("asset_usage", [])).is_empty() and not String(spec.get("visual_asset", "")).is_empty():
+		spec["asset_usage"] = ["visual:%s:%s" % [String(spec.get("visual_treatment", "")), String(spec.get("visual_asset", ""))]]
 	spec["player_task_groups"] = _player_task_groups(source_screen, spec)
 	spec["asset_license_required"] = not String(spec.get("visual_asset", "")).is_empty()
 	spec["primary_count"] = _string_array(spec.get("primary_row_ids", [])).size()
@@ -561,6 +609,11 @@ func page_spec(screen_id: String, overrides: Dictionary = {}) -> Dictionary:
 	spec["required_binding_count"] = _string_array(spec.get("required_bindings", [])).size()
 	spec["render_slot_count"] = _string_array(spec.get("render_slots", [])).size()
 	spec["state_region_count"] = _string_array(spec.get("state_regions", [])).size()
+	spec["status_region_count"] = _string_array(spec.get("status_region_ids", [])).size()
+	spec["layout_slot_count"] = _string_array(spec.get("layout_slots", [])).size()
+	spec["controller_action_count"] = _string_array(spec.get("controller_actions", [])).size()
+	spec["focus_action_count"] = _string_array(spec.get("focus_action_ids", [])).size()
+	spec["asset_usage_count"] = _string_array(spec.get("asset_usage", [])).size()
 	return spec
 
 func primary_row_ids(screen_id: String) -> Array[String]:

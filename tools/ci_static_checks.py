@@ -72,8 +72,11 @@ def check_boss_pattern_catalog_contract() -> list[str]:
     errors: list[str] = []
     catalog = ROOT / "godot" / "scripts" / "boss_pattern_catalog.gd"
     spellbook = ROOT / "godot" / "scripts" / "boss_spellbook_model.gd"
+    pattern_lab = ROOT / "godot" / "scripts" / "pattern_lab_model.gd"
+    replay_store = ROOT / "godot" / "scripts" / "replay_store.gd"
+    replay_list = ROOT / "godot" / "scripts" / "replay_list_model.gd"
     catalog_check = ROOT / "tools" / "boss_pattern_catalog_check.gd"
-    for path in [catalog, spellbook, catalog_check]:
+    for path in [catalog, spellbook, pattern_lab, replay_store, replay_list, catalog_check]:
         if not path.exists():
             errors.append(f"{path.relative_to(ROOT)}: missing")
             return errors
@@ -109,19 +112,62 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "MAX_INITIAL_EMIT_BULLETS_PER_PATTERN",
         "validate_performance_budgets",
         "validate_official_boss_type_coverage",
+        "validate_spellbook_preview_exports",
     ]:
         if token not in catalog_text:
             errors.append(f"godot/scripts/boss_pattern_catalog.gd: missing catalog contract token {token}")
 
     spellbook_text = spellbook.read_text(encoding="utf-8")
-    for token in ["timeout_ticks", "enrage_after_ticks", '"enrage"', "missing_timeout", "missing_enrage"]:
+    for token in [
+        "EXPORT_SCHEMA_VERSION",
+        "DEFAULT_PREVIEW_SEED",
+        "PREVIEW_SAMPLE_TICKS",
+        "deterministic_phase_preview",
+        "phase_export_data",
+        "validate_phase_preview_exports",
+        "phase_script",
+        "bullet_cap_per_tick",
+        "seed_policy",
+        "preview_export_id",
+        '"license"',
+        '"provenance"',
+        "timeout_ticks",
+        "enrage_after_ticks",
+        '"enrage"',
+        "missing_timeout",
+        "missing_enrage",
+        "preview_not_reproducible",
+        "preview_bullet_cap",
+    ]:
         if token not in spellbook_text:
             errors.append(f"godot/scripts/boss_spellbook_model.gd: missing timeout/enrage token {token}")
+
+    pattern_lab_text = pattern_lab.read_text(encoding="utf-8")
+    for token in [
+        "rows_for_spellbook_phase",
+        "rows_for_spellbook",
+        '"catalog_id"',
+        '"phase_id"',
+        '"deterministic_preview_signature"',
+        '"bullet_cap_per_tick"',
+        '"preview_export_id"',
+    ]:
+        if token not in pattern_lab_text:
+            errors.append(f"godot/scripts/pattern_lab_model.gd: missing spellbook Pattern Lab token {token}")
+
+    for replay_path in [replay_store, replay_list]:
+        replay_text = replay_path.read_text(encoding="utf-8")
+        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_id"']:
+            if token not in replay_text:
+                errors.append(f"{replay_path.relative_to(ROOT)}: missing spellbook replay metadata token {token}")
 
     check_text = catalog_check.read_text(encoding="utf-8")
     for token in [
         "validate_official_boss_type_coverage",
         "validate_performance_budgets",
+        "validate_spellbook_preview_exports",
+        "PatternLabModel",
+        "preview_count",
         "max_spellbook_emit",
     ]:
         if token not in check_text:
@@ -148,6 +194,7 @@ def check_assets_manifest() -> list[str]:
         path = entry.get("path")
         license_name = entry.get("license")
         source = entry.get("source_url")
+        provenance = entry.get("provenance")
         if not isinstance(path, str) or not path:
             errors.append(f"asset_manifest records[{index}]: missing path")
             continue
@@ -157,6 +204,8 @@ def check_assets_manifest() -> list[str]:
             errors.append(f"asset_manifest {path}: missing license")
         if not isinstance(source, str) or not source:
             errors.append(f"asset_manifest {path}: missing source_url")
+        if not isinstance(provenance, str) or not provenance:
+            errors.append(f"asset_manifest {path}: missing provenance")
         if not (ROOT / repo_path).exists():
             errors.append(f"asset_manifest {path}: file does not exist")
 
@@ -335,6 +384,16 @@ def _extract_array_values(block: str, field: str) -> list[str]:
     return [item.strip().strip('"') for item in raw.split(",") if item.strip()]
 
 
+def _asset_paths_from_usage(items: list[str]) -> list[str]:
+    paths: list[str] = []
+    for item in items:
+        marker = "res://"
+        index = item.find(marker)
+        if index >= 0:
+            paths.append(item[index:])
+    return paths
+
+
 def check_ui_page_contracts() -> list[str]:
     errors: list[str] = []
     text = CLIENT_MENU_PAGE_MODEL.read_text(encoding="utf-8")
@@ -350,6 +409,7 @@ def check_ui_page_contracts() -> list[str]:
         return ["godot/scripts/client_menu_page_model.gd: PAGE_SPECS did not parse"]
 
     required_pages = {"main_menu", "play", "collection", "community", "player_settings", "match", "network_match"}
+    page_level_targets = {"main_menu", "play", "collection", "community", "player_settings"}
     missing_required = sorted(required_pages - set(pages))
     if missing_required:
         errors.append(f"godot/scripts/client_menu_page_model.gd: missing required pages: {', '.join(missing_required)}")
@@ -364,6 +424,11 @@ def check_ui_page_contracts() -> list[str]:
     for page_id, block in pages.items():
         primary = _extract_array_values(block, "primary_row_ids")
         state_regions = _extract_array_values(block, "state_regions")
+        layout_slots = _extract_array_values(block, "layout_slots")
+        status_regions = _extract_array_values(block, "status_region_ids")
+        controller_actions = _extract_array_values(block, "controller_actions")
+        focus_actions = _extract_array_values(block, "focus_action_ids")
+        asset_usage = _extract_array_values(block, "asset_usage")
         visual_asset = _extract_string_value(block, "visual_asset")
         treatment = _extract_string_value(block, "visual_treatment")
         if not primary:
@@ -372,12 +437,30 @@ def check_ui_page_contracts() -> list[str]:
             errors.append(f"PAGE_SPECS[{page_id}]: missing state_regions")
         if not treatment:
             errors.append(f"PAGE_SPECS[{page_id}]: missing visual_treatment")
+        if page_id in page_level_targets:
+            if not layout_slots:
+                errors.append(f"PAGE_SPECS[{page_id}]: missing layout_slots")
+            if not status_regions:
+                errors.append(f"PAGE_SPECS[{page_id}]: missing status_region_ids")
+            if not controller_actions:
+                errors.append(f"PAGE_SPECS[{page_id}]: missing controller_actions")
+            if "ui_up" not in controller_actions or "ui_down" not in controller_actions or "ui_accept" not in controller_actions:
+                errors.append(f"PAGE_SPECS[{page_id}]: controller_actions missing base navigation")
+            if not focus_actions:
+                errors.append(f"PAGE_SPECS[{page_id}]: missing focus_action_ids")
+            if not asset_usage:
+                errors.append(f"PAGE_SPECS[{page_id}]: missing asset_usage")
         if visual_asset:
             if visual_asset not in manifest_paths:
                 errors.append(f"PAGE_SPECS[{page_id}]: visual_asset not registered: {visual_asset}")
             repo_path = ROOT / ("godot/" + visual_asset.removeprefix("res://"))
             if not repo_path.exists():
                 errors.append(f"PAGE_SPECS[{page_id}]: visual_asset missing: {visual_asset}")
+            for usage_path in _asset_paths_from_usage(asset_usage):
+                if usage_path not in manifest_paths:
+                    errors.append(f"PAGE_SPECS[{page_id}]: asset_usage path not registered: {usage_path}")
+                if usage_path != visual_asset and usage_path not in manifest_paths:
+                    errors.append(f"PAGE_SPECS[{page_id}]: asset_usage path missing manifest record: {usage_path}")
         elif page_id in required_pages:
             errors.append(f"PAGE_SPECS[{page_id}]: missing visual_asset")
         if page_id not in scene_map_keys:

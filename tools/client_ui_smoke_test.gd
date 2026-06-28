@@ -49,6 +49,8 @@ func _run_validation() -> bool:
 	var snapshot: Dictionary = await _open_snapshot("main_menu")
 	if not _assert_page_health(snapshot, "home", 0, 0):
 		return false
+	if not _assert_target_page_contract(snapshot, "home", ["portrait_art", "primary_routes"], ["home_status", "primary_focus"], "standee:home_portrait"):
+		return false
 	if int(snapshot.get("home_buttons", 0)) != 4:
 		return _fail("home should expose four primary buttons %s" % [snapshot])
 	var home_text := String(snapshot.get("home_buttons_text", ""))
@@ -74,6 +76,8 @@ func _run_validation() -> bool:
 		return false
 	if not await _validate_menu_independence():
 		return false
+	if not await _validate_collection_page_contract():
+		return false
 	if not await _validate_community_pages():
 		return false
 	if not await _validate_settings_pages():
@@ -84,6 +88,8 @@ func _validate_play_pages() -> bool:
 	stage = "play"
 	var snapshot: Dictionary = await _open_snapshot("play")
 	if not _assert_page_health(snapshot, "play", 1, 4):
+		return false
+	if not _assert_target_page_contract(snapshot, "play", ["mode_grid", "focus_panel", "quick_routes"], ["queue_state", "deck_state"], "frame:mode_cards"):
 		return false
 	if int(snapshot.get("status_cards", 0)) != 4:
 		return _fail("secondary status cards should be four primary categories %s" % [snapshot])
@@ -99,6 +105,11 @@ func _validate_play_pages() -> bool:
 	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 32)
 	if not _rows_have_ids(rows, ["play_practice", "play_matchmaking", "play_pvp_duel", "play_world_boss", "play_certification_hub"]):
 		return _fail("play rows missing expected modes")
+	var focus_result: Dictionary = main_node.call("_ui_press_visible_focus_action")
+	await _settle_frames(2)
+	if not bool(focus_result.get("ok", false)) or String(focus_result.get("row_id", "")) != "play_matchmaking" or String(main_node.get("ui_screen_model").current_screen) != "match":
+		return _fail("play focus action should open matchmaking %s" % [focus_result])
+	snapshot = await _open_snapshot("play")
 	if not await _validate_gameplay_view_unobstructed():
 		return false
 	snapshot = await _open_snapshot("play")
@@ -230,6 +241,8 @@ func _validate_community_pages() -> bool:
 	var snapshot: Dictionary = await _open_snapshot("community")
 	if not _assert_page_health(snapshot, "community", 1, 4):
 		return false
+	if not _assert_target_page_contract(snapshot, "community", ["notice_board", "social_tabs", "focus_panel"], ["announcement_state", "friend_presence"], "frame:community_notice_cards"):
+		return false
 	if not _contains_all(String(snapshot.get("overview_cards_text", "")), _text_keys(["screen.main.events", "screen.main.friends", "screen.main.social", "screen.main.promotions"])):
 		return _fail("community overview cards invalid %s" % String(snapshot.get("overview_cards_text", "")))
 	if _contains_any(String(snapshot.get("quick_actions_text", "")), _text_keys(["screen.main.events", "screen.main.friends", "screen.main.social", "screen.main.promotions"])):
@@ -267,6 +280,8 @@ func _validate_settings_pages() -> bool:
 	stage = "settings"
 	var snapshot: Dictionary = await _open_snapshot("player_settings")
 	if not _assert_page_health(snapshot, "player_settings", 1, 4):
+		return false
+	if not _assert_target_page_contract(snapshot, "player_settings", ["setting_groups", "control_preview", "control_buttons"], ["input_profile_state", "display_state"], "frame:settings_control_cards"):
 		return false
 	if int(snapshot.get("row_count", 0)) < 14 or int(snapshot.get("row_buttons", 0)) < 12:
 		return _fail("player settings should expose compact row window %s" % [snapshot])
@@ -355,6 +370,22 @@ func _validate_settings_pages() -> bool:
 		return _fail("display resolution should expose compact left/right/reset controls %s" % resolution_controls)
 	return true
 
+func _validate_collection_page_contract() -> bool:
+	stage = "collection"
+	var snapshot: Dictionary = await _open_snapshot("collection")
+	if not _assert_page_health(snapshot, "collection", 1, 4):
+		return false
+	if not _assert_target_page_contract(snapshot, "collection", ["collection_grid", "filter_tabs", "focus_panel"], ["deck_state", "chest_state", "replay_state"], "frame:collection_cards"):
+		return false
+	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 32)
+	if not _rows_have_ids(rows, ["collection_deck", "collection_chest", "collection_replay", "collection_workshop"]):
+		return _fail("collection rows missing deck/chest/replay/workshop")
+	var focus_result: Dictionary = main_node.call("_ui_press_visible_focus_action")
+	await _settle_frames(2)
+	if not bool(focus_result.get("ok", false)) or String(focus_result.get("row_id", "")) != "collection_deck" or String(main_node.get("ui_screen_model").current_screen) != "deck":
+		return _fail("collection focus action should open deck %s" % [focus_result])
+	return true
+
 func _press_home_button(index: int, expected_screen: String) -> bool:
 	if not main_node.call("_open_ui_screen", "main_menu"):
 		return _fail("main menu did not reopen")
@@ -411,6 +442,14 @@ func _assert_page_health(snapshot: Dictionary, label: String, expected_quick_max
 		return _fail("%s visible controls overlap %s" % [label, String(snapshot.get("visible_control_overlaps", ""))])
 	if int(snapshot.get("page_state_region_count", 0)) <= 0 or String(snapshot.get("page_state_regions", "")).is_empty():
 		return _fail("%s missing page state regions %s" % [label, snapshot])
+	if int(snapshot.get("page_layout_slot_count", 0)) <= 0 or String(snapshot.get("page_layout_slots", "")).is_empty():
+		return _fail("%s missing page layout slots %s" % [label, snapshot])
+	if int(snapshot.get("page_status_region_count", 0)) <= 0 or String(snapshot.get("page_status_regions", "")).is_empty():
+		return _fail("%s missing page status regions %s" % [label, snapshot])
+	if int(snapshot.get("page_controller_action_count", 0)) <= 0 or String(snapshot.get("page_controller_actions", "")).is_empty():
+		return _fail("%s missing controller actions %s" % [label, snapshot])
+	if int(snapshot.get("page_asset_usage_count", 0)) <= 0 or String(snapshot.get("page_asset_usage", "")).is_empty():
+		return _fail("%s missing asset usage records %s" % [label, snapshot])
 	if String(snapshot.get("page_visual_asset", "")).is_empty() or String(snapshot.get("page_visual_treatment", "")).is_empty():
 		return _fail("%s missing page visual contract %s" % [label, snapshot])
 	if int(snapshot.get("quick_buttons", 0)) > expected_quick_max:
@@ -419,6 +458,24 @@ func _assert_page_health(snapshot: Dictionary, label: String, expected_quick_max
 		return _fail("%s overview cards exceeded compact limit %s" % [label, snapshot])
 	if _visible_text_has_debug_labels(snapshot):
 		return _fail("%s leaked debug labels %s" % [label, snapshot])
+	return true
+
+func _assert_target_page_contract(snapshot: Dictionary, label: String, layout_tokens: Array[String], status_tokens: Array[String], asset_usage_token: String) -> bool:
+	var layout_text := String(snapshot.get("page_layout_slots", ""))
+	if not _contains_all(layout_text, layout_tokens):
+		return _fail("%s layout slots missing %s in %s" % [label, layout_tokens, layout_text])
+	var status_text := String(snapshot.get("page_status_regions", ""))
+	if not _contains_all(status_text, status_tokens):
+		return _fail("%s status regions missing %s in %s" % [label, status_tokens, status_text])
+	var controller_text := String(snapshot.get("page_controller_actions", ""))
+	if not _contains_all(controller_text, ["ui_up", "ui_down", "ui_accept"]):
+		return _fail("%s controller actions missing base navigation %s" % [label, controller_text])
+	if not String(snapshot.get("page_asset_usage", "")).contains(asset_usage_token):
+		return _fail("%s asset usage missing %s in %s" % [label, asset_usage_token, String(snapshot.get("page_asset_usage", ""))])
+	if int(snapshot.get("page_focus_action_count", 0)) <= 0 or String(snapshot.get("page_focus_action_ids", "")).is_empty():
+		return _fail("%s missing focus action ids %s" % [label, snapshot])
+	if label != "home" and (int(snapshot.get("focus_buttons", 0)) <= 0 or String(snapshot.get("focus_action", "")).is_empty()):
+		return _fail("%s focus panel missing actionable target %s" % [label, snapshot])
 	return true
 
 func _assert_nav_family(snapshot: Dictionary, label: String, expected_tokens: Array[String], blocked_tokens: Array[String]) -> bool:

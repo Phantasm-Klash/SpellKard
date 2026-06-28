@@ -56,7 +56,7 @@ func _check_asset_manifest() -> void:
 		_check_asset_record(record)
 
 func _check_asset_record(record: Dictionary) -> void:
-	var required_fields: Array[String] = ["path", "source_url", "author", "license", "modified", "imported_at"]
+	var required_fields: Array[String] = ["path", "source_url", "provenance", "author", "license", "modified", "imported_at"]
 	for field in required_fields:
 		if String(record.get(field, "")).is_empty():
 			_fail("asset record missing %s" % field)
