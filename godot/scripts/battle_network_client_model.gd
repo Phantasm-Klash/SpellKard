@@ -36,6 +36,7 @@ var last_ack := 0
 var last_received_seq := 0
 var last_payload_type := "none"
 var last_packet_header: Dictionary = {}
+var last_mode_action: Dictionary = {}
 
 func configure(network_match: RefCounted, descriptor_model: RefCounted = null) -> void:
 	network_match_model = network_match
@@ -78,6 +79,7 @@ func reset() -> void:
 	last_received_seq = 0
 	last_payload_type = "none"
 	last_packet_header = {}
+	last_mode_action = {}
 	_refresh_descriptor_state()
 
 func apply_battle_allocation(allocation: Dictionary) -> Dictionary:
@@ -213,6 +215,33 @@ func build_packet_header(payload_type: String, tick: int, ack: int = -1) -> Dict
 	next_seq += 1
 	last_error_code = "none"
 	return header
+
+func build_mode_action(action_type: String, payload: Dictionary = {}, tick: int = 0, action_id: String = "", ack: int = -1) -> Dictionary:
+	var normalized_action_type := action_type.strip_edges()
+	if normalized_action_type.is_empty():
+		last_error_code = "mode_action_type_empty"
+		return {"ok": false, "reason": last_error_code}
+	var header := build_packet_header("mode_action", tick, ack)
+	if not bool(header.get("ok", false)):
+		return {"ok": false, "reason": String(header.get("reason", last_error_code)), "payload_type": "mode_action"}
+	var action_seq := int(header.get("seq", 0))
+	var normalized_action_id := action_id.strip_edges()
+	if normalized_action_id.is_empty():
+		normalized_action_id = "%s_a%06d" % [match_id, action_seq]
+	var mode_action := {
+		"ok": true,
+		"match_id": match_id,
+		"player_id": player_id,
+		"action_id": normalized_action_id,
+		"action_type": normalized_action_type,
+		"payload_json": JSON.stringify(payload.duplicate(true)),
+		"tick": tick,
+		"seq": action_seq,
+		"client_result_authoritative": false,
+	}
+	last_mode_action = mode_action.duplicate(true)
+	last_error_code = "none"
+	return mode_action
 
 func receive_packet_header(header: Dictionary) -> Dictionary:
 	var incoming_match_id := String(header.get("match_id", ""))

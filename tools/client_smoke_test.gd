@@ -993,6 +993,12 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: battle network mode-action packet header invalid")
 		quit(1)
 		return true
+	var battle_mode_action_payload: Dictionary = main_node.call("_battle_network_build_mode_action", "select_round_card", {"card_id": "focus_lens", "round_index": 0}, 22, "action-smoke-transport", 1)
+	var battle_mode_action_payload_json: Variant = JSON.parse_string(String(battle_mode_action_payload.get("payload_json", "")))
+	if not bool(battle_mode_action_payload.get("ok", false)) or String(battle_mode_action_payload.get("match_id", "")) != "match-server-smoke" or String(battle_mode_action_payload.get("player_id", "")) != "p-smoke" or String(battle_mode_action_payload.get("action_id", "")) != "action-smoke-transport" or String(battle_mode_action_payload.get("action_type", "")) != "select_round_card" or int(battle_mode_action_payload.get("tick", 0)) != 22 or int(battle_mode_action_payload.get("seq", 0)) != 3 or bool(battle_mode_action_payload.get("client_result_authoritative", true)) or typeof(battle_mode_action_payload_json) != TYPE_DICTIONARY or String((battle_mode_action_payload_json as Dictionary).get("card_id", "")) != "focus_lens" or int((battle_mode_action_payload_json as Dictionary).get("round_index", -1)) != 0:
+		push_error("Smoke test failed: battle network mode-action payload builder invalid %s" % [battle_mode_action_payload])
+		quit(1)
+		return true
 	var invalid_battle_packet_header: Dictionary = main_node.call("_battle_network_build_packet_header", "client_result", 21, 0)
 	if bool(invalid_battle_packet_header.get("ok", false)) or String(invalid_battle_packet_header.get("reason", "")) != "payload_type_missing":
 		push_error("Smoke test failed: battle network accepted unknown payload type %s" % [invalid_battle_packet_header])

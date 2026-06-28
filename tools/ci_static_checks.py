@@ -101,6 +101,34 @@ def check_protocol_client_scripts() -> list[str]:
             errors.append(f"{rel}: missing required network/protocol client script")
         elif path.read_text(encoding="utf-8").count("\r\n"):
             errors.append(f"{rel}: must use LF line endings")
+    battle_model = ROOT / "godot" / "scripts" / "battle_network_client_model.gd"
+    if battle_model.exists():
+        text = battle_model.read_text(encoding="utf-8")
+        for token in [
+            "func build_mode_action(",
+            "build_packet_header(\"mode_action\"",
+            "\"match_id\": match_id",
+            "\"player_id\": player_id",
+            "\"action_id\": normalized_action_id",
+            "\"action_type\": normalized_action_type",
+            "\"payload_json\": JSON.stringify",
+            "\"tick\": tick",
+            "\"seq\": action_seq",
+            "\"client_result_authoritative\": false",
+        ]:
+            if token not in text:
+                errors.append(f"godot/scripts/battle_network_client_model.gd: missing BattleModeAction builder token {token}")
+    smoke_test = ROOT / "tools" / "client_smoke_test.gd"
+    if smoke_test.exists():
+        text = smoke_test.read_text(encoding="utf-8")
+        for token in [
+            "_battle_network_build_mode_action",
+            "JSON.parse_string(String(battle_mode_action_payload.get(\"payload_json\", \"\")))",
+            "\"action-smoke-transport\"",
+            "\"client_result_authoritative\"",
+        ]:
+            if token not in text:
+                errors.append(f"tools/client_smoke_test.gd: missing BattleModeAction smoke token {token}")
     return errors
 
 
