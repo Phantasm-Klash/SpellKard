@@ -1,10 +1,10 @@
 # Network, protocol, UI, and asset changes require repository owner review.
-/godot/scripts/gensoulkyo_http_client.gd @Phantasm-Klash
-/godot/scripts/battle_network_client_model.gd @Phantasm-Klash
-/godot/scripts/network_security_model.gd @Phantasm-Klash
-/godot/scripts/protocol_descriptor_model.gd @Phantasm-Klash
-/godot/scripts/matchmaking_model.gd @Phantasm-Klash
-/godot/scripts/network_match_model.gd @Phantasm-Klash
-/godot/scripts/results_service_model.gd @Phantasm-Klash
-/godot/assets/ @Phantasm-Klash
-/godot/themes/ @Phantasm-Klash
+/godot/scripts/gensoulkyo_http_client.gd @wjcwqc
+/godot/scripts/battle_network_client_model.gd @wjcwqc
+/godot/scripts/network_security_model.gd @wjcwqc
+/godot/scripts/protocol_descriptor_model.gd @wjcwqc
+/godot/scripts/matchmaking_model.gd @wjcwqc
+/godot/scripts/network_match_model.gd @wjcwqc
+/godot/scripts/results_service_model.gd @wjcwqc
+/godot/assets/ @wjcwqc
+/godot/themes/ @wjcwqc
