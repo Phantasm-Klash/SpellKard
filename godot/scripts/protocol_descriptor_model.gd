@@ -101,11 +101,11 @@ func message_fields(message_name: String) -> Array[String]:
 func validate_minimal_contract() -> Dictionary:
 	if descriptor.is_empty():
 		return {"ok": false, "reason": "descriptor_not_loaded"}
-	for message_name in ["BusinessSecureEnvelope", "BattleTicket", "BattlePacketHeader", "BattleInput", "BattleResult"]:
+	for message_name in ["BusinessSecureEnvelope", "BattleTicket", "BattlePacketHeader", "BattleInput", "BattleModeAction", "BattleResult"]:
 		if not has_message(message_name):
 			return {"ok": false, "reason": "message_missing", "message": message_name}
 	var payload_values := enum_values("BattlePayloadType")
-	for enum_name in ["BATTLE_PAYLOAD_TYPE_INPUT", "BATTLE_PAYLOAD_TYPE_SNAPSHOT", "BATTLE_PAYLOAD_TYPE_EVENT", "BATTLE_PAYLOAD_TYPE_RESULT"]:
+	for enum_name in ["BATTLE_PAYLOAD_TYPE_INPUT", "BATTLE_PAYLOAD_TYPE_SNAPSHOT", "BATTLE_PAYLOAD_TYPE_EVENT", "BATTLE_PAYLOAD_TYPE_RESULT", "BATTLE_PAYLOAD_TYPE_MODE_ACTION"]:
 		if not payload_values.has(enum_name):
 			return {"ok": false, "reason": "payload_enum_missing", "enum": enum_name}
 	var ticket_fields := message_fields("BattleTicket")
@@ -116,6 +116,10 @@ func validate_minimal_contract() -> Dictionary:
 	for field_name in ["match_id", "player_id", "tick", "seq", "ack", "payload_type", "key_id", "nonce"]:
 		if not header_fields.has(field_name):
 			return {"ok": false, "reason": "header_field_missing", "field": field_name}
+	var mode_action_fields := message_fields("BattleModeAction")
+	for field_name in ["match_id", "player_id", "tick", "seq", "action_id", "action_type", "payload_json", "client_result_authoritative"]:
+		if not mode_action_fields.has(field_name):
+			return {"ok": false, "reason": "mode_action_field_missing", "field": field_name}
 	return {"ok": true, "version": descriptor_version(), "protocol_version": protocol_version()}
 
 func summary() -> String:

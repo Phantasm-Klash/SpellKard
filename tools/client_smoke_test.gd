@@ -988,6 +988,11 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: battle network packet header invalid")
 		quit(1)
 		return true
+	var battle_mode_action_header: Dictionary = main_node.call("_battle_network_build_packet_header", "mode_action", 21, 1)
+	if not bool(battle_mode_action_header.get("ok", false)) or int(battle_mode_action_header.get("seq", 0)) != 2 or int(battle_mode_action_header.get("ack", -1)) != 1 or String(battle_mode_action_header.get("payload_type", "")) != "mode_action" or int(battle_mode_action_header.get("payload_type_number", 0)) != 9 or String(battle_mode_action_header.get("payload_type_enum", "")) != "BATTLE_PAYLOAD_TYPE_MODE_ACTION" or bool(battle_mode_action_header.get("server_authoritative", true)):
+		push_error("Smoke test failed: battle network mode-action packet header invalid")
+		quit(1)
+		return true
 	var invalid_battle_packet_header: Dictionary = main_node.call("_battle_network_build_packet_header", "client_result", 21, 0)
 	if bool(invalid_battle_packet_header.get("ok", false)) or String(invalid_battle_packet_header.get("reason", "")) != "payload_type_missing":
 		push_error("Smoke test failed: battle network accepted unknown payload type %s" % [invalid_battle_packet_header])
