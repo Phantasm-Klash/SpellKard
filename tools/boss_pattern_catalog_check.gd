@@ -171,6 +171,8 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 				failures.append("legacy_entry_sample_digest_mismatch:%s" % phase_id)
 			if not _arrays_equal_ints(legacy_entry.get("preview_sample_emit_counts", []), preview.get("sample_emit_counts", [])):
 				failures.append("legacy_entry_sample_emit_counts_mismatch:%s" % phase_id)
+			if String(legacy_entry.get("preview_signature", "")) != String(preview.get("signature", "")):
+				failures.append("legacy_entry_signature_missing:%s" % phase_id)
 	var invalid_entry := valid_entries[0].duplicate(true)
 	invalid_entry["replay_id"] = "fixture_missing_spellbook_preview"
 	invalid_entry["preview_export_id"] = ""
@@ -215,6 +217,27 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 	var negative_emit_counts: Array = (negative_sample_emit_count_entry.get("preview_sample_emit_counts", []) as Array).duplicate()
 	negative_emit_counts[0] = -1
 	negative_sample_emit_count_entry["preview_sample_emit_counts"] = negative_emit_counts
+	var legacy_signature_digest_mismatch_entry := _legacy_replay_entry_for_preview(
+		store,
+		String(valid_entries[0].get("spellbook_id", "")),
+		String(valid_entries[0].get("phase_id", "")),
+		spellbook_model.deterministic_phase_preview(
+			String(valid_entries[0].get("spellbook_id", "")),
+			String(valid_entries[0].get("phase_id", "")),
+			20260625
+		)
+	)
+	legacy_signature_digest_mismatch_entry["replay_id"] = "fixture_legacy_signature_digest_mismatch_spellbook_preview"
+	var mismatched_legacy_digests: Array = (legacy_signature_digest_mismatch_entry.get("preview_sample_signature_digests", []) as Array).duplicate()
+	mismatched_legacy_digests[0] = int(mismatched_legacy_digests[0]) + 1
+	legacy_signature_digest_mismatch_entry["preview_sample_signature_digests"] = mismatched_legacy_digests
+	var legacy_signature_emit_count_mismatch_entry := legacy_signature_digest_mismatch_entry.duplicate(true)
+	legacy_signature_emit_count_mismatch_entry["replay_id"] = "fixture_legacy_signature_emit_count_mismatch_spellbook_preview"
+	var valid_legacy_digests: Array = (valid_entries[0].get("preview_sample_signature_digests", []) as Array).duplicate()
+	legacy_signature_emit_count_mismatch_entry["preview_sample_signature_digests"] = valid_legacy_digests
+	var mismatched_legacy_emit_counts: Array = (legacy_signature_emit_count_mismatch_entry.get("preview_sample_emit_counts", []) as Array).duplicate()
+	mismatched_legacy_emit_counts[0] = int(mismatched_legacy_emit_counts[0]) + 1
+	legacy_signature_emit_count_mismatch_entry["preview_sample_emit_counts"] = mismatched_legacy_emit_counts
 	var bad_sample_count_entry := valid_entries[0].duplicate(true)
 	bad_sample_count_entry["replay_id"] = "fixture_bad_sample_count_spellbook_preview"
 	bad_sample_count_entry["preview_sample_count"] = int(bad_sample_count_entry.get("preview_sample_count", 0)) + 1
@@ -251,6 +274,10 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 		failures.append("negative_sample_digest_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(negative_sample_emit_count_entry)).get("ok", false)):
 		failures.append("negative_sample_emit_count_replay_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(legacy_signature_digest_mismatch_entry)).get("ok", false)):
+		failures.append("legacy_signature_digest_mismatch_replay_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(legacy_signature_emit_count_mismatch_entry)).get("ok", false)):
+		failures.append("legacy_signature_emit_count_mismatch_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(bad_schema_entry)).get("ok", false)):
 		failures.append("bad_schema_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(bad_sample_count_entry)).get("ok", false)):
@@ -311,6 +338,12 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 		var negative_sample_emit_count_row: Dictionary = replay_list._row_from_entry(negative_sample_emit_count_entry, rows.size() + 6)
 		if bool(negative_sample_emit_count_row.get("metadata_valid", true)) or String(negative_sample_emit_count_row.get("metadata_status", "")) != "bad_preview_sample_window":
 			failures.append("negative_sample_emit_count_row_metadata:%s" % [negative_sample_emit_count_row])
+		var legacy_signature_digest_mismatch_row: Dictionary = replay_list._row_from_entry(legacy_signature_digest_mismatch_entry, rows.size() + 7)
+		if bool(legacy_signature_digest_mismatch_row.get("metadata_valid", true)) or String(legacy_signature_digest_mismatch_row.get("metadata_status", "")) != "bad_preview_sample_window":
+			failures.append("legacy_signature_digest_mismatch_row_metadata:%s" % [legacy_signature_digest_mismatch_row])
+		var legacy_signature_emit_count_mismatch_row: Dictionary = replay_list._row_from_entry(legacy_signature_emit_count_mismatch_entry, rows.size() + 8)
+		if bool(legacy_signature_emit_count_mismatch_row.get("metadata_valid", true)) or String(legacy_signature_emit_count_mismatch_row.get("metadata_status", "")) != "bad_preview_sample_window":
+			failures.append("legacy_signature_emit_count_mismatch_row_metadata:%s" % [legacy_signature_emit_count_mismatch_row])
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,

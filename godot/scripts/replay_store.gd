@@ -87,6 +87,8 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 			var sample_ticks: Array[int] = _preview_sample_ticks_from_fields(entry)
 			var sample_signature_digests: Array[int] = _preview_sample_signature_digests_from_fields(entry)
 			var sample_emit_counts: Array[int] = _preview_sample_emit_counts_from_fields(entry)
+			var signature_sample_signature_digests: Array[int] = _sample_signature_digests_from_signature(str(entry.get("preview_signature", "")))
+			var signature_sample_emit_counts: Array[int] = _sample_emit_counts_from_signature(str(entry.get("preview_signature", "")))
 			if str(entry.get("spellbook_id", "")).is_empty():
 				failures.append("missing_spellbook_id:%s" % replay_id)
 			if str(entry.get("phase_id", "")).is_empty():
@@ -118,6 +120,10 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 				failures.append("preview_sample_emit_count_mismatch:%s" % replay_id)
 			if not _arrays_equal_ints(sample_ticks, SPELLBOOK_PREVIEW_SAMPLE_TICKS):
 				failures.append("preview_sample_ticks_noncanonical:%s" % replay_id)
+			if not signature_sample_signature_digests.is_empty() and not _arrays_equal_ints(sample_signature_digests, signature_sample_signature_digests):
+				failures.append("preview_sample_digest_signature_mismatch:%s" % replay_id)
+			if not signature_sample_emit_counts.is_empty() and not _arrays_equal_ints(sample_emit_counts, signature_sample_emit_counts):
+				failures.append("preview_sample_emit_count_signature_mismatch:%s" % replay_id)
 			if int(entry.get("preview_budget_headroom", -1)) < 0:
 				failures.append("preview_budget_overrun:%s" % replay_id)
 			if str(entry.get("performance_budget_status", "")) != "within_budget":
@@ -267,6 +273,7 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"phase_id": str(metadata.get("phase_id", "")),
 		"preview_export_schema_version": preview_schema_version,
 		"preview_export_id": str(metadata.get("preview_export_id", "")),
+		"preview_signature": str(metadata.get("preview_signature", "")),
 		"preview_signature_digest": preview_digest,
 		"preview_sample_ticks": preview_sample_ticks,
 		"preview_sample_signature_digests": preview_sample_signature_digests,
@@ -308,6 +315,8 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 	var sample_ticks := _preview_sample_ticks_from_fields(fields)
 	var sample_signature_digests := _preview_sample_signature_digests_from_fields(fields)
 	var sample_emit_counts := _preview_sample_emit_counts_from_fields(fields)
+	var signature_sample_signature_digests := _sample_signature_digests_from_signature(str(fields.get("preview_signature", "")))
+	var signature_sample_emit_counts := _sample_emit_counts_from_signature(str(fields.get("preview_signature", "")))
 	var sample_count := int(fields.get("preview_sample_count", -1))
 	if sample_ticks.is_empty() or sample_signature_digests.is_empty() or sample_emit_counts.is_empty() or sample_count <= 0:
 		return "bad_preview_sample_window"
@@ -316,6 +325,10 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 	if not _arrays_equal_ints(sample_ticks, SPELLBOOK_PREVIEW_SAMPLE_TICKS):
 		return "bad_preview_sample_window"
 	if not _all_nonnegative_ints(sample_signature_digests) or not _all_nonnegative_ints(sample_emit_counts):
+		return "bad_preview_sample_window"
+	if not signature_sample_signature_digests.is_empty() and not _arrays_equal_ints(sample_signature_digests, signature_sample_signature_digests):
+		return "bad_preview_sample_window"
+	if not signature_sample_emit_counts.is_empty() and not _arrays_equal_ints(sample_emit_counts, signature_sample_emit_counts):
 		return "bad_preview_sample_window"
 	if int(fields.get("preview_budget_headroom", -1)) < 0 or str(fields.get("performance_budget_status", "")) != "within_budget":
 		return "preview_budget_overrun"
