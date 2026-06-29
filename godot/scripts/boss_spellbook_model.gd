@@ -11,10 +11,10 @@ const PREVIEW_SAMPLE_TICKS: Array[int] = [0, 28, 56, 84, 112, 140]
 const PREVIEW_DIGEST_MODULUS := 1000000007
 
 const GOLDEN_PREVIEW_FIXTURES: Dictionary = {
-	"original_boss_archive:nonspell_radial_entry:20260625": {"signature_digest": 905452029, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_count": 6, "max_emit_per_tick": 42, "bullet_cap_per_tick": 192, "budget_headroom": 150, "performance_budget_status": "within_budget"},
-	"original_boss_archive:spell_laser_field:20260625": {"signature_digest": 187927263, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_count": 6, "max_emit_per_tick": 20, "bullet_cap_per_tick": 192, "budget_headroom": 172, "performance_budget_status": "within_budget"},
-	"original_boss_archive:spell_summoner_split:20260625": {"signature_digest": 471609142, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_count": 6, "max_emit_per_tick": 12, "bullet_cap_per_tick": 192, "budget_headroom": 180, "performance_budget_status": "within_budget"},
-	"original_boss_archive:last_spell_morph_bounce:20260625": {"signature_digest": 979716623, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_count": 6, "max_emit_per_tick": 30, "bullet_cap_per_tick": 192, "budget_headroom": 162, "performance_budget_status": "within_budget"},
+	"original_boss_archive:nonspell_radial_entry:20260625": {"signature_digest": 905452029, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_emit_counts": [24, 42, 24, 24, 42, 24], "sample_count": 6, "max_emit_per_tick": 42, "bullet_cap_per_tick": 192, "budget_headroom": 150, "performance_budget_status": "within_budget"},
+	"original_boss_archive:spell_laser_field:20260625": {"signature_digest": 187927263, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_emit_counts": [3, 2, 0, 12, 20, 0], "sample_count": 6, "max_emit_per_tick": 20, "bullet_cap_per_tick": 192, "budget_headroom": 172, "performance_budget_status": "within_budget"},
+	"original_boss_archive:spell_summoner_split:20260625": {"signature_digest": 471609142, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_emit_counts": [4, 0, 0, 0, 0, 12], "sample_count": 6, "max_emit_per_tick": 12, "bullet_cap_per_tick": 192, "budget_headroom": 180, "performance_budget_status": "within_budget"},
+	"original_boss_archive:last_spell_morph_bounce:20260625": {"signature_digest": 979716623, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_emit_counts": [30, 0, 0, 0, 0, 0], "sample_count": 6, "max_emit_per_tick": 30, "bullet_cap_per_tick": 192, "budget_headroom": 162, "performance_budget_status": "within_budget"},
 }
 
 var spellbooks: Array[Dictionary] = []
@@ -182,12 +182,14 @@ func deterministic_phase_preview(spellbook_id: String, phase_id: String, seed: i
 	var target: Vector2 = phase_script.get("preview_target", Vector2(480, 600))
 	var phase_offset: int = _phase_start_tick(spellbook_id, phase_id)
 	var samples: Array[Dictionary] = []
+	var sample_emit_counts: Array[int] = []
 	var max_emit := 0
 	var signature_parts: Array[String] = []
 	for sample_tick in PREVIEW_SAMPLE_TICKS:
 		var local_tick: int = phase_offset + mini(int(sample_tick), maxi(0, int(phase.get("duration_ticks", 1)) - 1))
 		var emitted: Array[Dictionary] = emit_tick(spellbook_id, local_tick, target, 50000 + local_tick, seed)
 		max_emit = maxi(max_emit, emitted.size())
+		sample_emit_counts.append(emitted.size())
 		var tick_signature := _bullet_signature(emitted)
 		signature_parts.append("%d:%s" % [sample_tick, tick_signature])
 		samples.append({
@@ -208,6 +210,7 @@ func deterministic_phase_preview(spellbook_id: String, phase_id: String, seed: i
 		"phase_id": phase_id,
 		"seed": seed,
 		"sample_ticks": PREVIEW_SAMPLE_TICKS.duplicate(),
+		"sample_emit_counts": sample_emit_counts,
 		"samples": samples,
 		"signature": signature,
 		"signature_digest": signature_digest,
@@ -444,6 +447,8 @@ func _validate_golden_fixture(fixture_id: String, phase_id: String, preview: Dic
 		failures.append("golden_preview_samples:%s" % phase_id)
 	if not _arrays_equal_ints(preview.get("sample_ticks", []), fixture.get("sample_ticks", [])):
 		failures.append("golden_preview_sample_ticks:%s:%s" % [phase_id, fixture_id])
+	if not _arrays_equal_ints(preview.get("sample_emit_counts", []), fixture.get("sample_emit_counts", [])):
+		failures.append("golden_preview_sample_emit_counts:%s:%s" % [phase_id, fixture_id])
 	if int(preview.get("max_emit_per_tick", 0)) != int(fixture.get("max_emit_per_tick", 0)):
 		failures.append("golden_preview_max_emit:%s:%d" % [phase_id, int(preview.get("max_emit_per_tick", 0))])
 	if int(preview.get("bullet_cap_per_tick", 0)) != int(fixture.get("bullet_cap_per_tick", 0)):
@@ -454,6 +459,8 @@ func _validate_golden_fixture(fixture_id: String, phase_id: String, preview: Dic
 		failures.append("golden_preview_sample_count_contract:%s:%s" % [phase_id, fixture_id])
 	if not _arrays_equal_ints(fixture.get("sample_ticks", []), PREVIEW_SAMPLE_TICKS):
 		failures.append("golden_preview_sample_ticks_contract:%s:%s" % [phase_id, fixture_id])
+	if int(fixture.get("sample_count", 0)) != (fixture.get("sample_emit_counts", []) as Array).size():
+		failures.append("golden_preview_sample_emit_count_contract:%s:%s" % [phase_id, fixture_id])
 	if int(fixture.get("budget_headroom", -1)) < 0:
 		failures.append("golden_preview_over_budget:%s:%d" % [phase_id, int(fixture.get("budget_headroom", -1))])
 	if String(fixture.get("performance_budget_status", "")) != String(preview.get("performance_budget_status", "")):

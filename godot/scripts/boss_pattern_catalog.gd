@@ -514,6 +514,10 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 					failures.append("golden_preview_digest:%s:%d" % [phase_id, int(preview_a.get("signature_digest", 0))])
 				if (preview_a.get("samples", []) as Array).size() != int(fixture.get("sample_count", 0)):
 					failures.append("golden_preview_samples:%s" % phase_id)
+				if not _arrays_equal_ints(preview_a.get("sample_ticks", []), fixture.get("sample_ticks", [])):
+					failures.append("golden_preview_sample_ticks:%s" % phase_id)
+				if not _arrays_equal_ints(preview_a.get("sample_emit_counts", []), fixture.get("sample_emit_counts", [])):
+					failures.append("golden_preview_sample_emit_counts:%s" % phase_id)
 				if int(preview_a.get("max_emit_per_tick", 0)) != int(fixture.get("max_emit_per_tick", 0)):
 					failures.append("golden_preview_max_emit:%s:%d" % [phase_id, int(preview_a.get("max_emit_per_tick", 0))])
 				if int(preview_a.get("bullet_cap_per_tick", 0)) != int(fixture.get("bullet_cap_per_tick", 0)):
@@ -538,6 +542,10 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 						failures.append("pattern_lab_headroom_mismatch:%s" % phase_id)
 					if String(coverage.get("performance_budget_status", "")) != String(preview_a.get("performance_budget_status", "")):
 						failures.append("pattern_lab_budget_status_mismatch:%s" % phase_id)
+					if not _arrays_equal_ints(coverage.get("preview_sample_ticks", []), preview_a.get("sample_ticks", [])):
+						failures.append("pattern_lab_sample_ticks_mismatch:%s" % phase_id)
+					if not _arrays_equal_ints(coverage.get("preview_sample_emit_counts", []), preview_a.get("sample_emit_counts", [])):
+						failures.append("pattern_lab_sample_emit_counts_mismatch:%s" % phase_id)
 	for fixture_id in golden_fixtures.keys():
 		if String(fixture_id).ends_with(":%d" % seed) and not seen_fixture_ids.has(String(fixture_id)):
 			failures.append("orphan_golden_preview:%s" % String(fixture_id))
@@ -750,3 +758,15 @@ static func _bullet_signature(bullets: Array[Dictionary]) -> String:
 			int((bullet.get("points", []) as Array).size()) if typeof(bullet.get("points", [])) == TYPE_ARRAY else 0,
 		])
 	return "|".join(parts)
+
+static func _arrays_equal_ints(left: Variant, right: Variant) -> bool:
+	if typeof(left) != TYPE_ARRAY or typeof(right) != TYPE_ARRAY:
+		return false
+	var left_array: Array = left
+	var right_array: Array = right
+	if left_array.size() != right_array.size():
+		return false
+	for index in range(left_array.size()):
+		if int(left_array[index]) != int(right_array[index]):
+			return false
+	return true

@@ -147,6 +147,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "missing_golden_preview",
         "golden_preview_headroom",
         "golden_preview_sample_ticks",
+        "golden_preview_sample_emit_counts",
         "preview_bullet_cap",
         "budget_headroom",
         "performance_budget_status",
@@ -166,6 +167,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         '"performance_budget_status"',
         '"preview_export_id"',
         '"preview_sample_ticks"',
+        '"preview_sample_emit_counts"',
         '"preview_sample_count"',
     ]:
         if token not in pattern_lab_text:
@@ -173,7 +175,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
 
     for replay_path in [replay_store, replay_list]:
         replay_text = replay_path.read_text(encoding="utf-8")
-        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_count"', '"max_preview_emit"', '"preview_bullet_cap_per_tick"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"', '"preview_budget_overrun"', '"preview_budget_contract_mismatch"', '"preview_sample_count_mismatch"', '"missing_preview_sample_window"', '"missing_preview_budget_window"', '"local_preview_marked_authoritative"']:
+        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_emit_counts"', '"preview_sample_count"', '"max_preview_emit"', '"preview_bullet_cap_per_tick"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"', '"preview_budget_overrun"', '"preview_budget_contract_mismatch"', '"preview_sample_count_mismatch"', '"preview_sample_emit_count_mismatch"', '"missing_preview_sample_window"', '"missing_preview_sample_emit_counts"', '"missing_preview_budget_window"', '"local_preview_marked_authoritative"']:
             if token not in replay_text:
                 errors.append(f"{replay_path.relative_to(ROOT)}: missing spellbook replay metadata token {token}")
     if "validate_spellbook_preview_metadata" not in replay_store.read_text(encoding="utf-8"):
@@ -197,26 +199,35 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "fixture_over_budget_spellbook_preview",
         "fixture_stale_digest_spellbook_preview",
         "fixture_stale_samples_spellbook_preview",
+        "fixture_stale_sample_emit_counts_spellbook_preview",
         "fixture_stale_max_emit_spellbook_preview",
         "fixture_stale_cap_spellbook_preview",
         "fixture_inconsistent_budget_spellbook_preview",
         "fixture_bad_sample_count_spellbook_preview",
+        "fixture_bad_sample_emit_count_spellbook_preview",
         "fixture_missing_samples_spellbook_preview",
+        "fixture_missing_sample_emit_counts_spellbook_preview",
         "bad_sample_count_replay_accepted",
+        "bad_sample_emit_count_replay_accepted",
+        "missing_preview_sample_emit_counts_replay_accepted",
         "missing_sample_window_replay_accepted",
         "inconsistent_budget_replay_accepted",
         "stale_digest_status_missing",
         "stale_sample_status_missing",
+        "stale_sample_emit_counts_status_missing",
         "stale_max_emit_status_missing",
         "stale_cap_status_missing",
         "preview_digest_mismatch",
         "preview_sample_ticks_mismatch",
+        "preview_sample_emit_counts_mismatch",
         "preview_budget_overrun",
         "preview_budget_contract_mismatch",
         "missing_preview_budget_window",
         "local_preview_marked_authoritative",
         "preview_sample_count_mismatch",
+        "preview_sample_emit_count_mismatch",
         "missing_preview_sample_window",
+        "missing_preview_sample_emit_counts",
         "TightSpellbookBudgetModel",
         "_validate_phase_budget_regression",
         "tight_phase_budget_accepted",
@@ -225,6 +236,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "spellbook_phase_emit_budget:nonspell_radial_entry",
         "validate_spellbook_preview_metadata",
         "preview_sample_ticks",
+        "preview_sample_emit_counts",
         "preview_sample_count",
         "max_preview_emit",
         "preview_bullet_cap_per_tick",

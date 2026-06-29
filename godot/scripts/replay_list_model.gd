@@ -132,6 +132,7 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"preview_export_id": str(entry.get("preview_export_id", "")),
 		"preview_signature_digest": int(entry.get("preview_signature_digest", 0)),
 		"preview_sample_ticks": (entry.get("preview_sample_ticks", []) as Array).duplicate(),
+		"preview_sample_emit_counts": (entry.get("preview_sample_emit_counts", []) as Array).duplicate(),
 		"preview_sample_count": int(entry.get("preview_sample_count", 0)),
 		"max_preview_emit": int(entry.get("max_preview_emit", -1)),
 		"preview_bullet_cap_per_tick": int(entry.get("preview_bullet_cap_per_tick", -1)),
@@ -164,11 +165,16 @@ func _entry_metadata_status(entry: Dictionary, metadata_valid: bool) -> String:
 				or int(entry.get("preview_signature_digest", 0)) <= 0:
 			return "missing_spellbook_preview"
 		var sample_ticks: Array = entry.get("preview_sample_ticks", [])
+		var sample_emit_counts: Array = entry.get("preview_sample_emit_counts", [])
 		var sample_count := int(entry.get("preview_sample_count", -1))
 		if sample_ticks.is_empty() or sample_count <= 0:
 			return "missing_preview_sample_window"
+		if sample_emit_counts.is_empty():
+			return "missing_preview_sample_emit_counts"
 		if sample_count != sample_ticks.size():
 			return "preview_sample_count_mismatch"
+		if sample_count != sample_emit_counts.size():
+			return "preview_sample_emit_count_mismatch"
 		var max_preview_emit := int(entry.get("max_preview_emit", -1))
 		var preview_cap := int(entry.get("preview_bullet_cap_per_tick", -1))
 		if max_preview_emit < 0 or preview_cap <= 0:

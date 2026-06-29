@@ -93,15 +93,20 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 			if int(entry.get("preview_signature_digest", 0)) <= 0:
 				failures.append("missing_preview_digest:%s" % replay_id)
 			var sample_ticks: Array[int] = _normalized_int_array(entry.get("preview_sample_ticks", []))
+			var sample_emit_counts: Array[int] = _normalized_int_array(entry.get("preview_sample_emit_counts", []))
 			var sample_count := int(entry.get("preview_sample_count", -1))
 			var max_preview_emit := int(entry.get("max_preview_emit", -1))
 			var preview_cap := int(entry.get("preview_bullet_cap_per_tick", -1))
 			if sample_ticks.is_empty():
 				failures.append("missing_preview_sample_ticks:%s" % replay_id)
+			if sample_emit_counts.is_empty():
+				failures.append("missing_preview_sample_emit_counts:%s" % replay_id)
 			if sample_count <= 0:
 				failures.append("missing_preview_sample_count:%s" % replay_id)
 			elif sample_count != sample_ticks.size():
 				failures.append("preview_sample_count_mismatch:%s" % replay_id)
+			elif sample_count != sample_emit_counts.size():
+				failures.append("preview_sample_emit_count_mismatch:%s" % replay_id)
 			if max_preview_emit < 0:
 				failures.append("missing_preview_max_emit:%s" % replay_id)
 			if preview_cap <= 0:
@@ -145,6 +150,8 @@ func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary)
 		failures.append("preview_budget_status_mismatch:%s" % str(entry.get("replay_id", "")))
 	if not _arrays_equal_ints(entry.get("preview_sample_ticks", []), preview.get("sample_ticks", [])):
 		failures.append("preview_sample_ticks_mismatch:%s" % str(entry.get("replay_id", "")))
+	if not _arrays_equal_ints(entry.get("preview_sample_emit_counts", []), preview.get("sample_emit_counts", [])):
+		failures.append("preview_sample_emit_counts_mismatch:%s" % str(entry.get("replay_id", "")))
 	if int(entry.get("preview_sample_count", -1)) != (preview.get("samples", []) as Array).size():
 		failures.append("preview_sample_count_mismatch:%s" % str(entry.get("replay_id", "")))
 	return {
@@ -251,6 +258,7 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"preview_export_id": str(metadata.get("preview_export_id", "")),
 		"preview_signature_digest": preview_digest,
 		"preview_sample_ticks": _normalized_int_array(metadata.get("preview_sample_ticks", [])),
+		"preview_sample_emit_counts": _normalized_int_array(metadata.get("preview_sample_emit_counts", [])),
 		"preview_sample_count": int(metadata.get("preview_sample_count", _normalized_int_array(metadata.get("preview_sample_ticks", [])).size())),
 		"max_preview_emit": int(metadata.get("max_preview_emit", -1)),
 		"preview_bullet_cap_per_tick": int(metadata.get("preview_bullet_cap_per_tick", -1)),
@@ -281,11 +289,16 @@ func _metadata_status(metadata: Dictionary) -> String:
 			or preview_digest <= 0:
 		return "missing_spellbook_preview"
 	var sample_ticks: Array[int] = _normalized_int_array(metadata.get("preview_sample_ticks", []))
+	var sample_emit_counts: Array[int] = _normalized_int_array(metadata.get("preview_sample_emit_counts", []))
 	var sample_count := int(metadata.get("preview_sample_count", -1))
 	if sample_ticks.is_empty() or sample_count <= 0:
 		return "missing_preview_sample_window"
+	if sample_emit_counts.is_empty():
+		return "missing_preview_sample_emit_counts"
 	if sample_count != sample_ticks.size():
 		return "preview_sample_count_mismatch"
+	if sample_count != sample_emit_counts.size():
+		return "preview_sample_emit_count_mismatch"
 	var max_preview_emit := int(metadata.get("max_preview_emit", -1))
 	var preview_cap := int(metadata.get("preview_bullet_cap_per_tick", -1))
 	if max_preview_emit < 0 or preview_cap <= 0:
@@ -322,6 +335,8 @@ func _metadata_with_spellbook_preview_defaults(snapshot: Dictionary, metadata: D
 		result["preview_signature_digest"] = int(preview.get("signature_digest", 0))
 	if not result.has("preview_sample_ticks") or _normalized_int_array(result.get("preview_sample_ticks", [])).is_empty():
 		result["preview_sample_ticks"] = (preview.get("sample_ticks", []) as Array).duplicate()
+	if not result.has("preview_sample_emit_counts") or _normalized_int_array(result.get("preview_sample_emit_counts", [])).is_empty():
+		result["preview_sample_emit_counts"] = (preview.get("sample_emit_counts", []) as Array).duplicate()
 	if int(result.get("preview_sample_count", 0)) <= 0:
 		result["preview_sample_count"] = (preview.get("samples", []) as Array).size()
 	if not result.has("max_preview_emit") or int(result.get("max_preview_emit", -1)) < 0:
