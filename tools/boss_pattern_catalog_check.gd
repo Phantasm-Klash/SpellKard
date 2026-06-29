@@ -82,29 +82,26 @@ func _initialize() -> void:
 
 func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 	var failures: Array[String] = []
-	var preview: Dictionary = spellbook_model.deterministic_phase_preview("original_boss_archive", "spell_laser_field", 20260625)
-	var valid_entry := {
-		"replay_id": "fixture_spellbook_preview",
-		"path": "user://replays/fixture_spellbook_preview.json",
-		"ruleset_version": "ruleset-local-s0",
-		"final_tick": 180,
-		"mode": "boss_spellbook_practice",
-		"catalog_id": "boss_spellbook",
-		"spellbook_id": "original_boss_archive",
-		"phase_id": "spell_laser_field",
-		"preview_export_id": String(preview.get("export_id", "")),
-		"preview_signature_digest": int(preview.get("signature_digest", 0)),
-		"metadata_valid": true,
-		"metadata_status": "valid",
-		"server_authoritative": false,
-	}
-	var invalid_entry := valid_entry.duplicate(true)
+	var store: RefCounted = ReplayStore.new()
+	var valid_entries: Array[Dictionary] = []
+	for spellbook_id in spellbook_model.spellbook_ids():
+		for phase_row in spellbook_model.timeline_rows(String(spellbook_id)):
+			var phase_id := String((phase_row as Dictionary).get("phase_id", ""))
+			var preview: Dictionary = spellbook_model.deterministic_phase_preview(String(spellbook_id), phase_id, 20260625)
+			var entry := _replay_entry_for_preview(store, String(spellbook_id), phase_id, preview)
+			valid_entries.append(entry)
+			if int(entry.get("preview_budget_headroom", -1)) != int(preview.get("budget_headroom", -2)):
+				failures.append("entry_headroom_mismatch:%s" % phase_id)
+			if String(entry.get("performance_budget_status", "")) != String(preview.get("performance_budget_status", "")):
+				failures.append("entry_budget_status_mismatch:%s" % phase_id)
+	var invalid_entry := valid_entries[0].duplicate(true)
 	invalid_entry["replay_id"] = "fixture_missing_spellbook_preview"
 	invalid_entry["preview_export_id"] = ""
 	invalid_entry["preview_signature_digest"] = 0
-	var store: RefCounted = ReplayStore.new()
-	var valid_entries: Array[Dictionary] = [valid_entry]
-	var invalid_entries: Array[Dictionary] = [invalid_entry]
+	var authoritative_entry := valid_entries[0].duplicate(true)
+	authoritative_entry["replay_id"] = "fixture_authoritative_spellbook_preview"
+	authoritative_entry["server_authoritative"] = true
+	var invalid_entries: Array[Dictionary] = [invalid_entry, authoritative_entry]
 	var valid_result: Dictionary = store.validate_index_metadata(valid_entries)
 	if not bool(valid_result.get("ok", false)):
 		failures.append("valid_replay_rejected:%s" % [valid_result.get("failures", [])])
@@ -113,20 +110,50 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 		failures.append("invalid_replay_accepted")
 	var replay_list: RefCounted = ReplayListModel.new()
 	replay_list.replay_store = store
-	var list_entries: Array[Dictionary] = [valid_entry, invalid_entry]
+	var list_entries: Array[Dictionary] = valid_entries.duplicate(true)
+	list_entries.append(invalid_entry)
 	replay_list.entries = list_entries
-	var rows: Array[Dictionary] = replay_list.row_models(2)
-	if rows.size() != 2:
+	var rows: Array[Dictionary] = replay_list.row_models(list_entries.size())
+	if rows.size() != list_entries.size():
 		failures.append("replay_rows_missing:%d" % rows.size())
 	else:
-		var valid_row: Dictionary = rows[0]
-		var invalid_row: Dictionary = rows[1]
-		if not bool(valid_row.get("metadata_valid", false)) or String(valid_row.get("metadata_status", "")) != "valid":
-			failures.append("valid_row_metadata:%s" % [valid_row])
+		for index in range(valid_entries.size()):
+			var valid_row: Dictionary = rows[index]
+			if not bool(valid_row.get("metadata_valid", false)) or String(valid_row.get("metadata_status", "")) != "valid":
+				failures.append("valid_row_metadata:%s" % [valid_row])
+			if int(valid_row.get("preview_budget_headroom", -1)) < 0:
+				failures.append("valid_row_headroom:%s" % [valid_row])
+			if String(valid_row.get("performance_budget_status", "")) != "within_budget":
+				failures.append("valid_row_budget_status:%s" % [valid_row])
+		var invalid_row: Dictionary = rows[valid_entries.size()]
 		if bool(invalid_row.get("metadata_valid", true)) or String(invalid_row.get("metadata_status", "")) != "missing_spellbook_preview":
 			failures.append("invalid_row_metadata:%s" % [invalid_row])
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,
-		"checked": 2,
+		"checked": valid_entries.size() + invalid_entries.size(),
 	}
+
+func _replay_entry_for_preview(store: RefCounted, spellbook_id: String, phase_id: String, preview: Dictionary) -> Dictionary:
+	var snapshot := {
+		"ruleset_version": "ruleset-local-s0",
+		"game_version": "prototype",
+		"match_seed": int(preview.get("seed", 0)),
+		"final_result_hash": int(preview.get("signature_digest", 0)),
+		"input_stream": [],
+		"metadata": {
+			"saved_at": "2026-06-29T04:18:00Z",
+			"final_tick": 180,
+			"mode": "boss_spellbook_practice",
+			"catalog_id": "boss_spellbook",
+			"spellbook_id": spellbook_id,
+			"phase_id": phase_id,
+			"preview_export_id": String(preview.get("export_id", "")),
+			"preview_signature_digest": int(preview.get("signature_digest", 0)),
+			"preview_budget_headroom": int(preview.get("budget_headroom", 0)),
+			"performance_budget_status": String(preview.get("performance_budget_status", "")),
+			"server_authoritative": false,
+			"result": "practice",
+		},
+	}
+	return store._build_index_entry(snapshot, "user://replays/fixture_%s_%s.json" % [spellbook_id, phase_id])

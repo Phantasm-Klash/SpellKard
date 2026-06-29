@@ -192,6 +192,8 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"phase_id": str(metadata.get("phase_id", "")),
 		"preview_export_id": str(metadata.get("preview_export_id", "")),
 		"preview_signature_digest": preview_digest,
+		"preview_budget_headroom": int(metadata.get("preview_budget_headroom", 0)),
+		"performance_budget_status": str(metadata.get("performance_budget_status", "")),
 		"metadata_valid": _metadata_valid(metadata),
 		"metadata_status": _metadata_status(metadata),
 		"server_authoritative": bool(metadata.get("server_authoritative", false)),
