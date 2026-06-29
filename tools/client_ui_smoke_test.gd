@@ -448,6 +448,10 @@ func _assert_page_health(snapshot: Dictionary, label: String, expected_quick_max
 		return _fail("%s visible controls below minimum target size %s" % [label, String(snapshot.get("visible_control_small_targets", ""))])
 	if int(snapshot.get("visible_text_unclipped_count", 0)) != 0:
 		return _fail("%s visible button text is not clipped/ellipsized %s" % [label, String(snapshot.get("visible_text_unclipped", ""))])
+	if int(snapshot.get("visible_label_unwrapped_count", 0)) != 0:
+		return _fail("%s visible labels are not wrapped %s" % [label, String(snapshot.get("visible_label_unwrapped", ""))])
+	if int(snapshot.get("visible_label_out_of_panel_count", 0)) != 0:
+		return _fail("%s visible labels extend outside panel %s" % [label, String(snapshot.get("visible_label_out_of_panel", ""))])
 	if int(snapshot.get("visible_mouse_blocked_count", 0)) != 0:
 		return _fail("%s visible buttons are not mouse-operable %s" % [label, String(snapshot.get("visible_mouse_blocked", ""))])
 	if int(snapshot.get("page_state_region_count", 0)) <= 0 or String(snapshot.get("page_state_regions", "")).is_empty():

@@ -648,9 +648,12 @@ def check_ui_page_contracts() -> list[str]:
     main_text = (ROOT / "godot" / "scripts" / "main.gd").read_text(encoding="utf-8")
     for token in [
         "func _ui_visible_mouse_health_check()",
+        "func _ui_visible_label_text_fit_check()",
         "func _ui_focus_section_runtime_check(page_layout: Dictionary)",
         '"page_focus_sections_missing_visible"',
         '"visible_mouse_blocked_count"',
+        '"visible_label_unwrapped_count"',
+        '"visible_label_out_of_panel_count"',
     ]:
         if token not in main_text:
             errors.append(f"godot/scripts/main.gd: missing UI runtime interaction health token {token}")
@@ -658,6 +661,8 @@ def check_ui_page_contracts() -> list[str]:
     for token in [
         '"visible_mouse_blocked_count"',
         '"page_focus_section_missing_visible_count"',
+        '"visible_label_unwrapped_count"',
+        '"visible_label_out_of_panel_count"',
     ]:
         if token not in ui_smoke_text:
             errors.append(f"tools/client_ui_smoke_test.gd: missing UI interaction smoke token {token}")

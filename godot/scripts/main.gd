@@ -2869,6 +2869,7 @@ func _ui_overlay_snapshot() -> Dictionary:
 	var overlap_check := _ui_visible_control_overlap_check()
 	var focus_check := _ui_visible_focus_health_check()
 	var text_fit_check := _ui_visible_text_fit_check()
+	var label_fit_check := _ui_visible_label_text_fit_check()
 	var mouse_check := _ui_visible_mouse_health_check()
 	var focus_section_check := _ui_focus_section_runtime_check(page_layout)
 	var viewport_size := get_viewport_rect().size
@@ -3007,6 +3008,11 @@ func _ui_overlay_snapshot() -> Dictionary:
 		"visible_control_small_targets": String(text_fit_check.get("small_targets", "")),
 		"visible_text_unclipped_count": int(text_fit_check.get("unclipped_count", 0)),
 		"visible_text_unclipped": String(text_fit_check.get("unclipped", "")),
+		"visible_label_text_count": int(label_fit_check.get("label_count", 0)),
+		"visible_label_unwrapped_count": int(label_fit_check.get("unwrapped_count", 0)),
+		"visible_label_unwrapped": String(label_fit_check.get("unwrapped", "")),
+		"visible_label_out_of_panel_count": int(label_fit_check.get("out_of_panel_count", 0)),
+		"visible_label_out_of_panel": String(label_fit_check.get("out_of_panel", "")),
 		"visible_mouse_operable_count": int(mouse_check.get("operable_count", 0)),
 		"visible_mouse_blocked_count": int(mouse_check.get("blocked_count", 0)),
 		"visible_mouse_blocked": String(mouse_check.get("blocked", "")),
@@ -3087,6 +3093,31 @@ func _ui_visible_text_fit_check() -> Dictionary:
 		"small_targets": ",".join(small_targets),
 		"unclipped_count": unclipped.size(),
 		"unclipped": ",".join(unclipped),
+	}
+
+func _ui_visible_label_text_fit_check() -> Dictionary:
+	var labels := _visible_player_facing_labels()
+	var unwrapped: Array[String] = []
+	var out_of_panel: Array[String] = []
+	var panel_rect := Rect2(ui_panel.global_position, ui_panel.size) if ui_panel != null else Rect2()
+	for item in labels:
+		var label := item.get("label", null) as Label
+		if label == null:
+			continue
+		var label_id := String(item.get("id", ""))
+		var requires_wrap := bool(item.get("requires_wrap", true))
+		if requires_wrap and label.text.length() > 24 and label.autowrap_mode == TextServer.AUTOWRAP_OFF:
+			unwrapped.append(label_id)
+		if panel_rect.size.x > 1.0 and panel_rect.size.y > 1.0:
+			var label_rect := Rect2(label.global_position, label.size)
+			if label_rect.size.x > 1.0 and label_rect.size.y > 1.0 and not panel_rect.encloses(label_rect):
+				out_of_panel.append(label_id)
+	return {
+		"label_count": labels.size(),
+		"unwrapped_count": unwrapped.size(),
+		"unwrapped": ",".join(unwrapped),
+		"out_of_panel_count": out_of_panel.size(),
+		"out_of_panel": ",".join(out_of_panel),
 	}
 
 func _ui_visible_mouse_health_check() -> Dictionary:
@@ -3179,6 +3210,26 @@ func _append_focus_button_for_health(result: Array[Dictionary], control_id: Stri
 		"id": control_id,
 		"button": button,
 	})
+
+func _visible_player_facing_labels() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	_append_visible_label_for_health(result, "title", ui_title_label, false)
+	_append_visible_label_for_health(result, "nav_path", ui_nav_label)
+	_append_visible_label_for_health(result, "shell", ui_shell_label)
+	_append_visible_label_for_health(result, "page_summary", ui_page_summary_label)
+	_append_visible_label_for_health(result, "section_summary", ui_section_label)
+	_append_visible_label_for_health(result, "control_preview", ui_control_label)
+	_append_visible_label_for_health(result, "status", ui_status_label)
+	_append_visible_label_for_health(result, "detail", ui_detail_label)
+	_append_visible_label_for_health(result, "hint", ui_hint_label)
+	_append_visible_label_for_health(result, "home_portrait", ui_home_portrait_label)
+	_append_visible_label_for_health(result, "home_status", ui_home_status_label)
+	return result
+
+func _append_visible_label_for_health(result: Array[Dictionary], label_id: String, label: Label, require_wrap: bool = true) -> void:
+	if label == null or not label.is_visible_in_tree() or label.text.is_empty():
+		return
+	result.append({"id": label_id, "label": label, "requires_wrap": require_wrap})
 
 func _ui_string_array(source: Variant) -> Array[String]:
 	var values: Array[String] = []
@@ -4162,11 +4213,22 @@ func _ui_bound_or_new_grid(scene_id: String, binding_name: String, fallback_name
 func _ui_bound_or_new_label(scene_id: String, binding_name: String, fallback_name: String) -> Label:
 	var node := _ui_bound_node(scene_id, binding_name)
 	if node is Label:
-		return node as Label
+		var bound_label := node as Label
+		_configure_ui_label(bound_label, binding_name)
+		return bound_label
 	var label := Label.new()
 	label.name = fallback_name
+	_configure_ui_label(label, binding_name)
 	_attach_ui_fallback_node(binding_name, label)
 	return label
+
+func _configure_ui_label(label: Label, binding_name: String = "") -> void:
+	if label == null:
+		return
+	label.clip_text = true
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if binding_name != "TitleLabel":
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 func _ui_bound_container_or_parent(scene_id: String, binding_name: String, fallback_parent: Container) -> Container:
 	var node := _ui_bound_node(scene_id, binding_name)
