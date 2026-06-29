@@ -1,6 +1,8 @@
 ﻿class_name ReplayStore
 extends RefCounted
 
+const BossSpellbookModel := preload("res://scripts/boss_spellbook_model.gd")
+
 const REPLAY_DIR := "user://replays"
 const LATEST_REPLAY_PATH := "user://replays/latest_local_replay.json"
 const REPLAY_INDEX_PATH := "user://replays/index.json"
@@ -92,14 +94,22 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 				failures.append("missing_preview_digest:%s" % replay_id)
 			var sample_ticks: Array[int] = _normalized_int_array(entry.get("preview_sample_ticks", []))
 			var sample_count := int(entry.get("preview_sample_count", -1))
+			var max_preview_emit := int(entry.get("max_preview_emit", -1))
+			var preview_cap := int(entry.get("preview_bullet_cap_per_tick", -1))
 			if sample_ticks.is_empty():
 				failures.append("missing_preview_sample_ticks:%s" % replay_id)
 			if sample_count <= 0:
 				failures.append("missing_preview_sample_count:%s" % replay_id)
 			elif sample_count != sample_ticks.size():
 				failures.append("preview_sample_count_mismatch:%s" % replay_id)
+			if max_preview_emit < 0:
+				failures.append("missing_preview_max_emit:%s" % replay_id)
+			if preview_cap <= 0:
+				failures.append("missing_preview_bullet_cap:%s" % replay_id)
 			if int(entry.get("preview_budget_headroom", -1)) < 0:
 				failures.append("preview_budget_overrun:%s" % replay_id)
+			elif max_preview_emit >= 0 and preview_cap > 0 and int(entry.get("preview_budget_headroom", -1)) != preview_cap - max_preview_emit:
+				failures.append("preview_budget_contract_mismatch:%s" % replay_id)
 			if str(entry.get("performance_budget_status", "")) != "within_budget":
 				failures.append("preview_budget_status:%s" % replay_id)
 			if bool(entry.get("server_authoritative", false)):
@@ -125,6 +135,10 @@ func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary)
 		failures.append("preview_export_mismatch:%s" % str(entry.get("replay_id", "")))
 	if int(entry.get("preview_signature_digest", 0)) != int(preview.get("signature_digest", 0)):
 		failures.append("preview_digest_mismatch:%s" % str(entry.get("replay_id", "")))
+	if int(entry.get("max_preview_emit", -1)) != int(preview.get("max_emit_per_tick", -2)):
+		failures.append("preview_max_emit_mismatch:%s" % str(entry.get("replay_id", "")))
+	if int(entry.get("preview_bullet_cap_per_tick", -1)) != int(preview.get("bullet_cap_per_tick", -2)):
+		failures.append("preview_cap_mismatch:%s" % str(entry.get("replay_id", "")))
 	if int(entry.get("preview_budget_headroom", -1)) != int(preview.get("budget_headroom", -2)):
 		failures.append("preview_headroom_mismatch:%s" % str(entry.get("replay_id", "")))
 	if String(entry.get("performance_budget_status", "")) != String(preview.get("performance_budget_status", "")):
@@ -212,7 +226,8 @@ func _update_index(snapshot: Dictionary, path: String) -> void:
 
 func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 	var input_stream: Array = snapshot.get("input_stream", [])
-	var metadata: Dictionary = snapshot.get("metadata", {})
+	var raw_metadata: Dictionary = snapshot.get("metadata", {})
+	var metadata: Dictionary = _metadata_with_spellbook_preview_defaults(snapshot, raw_metadata)
 	var final_hash := int(snapshot.get("final_result_hash", 0))
 	var saved_at := str(metadata.get("saved_at", Time.get_datetime_string_from_system(true, true)))
 	var preview_digest := int(metadata.get("preview_signature_digest", snapshot.get("preview_signature_digest", 0)))
@@ -237,6 +252,8 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"preview_signature_digest": preview_digest,
 		"preview_sample_ticks": _normalized_int_array(metadata.get("preview_sample_ticks", [])),
 		"preview_sample_count": int(metadata.get("preview_sample_count", _normalized_int_array(metadata.get("preview_sample_ticks", [])).size())),
+		"max_preview_emit": int(metadata.get("max_preview_emit", -1)),
+		"preview_bullet_cap_per_tick": int(metadata.get("preview_bullet_cap_per_tick", -1)),
 		"preview_budget_headroom": int(metadata.get("preview_budget_headroom", 0)),
 		"performance_budget_status": str(metadata.get("performance_budget_status", "")),
 		"metadata_valid": _metadata_valid(metadata),
@@ -269,13 +286,53 @@ func _metadata_status(metadata: Dictionary) -> String:
 		return "missing_preview_sample_window"
 	if sample_count != sample_ticks.size():
 		return "preview_sample_count_mismatch"
+	var max_preview_emit := int(metadata.get("max_preview_emit", -1))
+	var preview_cap := int(metadata.get("preview_bullet_cap_per_tick", -1))
+	if max_preview_emit < 0 or preview_cap <= 0:
+		return "missing_preview_budget_window"
 	if int(metadata.get("preview_budget_headroom", -1)) < 0:
 		return "preview_budget_overrun"
+	if int(metadata.get("preview_budget_headroom", -1)) != preview_cap - max_preview_emit:
+		return "preview_budget_contract_mismatch"
 	if str(metadata.get("performance_budget_status", "")) != "within_budget":
 		return "preview_budget_status"
 	if bool(metadata.get("server_authoritative", false)):
 		return "local_preview_marked_authoritative"
 	return "valid"
+
+func _metadata_with_spellbook_preview_defaults(snapshot: Dictionary, metadata: Dictionary) -> Dictionary:
+	var result := metadata.duplicate(true)
+	if str(result.get("mode", "")) != "boss_spellbook_practice" and str(result.get("catalog_id", "")) != "boss_spellbook":
+		return result
+	var practice_config: Dictionary = snapshot.get("practice_config", {})
+	var spellbook_id := str(result.get("spellbook_id", practice_config.get("spellbook_id", "")))
+	var phase_id := str(result.get("phase_id", practice_config.get("phase_id", "")))
+	if spellbook_id.is_empty() or phase_id.is_empty():
+		return result
+	result["spellbook_id"] = spellbook_id
+	result["phase_id"] = phase_id
+	var preview := BossSpellbookModel.new().deterministic_phase_preview(spellbook_id, phase_id, int(snapshot.get("match_seed", 0)))
+	if preview.is_empty():
+		return result
+	if str(result.get("preview_export_id", "")).is_empty():
+		result["preview_export_id"] = str(preview.get("export_id", ""))
+	if str(result.get("preview_signature", "")).is_empty():
+		result["preview_signature"] = str(preview.get("signature", ""))
+	if int(result.get("preview_signature_digest", 0)) <= 0:
+		result["preview_signature_digest"] = int(preview.get("signature_digest", 0))
+	if not result.has("preview_sample_ticks") or _normalized_int_array(result.get("preview_sample_ticks", [])).is_empty():
+		result["preview_sample_ticks"] = (preview.get("sample_ticks", []) as Array).duplicate()
+	if int(result.get("preview_sample_count", 0)) <= 0:
+		result["preview_sample_count"] = (preview.get("samples", []) as Array).size()
+	if not result.has("max_preview_emit") or int(result.get("max_preview_emit", -1)) < 0:
+		result["max_preview_emit"] = int(preview.get("max_emit_per_tick", -1))
+	if not result.has("preview_bullet_cap_per_tick") or int(result.get("preview_bullet_cap_per_tick", -1)) <= 0:
+		result["preview_bullet_cap_per_tick"] = int(preview.get("bullet_cap_per_tick", -1))
+	if not result.has("preview_budget_headroom"):
+		result["preview_budget_headroom"] = int(preview.get("budget_headroom", 0))
+	if str(result.get("performance_budget_status", "")).is_empty():
+		result["performance_budget_status"] = str(preview.get("performance_budget_status", ""))
+	return result
 
 func _preview_validation_status(failures: Array[String]) -> String:
 	if failures.is_empty():

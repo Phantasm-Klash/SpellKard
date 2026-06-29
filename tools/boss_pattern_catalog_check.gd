@@ -149,6 +149,12 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 				failures.append("entry_headroom_mismatch:%s" % phase_id)
 			if String(entry.get("performance_budget_status", "")) != String(preview.get("performance_budget_status", "")):
 				failures.append("entry_budget_status_mismatch:%s" % phase_id)
+			if int(entry.get("max_preview_emit", -1)) != int(preview.get("max_emit_per_tick", -2)):
+				failures.append("entry_max_emit_mismatch:%s" % phase_id)
+			if int(entry.get("preview_bullet_cap_per_tick", -1)) != int(preview.get("bullet_cap_per_tick", -2)):
+				failures.append("entry_cap_mismatch:%s" % phase_id)
+			if int(entry.get("preview_budget_headroom", -1)) != int(entry.get("preview_bullet_cap_per_tick", 0)) - int(entry.get("max_preview_emit", 0)):
+				failures.append("entry_budget_contract_mismatch:%s" % phase_id)
 			if int(entry.get("preview_sample_count", -1)) != (preview.get("samples", []) as Array).size():
 				failures.append("entry_sample_count_mismatch:%s" % phase_id)
 			if not _arrays_equal_ints(entry.get("preview_sample_ticks", []), preview.get("sample_ticks", [])):
@@ -178,7 +184,19 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 	missing_sample_entry["replay_id"] = "fixture_missing_samples_spellbook_preview"
 	missing_sample_entry["preview_sample_ticks"] = []
 	missing_sample_entry["preview_sample_count"] = 0
-	var invalid_entries: Array[Dictionary] = [invalid_entry, authoritative_entry, over_budget_entry, bad_sample_count_entry, missing_sample_entry]
+	var missing_budget_entry := valid_entries[0].duplicate(true)
+	missing_budget_entry["replay_id"] = "fixture_missing_budget_window_spellbook_preview"
+	missing_budget_entry["max_preview_emit"] = -1
+	var stale_max_emit_entry := valid_entries[0].duplicate(true)
+	stale_max_emit_entry["replay_id"] = "fixture_stale_max_emit_spellbook_preview"
+	stale_max_emit_entry["max_preview_emit"] = int(stale_max_emit_entry.get("max_preview_emit", 0)) + 1
+	var stale_cap_entry := valid_entries[0].duplicate(true)
+	stale_cap_entry["replay_id"] = "fixture_stale_cap_spellbook_preview"
+	stale_cap_entry["preview_bullet_cap_per_tick"] = int(stale_cap_entry.get("preview_bullet_cap_per_tick", 0)) + 1
+	var inconsistent_budget_entry := valid_entries[0].duplicate(true)
+	inconsistent_budget_entry["replay_id"] = "fixture_inconsistent_budget_spellbook_preview"
+	inconsistent_budget_entry["preview_budget_headroom"] = int(inconsistent_budget_entry.get("preview_budget_headroom", 0)) + 1
+	var invalid_entries: Array[Dictionary] = [invalid_entry, authoritative_entry, over_budget_entry, bad_sample_count_entry, missing_sample_entry, missing_budget_entry, inconsistent_budget_entry]
 	var valid_result: Dictionary = store.validate_index_metadata(valid_entries)
 	if not bool(valid_result.get("ok", false)):
 		failures.append("valid_replay_rejected:%s" % [valid_result.get("failures", [])])
@@ -198,10 +216,22 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 		failures.append("stale_sample_preview_accepted")
 	if String(store.validate_spellbook_preview_metadata(stale_sample_entry, first_preview).get("status", "")) != "preview_sample_ticks_mismatch":
 		failures.append("stale_sample_status_missing:%s" % [store.validate_spellbook_preview_metadata(stale_sample_entry, first_preview)])
+	if bool(store.validate_spellbook_preview_metadata(stale_max_emit_entry, first_preview).get("ok", false)):
+		failures.append("stale_max_emit_preview_accepted")
+	if String(store.validate_spellbook_preview_metadata(stale_max_emit_entry, first_preview).get("status", "")) != "preview_budget_contract_mismatch":
+		failures.append("stale_max_emit_status_missing:%s" % [store.validate_spellbook_preview_metadata(stale_max_emit_entry, first_preview)])
+	if bool(store.validate_spellbook_preview_metadata(stale_cap_entry, first_preview).get("ok", false)):
+		failures.append("stale_cap_preview_accepted")
+	if String(store.validate_spellbook_preview_metadata(stale_cap_entry, first_preview).get("status", "")) != "preview_budget_contract_mismatch":
+		failures.append("stale_cap_status_missing:%s" % [store.validate_spellbook_preview_metadata(stale_cap_entry, first_preview)])
 	if bool(store.validate_index_metadata(_single_entry_array(bad_sample_count_entry)).get("ok", false)):
 		failures.append("bad_sample_count_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(missing_sample_entry)).get("ok", false)):
 		failures.append("missing_sample_window_replay_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(missing_budget_entry)).get("ok", false)):
+		failures.append("missing_budget_window_replay_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(inconsistent_budget_entry)).get("ok", false)):
+		failures.append("inconsistent_budget_replay_accepted")
 	var replay_list: RefCounted = ReplayListModel.new()
 	replay_list.replay_store = store
 	var list_entries: Array[Dictionary] = valid_entries.duplicate(true)
@@ -219,6 +249,10 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 				failures.append("valid_row_headroom:%s" % [valid_row])
 			if String(valid_row.get("performance_budget_status", "")) != "within_budget":
 				failures.append("valid_row_budget_status:%s" % [valid_row])
+			if int(valid_row.get("max_preview_emit", -1)) < 0 or int(valid_row.get("preview_bullet_cap_per_tick", -1)) <= 0:
+				failures.append("valid_row_budget_window:%s" % [valid_row])
+			if int(valid_row.get("preview_budget_headroom", -1)) != int(valid_row.get("preview_bullet_cap_per_tick", 0)) - int(valid_row.get("max_preview_emit", 0)):
+				failures.append("valid_row_budget_contract:%s" % [valid_row])
 			if int(valid_row.get("preview_sample_count", -1)) <= 0:
 				failures.append("valid_row_sample_count:%s" % [valid_row])
 		var invalid_row: Dictionary = rows[valid_entries.size()]
@@ -236,6 +270,12 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 		var missing_sample_row: Dictionary = replay_list._row_from_entry(missing_sample_entry, rows.size() + 3)
 		if bool(missing_sample_row.get("metadata_valid", true)) or String(missing_sample_row.get("metadata_status", "")) != "missing_preview_sample_window":
 			failures.append("missing_sample_row_metadata:%s" % [missing_sample_row])
+		var missing_budget_row: Dictionary = replay_list._row_from_entry(missing_budget_entry, rows.size() + 4)
+		if bool(missing_budget_row.get("metadata_valid", true)) or String(missing_budget_row.get("metadata_status", "")) != "missing_preview_budget_window":
+			failures.append("missing_budget_row_metadata:%s" % [missing_budget_row])
+		var inconsistent_budget_row: Dictionary = replay_list._row_from_entry(inconsistent_budget_entry, rows.size() + 5)
+		if bool(inconsistent_budget_row.get("metadata_valid", true)) or String(inconsistent_budget_row.get("metadata_status", "")) != "preview_budget_contract_mismatch":
+			failures.append("inconsistent_budget_row_metadata:%s" % [inconsistent_budget_row])
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,
@@ -260,6 +300,8 @@ func _replay_entry_for_preview(store: RefCounted, spellbook_id: String, phase_id
 			"preview_signature_digest": int(preview.get("signature_digest", 0)),
 			"preview_sample_ticks": (preview.get("sample_ticks", []) as Array).duplicate(),
 			"preview_sample_count": (preview.get("samples", []) as Array).size(),
+			"max_preview_emit": int(preview.get("max_emit_per_tick", -1)),
+			"preview_bullet_cap_per_tick": int(preview.get("bullet_cap_per_tick", -1)),
 			"preview_budget_headroom": int(preview.get("budget_headroom", 0)),
 			"performance_budget_status": String(preview.get("performance_budget_status", "")),
 			"server_authoritative": false,

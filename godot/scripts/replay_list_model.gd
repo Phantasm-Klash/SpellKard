@@ -133,6 +133,8 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"preview_signature_digest": int(entry.get("preview_signature_digest", 0)),
 		"preview_sample_ticks": (entry.get("preview_sample_ticks", []) as Array).duplicate(),
 		"preview_sample_count": int(entry.get("preview_sample_count", 0)),
+		"max_preview_emit": int(entry.get("max_preview_emit", -1)),
+		"preview_bullet_cap_per_tick": int(entry.get("preview_bullet_cap_per_tick", -1)),
 		"preview_budget_headroom": int(entry.get("preview_budget_headroom", 0)),
 		"performance_budget_status": str(entry.get("performance_budget_status", "")),
 		"metadata_valid": metadata_valid,
@@ -167,8 +169,14 @@ func _entry_metadata_status(entry: Dictionary, metadata_valid: bool) -> String:
 			return "missing_preview_sample_window"
 		if sample_count != sample_ticks.size():
 			return "preview_sample_count_mismatch"
+		var max_preview_emit := int(entry.get("max_preview_emit", -1))
+		var preview_cap := int(entry.get("preview_bullet_cap_per_tick", -1))
+		if max_preview_emit < 0 or preview_cap <= 0:
+			return "missing_preview_budget_window"
 		if int(entry.get("preview_budget_headroom", -1)) < 0:
 			return "preview_budget_overrun"
+		if int(entry.get("preview_budget_headroom", -1)) != preview_cap - max_preview_emit:
+			return "preview_budget_contract_mismatch"
 		if str(entry.get("performance_budget_status", "")) != "within_budget":
 			return "preview_budget_status"
 		if bool(entry.get("server_authoritative", false)):
