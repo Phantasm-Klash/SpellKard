@@ -129,9 +129,11 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"catalog_id": str(entry.get("catalog_id", "")),
 		"spellbook_id": str(entry.get("spellbook_id", "")),
 		"phase_id": str(entry.get("phase_id", "")),
+		"preview_export_schema_version": int(entry.get("preview_export_schema_version", 0)),
 		"preview_export_id": str(entry.get("preview_export_id", "")),
 		"preview_signature_digest": int(entry.get("preview_signature_digest", 0)),
 		"preview_sample_ticks": (entry.get("preview_sample_ticks", []) as Array).duplicate(),
+		"preview_sample_signature_digests": (entry.get("preview_sample_signature_digests", []) as Array).duplicate(),
 		"preview_sample_count": int(entry.get("preview_sample_count", 0)),
 		"preview_budget_headroom": int(entry.get("preview_budget_headroom", 0)),
 		"performance_budget_status": str(entry.get("performance_budget_status", "")),
@@ -153,6 +155,8 @@ func _entry_metadata_valid(entry: Dictionary) -> bool:
 func _entry_metadata_status(entry: Dictionary, metadata_valid: bool) -> String:
 	if metadata_valid:
 		return "valid"
+	if replay_store != null and replay_store.has_method("metadata_status_for_entry"):
+		return str(replay_store.metadata_status_for_entry(entry))
 	if str(entry.get("catalog_id", "")) == "boss_spellbook" or str(entry.get("mode", "")) == "boss_spellbook_practice":
 		return "missing_spellbook_preview"
 	return "invalid"
