@@ -11,10 +11,10 @@ const PREVIEW_SAMPLE_TICKS: Array[int] = [0, 28, 56, 84, 112, 140]
 const PREVIEW_DIGEST_MODULUS := 1000000007
 
 const GOLDEN_PREVIEW_FIXTURES: Dictionary = {
-	"original_boss_archive:nonspell_radial_entry:20260625": {"signature_digest": 905452029, "sample_count": 6, "max_emit_per_tick": 42, "bullet_cap_per_tick": 192, "budget_headroom": 150},
-	"original_boss_archive:spell_laser_field:20260625": {"signature_digest": 187927263, "sample_count": 6, "max_emit_per_tick": 20, "bullet_cap_per_tick": 192, "budget_headroom": 172},
-	"original_boss_archive:spell_summoner_split:20260625": {"signature_digest": 471609142, "sample_count": 6, "max_emit_per_tick": 12, "bullet_cap_per_tick": 192, "budget_headroom": 180},
-	"original_boss_archive:last_spell_morph_bounce:20260625": {"signature_digest": 979716623, "sample_count": 6, "max_emit_per_tick": 30, "bullet_cap_per_tick": 192, "budget_headroom": 162},
+	"original_boss_archive:nonspell_radial_entry:20260625": {"signature_digest": 905452029, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_count": 6, "max_emit_per_tick": 42, "bullet_cap_per_tick": 192, "budget_headroom": 150, "performance_budget_status": "within_budget"},
+	"original_boss_archive:spell_laser_field:20260625": {"signature_digest": 187927263, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_count": 6, "max_emit_per_tick": 20, "bullet_cap_per_tick": 192, "budget_headroom": 172, "performance_budget_status": "within_budget"},
+	"original_boss_archive:spell_summoner_split:20260625": {"signature_digest": 471609142, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_count": 6, "max_emit_per_tick": 12, "bullet_cap_per_tick": 192, "budget_headroom": 180, "performance_budget_status": "within_budget"},
+	"original_boss_archive:last_spell_morph_bounce:20260625": {"signature_digest": 979716623, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_count": 6, "max_emit_per_tick": 30, "bullet_cap_per_tick": 192, "budget_headroom": 162, "performance_budget_status": "within_budget"},
 }
 
 var spellbooks: Array[Dictionary] = []
@@ -436,6 +436,8 @@ func _validate_golden_fixture(fixture_id: String, phase_id: String, preview: Dic
 		failures.append("golden_preview_digest:%s:%d" % [phase_id, int(preview.get("signature_digest", 0))])
 	if (preview.get("samples", []) as Array).size() != int(fixture.get("sample_count", 0)):
 		failures.append("golden_preview_samples:%s" % phase_id)
+	if not _arrays_equal_ints(preview.get("sample_ticks", []), fixture.get("sample_ticks", [])):
+		failures.append("golden_preview_sample_ticks:%s:%s" % [phase_id, fixture_id])
 	if int(preview.get("max_emit_per_tick", 0)) != int(fixture.get("max_emit_per_tick", 0)):
 		failures.append("golden_preview_max_emit:%s:%d" % [phase_id, int(preview.get("max_emit_per_tick", 0))])
 	if int(preview.get("bullet_cap_per_tick", 0)) != int(fixture.get("bullet_cap_per_tick", 0)):
@@ -444,9 +446,25 @@ func _validate_golden_fixture(fixture_id: String, phase_id: String, preview: Dic
 		failures.append("golden_preview_headroom:%s:%d" % [phase_id, int(preview.get("budget_headroom", 0))])
 	if int(fixture.get("sample_count", 0)) != PREVIEW_SAMPLE_TICKS.size():
 		failures.append("golden_preview_sample_count_contract:%s:%s" % [phase_id, fixture_id])
+	if not _arrays_equal_ints(fixture.get("sample_ticks", []), PREVIEW_SAMPLE_TICKS):
+		failures.append("golden_preview_sample_ticks_contract:%s:%s" % [phase_id, fixture_id])
 	if int(fixture.get("budget_headroom", -1)) < 0:
 		failures.append("golden_preview_over_budget:%s:%d" % [phase_id, int(fixture.get("budget_headroom", -1))])
+	if String(fixture.get("performance_budget_status", "")) != String(preview.get("performance_budget_status", "")):
+		failures.append("golden_preview_budget_status:%s:%s" % [phase_id, String(preview.get("performance_budget_status", ""))])
 	return failures
+
+func _arrays_equal_ints(left: Variant, right: Variant) -> bool:
+	if typeof(left) != TYPE_ARRAY or typeof(right) != TYPE_ARRAY:
+		return false
+	var left_array: Array = left
+	var right_array: Array = right
+	if left_array.size() != right_array.size():
+		return false
+	for index in range(left_array.size()):
+		if int(left_array[index]) != int(right_array[index]):
+			return false
+	return true
 
 func _rebuild_index() -> void:
 	spellbook_by_id.clear()

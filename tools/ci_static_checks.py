@@ -143,6 +143,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "golden_preview_digest",
         "missing_golden_preview",
         "golden_preview_headroom",
+        "golden_preview_sample_ticks",
         "preview_bullet_cap",
         "budget_headroom",
         "performance_budget_status",
@@ -184,6 +185,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "replay_metadata",
         "max_spellbook_emit",
         "fixture_authoritative_spellbook_preview",
+        "fixture_over_budget_spellbook_preview",
         "preview_budget_headroom",
         "performance_budget_status",
     ]:

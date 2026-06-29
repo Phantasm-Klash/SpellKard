@@ -101,7 +101,11 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 	var authoritative_entry := valid_entries[0].duplicate(true)
 	authoritative_entry["replay_id"] = "fixture_authoritative_spellbook_preview"
 	authoritative_entry["server_authoritative"] = true
-	var invalid_entries: Array[Dictionary] = [invalid_entry, authoritative_entry]
+	var over_budget_entry := valid_entries[0].duplicate(true)
+	over_budget_entry["replay_id"] = "fixture_over_budget_spellbook_preview"
+	over_budget_entry["preview_budget_headroom"] = -1
+	over_budget_entry["performance_budget_status"] = "over_budget"
+	var invalid_entries: Array[Dictionary] = [invalid_entry, authoritative_entry, over_budget_entry]
 	var valid_result: Dictionary = store.validate_index_metadata(valid_entries)
 	if not bool(valid_result.get("ok", false)):
 		failures.append("valid_replay_rejected:%s" % [valid_result.get("failures", [])])
@@ -128,6 +132,9 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 		var invalid_row: Dictionary = rows[valid_entries.size()]
 		if bool(invalid_row.get("metadata_valid", true)) or String(invalid_row.get("metadata_status", "")) != "missing_spellbook_preview":
 			failures.append("invalid_row_metadata:%s" % [invalid_row])
+		var over_budget_row: Dictionary = replay_list._row_from_entry(over_budget_entry, rows.size())
+		if bool(over_budget_row.get("metadata_valid", true)) or String(over_budget_row.get("metadata_status", "")) != "missing_spellbook_preview":
+			failures.append("over_budget_row_metadata:%s" % [over_budget_row])
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,
