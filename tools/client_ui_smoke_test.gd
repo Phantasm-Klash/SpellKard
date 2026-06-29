@@ -440,6 +440,14 @@ func _assert_default_language_state() -> bool:
 func _assert_page_health(snapshot: Dictionary, label: String, expected_quick_max: int, expected_overview_max: int) -> bool:
 	if int(snapshot.get("visible_control_overlap_count", 0)) != 0:
 		return _fail("%s visible controls overlap %s" % [label, String(snapshot.get("visible_control_overlaps", ""))])
+	if bool(snapshot.get("visible", true)) and int(snapshot.get("visible_focusable_count", 0)) <= 0:
+		return _fail("%s has no visible focusable controls %s" % [label, snapshot])
+	if int(snapshot.get("visible_focus_without_neighbor_count", 0)) != 0:
+		return _fail("%s visible controls missing focus neighbors %s" % [label, String(snapshot.get("visible_focus_without_neighbor", ""))])
+	if int(snapshot.get("visible_control_small_target_count", 0)) != 0:
+		return _fail("%s visible controls below minimum target size %s" % [label, String(snapshot.get("visible_control_small_targets", ""))])
+	if int(snapshot.get("visible_text_unclipped_count", 0)) != 0:
+		return _fail("%s visible button text is not clipped/ellipsized %s" % [label, String(snapshot.get("visible_text_unclipped", ""))])
 	if int(snapshot.get("page_state_region_count", 0)) <= 0 or String(snapshot.get("page_state_regions", "")).is_empty():
 		return _fail("%s missing page state regions %s" % [label, snapshot])
 	if int(snapshot.get("page_layout_slot_count", 0)) <= 0 or String(snapshot.get("page_layout_slots", "")).is_empty():
@@ -470,6 +478,8 @@ func _assert_target_page_contract(snapshot: Dictionary, label: String, layout_to
 	var controller_text := String(snapshot.get("page_controller_actions", ""))
 	if not _contains_all(controller_text, ["ui_up", "ui_down", "ui_accept"]):
 		return _fail("%s controller actions missing base navigation %s" % [label, controller_text])
+	if label != "home" and not _contains_all(controller_text, ["ui_left_control", "ui_right_control"]):
+		return _fail("%s controller actions missing secondary navigation %s" % [label, controller_text])
 	if not String(snapshot.get("page_asset_usage", "")).contains(asset_usage_token):
 		return _fail("%s asset usage missing %s in %s" % [label, asset_usage_token, String(snapshot.get("page_asset_usage", ""))])
 	if int(snapshot.get("page_focus_action_count", 0)) <= 0 or String(snapshot.get("page_focus_action_ids", "")).is_empty():

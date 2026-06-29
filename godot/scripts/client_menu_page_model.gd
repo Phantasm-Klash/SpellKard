@@ -1,6 +1,22 @@
 class_name ClientMenuPageModel
 extends RefCounted
 
+const DEFAULT_CONTROLLER_ACTIONS: Array[String] = ["ui_up", "ui_down", "ui_accept", "ui_cancel_back"]
+const HUB_CONTROLLER_ACTIONS: Array[String] = ["ui_up", "ui_down", "ui_left_control", "ui_right_control", "ui_accept", "category_tab", "status_card", "focus_action"]
+const SETTINGS_CONTROLLER_ACTIONS: Array[String] = ["ui_up", "ui_down", "ui_left_control", "ui_right_control", "ui_accept", "category_tab", "status_card", "focus_action", "capture_binding", "reset_control"]
+const DEFAULT_LAYOUT_SLOTS := {
+	"home_lobby": ["portrait_art", "lobby_status", "primary_routes", "safe_margin"],
+	"hub": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "overview_cards", "row_window", "quick_routes"],
+	"community": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "notice_board", "social_tabs", "row_window", "quick_routes"],
+	"settings": ["navigation_rail", "category_tabs", "focus_panel", "setting_groups", "control_preview", "control_buttons", "row_window", "quick_routes"],
+	"matchmaking": ["category_tabs", "focus_panel", "mode_cards", "queue_state", "network_status", "row_window", "quick_routes"],
+	"network_room": ["category_tabs", "focus_panel", "room_actions", "business_transport", "battle_transport", "row_window", "quick_routes"],
+	"mode_select": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "mode_grid", "row_window", "quick_routes"],
+	"collection": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "collection_grid", "filter_tabs", "row_window", "quick_routes"],
+	"playfield": ["gameplay_hud", "compact_menu", "focus_panel", "quick_routes"],
+	"battle_room": ["gameplay_hud", "server_projection", "network_status"],
+}
+
 const PAGE_SPECS := {
 	"main_menu": {
 		"kind": "home_lobby",
@@ -593,9 +609,11 @@ func page_spec(screen_id: String, overrides: Dictionary = {}) -> Dictionary:
 	if _string_array(spec.get("status_region_ids", [])).is_empty():
 		spec["status_region_ids"] = _string_array(spec.get("state_regions", []))
 	if _string_array(spec.get("layout_slots", [])).is_empty():
-		spec["layout_slots"] = _string_array(spec.get("render_slots", []))
+		spec["layout_slots"] = _layout_slots_for_spec(spec)
 	if _string_array(spec.get("controller_actions", [])).is_empty():
-		spec["controller_actions"] = ["ui_up", "ui_down", "ui_accept", "ui_cancel_back"]
+		spec["controller_actions"] = _controller_actions_for_spec(spec)
+	if _string_array(spec.get("focus_action_ids", [])).is_empty():
+		spec["focus_action_ids"] = _default_focus_action_ids(spec)
 	if _string_array(spec.get("asset_usage", [])).is_empty() and not String(spec.get("visual_asset", "")).is_empty():
 		spec["asset_usage"] = ["visual:%s:%s" % [String(spec.get("visual_treatment", "")), String(spec.get("visual_asset", ""))]]
 	spec["player_task_groups"] = _player_task_groups(source_screen, spec)
@@ -713,6 +731,34 @@ func _base_spec(screen_id: String) -> Dictionary:
 
 func _scene_id_for_screen(screen_id: String) -> String:
 	return String(PAGE_SCENE_IDS.get(screen_id, "menu_hub"))
+
+func _layout_slots_for_spec(spec: Dictionary) -> Array[String]:
+	var kind := String(spec.get("kind", ""))
+	if DEFAULT_LAYOUT_SLOTS.has(kind):
+		return _string_array(DEFAULT_LAYOUT_SLOTS[kind])
+	var render_slots := _string_array(spec.get("render_slots", []))
+	if not render_slots.is_empty():
+		return render_slots
+	return ["navigation_rail", "focus_panel", "row_window"]
+
+func _controller_actions_for_spec(spec: Dictionary) -> Array[String]:
+	var kind := String(spec.get("kind", ""))
+	if kind == "settings":
+		return SETTINGS_CONTROLLER_ACTIONS.duplicate()
+	if kind in ["hub", "community", "collection", "matchmaking", "network_room", "mode_select"]:
+		return HUB_CONTROLLER_ACTIONS.duplicate()
+	return DEFAULT_CONTROLLER_ACTIONS.duplicate()
+
+func _default_focus_action_ids(spec: Dictionary) -> Array[String]:
+	var primary := _string_array(spec.get("primary_row_ids", []))
+	var focus_ids: Array[String] = []
+	for row_id in primary:
+		if row_id.ends_with("_summary"):
+			continue
+		focus_ids.append(row_id)
+		if focus_ids.size() >= 4:
+			break
+	return focus_ids
 
 func _player_task_groups(screen_id: String, spec: Dictionary) -> Array[String]:
 	match screen_id:

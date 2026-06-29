@@ -2867,6 +2867,8 @@ func _ui_overlay_snapshot() -> Dictionary:
 	var selected: Dictionary = _decorated_ui_selected_row()
 	var page_layout := _ui_page_layout()
 	var overlap_check := _ui_visible_control_overlap_check()
+	var focus_check := _ui_visible_focus_health_check()
+	var text_fit_check := _ui_visible_text_fit_check()
 	var viewport_size := get_viewport_rect().size
 	var panel_rect := Rect2(ui_panel.position, ui_panel.size) if ui_panel != null else Rect2()
 	var portrait_rect := Rect2(ui_home_portrait_panel.global_position, ui_home_portrait_panel.size) if ui_home_portrait_panel != null else Rect2()
@@ -2986,6 +2988,13 @@ func _ui_overlay_snapshot() -> Dictionary:
 		"visible_control_count": int(overlap_check.get("control_count", 0)),
 		"visible_control_overlap_count": int(overlap_check.get("overlap_count", 0)),
 		"visible_control_overlaps": String(overlap_check.get("overlaps", "")),
+		"visible_focusable_count": int(focus_check.get("focusable_count", 0)),
+		"visible_focus_without_neighbor_count": int(focus_check.get("missing_neighbor_count", 0)),
+		"visible_focus_without_neighbor": String(focus_check.get("missing_neighbors", "")),
+		"visible_control_small_target_count": int(text_fit_check.get("small_target_count", 0)),
+		"visible_control_small_targets": String(text_fit_check.get("small_targets", "")),
+		"visible_text_unclipped_count": int(text_fit_check.get("unclipped_count", 0)),
+		"visible_text_unclipped": String(text_fit_check.get("unclipped", "")),
 		"debug_status": ui_screen_model.screen_summary() if ui_screen_model != null else "",
 	}
 
@@ -3030,6 +3039,69 @@ func _append_visible_controls_for_overlap(result: Array[Dictionary], group: Stri
 			"id": "%s%d" % [group, i],
 			"rect": rect,
 		})
+
+func _ui_visible_focus_health_check() -> Dictionary:
+	var controls := _visible_focus_controls()
+	var missing: Array[String] = []
+	for item in controls:
+		var button := item.get("button", null) as Button
+		if button == null:
+			continue
+		if button.focus_neighbor_top == NodePath() or button.focus_neighbor_bottom == NodePath():
+			missing.append(String(item.get("id", "")))
+	return {
+		"focusable_count": controls.size(),
+		"missing_neighbor_count": missing.size(),
+		"missing_neighbors": ",".join(missing),
+	}
+
+func _ui_visible_text_fit_check() -> Dictionary:
+	var controls := _visible_focus_controls()
+	var small_targets: Array[String] = []
+	var unclipped: Array[String] = []
+	for item in controls:
+		var button := item.get("button", null) as Button
+		if button == null:
+			continue
+		if button.size.x < 44.0 or button.size.y < 22.0:
+			small_targets.append(String(item.get("id", "")))
+		if not button.text.is_empty() and (not button.clip_text or button.text_overrun_behavior != TextServer.OVERRUN_TRIM_ELLIPSIS):
+			unclipped.append(String(item.get("id", "")))
+	return {
+		"small_target_count": small_targets.size(),
+		"small_targets": ",".join(small_targets),
+		"unclipped_count": unclipped.size(),
+		"unclipped": ",".join(unclipped),
+	}
+
+func _visible_focus_controls() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	_append_visible_focus_controls(result, "home", ui_home_buttons)
+	_append_visible_focus_controls(result, "nav", ui_nav_row_labels)
+	_append_visible_focus_controls(result, "category", ui_category_buttons)
+	_append_visible_focus_controls(result, "status", ui_status_cards)
+	_append_focus_button_for_health(result, "focus", ui_focus_button)
+	_append_visible_focus_controls(result, "section", ui_section_buttons)
+	_append_visible_focus_controls(result, "overview", ui_overview_buttons)
+	_append_visible_focus_controls(result, "quick", ui_quick_buttons)
+	_append_visible_focus_controls(result, "control", ui_control_buttons)
+	_append_visible_focus_controls(result, "row", ui_row_labels)
+	return result
+
+func _append_visible_focus_controls(result: Array[Dictionary], group: String, controls: Array) -> void:
+	for i in range(controls.size()):
+		var value: Variant = controls[i]
+		if not value is Button:
+			continue
+		_append_focus_button_for_health(result, "%s%d" % [group, i], value as Button)
+
+func _append_focus_button_for_health(result: Array[Dictionary], control_id: String, button: Button) -> void:
+	if button == null or not button.is_visible_in_tree() or button.disabled or button.focus_mode == Control.FOCUS_NONE:
+		return
+	result.append({
+		"id": control_id,
+		"button": button,
+	})
 
 func _ui_string_array(source: Variant) -> Array[String]:
 	var values: Array[String] = []
@@ -4392,6 +4464,48 @@ func _ui_deactivate_button(button: Button, meta_keys: Array = []) -> void:
 		if button.has_meta(key):
 			button.remove_meta(key)
 
+func _update_ui_focus_neighbors() -> void:
+	var buttons := _visible_focus_button_chain()
+	for i in range(buttons.size()):
+		var button := buttons[i]
+		if button == null:
+			continue
+		var previous := buttons[wrapi(i - 1, 0, buttons.size())]
+		var next := buttons[wrapi(i + 1, 0, buttons.size())]
+		var previous_path := previous.get_path() if previous != null else NodePath()
+		var next_path := next.get_path() if next != null else NodePath()
+		button.focus_neighbor_top = previous_path
+		button.focus_neighbor_bottom = next_path
+		button.focus_neighbor_left = previous_path
+		button.focus_neighbor_right = next_path
+		button.focus_previous = previous_path
+		button.focus_next = next_path
+
+func _visible_focus_button_chain() -> Array[Button]:
+	var buttons: Array[Button] = []
+	_append_visible_buttons_to_focus_chain(buttons, ui_home_buttons)
+	_append_visible_buttons_to_focus_chain(buttons, ui_nav_row_labels)
+	_append_visible_buttons_to_focus_chain(buttons, ui_category_buttons)
+	_append_visible_buttons_to_focus_chain(buttons, ui_status_cards)
+	if ui_focus_button != null:
+		_append_button_to_focus_chain(buttons, ui_focus_button)
+	_append_visible_buttons_to_focus_chain(buttons, ui_section_buttons)
+	_append_visible_buttons_to_focus_chain(buttons, ui_overview_buttons)
+	_append_visible_buttons_to_focus_chain(buttons, ui_quick_buttons)
+	_append_visible_buttons_to_focus_chain(buttons, ui_control_buttons)
+	_append_visible_buttons_to_focus_chain(buttons, ui_row_labels)
+	return buttons
+
+func _append_visible_buttons_to_focus_chain(result: Array[Button], controls: Array) -> void:
+	for value in controls:
+		if value is Button:
+			_append_button_to_focus_chain(result, value as Button)
+
+func _append_button_to_focus_chain(result: Array[Button], button: Button) -> void:
+	if button == null or not button.is_visible_in_tree() or button.disabled or button.focus_mode == Control.FOCUS_NONE:
+		return
+	result.append(button)
+
 func _deactivate_home_ui_controls() -> void:
 	for button in ui_home_buttons:
 		_ui_deactivate_button(button, ["row_index", "row_id", "screen_id"])
@@ -4438,6 +4552,7 @@ func _update_ui_overlay() -> void:
 	_update_ui_home_surface(all_rows)
 	if home_visible:
 		_deactivate_secondary_ui_controls()
+		_update_ui_focus_neighbors()
 		return
 	_deactivate_home_ui_controls()
 	var nav_rows: Array[Dictionary] = ui_screen_model.navigation_rows()
@@ -4475,6 +4590,7 @@ func _update_ui_overlay() -> void:
 		_ui_mark_button_owner(label)
 		label.set_meta("row_index", absolute_index)
 		label.text = _format_ui_overlay_row(rows[i], prefix, all_rows, absolute_index)
+	_update_ui_focus_neighbors()
 
 func _layout_ui_overlay(page_layout: Dictionary = {}) -> void:
 	if ui_panel == null:

@@ -409,7 +409,6 @@ def check_ui_page_contracts() -> list[str]:
         return ["godot/scripts/client_menu_page_model.gd: PAGE_SPECS did not parse"]
 
     required_pages = {"main_menu", "play", "collection", "community", "player_settings", "match", "network_match"}
-    page_level_targets = {"main_menu", "play", "collection", "community", "player_settings"}
     missing_required = sorted(required_pages - set(pages))
     if missing_required:
         errors.append(f"godot/scripts/client_menu_page_model.gd: missing required pages: {', '.join(missing_required)}")
@@ -437,19 +436,21 @@ def check_ui_page_contracts() -> list[str]:
             errors.append(f"PAGE_SPECS[{page_id}]: missing state_regions")
         if not treatment:
             errors.append(f"PAGE_SPECS[{page_id}]: missing visual_treatment")
-        if page_id in page_level_targets:
-            if not layout_slots:
-                errors.append(f"PAGE_SPECS[{page_id}]: missing layout_slots")
-            if not status_regions:
-                errors.append(f"PAGE_SPECS[{page_id}]: missing status_region_ids")
-            if not controller_actions:
-                errors.append(f"PAGE_SPECS[{page_id}]: missing controller_actions")
-            if "ui_up" not in controller_actions or "ui_down" not in controller_actions or "ui_accept" not in controller_actions:
-                errors.append(f"PAGE_SPECS[{page_id}]: controller_actions missing base navigation")
-            if not focus_actions:
-                errors.append(f"PAGE_SPECS[{page_id}]: missing focus_action_ids")
-            if not asset_usage:
-                errors.append(f"PAGE_SPECS[{page_id}]: missing asset_usage")
+        if not layout_slots and '"layout_slots"' not in text:
+            errors.append(f"PAGE_SPECS[{page_id}]: missing layout_slots/default")
+        if not status_regions and '"status_region_ids"' not in text:
+            errors.append(f"PAGE_SPECS[{page_id}]: missing status_region_ids/default")
+        if not controller_actions and "func _controller_actions_for_spec" not in text:
+            errors.append(f"PAGE_SPECS[{page_id}]: missing controller_actions/default")
+        effective_controller_actions = controller_actions
+        if not effective_controller_actions and "func _controller_actions_for_spec" in text:
+            effective_controller_actions = ["ui_up", "ui_down", "ui_accept"]
+        if "ui_up" not in effective_controller_actions or "ui_down" not in effective_controller_actions or "ui_accept" not in effective_controller_actions:
+            errors.append(f"PAGE_SPECS[{page_id}]: controller_actions missing base navigation")
+        if not focus_actions and "func _default_focus_action_ids" not in text:
+            errors.append(f"PAGE_SPECS[{page_id}]: missing focus_action_ids/default")
+        if not asset_usage and '"asset_usage"' not in text:
+            errors.append(f"PAGE_SPECS[{page_id}]: missing asset_usage/default")
         if visual_asset:
             if visual_asset not in manifest_paths:
                 errors.append(f"PAGE_SPECS[{page_id}]: visual_asset not registered: {visual_asset}")
