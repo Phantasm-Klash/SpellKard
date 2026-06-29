@@ -406,6 +406,23 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		failures.append("stale_export_preview_accepted")
 	if bool(store.validate_spellbook_preview_metadata(stale_seed_entry, first_preview).get("ok", false)):
 		failures.append("stale_seed_preview_accepted")
+	var stale_source_preview := first_preview.duplicate(true)
+	stale_source_preview["preview_fixture_id"] = "original_boss_archive:wrong_phase:20260625"
+	stale_source_preview["export_id"] = "boss_spellbook_preview_original_boss_archive_wrong_phase_20260625"
+	var stale_source_result: Dictionary = store.validate_spellbook_preview_metadata(valid_entries[0], stale_source_preview)
+	if bool(stale_source_result.get("ok", false)):
+		failures.append("stale_source_preview_accepted")
+	var saw_source_fixture_failure := false
+	var saw_source_export_failure := false
+	for failure in stale_source_result.get("failures", []):
+		if String(failure).begins_with("preview_fixture_source_mismatch:"):
+			saw_source_fixture_failure = true
+		if String(failure).begins_with("preview_export_source_mismatch:"):
+			saw_source_export_failure = true
+	if not saw_source_fixture_failure:
+		failures.append("stale_source_fixture_failure_missing:%s" % [stale_source_result.get("failures", [])])
+	if not saw_source_export_failure:
+		failures.append("stale_source_export_failure_missing:%s" % [stale_source_result.get("failures", [])])
 	if bool(store.validate_spellbook_preview_metadata(stale_sample_entry, first_preview).get("ok", false)):
 		failures.append("stale_sample_preview_accepted")
 	if bool(store.validate_spellbook_preview_metadata(stale_sample_digest_entry, first_preview).get("ok", false)):

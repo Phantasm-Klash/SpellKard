@@ -183,6 +183,10 @@ func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary)
 	if not bool(base_result.get("ok", false)):
 		for failure in base_result.get("failures", []):
 			failures.append(String(failure))
+	if String(preview.get("preview_fixture_id", "")) != _expected_preview_fixture_id(preview):
+		failures.append("preview_fixture_source_mismatch:%s" % str(entry.get("replay_id", "")))
+	if String(preview.get("export_id", "")) != _expected_preview_export_id(preview):
+		failures.append("preview_export_source_mismatch:%s" % str(entry.get("replay_id", "")))
 	if String(entry.get("spellbook_id", "")) != String(preview.get("spellbook_id", "")):
 		failures.append("preview_spellbook_mismatch:%s" % str(entry.get("replay_id", "")))
 	if String(entry.get("phase_id", "")) != String(preview.get("phase_id", "")):
