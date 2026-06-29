@@ -135,6 +135,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "bullet_cap_per_tick",
         "seed_policy",
         "preview_export_id",
+        "preview_fixture_id",
         "export_schema_version",
         '"license"',
         '"provenance"',
@@ -176,6 +177,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         '"bullet_cap_per_tick"',
         '"preview_export_schema_version"',
         '"preview_authority_scope"',
+        '"preview_fixture_id"',
         '"performance_budget_status"',
         '"preview_export_id"',
         '"preview_sample_ticks"',
@@ -295,6 +297,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "validate_spellbook_preview_metadata",
         "preview_export_schema_version",
         "preview_authority_scope",
+        "preview_fixture_id",
         "preview_sample_ticks",
         "preview_sample_window_start_tick",
         "preview_sample_window_end_tick",
@@ -312,6 +315,8 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "bad_preview_sample_window",
         "local_preview_marked_authoritative",
         "preview_fixture_mismatch",
+        "pattern_row_digest_mismatch",
+        "pattern_row_fixture_mismatch",
     ]:
         if token not in check_text:
             errors.append(f"tools/boss_pattern_catalog_check.gd: missing catalog check token {token}")

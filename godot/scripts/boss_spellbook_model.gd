@@ -213,6 +213,7 @@ func deterministic_phase_preview(spellbook_id: String, phase_id: String, seed: i
 	return {
 		"export_schema_version": EXPORT_SCHEMA_VERSION,
 		"export_id": "boss_spellbook_preview_%s_%s_%d" % [spellbook_id, phase_id, seed],
+		"preview_fixture_id": _golden_fixture_id(spellbook_id, phase_id, seed),
 		"catalog_id": "boss_spellbook",
 		"spellbook_id": spellbook_id,
 		"phase_id": phase_id,

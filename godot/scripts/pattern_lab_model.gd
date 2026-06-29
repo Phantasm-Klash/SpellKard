@@ -71,8 +71,12 @@ func rows_for_spellbook_phase(catalog_id: String, phase_id: String, spellbook_id
 		row["name"] = String(pattern_dict.get("id", ""))
 		row["source_policy"] = "original_spell_phase_script"
 		row["preview_export_schema_version"] = int(preview.get("export_schema_version", 0))
+		row["preview_export_id"] = String(preview.get("export_id", ""))
+		row["preview_fixture_id"] = String(preview.get("preview_fixture_id", ""))
 		row["preview_authority_scope"] = String(preview.get("preview_authority_scope", ""))
 		row["deterministic_preview_signature"] = String(preview.get("signature", ""))
+		row["deterministic_preview_digest"] = int(preview.get("signature_digest", 0))
+		row["seed"] = int(preview.get("seed", 0))
 		row["preview_sample_ticks"] = (preview.get("sample_ticks", []) as Array).duplicate()
 		row["preview_sample_window_start_tick"] = int(preview.get("sample_window_start_tick", 0))
 		row["preview_sample_window_end_tick"] = int(preview.get("sample_window_end_tick", 0))
@@ -80,6 +84,10 @@ func rows_for_spellbook_phase(catalog_id: String, phase_id: String, spellbook_id
 		row["preview_sample_signature_digests"] = (preview.get("sample_signature_digests", []) as Array).duplicate()
 		row["preview_sample_emit_counts"] = (preview.get("sample_emit_counts", []) as Array).duplicate()
 		row["preview_sample_count"] = (preview.get("samples", []) as Array).size()
+		row["max_preview_emit"] = int(preview.get("max_emit_per_tick", 0))
+		row["bullet_cap_per_tick"] = int(preview.get("bullet_cap_per_tick", phase_script.get("bullet_cap_per_tick", 0)))
+		row["preview_budget_headroom"] = int(preview.get("budget_headroom", 0))
+		row["performance_budget_status"] = String(preview.get("performance_budget_status", ""))
 		row["enabled"] = true
 		pattern_rows.append(row)
 	var coverage_row := _spellbook_phase_coverage_row(catalog_id, spellbook_id, phase, phase_script, preview, pattern_rows)

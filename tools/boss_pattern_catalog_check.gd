@@ -55,7 +55,7 @@ func _initialize() -> void:
 		push_error("Boss spellbook preview exports failed: %s" % [preview_exports])
 		quit(1)
 		return
-	var replay_metadata: Dictionary = _validate_replay_metadata(spellbook_model)
+	var replay_metadata: Dictionary = _validate_replay_metadata(spellbook_model, pattern_lab_model)
 	if not bool(replay_metadata.get("ok", false)):
 		push_error("Boss spellbook replay metadata failed: %s" % [replay_metadata])
 		quit(1)
@@ -132,7 +132,7 @@ func _validate_phase_budget_regression(stage_model: RefCounted) -> Dictionary:
 		"failures": failures,
 	}
 
-func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
+func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: RefCounted) -> Dictionary:
 	var failures: Array[String] = []
 	var store: RefCounted = ReplayStore.new()
 	var valid_entries: Array[Dictionary] = []
@@ -157,6 +157,8 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 				failures.append("entry_schema_mismatch:%s" % phase_id)
 			if String(entry.get("preview_authority_scope", "")) != String(preview.get("preview_authority_scope", "")):
 				failures.append("entry_authority_scope_mismatch:%s" % phase_id)
+			if String(preview.get("preview_fixture_id", "")) != "%s:%s:%d" % [String(spellbook_id), phase_id, int(preview.get("seed", 0))]:
+				failures.append("preview_fixture_id_mismatch:%s" % phase_id)
 			if String(entry.get("preview_fixture_id", "")) != "%s:%s:%d" % [String(spellbook_id), phase_id, int(preview.get("seed", 0))]:
 				failures.append("entry_fixture_mismatch:%s" % phase_id)
 			if int(entry.get("preview_sample_count", -1)) != (preview.get("samples", []) as Array).size():
@@ -452,6 +454,27 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 		var stale_digest_row: Dictionary = replay_list._row_from_entry(stale_digest_entry, rows.size() + 15)
 		if bool(stale_digest_row.get("metadata_valid", true)) or String(stale_digest_row.get("metadata_status", "")) != "preview_signature_digest_mismatch":
 			failures.append("stale_digest_row_metadata:%s" % [stale_digest_row])
+	var pattern_lab_rows: Array[Dictionary] = pattern_lab_model.rows_for_spellbook("original_boss_archive", 20260625)
+	for lab_row in pattern_lab_rows:
+		var row_dict: Dictionary = lab_row as Dictionary
+		if String(row_dict.get("coverage_kind", "")) == "spellbook_phase":
+			continue
+		var lab_phase_id := String(row_dict.get("phase_id", ""))
+		var lab_preview: Dictionary = spellbook_model.deterministic_phase_preview("original_boss_archive", lab_phase_id, 20260625)
+		if int(row_dict.get("deterministic_preview_digest", 0)) != int(lab_preview.get("signature_digest", 0)):
+			failures.append("pattern_row_digest_mismatch:%s" % lab_phase_id)
+		if String(row_dict.get("preview_export_id", "")) != String(lab_preview.get("export_id", "")):
+			failures.append("pattern_row_export_mismatch:%s" % lab_phase_id)
+		if String(row_dict.get("preview_fixture_id", "")) != String(lab_preview.get("preview_fixture_id", "")):
+			failures.append("pattern_row_fixture_mismatch:%s" % lab_phase_id)
+		if int(row_dict.get("max_preview_emit", -1)) != int(lab_preview.get("max_emit_per_tick", -2)):
+			failures.append("pattern_row_max_emit_mismatch:%s" % lab_phase_id)
+		if int(row_dict.get("bullet_cap_per_tick", -1)) != int(lab_preview.get("bullet_cap_per_tick", -2)):
+			failures.append("pattern_row_bullet_cap_mismatch:%s" % lab_phase_id)
+		if int(row_dict.get("preview_budget_headroom", -1)) != int(lab_preview.get("budget_headroom", -2)):
+			failures.append("pattern_row_headroom_mismatch:%s" % lab_phase_id)
+		if String(row_dict.get("performance_budget_status", "")) != String(lab_preview.get("performance_budget_status", "")):
+			failures.append("pattern_row_budget_status_mismatch:%s" % lab_phase_id)
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,
