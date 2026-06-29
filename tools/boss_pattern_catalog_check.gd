@@ -7,6 +7,26 @@ const PatternLabModel := preload("res://scripts/pattern_lab_model.gd")
 const ReplayListModel := preload("res://scripts/replay_list_model.gd")
 const ReplayStore := preload("res://scripts/replay_store.gd")
 
+class TightSpellbookBudgetModel:
+	extends RefCounted
+
+	var base: RefCounted = BossSpellbookModel.new()
+
+	func spellbook_ids() -> Array[String]:
+		return base.spellbook_ids()
+
+	func spellbook_config(spellbook_id: String) -> Dictionary:
+		return base.spellbook_config(spellbook_id)
+
+	func phase_script_config(spellbook_id: String, phase_id: String) -> Dictionary:
+		var script: Dictionary = base.phase_script_config(spellbook_id, phase_id)
+		if phase_id == "nonspell_radial_entry":
+			script["bullet_cap_per_tick"] = 20
+		return script
+
+	func emit_tick(spellbook_id: String, local_tick: int, target: Vector2, spawn_index: int, seed: int) -> Array[Dictionary]:
+		return base.emit_tick(spellbook_id, local_tick, target, spawn_index, seed)
+
 func _initialize() -> void:
 	var stage_model: RefCounted = StageSelectModel.new()
 	var coverage: Dictionary = BossPatternCatalog.validate_stage_patterns(stage_model)
@@ -60,6 +80,11 @@ func _initialize() -> void:
 		push_error("Boss pattern performance budgets failed: %s" % [budgets])
 		quit(1)
 		return
+	var phase_budget_regression: Dictionary = _validate_phase_budget_regression(stage_model)
+	if not bool(phase_budget_regression.get("ok", false)):
+		push_error("Boss spellbook phase budget regression failed: %s" % [phase_budget_regression])
+		quit(1)
+		return
 	print("boss_pattern_catalog_check ok: families=%d recipes=%d adapters=%d requirements=%d official_types=%d types=%d emitted=%d behavior_spawns=%d spellbooks=%d phases=%d previews=%d golden_previews=%d replay_metadata=%d max_emit=%d max_behavior_spawn=%d max_spellbook_emit=%d" % [
 		BossPatternCatalog.family_rows().size(),
 		int(recipes.get("recipe_count", 0)),
@@ -79,6 +104,33 @@ func _initialize() -> void:
 		int(budgets.get("max_spellbook_emit_per_tick", 0)),
 	])
 	quit(0)
+
+func _validate_phase_budget_regression(stage_model: RefCounted) -> Dictionary:
+	var failures: Array[String] = []
+	var tight_model: RefCounted = TightSpellbookBudgetModel.new()
+	var result: Dictionary = BossPatternCatalog.validate_performance_budgets(stage_model, tight_model, 20260625)
+	if bool(result.get("ok", true)):
+		failures.append("tight_phase_budget_accepted")
+	var saw_phase_failure := false
+	for failure in result.get("failures", []):
+		if String(failure).begins_with("spellbook_phase_emit_budget:nonspell_radial_entry:"):
+			saw_phase_failure = true
+	if not saw_phase_failure:
+		failures.append("tight_phase_budget_failure_missing:%s" % [result.get("failures", [])])
+	var saw_over_budget_row := false
+	for row in result.get("spellbook_budget_rows", []):
+		var row_dict: Dictionary = row as Dictionary
+		if String(row_dict.get("phase_id", "")) == "nonspell_radial_entry" \
+				and int(row_dict.get("bullet_cap_per_tick", 0)) == 20 \
+				and String(row_dict.get("performance_budget_status", "")) == "over_budget" \
+				and int(row_dict.get("budget_headroom", 0)) < 0:
+			saw_over_budget_row = true
+	if not saw_over_budget_row:
+		failures.append("tight_phase_budget_row_missing:%s" % [result.get("spellbook_budget_rows", [])])
+	return {
+		"ok": failures.is_empty(),
+		"failures": failures,
+	}
 
 func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 	var failures: Array[String] = []

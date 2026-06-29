@@ -441,6 +441,15 @@ static func validate_performance_budgets(stage_model: RefCounted, spellbook_mode
 	var max_spellbook_emit := int(spellbook_budget.get("max_emit_per_tick", 0))
 	if max_spellbook_emit > MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK:
 		failures.append("spellbook_emit_budget:%d" % max_spellbook_emit)
+	if String(spellbook_budget.get("status", "")) == "over_budget":
+		for row in spellbook_budget.get("rows", []):
+			var row_dict: Dictionary = row as Dictionary
+			if String(row_dict.get("performance_budget_status", "")) == "over_budget":
+				failures.append("spellbook_phase_emit_budget:%s:%d>%d" % [
+					String(row_dict.get("phase_id", "")),
+					int(row_dict.get("max_emit_per_tick", 0)),
+					int(row_dict.get("bullet_cap_per_tick", 0)),
+				])
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,
@@ -656,6 +665,7 @@ static func _spellbook_emit_budget_report(spellbook_model: RefCounted, target: V
 		return {"max_emit_per_tick": 0, "max_phase_id": "", "rows": [], "status": "missing_spellbook_model"}
 	var max_emit := 0
 	var max_phase_id := ""
+	var any_over_budget := false
 	var rows: Array[Dictionary] = []
 	for spellbook_id in spellbook_model.spellbook_ids():
 		var spellbook: Dictionary = spellbook_model.spellbook_config(String(spellbook_id))
@@ -664,6 +674,7 @@ static func _spellbook_emit_budget_report(spellbook_model: RefCounted, target: V
 			var phase_dict: Dictionary = phase as Dictionary
 			var phase_id := String(phase_dict.get("id", ""))
 			var duration := int(phase_dict.get("duration_ticks", 0))
+			var phase_cap := _spellbook_phase_bullet_cap(spellbook_model, String(spellbook_id), phase_dict)
 			var phase_max_emit := 0
 			var phase_max_tick := phase_start
 			for local_tick in range(phase_start, phase_start + max(1, duration)):
@@ -674,22 +685,32 @@ static func _spellbook_emit_budget_report(spellbook_model: RefCounted, target: V
 				if emitted.size() > max_emit:
 					max_emit = emitted.size()
 					max_phase_id = phase_id
+			if phase_max_emit > phase_cap:
+				any_over_budget = true
 			rows.append({
 				"spellbook_id": String(spellbook_id),
 				"phase_id": phase_id,
 				"max_emit_per_tick": phase_max_emit,
 				"max_emit_local_tick": phase_max_tick,
-				"bullet_cap_per_tick": MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK,
-				"budget_headroom": MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK - phase_max_emit,
-				"performance_budget_status": "within_budget" if phase_max_emit <= MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK else "over_budget",
+				"bullet_cap_per_tick": phase_cap,
+				"budget_headroom": phase_cap - phase_max_emit,
+				"performance_budget_status": "within_budget" if phase_max_emit <= phase_cap else "over_budget",
 			})
 			phase_start += duration
 	return {
 		"max_emit_per_tick": max_emit,
 		"max_phase_id": max_phase_id,
 		"rows": rows,
-		"status": "within_budget" if max_emit <= MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK else "over_budget",
+		"status": "over_budget" if any_over_budget else "within_budget",
 	}
+
+static func _spellbook_phase_bullet_cap(spellbook_model: RefCounted, spellbook_id: String, phase: Dictionary) -> int:
+	var phase_script: Dictionary = {}
+	if spellbook_model != null and spellbook_model.has_method("phase_script_config"):
+		phase_script = spellbook_model.phase_script_config(spellbook_id, String(phase.get("id", "")))
+	if phase_script.is_empty():
+		phase_script = phase.get("phase_script", {})
+	return max(1, int(phase_script.get("bullet_cap_per_tick", MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK)))
 
 static func _has_shaped_laser(bullets: Array[Dictionary]) -> bool:
 	for bullet in bullets:

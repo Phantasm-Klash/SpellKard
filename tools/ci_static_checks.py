@@ -113,6 +113,8 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "validate_performance_budgets",
         "validate_official_boss_type_coverage",
         "validate_spellbook_preview_exports",
+        "_spellbook_phase_bullet_cap",
+        "spellbook_phase_emit_budget",
     ]:
         if token not in catalog_text:
             errors.append(f"godot/scripts/boss_pattern_catalog.gd: missing catalog contract token {token}")
@@ -197,6 +199,12 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "fixture_missing_samples_spellbook_preview",
         "bad_sample_count_replay_accepted",
         "missing_sample_window_replay_accepted",
+        "TightSpellbookBudgetModel",
+        "_validate_phase_budget_regression",
+        "tight_phase_budget_accepted",
+        "tight_phase_budget_failure_missing",
+        "tight_phase_budget_row_missing",
+        "spellbook_phase_emit_budget:nonspell_radial_entry",
         "validate_spellbook_preview_metadata",
         "preview_sample_ticks",
         "preview_sample_count",
