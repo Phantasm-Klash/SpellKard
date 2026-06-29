@@ -90,6 +90,14 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 				failures.append("missing_preview_export_id:%s" % replay_id)
 			if int(entry.get("preview_signature_digest", 0)) <= 0:
 				failures.append("missing_preview_digest:%s" % replay_id)
+			var sample_ticks: Array[int] = _normalized_int_array(entry.get("preview_sample_ticks", []))
+			var sample_count := int(entry.get("preview_sample_count", -1))
+			if sample_ticks.is_empty():
+				failures.append("missing_preview_sample_ticks:%s" % replay_id)
+			if sample_count <= 0:
+				failures.append("missing_preview_sample_count:%s" % replay_id)
+			elif sample_count != sample_ticks.size():
+				failures.append("preview_sample_count_mismatch:%s" % replay_id)
 			if int(entry.get("preview_budget_headroom", -1)) < 0:
 				failures.append("preview_budget_overrun:%s" % replay_id)
 			if str(entry.get("performance_budget_status", "")) != "within_budget":
@@ -247,6 +255,8 @@ func _metadata_valid(metadata: Dictionary) -> bool:
 		and not str(metadata.get("phase_id", "")).is_empty() \
 		and not str(metadata.get("preview_export_id", "")).is_empty() \
 		and preview_digest > 0 \
+		and not _normalized_int_array(metadata.get("preview_sample_ticks", [])).is_empty() \
+		and int(metadata.get("preview_sample_count", -1)) == _normalized_int_array(metadata.get("preview_sample_ticks", [])).size() \
 		and int(metadata.get("preview_budget_headroom", -1)) >= 0 \
 		and str(metadata.get("performance_budget_status", "")) == "within_budget" \
 		and not bool(metadata.get("server_authoritative", false))

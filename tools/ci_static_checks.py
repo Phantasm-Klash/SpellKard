@@ -125,6 +125,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "GOLDEN_PREVIEW_FIXTURES",
         "deterministic_phase_preview",
         "golden_preview_fixtures",
+        "phase_script_config",
         "phase_export_data",
         "validate_phase_preview_exports",
         "signature_digest",
@@ -162,6 +163,8 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         '"bullet_cap_per_tick"',
         '"performance_budget_status"',
         '"preview_export_id"',
+        '"preview_sample_ticks"',
+        '"preview_sample_count"',
     ]:
         if token not in pattern_lab_text:
             errors.append(f"godot/scripts/pattern_lab_model.gd: missing spellbook Pattern Lab token {token}")
@@ -190,6 +193,10 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "fixture_over_budget_spellbook_preview",
         "fixture_stale_digest_spellbook_preview",
         "fixture_stale_samples_spellbook_preview",
+        "fixture_bad_sample_count_spellbook_preview",
+        "fixture_missing_samples_spellbook_preview",
+        "bad_sample_count_replay_accepted",
+        "missing_sample_window_replay_accepted",
         "validate_spellbook_preview_metadata",
         "preview_sample_ticks",
         "preview_sample_count",
