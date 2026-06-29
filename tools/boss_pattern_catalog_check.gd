@@ -446,6 +446,8 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		failures.append("stale_sample_preview_accepted")
 	if bool(store.validate_spellbook_preview_metadata(stale_sample_digest_entry, first_preview).get("ok", false)):
 		failures.append("stale_sample_digest_preview_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(stale_sample_digest_entry)).get("ok", false)):
+		failures.append("stale_sample_digest_replay_accepted")
 	if bool(store.validate_spellbook_preview_metadata(stale_sample_emit_count_entry, first_preview).get("ok", false)):
 		failures.append("stale_sample_emit_count_preview_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(stale_sample_emit_count_entry)).get("ok", false)):
@@ -571,7 +573,7 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		if bool(negative_sample_digest_row.get("metadata_valid", true)) or String(negative_sample_digest_row.get("metadata_status", "")) != "preview_sample_digest_negative":
 			failures.append("negative_sample_digest_row_metadata:%s" % [negative_sample_digest_row])
 		var stale_sample_emit_count_row: Dictionary = replay_list._row_from_entry(stale_sample_emit_count_entry, rows.size() + 9)
-		if bool(stale_sample_emit_count_row.get("metadata_valid", true)) or String(stale_sample_emit_count_row.get("metadata_status", "")) != "preview_max_emit_mismatch":
+		if bool(stale_sample_emit_count_row.get("metadata_valid", true)) or String(stale_sample_emit_count_row.get("metadata_status", "")) != "preview_sample_emit_count_mismatch":
 			failures.append("stale_sample_emit_count_row_metadata:%s" % [stale_sample_emit_count_row])
 		var negative_sample_emit_count_row: Dictionary = replay_list._row_from_entry(negative_sample_emit_count_entry, rows.size() + 10)
 		if bool(negative_sample_emit_count_row.get("metadata_valid", true)) or String(negative_sample_emit_count_row.get("metadata_status", "")) != "preview_sample_emit_count_negative":

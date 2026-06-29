@@ -12,6 +12,12 @@ const SPELLBOOK_PREVIEW_SAMPLE_WINDOW_END_TICK := 140
 const SPELLBOOK_PREVIEW_SAMPLE_WINDOW_STRIDE_TICKS := 28
 const SPELLBOOK_PREVIEW_EXPORT_PREFIX := "boss_spellbook_preview"
 const SPELLBOOK_PREVIEW_AUTHORITY_SCOPE := "local_practice_preview_only"
+const SPELLBOOK_PREVIEW_GOLDEN_FIXTURES: Dictionary = {
+	"original_boss_archive:nonspell_radial_entry:20260625": {"export_schema_version": 1, "export_id": "boss_spellbook_preview_original_boss_archive_nonspell_radial_entry_20260625", "preview_authority_scope": "local_practice_preview_only", "signature_digest": 905452029, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [429408177, 651507191, 705589077, 266214312, 882357878, 75020320], "sample_emit_counts": [24, 42, 24, 24, 42, 24], "sample_count": 6, "max_emit_per_tick": 42, "bullet_cap_per_tick": 192, "budget_headroom": 150, "performance_budget_status": "within_budget"},
+	"original_boss_archive:spell_laser_field:20260625": {"export_schema_version": 1, "export_id": "boss_spellbook_preview_original_boss_archive_spell_laser_field_20260625", "preview_authority_scope": "local_practice_preview_only", "signature_digest": 187927263, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [450260093, 75256905, 0, 862484991, 934817433, 0], "sample_emit_counts": [3, 2, 0, 12, 20, 0], "sample_count": 6, "max_emit_per_tick": 20, "bullet_cap_per_tick": 192, "budget_headroom": 172, "performance_budget_status": "within_budget"},
+	"original_boss_archive:spell_summoner_split:20260625": {"export_schema_version": 1, "export_id": "boss_spellbook_preview_original_boss_archive_spell_summoner_split_20260625", "preview_authority_scope": "local_practice_preview_only", "signature_digest": 471609142, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [368982465, 0, 0, 0, 0, 742323659], "sample_emit_counts": [4, 0, 0, 0, 0, 12], "sample_count": 6, "max_emit_per_tick": 12, "bullet_cap_per_tick": 192, "budget_headroom": 180, "performance_budget_status": "within_budget"},
+	"original_boss_archive:last_spell_morph_bounce:20260625": {"export_schema_version": 1, "export_id": "boss_spellbook_preview_original_boss_archive_last_spell_morph_bounce_20260625", "preview_authority_scope": "local_practice_preview_only", "signature_digest": 979716623, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [769410047, 0, 0, 0, 0, 0], "sample_emit_counts": [30, 0, 0, 0, 0, 0], "sample_count": 6, "max_emit_per_tick": 30, "bullet_cap_per_tick": 192, "budget_headroom": 162, "performance_budget_status": "within_budget"},
+}
 const SPELLBOOK_PREVIEW_SERVER_AUTHORITY_FIELDS: Array[String] = [
 	"boss_instance_id",
 	"boss_max_hp",
@@ -180,6 +186,11 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 				failures.append("preview_sample_digest_signature_mismatch:%s" % replay_id)
 			if not signature_sample_emit_counts.is_empty() and not _arrays_equal_ints(sample_emit_counts, signature_sample_emit_counts):
 				failures.append("preview_sample_emit_count_signature_mismatch:%s" % replay_id)
+			var golden_fixture: Dictionary = _golden_preview_fixture_for_fields(entry)
+			if golden_fixture.is_empty():
+				failures.append("unknown_preview_fixture:%s" % replay_id)
+			else:
+				failures.append_array(_golden_fixture_failures(entry, golden_fixture, replay_id))
 			if max_emit_per_tick < 0:
 				failures.append("missing_preview_max_emit:%s" % replay_id)
 			elif max_emit_per_tick != _max_int(sample_emit_counts):
@@ -482,6 +493,12 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 		return "preview_sample_digest_mismatch"
 	if not signature_sample_emit_counts.is_empty() and not _arrays_equal_ints(sample_emit_counts, signature_sample_emit_counts):
 		return "preview_sample_emit_count_mismatch"
+	var golden_fixture := _golden_preview_fixture_for_fields(fields)
+	if golden_fixture.is_empty():
+		return "unknown_preview_fixture"
+	var golden_status := _golden_fixture_status(fields, golden_fixture)
+	if golden_status != "valid":
+		return golden_status
 	if max_emit_per_tick < 0 or max_emit_per_tick != _max_int(sample_emit_counts):
 		return "preview_max_emit_mismatch"
 	if bullet_cap_per_tick <= 0 or int(fields.get("preview_budget_headroom", -1)) != bullet_cap_per_tick - max_emit_per_tick:
@@ -521,6 +538,69 @@ func _expected_preview_export_id(fields: Dictionary) -> String:
 
 func _preview_seed_from_fields(fields: Dictionary) -> int:
 	return int(fields.get("preview_seed", fields.get("seed", fields.get("match_seed", 0))))
+
+func _golden_preview_fixture_for_fields(fields: Dictionary) -> Dictionary:
+	var fixture_id := _expected_preview_fixture_id(fields)
+	if fixture_id.is_empty() or not SPELLBOOK_PREVIEW_GOLDEN_FIXTURES.has(fixture_id):
+		return {}
+	return (SPELLBOOK_PREVIEW_GOLDEN_FIXTURES[fixture_id] as Dictionary).duplicate(true)
+
+func _golden_fixture_status(fields: Dictionary, fixture: Dictionary) -> String:
+	var replay_id := str(fields.get("replay_id", ""))
+	var failures := _golden_fixture_failures(fields, fixture, replay_id)
+	if failures.is_empty():
+		return "valid"
+	var first_failure := String(failures[0])
+	if first_failure.begins_with("preview_signature_digest_mismatch:"):
+		return "preview_signature_digest_mismatch"
+	if first_failure.begins_with("preview_sample_digest_mismatch:"):
+		return "preview_sample_digest_mismatch"
+	if first_failure.begins_with("preview_sample_emit_count_mismatch:"):
+		return "preview_sample_emit_count_mismatch"
+	if first_failure.begins_with("preview_max_emit_mismatch:"):
+		return "preview_max_emit_mismatch"
+	if first_failure.begins_with("preview_budget_headroom_mismatch:"):
+		return "preview_budget_headroom_mismatch"
+	if first_failure.begins_with("preview_budget_status:"):
+		return "preview_budget_overrun"
+	if first_failure.begins_with("bad_preview_schema:"):
+		return "bad_preview_schema"
+	if first_failure.begins_with("preview_authority_scope_mismatch:"):
+		return "preview_authority_scope_mismatch"
+	if first_failure.begins_with("preview_export_id_mismatch:"):
+		return "preview_export_id_mismatch"
+	return "preview_golden_fixture_mismatch"
+
+func _golden_fixture_failures(fields: Dictionary, fixture: Dictionary, replay_id: String) -> Array[String]:
+	var failures: Array[String] = []
+	if int(fields.get("preview_export_schema_version", 0)) != int(fixture.get("export_schema_version", 0)):
+		failures.append("bad_preview_schema:%s" % replay_id)
+	if str(fields.get("preview_export_id", "")) != str(fixture.get("export_id", "")):
+		failures.append("preview_export_id_mismatch:%s" % replay_id)
+	if str(fields.get("preview_authority_scope", SPELLBOOK_PREVIEW_AUTHORITY_SCOPE)) != str(fixture.get("preview_authority_scope", "")):
+		failures.append("preview_authority_scope_mismatch:%s" % replay_id)
+	if int(fields.get("preview_signature_digest", 0)) != int(fixture.get("signature_digest", 0)):
+		failures.append("preview_signature_digest_mismatch:%s" % replay_id)
+	if not _arrays_equal_ints(_preview_sample_ticks_from_fields(fields), fixture.get("sample_ticks", [])):
+		failures.append("preview_sample_ticks_noncanonical:%s" % replay_id)
+	if int(fields.get("preview_sample_window_start_tick", -1)) != int(fixture.get("sample_window_start_tick", -2)) \
+			or int(fields.get("preview_sample_window_end_tick", -1)) != int(fixture.get("sample_window_end_tick", -2)) \
+			or int(fields.get("preview_sample_window_stride_ticks", -1)) != int(fixture.get("sample_window_stride_ticks", -2)):
+		failures.append("preview_sample_window_mismatch:%s" % replay_id)
+	if int(fields.get("preview_sample_count", -1)) != int(fixture.get("sample_count", 0)):
+		failures.append("preview_sample_count_mismatch:%s" % replay_id)
+	if not _arrays_equal_ints(_preview_sample_signature_digests_from_fields(fields), fixture.get("sample_signature_digests", [])):
+		failures.append("preview_sample_digest_mismatch:%s" % replay_id)
+	if not _arrays_equal_ints(_preview_sample_emit_counts_from_fields(fields), fixture.get("sample_emit_counts", [])):
+		failures.append("preview_sample_emit_count_mismatch:%s" % replay_id)
+	if int(fields.get("preview_max_emit_per_tick", -1)) != int(fixture.get("max_emit_per_tick", 0)):
+		failures.append("preview_max_emit_mismatch:%s" % replay_id)
+	if int(fields.get("preview_bullet_cap_per_tick", -1)) != int(fixture.get("bullet_cap_per_tick", 0)) \
+			or int(fields.get("preview_budget_headroom", -1)) != int(fixture.get("budget_headroom", 0)):
+		failures.append("preview_budget_headroom_mismatch:%s" % replay_id)
+	if str(fields.get("performance_budget_status", "")) != str(fixture.get("performance_budget_status", "")):
+		failures.append("preview_budget_status:%s" % replay_id)
+	return failures
 
 func _server_authority_claim_fields(fields: Dictionary) -> Array[String]:
 	var claims: Array[String] = []
