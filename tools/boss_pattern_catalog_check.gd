@@ -27,6 +27,35 @@ class TightSpellbookBudgetModel:
 	func emit_tick(spellbook_id: String, local_tick: int, target: Vector2, spawn_index: int, seed: int) -> Array[Dictionary]:
 		return base.emit_tick(spellbook_id, local_tick, target, spawn_index, seed)
 
+class StaleGoldenFixtureIdentityModel:
+	extends RefCounted
+
+	var base: RefCounted = BossSpellbookModel.new()
+
+	func spellbook_ids() -> Array[String]:
+		return base.spellbook_ids()
+
+	func timeline_rows(spellbook_id: String) -> Array[Dictionary]:
+		return base.timeline_rows(spellbook_id)
+
+	func deterministic_phase_preview(spellbook_id: String, phase_id: String, seed: int = 20260625) -> Dictionary:
+		return base.deterministic_phase_preview(spellbook_id, phase_id, seed)
+
+	func phase_export_data(spellbook_id: String, seed: int = 20260625) -> Dictionary:
+		return base.phase_export_data(spellbook_id, seed)
+
+	func validate_phase_preview_exports(seed: int = 20260625) -> Dictionary:
+		return base.validate_phase_preview_exports(seed)
+
+	func golden_preview_fixtures() -> Dictionary:
+		var fixtures: Dictionary = base.golden_preview_fixtures()
+		var fixture_id := "original_boss_archive:nonspell_radial_entry:20260625"
+		var stale: Dictionary = (fixtures.get(fixture_id, {}) as Dictionary).duplicate(true)
+		stale["export_id"] = "boss_spellbook_preview_original_boss_archive_wrong_phase_20260625"
+		stale["preview_fixture_id"] = "original_boss_archive:wrong_phase:20260625"
+		fixtures[fixture_id] = stale
+		return fixtures
+
 func _initialize() -> void:
 	var stage_model: RefCounted = StageSelectModel.new()
 	var coverage: Dictionary = BossPatternCatalog.validate_stage_patterns(stage_model)
@@ -53,6 +82,11 @@ func _initialize() -> void:
 	var preview_exports: Dictionary = BossPatternCatalog.validate_spellbook_preview_exports(spellbook_model, pattern_lab_model, 20260625)
 	if not bool(preview_exports.get("ok", false)):
 		push_error("Boss spellbook preview exports failed: %s" % [preview_exports])
+		quit(1)
+		return
+	var golden_identity_regression: Dictionary = _validate_golden_fixture_identity_regression(pattern_lab_model)
+	if not bool(golden_identity_regression.get("ok", false)):
+		push_error("Boss spellbook golden fixture identity regression failed: %s" % [golden_identity_regression])
 		quit(1)
 		return
 	var replay_metadata: Dictionary = _validate_replay_metadata(spellbook_model, pattern_lab_model)
@@ -85,7 +119,7 @@ func _initialize() -> void:
 		push_error("Boss spellbook phase budget regression failed: %s" % [phase_budget_regression])
 		quit(1)
 		return
-	print("boss_pattern_catalog_check ok: families=%d recipes=%d adapters=%d requirements=%d official_types=%d types=%d emitted=%d behavior_spawns=%d spellbooks=%d phases=%d previews=%d golden_previews=%d replay_metadata=%d max_emit=%d max_behavior_spawn=%d max_spellbook_emit=%d" % [
+	print("boss_pattern_catalog_check ok: families=%d recipes=%d adapters=%d requirements=%d official_types=%d types=%d emitted=%d behavior_spawns=%d spellbooks=%d phases=%d previews=%d golden_previews=%d golden_identity_regressions=%d replay_metadata=%d max_emit=%d max_behavior_spawn=%d max_spellbook_emit=%d" % [
 		BossPatternCatalog.family_rows().size(),
 		int(recipes.get("recipe_count", 0)),
 		int(recipes.get("adapter_count", 0)),
@@ -98,12 +132,36 @@ func _initialize() -> void:
 		int(spellbooks.get("phase_count", 0)),
 		int(preview_exports.get("preview_count", 0)),
 		int(preview_exports.get("golden_preview_count", 0)),
+		int(golden_identity_regression.get("checked", 0)),
 		int(replay_metadata.get("checked", 0)),
 		int(budgets.get("max_initial_emit", 0)),
 		int(budgets.get("max_behavior_spawned_per_tick", 0)),
 		int(budgets.get("max_spellbook_emit_per_tick", 0)),
 	])
 	quit(0)
+
+func _validate_golden_fixture_identity_regression(pattern_lab_model: RefCounted) -> Dictionary:
+	var failures: Array[String] = []
+	var stale_model: RefCounted = StaleGoldenFixtureIdentityModel.new()
+	var result: Dictionary = BossPatternCatalog.validate_spellbook_preview_exports(stale_model, pattern_lab_model, 20260625)
+	if bool(result.get("ok", true)):
+		failures.append("stale_golden_fixture_identity_accepted")
+	var saw_fixture_failure := false
+	var saw_export_failure := false
+	for failure in result.get("failures", []):
+		if String(failure).contains("golden_preview_fixture_id:nonspell_radial_entry"):
+			saw_fixture_failure = true
+		if String(failure).contains("golden_preview_export_id:nonspell_radial_entry"):
+			saw_export_failure = true
+	if not saw_fixture_failure:
+		failures.append("stale_golden_fixture_id_failure_missing:%s" % [result.get("failures", [])])
+	if not saw_export_failure:
+		failures.append("stale_golden_export_id_failure_missing:%s" % [result.get("failures", [])])
+	return {
+		"ok": failures.is_empty(),
+		"failures": failures,
+		"checked": 1,
+	}
 
 func _validate_phase_budget_regression(stage_model: RefCounted) -> Dictionary:
 	var failures: Array[String] = []

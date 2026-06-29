@@ -514,6 +514,11 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 					failures.append("golden_preview_digest:%s:%d" % [phase_id, int(preview_a.get("signature_digest", 0))])
 				if String(fixture.get("preview_authority_scope", "")) != "local_practice_preview_only":
 					failures.append("golden_preview_authority_scope:%s" % phase_id)
+				if String(fixture.get("preview_fixture_id", "")) != String(preview_a.get("preview_fixture_id", "")) \
+						or String(fixture.get("preview_fixture_id", "")) != fixture_id:
+					failures.append("golden_preview_fixture_id:%s:%s" % [phase_id, fixture_id])
+				if String(fixture.get("export_id", "")) != String(preview_a.get("export_id", "")):
+					failures.append("golden_preview_export_id:%s:%s" % [phase_id, fixture_id])
 				if (preview_a.get("samples", []) as Array).size() != int(fixture.get("sample_count", 0)):
 					failures.append("golden_preview_samples:%s" % phase_id)
 				if int(preview_a.get("max_emit_per_tick", 0)) != int(fixture.get("max_emit_per_tick", 0)):
