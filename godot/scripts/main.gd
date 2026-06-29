@@ -2869,6 +2869,8 @@ func _ui_overlay_snapshot() -> Dictionary:
 	var overlap_check := _ui_visible_control_overlap_check()
 	var focus_check := _ui_visible_focus_health_check()
 	var text_fit_check := _ui_visible_text_fit_check()
+	var mouse_check := _ui_visible_mouse_health_check()
+	var focus_section_check := _ui_focus_section_runtime_check(page_layout)
 	var viewport_size := get_viewport_rect().size
 	var panel_rect := Rect2(ui_panel.position, ui_panel.size) if ui_panel != null else Rect2()
 	var portrait_rect := Rect2(ui_home_portrait_panel.global_position, ui_home_portrait_panel.size) if ui_home_portrait_panel != null else Rect2()
@@ -2909,6 +2911,8 @@ func _ui_overlay_snapshot() -> Dictionary:
 		"page_asset_usage": ",".join(_ui_string_array(page_layout.get("asset_usage", []))),
 		"page_input_methods": ",".join(_ui_string_array(page_layout.get("input_methods", []))),
 		"page_focus_sections": ",".join(_ui_string_array(page_layout.get("focus_sections", []))),
+		"page_focus_sections_visible": String(focus_section_check.get("visible_sections", "")),
+		"page_focus_sections_missing_visible": String(focus_section_check.get("missing_sections", "")),
 		"page_text_fit_policy": ",".join(_ui_string_array(page_layout.get("text_fit_policy", []))),
 		"page_visual_asset": String(page_layout.get("visual_asset", "")),
 		"page_visual_treatment": String(page_layout.get("visual_treatment", "")),
@@ -2927,6 +2931,8 @@ func _ui_overlay_snapshot() -> Dictionary:
 		"page_asset_usage_count": int(page_layout.get("asset_usage_count", 0)),
 		"page_input_method_count": int(page_layout.get("input_method_count", 0)),
 		"page_focus_section_count": int(page_layout.get("focus_section_count", 0)),
+		"page_focus_section_visible_count": int(focus_section_check.get("visible_count", 0)),
+		"page_focus_section_missing_visible_count": int(focus_section_check.get("missing_count", 0)),
 		"page_text_fit_policy_count": int(page_layout.get("text_fit_policy_count", 0)),
 		"viewport_size": viewport_size,
 		"home_visible": _is_home_screen() and ui_home_box != null and ui_home_box.visible,
@@ -3001,6 +3007,9 @@ func _ui_overlay_snapshot() -> Dictionary:
 		"visible_control_small_targets": String(text_fit_check.get("small_targets", "")),
 		"visible_text_unclipped_count": int(text_fit_check.get("unclipped_count", 0)),
 		"visible_text_unclipped": String(text_fit_check.get("unclipped", "")),
+		"visible_mouse_operable_count": int(mouse_check.get("operable_count", 0)),
+		"visible_mouse_blocked_count": int(mouse_check.get("blocked_count", 0)),
+		"visible_mouse_blocked": String(mouse_check.get("blocked", "")),
 		"debug_status": ui_screen_model.screen_summary() if ui_screen_model != null else "",
 	}
 
@@ -3079,6 +3088,68 @@ func _ui_visible_text_fit_check() -> Dictionary:
 		"unclipped_count": unclipped.size(),
 		"unclipped": ",".join(unclipped),
 	}
+
+func _ui_visible_mouse_health_check() -> Dictionary:
+	var controls := _visible_focus_controls()
+	var blocked: Array[String] = []
+	for item in controls:
+		var button := item.get("button", null) as Button
+		if button == null:
+			continue
+		if button.mouse_filter == Control.MOUSE_FILTER_IGNORE or button.mouse_default_cursor_shape != Control.CURSOR_POINTING_HAND:
+			blocked.append(String(item.get("id", "")))
+	return {
+		"operable_count": controls.size() - blocked.size(),
+		"blocked_count": blocked.size(),
+		"blocked": ",".join(blocked),
+	}
+
+func _ui_focus_section_runtime_check(page_layout: Dictionary) -> Dictionary:
+	var expected_sections := _ui_string_array(page_layout.get("focus_sections", []))
+	var visible_sections: Array[String] = []
+	var missing_sections: Array[String] = []
+	for section_id in expected_sections:
+		if _ui_focus_section_visible_count(section_id) > 0:
+			visible_sections.append(section_id)
+		elif _ui_focus_section_is_contextual(section_id):
+			continue
+		else:
+			missing_sections.append(section_id)
+	return {
+		"visible_count": visible_sections.size(),
+		"missing_count": missing_sections.size(),
+		"visible_sections": ",".join(visible_sections),
+		"missing_sections": ",".join(missing_sections),
+	}
+
+func _ui_focus_section_is_contextual(section_id: String) -> bool:
+	return section_id in ["control_buttons", "control_preview"]
+
+func _ui_focus_section_visible_count(section_id: String) -> int:
+	match section_id:
+		"primary_routes":
+			return _ui_overlay_focusable_count(ui_home_buttons)
+		"navigation_rail":
+			return _ui_overlay_focusable_count(ui_nav_row_labels)
+		"category_tabs":
+			return _ui_overlay_focusable_count(ui_category_buttons)
+		"status_cards":
+			return _ui_overlay_focusable_count(ui_status_cards)
+		"focus_panel":
+			return _ui_focus_button_count()
+		"section_tabs", "social_tabs", "filter_tabs":
+			return _ui_overlay_focusable_count(ui_section_buttons)
+		"overview_cards", "setting_groups", "mode_cards", "mode_grid", "collection_grid", "notice_board":
+			return _ui_overlay_focusable_count(ui_overview_buttons)
+		"quick_routes":
+			return _ui_overlay_focusable_count(ui_quick_buttons)
+		"control_buttons":
+			return _ui_overlay_focusable_count(ui_control_buttons)
+		"row_window":
+			return _ui_overlay_focusable_count(ui_row_labels)
+		"control_preview":
+			return 1 if ui_control_label != null and ui_control_label.is_visible_in_tree() and not ui_control_label.text.is_empty() else 0
+	return 0
 
 func _visible_focus_controls() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []

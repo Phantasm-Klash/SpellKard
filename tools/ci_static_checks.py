@@ -534,6 +534,23 @@ def check_ui_page_contracts() -> list[str]:
     for forbidden in ['"id": "certification"', '"id": "deck"', '"id": "replay"', '"id": "settings"']:
         if forbidden in main_rows_text:
             errors.append(f"client_shell_model.gd main_menu_rows should not expose {forbidden}")
+
+    main_text = (ROOT / "godot" / "scripts" / "main.gd").read_text(encoding="utf-8")
+    for token in [
+        "func _ui_visible_mouse_health_check()",
+        "func _ui_focus_section_runtime_check(page_layout: Dictionary)",
+        '"page_focus_sections_missing_visible"',
+        '"visible_mouse_blocked_count"',
+    ]:
+        if token not in main_text:
+            errors.append(f"godot/scripts/main.gd: missing UI runtime interaction health token {token}")
+    ui_smoke_text = (ROOT / "tools" / "client_ui_smoke_test.gd").read_text(encoding="utf-8")
+    for token in [
+        '"visible_mouse_blocked_count"',
+        '"page_focus_section_missing_visible_count"',
+    ]:
+        if token not in ui_smoke_text:
+            errors.append(f"tools/client_ui_smoke_test.gd: missing UI interaction smoke token {token}")
     return errors
 
 

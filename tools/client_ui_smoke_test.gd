@@ -448,6 +448,8 @@ func _assert_page_health(snapshot: Dictionary, label: String, expected_quick_max
 		return _fail("%s visible controls below minimum target size %s" % [label, String(snapshot.get("visible_control_small_targets", ""))])
 	if int(snapshot.get("visible_text_unclipped_count", 0)) != 0:
 		return _fail("%s visible button text is not clipped/ellipsized %s" % [label, String(snapshot.get("visible_text_unclipped", ""))])
+	if int(snapshot.get("visible_mouse_blocked_count", 0)) != 0:
+		return _fail("%s visible buttons are not mouse-operable %s" % [label, String(snapshot.get("visible_mouse_blocked", ""))])
 	if int(snapshot.get("page_state_region_count", 0)) <= 0 or String(snapshot.get("page_state_regions", "")).is_empty():
 		return _fail("%s missing page state regions %s" % [label, snapshot])
 	if int(snapshot.get("page_layout_slot_count", 0)) <= 0 or String(snapshot.get("page_layout_slots", "")).is_empty():
@@ -462,6 +464,8 @@ func _assert_page_health(snapshot: Dictionary, label: String, expected_quick_max
 		return _fail("%s missing keyboard/gamepad/mouse contract %s" % [label, snapshot])
 	if int(snapshot.get("page_focus_section_count", 0)) <= 0 or String(snapshot.get("page_focus_sections", "")).is_empty():
 		return _fail("%s missing focus section contract %s" % [label, snapshot])
+	if bool(snapshot.get("visible", true)) and int(snapshot.get("page_focus_section_missing_visible_count", 0)) != 0:
+		return _fail("%s missing visible controls for focus sections %s in %s" % [label, String(snapshot.get("page_focus_sections_missing_visible", "")), String(snapshot.get("page_focus_sections", ""))])
 	if int(snapshot.get("page_text_fit_policy_count", 0)) <= 0 or not _contains_all(String(snapshot.get("page_text_fit_policy", "")), ["clip_button_text", "ellipsis_overrun", "wrap_labels"]):
 		return _fail("%s missing text fit policy %s" % [label, snapshot])
 	if String(snapshot.get("page_visual_asset", "")).is_empty() or String(snapshot.get("page_visual_treatment", "")).is_empty():
