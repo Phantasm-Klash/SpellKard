@@ -158,6 +158,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "sample_emit_counts",
         "budget_headroom",
         "performance_budget_status",
+        "PREVIEW_AUTHORITY_SCOPE",
+        "preview_authority_scope",
+        "golden_preview_authority_scope",
     ]:
         if token not in spellbook_text:
             errors.append(f"godot/scripts/boss_spellbook_model.gd: missing timeout/enrage token {token}")
@@ -172,6 +175,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         '"deterministic_preview_digest"',
         '"bullet_cap_per_tick"',
         '"preview_export_schema_version"',
+        '"preview_authority_scope"',
         '"performance_budget_status"',
         '"preview_export_id"',
         '"preview_sample_ticks"',
@@ -187,7 +191,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
 
     for replay_path in [replay_store, replay_list]:
         replay_text = replay_path.read_text(encoding="utf-8")
-        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_schema_version"', '"preview_export_id"', '"preview_fixture_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_window_start_tick"', '"preview_sample_window_end_tick"', '"preview_sample_window_stride_ticks"', '"preview_sample_signature_digests"', '"preview_sample_emit_counts"', '"preview_sample_count"', '"preview_max_emit_per_tick"', '"preview_bullet_cap_per_tick"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
+        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_schema_version"', '"preview_export_id"', '"preview_authority_scope"', '"preview_fixture_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_window_start_tick"', '"preview_sample_window_end_tick"', '"preview_sample_window_stride_ticks"', '"preview_sample_signature_digests"', '"preview_sample_emit_counts"', '"preview_sample_count"', '"preview_max_emit_per_tick"', '"preview_bullet_cap_per_tick"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
             if token not in replay_text:
                 errors.append(f"{replay_path.relative_to(ROOT)}: missing spellbook replay metadata token {token}")
     if "validate_spellbook_preview_metadata" not in replay_store.read_text(encoding="utf-8"):
@@ -223,6 +227,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         '"local_preview_marked_authoritative"',
         '"preview_fixture_mismatch"',
         '"preview_signature_digest_mismatch"',
+        '"preview_authority_scope_mismatch"',
     ]:
         if token not in replay_store_text:
             errors.append(f"godot/scripts/replay_store.gd: missing spellbook replay metadata status token {token}")
@@ -240,11 +245,15 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "replay_metadata",
         "max_spellbook_emit",
         "fixture_authoritative_spellbook_preview",
+        "fixture_wrong_authority_scope_spellbook_preview",
         "fixture_bad_schema_spellbook_preview",
         "fixture_over_budget_spellbook_preview",
         "fixture_stale_digest_spellbook_preview",
         "stale_digest_replay_accepted",
+        "wrong_authority_scope_replay_accepted",
+        "wrong_authority_scope_preview_accepted",
         "preview_signature_digest_mismatch",
+        "preview_authority_scope_mismatch",
         "fixture_stale_fixture_spellbook_preview",
         "fixture_stale_export_spellbook_preview",
         "fixture_stale_samples_spellbook_preview",
@@ -285,6 +294,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "tight_phase_budget_row_missing",
         "validate_spellbook_preview_metadata",
         "preview_export_schema_version",
+        "preview_authority_scope",
         "preview_sample_ticks",
         "preview_sample_window_start_tick",
         "preview_sample_window_end_tick",

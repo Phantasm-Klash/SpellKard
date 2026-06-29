@@ -11,6 +11,7 @@ const SPELLBOOK_PREVIEW_SAMPLE_WINDOW_START_TICK := 0
 const SPELLBOOK_PREVIEW_SAMPLE_WINDOW_END_TICK := 140
 const SPELLBOOK_PREVIEW_SAMPLE_WINDOW_STRIDE_TICKS := 28
 const SPELLBOOK_PREVIEW_EXPORT_PREFIX := "boss_spellbook_preview"
+const SPELLBOOK_PREVIEW_AUTHORITY_SCOPE := "local_practice_preview_only"
 
 var last_error := ""
 
@@ -105,6 +106,8 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 				failures.append("missing_phase_id:%s" % replay_id)
 			if str(entry.get("preview_export_id", "")).is_empty():
 				failures.append("missing_preview_export_id:%s" % replay_id)
+			if str(entry.get("preview_authority_scope", SPELLBOOK_PREVIEW_AUTHORITY_SCOPE)) != SPELLBOOK_PREVIEW_AUTHORITY_SCOPE:
+				failures.append("preview_authority_scope_mismatch:%s" % replay_id)
 			if str(entry.get("preview_fixture_id", "")).is_empty():
 				failures.append("missing_preview_fixture_id:%s" % replay_id)
 			elif str(entry.get("preview_fixture_id", "")) != _expected_preview_fixture_id(entry):
@@ -181,6 +184,9 @@ func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary)
 		failures.append("preview_phase_mismatch:%s" % str(entry.get("replay_id", "")))
 	if String(entry.get("preview_export_id", "")) != String(preview.get("export_id", "")):
 		failures.append("preview_export_mismatch:%s" % str(entry.get("replay_id", "")))
+	if String(entry.get("preview_authority_scope", SPELLBOOK_PREVIEW_AUTHORITY_SCOPE)) != SPELLBOOK_PREVIEW_AUTHORITY_SCOPE \
+			or String(preview.get("preview_authority_scope", "")) != SPELLBOOK_PREVIEW_AUTHORITY_SCOPE:
+		failures.append("preview_authority_scope_mismatch:%s" % str(entry.get("replay_id", "")))
 	if String(entry.get("preview_fixture_id", "")) != _expected_preview_fixture_id(preview):
 		failures.append("preview_fixture_mismatch:%s" % str(entry.get("replay_id", "")))
 	if int(entry.get("preview_export_schema_version", 0)) != int(preview.get("export_schema_version", 0)):
@@ -324,6 +330,7 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"phase_id": str(metadata.get("phase_id", "")),
 		"preview_export_schema_version": preview_schema_version,
 		"preview_export_id": str(metadata.get("preview_export_id", "")),
+		"preview_authority_scope": str(metadata.get("preview_authority_scope", SPELLBOOK_PREVIEW_AUTHORITY_SCOPE if is_spellbook_preview else "")),
 		"preview_fixture_id": str(metadata.get("preview_fixture_id", _expected_preview_fixture_id_from_parts(str(metadata.get("spellbook_id", "")), str(metadata.get("phase_id", "")), int(snapshot.get("match_seed", 0))))),
 		"preview_signature": str(metadata.get("preview_signature", "")),
 		"preview_signature_digest": preview_digest,
@@ -376,6 +383,8 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 	if str(fields.get("preview_fixture_id", "")) != _expected_preview_fixture_id(fields) \
 			or str(fields.get("preview_export_id", "")) != _expected_preview_export_id(fields):
 		return "preview_fixture_mismatch"
+	if str(fields.get("preview_authority_scope", SPELLBOOK_PREVIEW_AUTHORITY_SCOPE)) != SPELLBOOK_PREVIEW_AUTHORITY_SCOPE:
+		return "preview_authority_scope_mismatch"
 	if int(fields.get("preview_export_schema_version", 0)) != SPELLBOOK_PREVIEW_EXPORT_SCHEMA_VERSION:
 		return "bad_preview_schema"
 	if signature_digest > 0 and preview_digest != signature_digest:

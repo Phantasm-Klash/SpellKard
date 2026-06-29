@@ -12,12 +12,13 @@ const PREVIEW_SAMPLE_WINDOW_START_TICK := 0
 const PREVIEW_SAMPLE_WINDOW_END_TICK := 140
 const PREVIEW_SAMPLE_WINDOW_STRIDE_TICKS := 28
 const PREVIEW_DIGEST_MODULUS := 1000000007
+const PREVIEW_AUTHORITY_SCOPE := "local_practice_preview_only"
 
 const GOLDEN_PREVIEW_FIXTURES: Dictionary = {
-	"original_boss_archive:nonspell_radial_entry:20260625": {"export_schema_version": 1, "signature_digest": 905452029, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [429408177, 651507191, 705589077, 266214312, 882357878, 75020320], "sample_emit_counts": [24, 42, 24, 24, 42, 24], "sample_count": 6, "max_emit_per_tick": 42, "bullet_cap_per_tick": 192, "budget_headroom": 150, "performance_budget_status": "within_budget"},
-	"original_boss_archive:spell_laser_field:20260625": {"export_schema_version": 1, "signature_digest": 187927263, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [450260093, 75256905, 0, 862484991, 934817433, 0], "sample_emit_counts": [3, 2, 0, 12, 20, 0], "sample_count": 6, "max_emit_per_tick": 20, "bullet_cap_per_tick": 192, "budget_headroom": 172, "performance_budget_status": "within_budget"},
-	"original_boss_archive:spell_summoner_split:20260625": {"export_schema_version": 1, "signature_digest": 471609142, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [368982465, 0, 0, 0, 0, 742323659], "sample_emit_counts": [4, 0, 0, 0, 0, 12], "sample_count": 6, "max_emit_per_tick": 12, "bullet_cap_per_tick": 192, "budget_headroom": 180, "performance_budget_status": "within_budget"},
-	"original_boss_archive:last_spell_morph_bounce:20260625": {"export_schema_version": 1, "signature_digest": 979716623, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [769410047, 0, 0, 0, 0, 0], "sample_emit_counts": [30, 0, 0, 0, 0, 0], "sample_count": 6, "max_emit_per_tick": 30, "bullet_cap_per_tick": 192, "budget_headroom": 162, "performance_budget_status": "within_budget"},
+	"original_boss_archive:nonspell_radial_entry:20260625": {"export_schema_version": 1, "preview_authority_scope": "local_practice_preview_only", "signature_digest": 905452029, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [429408177, 651507191, 705589077, 266214312, 882357878, 75020320], "sample_emit_counts": [24, 42, 24, 24, 42, 24], "sample_count": 6, "max_emit_per_tick": 42, "bullet_cap_per_tick": 192, "budget_headroom": 150, "performance_budget_status": "within_budget"},
+	"original_boss_archive:spell_laser_field:20260625": {"export_schema_version": 1, "preview_authority_scope": "local_practice_preview_only", "signature_digest": 187927263, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [450260093, 75256905, 0, 862484991, 934817433, 0], "sample_emit_counts": [3, 2, 0, 12, 20, 0], "sample_count": 6, "max_emit_per_tick": 20, "bullet_cap_per_tick": 192, "budget_headroom": 172, "performance_budget_status": "within_budget"},
+	"original_boss_archive:spell_summoner_split:20260625": {"export_schema_version": 1, "preview_authority_scope": "local_practice_preview_only", "signature_digest": 471609142, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [368982465, 0, 0, 0, 0, 742323659], "sample_emit_counts": [4, 0, 0, 0, 0, 12], "sample_count": 6, "max_emit_per_tick": 12, "bullet_cap_per_tick": 192, "budget_headroom": 180, "performance_budget_status": "within_budget"},
+	"original_boss_archive:last_spell_morph_bounce:20260625": {"export_schema_version": 1, "preview_authority_scope": "local_practice_preview_only", "signature_digest": 979716623, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [769410047, 0, 0, 0, 0, 0], "sample_emit_counts": [30, 0, 0, 0, 0, 0], "sample_count": 6, "max_emit_per_tick": 30, "bullet_cap_per_tick": 192, "budget_headroom": 162, "performance_budget_status": "within_budget"},
 }
 
 var spellbooks: Array[Dictionary] = []
@@ -216,6 +217,7 @@ func deterministic_phase_preview(spellbook_id: String, phase_id: String, seed: i
 		"spellbook_id": spellbook_id,
 		"phase_id": phase_id,
 		"seed": seed,
+		"preview_authority_scope": PREVIEW_AUTHORITY_SCOPE,
 		"sample_ticks": PREVIEW_SAMPLE_TICKS.duplicate(),
 		"sample_window_start_tick": PREVIEW_SAMPLE_WINDOW_START_TICK,
 		"sample_window_end_tick": PREVIEW_SAMPLE_WINDOW_END_TICK,
@@ -251,6 +253,7 @@ func phase_export_data(spellbook_id: String, seed: int = DEFAULT_PREVIEW_SEED) -
 		"catalog_id": "boss_spellbook",
 		"spellbook_id": spellbook_id,
 		"seed": seed,
+		"preview_authority_scope": PREVIEW_AUTHORITY_SCOPE,
 		"source_policy": String(spellbook.get("source_policy", "")),
 		"license": "SpellKard original metadata; recipe references remain mechanism-only",
 		"provenance": "Generated from BossSpellbookModel phase scripts and deterministic preview samples",
@@ -327,6 +330,8 @@ func validate_phase_preview_exports(seed: int = DEFAULT_PREVIEW_SEED) -> Diction
 				continue
 			if String(preview_a.get("license", "")).is_empty() or String(preview_a.get("provenance", "")).is_empty():
 				failures.append("preview_missing_provenance:%s" % phase_id)
+			if String(preview_a.get("preview_authority_scope", "")) != PREVIEW_AUTHORITY_SCOPE:
+				failures.append("preview_authority_scope:%s" % phase_id)
 			if int(phase_script.get("timeout_ticks", 0)) <= 0 or int(phase_script.get("enrage_after_ticks", 0)) <= 0:
 				failures.append("preview_missing_timeout_enrage:%s" % phase_id)
 			if String(preview_a.get("signature", "")) != String(preview_b.get("signature", "")):
@@ -454,6 +459,8 @@ func _validate_golden_fixture(fixture_id: String, phase_id: String, preview: Dic
 	var failures: Array[String] = []
 	if int(fixture.get("export_schema_version", 0)) != EXPORT_SCHEMA_VERSION:
 		failures.append("golden_preview_schema:%s:%d" % [phase_id, int(fixture.get("export_schema_version", 0))])
+	if String(fixture.get("preview_authority_scope", "")) != PREVIEW_AUTHORITY_SCOPE:
+		failures.append("golden_preview_authority_scope:%s:%s" % [phase_id, fixture_id])
 	if int(preview.get("signature_digest", 0)) != int(fixture.get("signature_digest", 0)):
 		failures.append("golden_preview_digest:%s:%d" % [phase_id, int(preview.get("signature_digest", 0))])
 	if (preview.get("samples", []) as Array).size() != int(fixture.get("sample_count", 0)):

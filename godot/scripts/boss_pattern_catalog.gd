@@ -489,6 +489,8 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 			var preview_a: Dictionary = spellbook_model.deterministic_phase_preview(String(spellbook_id), phase_id, seed)
 			var preview_b: Dictionary = spellbook_model.deterministic_phase_preview(String(spellbook_id), phase_id, seed)
 			preview_count += 1
+			if String(preview_a.get("preview_authority_scope", "")) != "local_practice_preview_only":
+				failures.append("preview_authority_scope:%s" % phase_id)
 			if String(phase_script.get("license", "")).is_empty() or String(phase_script.get("provenance", "")).is_empty():
 				failures.append("script_missing_provenance:%s" % phase_id)
 			if int(phase_script.get("timeout_ticks", 0)) <= 0 or int(phase_script.get("enrage_after_ticks", 0)) <= 0:
@@ -510,6 +512,8 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 				seen_fixture_ids.append(fixture_id)
 				if int(preview_a.get("signature_digest", 0)) != int(fixture.get("signature_digest", 0)):
 					failures.append("golden_preview_digest:%s:%d" % [phase_id, int(preview_a.get("signature_digest", 0))])
+				if String(fixture.get("preview_authority_scope", "")) != "local_practice_preview_only":
+					failures.append("golden_preview_authority_scope:%s" % phase_id)
 				if (preview_a.get("samples", []) as Array).size() != int(fixture.get("sample_count", 0)):
 					failures.append("golden_preview_samples:%s" % phase_id)
 				if int(preview_a.get("max_emit_per_tick", 0)) != int(fixture.get("max_emit_per_tick", 0)):
@@ -532,6 +536,8 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 						failures.append("pattern_lab_missing_preview:%s" % phase_id)
 					if int(coverage.get("deterministic_preview_digest", 0)) != int(preview_a.get("signature_digest", 0)):
 						failures.append("pattern_lab_digest_mismatch:%s" % phase_id)
+					if String(coverage.get("preview_authority_scope", "")) != String(preview_a.get("preview_authority_scope", "")):
+						failures.append("pattern_lab_authority_scope_mismatch:%s" % phase_id)
 					if int(coverage.get("max_preview_emit", 0)) != int(preview_a.get("max_emit_per_tick", 0)):
 						failures.append("pattern_lab_max_emit_mismatch:%s" % phase_id)
 					if int(coverage.get("preview_budget_headroom", 0)) != int(preview_a.get("budget_headroom", 0)):
