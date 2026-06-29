@@ -176,6 +176,17 @@ def check_boss_pattern_catalog_contract() -> list[str]:
                 errors.append(f"{replay_path.relative_to(ROOT)}: missing spellbook replay metadata token {token}")
     if "validate_spellbook_preview_metadata" not in replay_store.read_text(encoding="utf-8"):
         errors.append("godot/scripts/replay_store.gd: missing exact spellbook preview metadata validator")
+    replay_store_text = replay_store.read_text(encoding="utf-8")
+    replay_list_text = replay_list.read_text(encoding="utf-8")
+    if "metadata_status_for_entry" not in replay_store_text or "metadata_status_for_entry" not in replay_list_text:
+        errors.append("spellbook replay metadata status contract missing metadata_status_for_entry")
+    for token in [
+        '"preview_budget_overrun"',
+        '"bad_preview_sample_window"',
+        '"local_preview_marked_authoritative"',
+    ]:
+        if token not in replay_store_text:
+            errors.append(f"godot/scripts/replay_store.gd: missing spellbook replay metadata status token {token}")
 
     check_text = catalog_check.read_text(encoding="utf-8")
     for token in [
@@ -202,6 +213,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "preview_sample_count",
         "preview_budget_headroom",
         "performance_budget_status",
+        "preview_budget_overrun",
+        "bad_preview_sample_window",
+        "local_preview_marked_authoritative",
     ]:
         if token not in check_text:
             errors.append(f"tools/boss_pattern_catalog_check.gd: missing catalog check token {token}")

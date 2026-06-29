@@ -153,6 +153,8 @@ func _entry_metadata_valid(entry: Dictionary) -> bool:
 func _entry_metadata_status(entry: Dictionary, metadata_valid: bool) -> String:
 	if metadata_valid:
 		return "valid"
+	if replay_store != null and replay_store.has_method("metadata_status_for_entry"):
+		return str(replay_store.metadata_status_for_entry(entry))
 	if str(entry.get("catalog_id", "")) == "boss_spellbook" or str(entry.get("mode", "")) == "boss_spellbook_practice":
 		return "missing_spellbook_preview"
 	return "invalid"

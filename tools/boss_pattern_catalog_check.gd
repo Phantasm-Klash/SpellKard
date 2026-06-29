@@ -169,8 +169,14 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 		if bool(invalid_row.get("metadata_valid", true)) or String(invalid_row.get("metadata_status", "")) != "missing_spellbook_preview":
 			failures.append("invalid_row_metadata:%s" % [invalid_row])
 		var over_budget_row: Dictionary = replay_list._row_from_entry(over_budget_entry, rows.size())
-		if bool(over_budget_row.get("metadata_valid", true)) or String(over_budget_row.get("metadata_status", "")) != "missing_spellbook_preview":
+		if bool(over_budget_row.get("metadata_valid", true)) or String(over_budget_row.get("metadata_status", "")) != "preview_budget_overrun":
 			failures.append("over_budget_row_metadata:%s" % [over_budget_row])
+		var authoritative_row: Dictionary = replay_list._row_from_entry(authoritative_entry, rows.size() + 1)
+		if bool(authoritative_row.get("metadata_valid", true)) or String(authoritative_row.get("metadata_status", "")) != "local_preview_marked_authoritative":
+			failures.append("authoritative_row_metadata:%s" % [authoritative_row])
+		var bad_sample_count_row: Dictionary = replay_list._row_from_entry(bad_sample_count_entry, rows.size() + 2)
+		if bool(bad_sample_count_row.get("metadata_valid", true)) or String(bad_sample_count_row.get("metadata_status", "")) != "bad_preview_sample_window":
+			failures.append("bad_sample_count_row_metadata:%s" % [bad_sample_count_row])
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,

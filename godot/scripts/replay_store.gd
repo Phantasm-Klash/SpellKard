@@ -138,6 +138,9 @@ func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary)
 		"failures": failures,
 	}
 
+func metadata_status_for_entry(entry: Dictionary) -> String:
+	return _spellbook_metadata_status_from_fields(entry)
+
 func save_index(entries: Array[Dictionary]) -> bool:
 	if not _ensure_replay_dir():
 		return false
@@ -246,25 +249,31 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 	}
 
 func _metadata_valid(metadata: Dictionary) -> bool:
-	if str(metadata.get("mode", "")) != "boss_spellbook_practice" and str(metadata.get("catalog_id", "")) != "boss_spellbook":
-		return true
-	var preview_digest := int(metadata.get("preview_signature_digest", 0))
-	if preview_digest <= 0 and not str(metadata.get("preview_signature", "")).is_empty():
-		preview_digest = _stable_signature_digest(str(metadata.get("preview_signature", "")))
-	return not str(metadata.get("spellbook_id", "")).is_empty() \
-		and not str(metadata.get("phase_id", "")).is_empty() \
-		and not str(metadata.get("preview_export_id", "")).is_empty() \
-		and preview_digest > 0 \
-		and not _normalized_int_array(metadata.get("preview_sample_ticks", [])).is_empty() \
-		and int(metadata.get("preview_sample_count", -1)) == _normalized_int_array(metadata.get("preview_sample_ticks", [])).size() \
-		and int(metadata.get("preview_budget_headroom", -1)) >= 0 \
-		and str(metadata.get("performance_budget_status", "")) == "within_budget" \
-		and not bool(metadata.get("server_authoritative", false))
+	return _spellbook_metadata_status_from_fields(metadata) == "valid"
 
 func _metadata_status(metadata: Dictionary) -> String:
-	if _metadata_valid(metadata):
+	return _spellbook_metadata_status_from_fields(metadata)
+
+func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
+	if str(fields.get("mode", "")) != "boss_spellbook_practice" and str(fields.get("catalog_id", "")) != "boss_spellbook":
 		return "valid"
-	return "missing_spellbook_preview"
+	var preview_digest := int(fields.get("preview_signature_digest", 0))
+	if preview_digest <= 0 and not str(fields.get("preview_signature", "")).is_empty():
+		preview_digest = _stable_signature_digest(str(fields.get("preview_signature", "")))
+	if bool(fields.get("server_authoritative", false)):
+		return "local_preview_marked_authoritative"
+	if str(fields.get("spellbook_id", "")).is_empty() \
+			or str(fields.get("phase_id", "")).is_empty() \
+			or str(fields.get("preview_export_id", "")).is_empty() \
+			or preview_digest <= 0:
+		return "missing_spellbook_preview"
+	var sample_ticks := _normalized_int_array(fields.get("preview_sample_ticks", []))
+	var sample_count := int(fields.get("preview_sample_count", -1))
+	if sample_ticks.is_empty() or sample_count <= 0 or sample_count != sample_ticks.size():
+		return "bad_preview_sample_window"
+	if int(fields.get("preview_budget_headroom", -1)) < 0 or str(fields.get("performance_budget_status", "")) != "within_budget":
+		return "preview_budget_overrun"
+	return "valid"
 
 func _stable_signature_digest(signature: String) -> int:
 	var digest := 0
