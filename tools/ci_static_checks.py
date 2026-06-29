@@ -539,6 +539,7 @@ def check_ui_page_contracts() -> list[str]:
     for token in [
         "func _ui_visible_mouse_health_check()",
         "func _ui_focus_section_runtime_check(page_layout: Dictionary)",
+        "func _page_layout_focus_action_ids(screen_id: String) -> Array[String]",
         '"page_focus_sections_missing_visible"',
         '"visible_mouse_blocked_count"',
     ]:
@@ -548,6 +549,8 @@ def check_ui_page_contracts() -> list[str]:
     for token in [
         '"visible_mouse_blocked_count"',
         '"page_focus_section_missing_visible_count"',
+        '"community focus action should open activity',
+        '"player settings focus action should open input settings',
     ]:
         if token not in ui_smoke_text:
             errors.append(f"tools/client_ui_smoke_test.gd: missing UI interaction smoke token {token}")

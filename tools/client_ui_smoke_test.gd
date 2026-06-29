@@ -250,6 +250,10 @@ func _validate_community_pages() -> bool:
 	var community_rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 32)
 	if not _rows_have_ids(community_rows, ["community_events", "community_friends", "community_social", "community_promotions", "announce_architecture", "link_discord"]):
 		return _fail("community rows missing social surfaces")
+	var community_focus: Dictionary = main_node.call("_ui_press_visible_focus_action")
+	await _settle_frames(2)
+	if not bool(community_focus.get("ok", false)) or String(community_focus.get("row_id", "")) != "community_events" or String(main_node.get("ui_screen_model").current_screen) != "activity":
+		return _fail("community focus action should open activity %s" % [community_focus])
 	snapshot = await _open_snapshot("activity")
 	if not _assert_page_health(snapshot, "activity", 2, 3):
 		return false
@@ -294,6 +298,12 @@ func _validate_settings_pages() -> bool:
 	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 48)
 	if not _rows_have_ids(rows, ["settings_language", "settings_gamepad_curve", "settings_keybinds", "settings_volume", "settings_resolution", "settings_save_now", "settings_restore_defaults"]):
 		return _fail("player settings rows missing expected controls")
+	var settings_focus: Dictionary = main_node.call("_ui_press_visible_focus_action")
+	await _settle_frames(2)
+	if not bool(settings_focus.get("ok", false)) or String(settings_focus.get("row_id", "")) != "settings_gamepad_curve" or String(main_node.get("ui_screen_model").current_screen) != "input_settings":
+		return _fail("player settings focus action should open input settings %s" % [settings_focus])
+	snapshot = await _open_snapshot("player_settings")
+	rows = main_node.call("_ui_screen_rows", 48)
 	var language_index := _row_index_by_id(rows, "settings_language")
 	if language_index < 0:
 		return _fail("language row missing")

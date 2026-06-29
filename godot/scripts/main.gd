@@ -4966,6 +4966,9 @@ func _page_focus_data(screen_id: String, rows: Array[Dictionary], selected: Dict
 			"primary_row_ids": [],
 			"primary_label": _row_label_text(selected),
 		}
+	var layout_focus_ids := _page_layout_focus_action_ids(screen_id)
+	if not layout_focus_ids.is_empty():
+		payload["primary_row_ids"] = layout_focus_ids
 	var target := _focus_target_row(rows, payload, selected)
 	payload["row_index"] = int(target.get("row_index", -1))
 	payload["row_id"] = String(target.get("row_id", ""))
@@ -4973,6 +4976,14 @@ func _page_focus_data(screen_id: String, rows: Array[Dictionary], selected: Dict
 	payload["target_detail"] = String(target.get("detail", ""))
 	payload["tooltip"] = "%s: %s" % [String(payload.get("title", "")), String(payload.get("summary", ""))]
 	return payload
+
+func _page_layout_focus_action_ids(screen_id: String) -> Array[String]:
+	if ui_screen_model == null or not ui_screen_model.has_method("page_layout"):
+		return []
+	var layout_value: Variant = ui_screen_model.page_layout(screen_id)
+	if typeof(layout_value) != TYPE_DICTIONARY:
+		return []
+	return _ui_string_array((layout_value as Dictionary).get("focus_action_ids", []))
 
 func _focus_target_row(rows: Array[Dictionary], payload: Dictionary, selected: Dictionary) -> Dictionary:
 	var primary_ids: Array = payload.get("primary_row_ids", [])
