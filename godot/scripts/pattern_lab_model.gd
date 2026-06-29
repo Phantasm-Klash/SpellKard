@@ -54,6 +54,8 @@ func rows_for_spellbook_phase(catalog_id: String, phase_id: String, spellbook_id
 		return []
 	var preview: Dictionary = boss_spellbook_model.deterministic_phase_preview(spellbook_id, phase_id, seed)
 	var phase_script: Dictionary = phase.get("phase_script", {})
+	if phase_script.is_empty() and boss_spellbook_model.has_method("phase_script_config"):
+		phase_script = boss_spellbook_model.phase_script_config(spellbook_id, phase_id)
 	var pattern_rows: Array[Dictionary] = []
 	for pattern in phase.get("patterns", []):
 		var pattern_dict: Dictionary = (pattern as Dictionary).duplicate(true)
@@ -152,9 +154,11 @@ func _spellbook_phase_coverage_row(catalog_id: String, spellbook_id: String, pha
 		"deterministic_preview_signature": String(preview.get("signature", "")),
 		"deterministic_preview_digest": int(preview.get("signature_digest", 0)),
 		"seed": int(preview.get("seed", 0)),
+		"preview_sample_ticks": (preview.get("sample_ticks", []) as Array).duplicate(),
+		"preview_sample_count": (preview.get("samples", []) as Array).size(),
 		"max_preview_emit": int(preview.get("max_emit_per_tick", 0)),
-		"preview_budget_headroom": max(0, int(phase_script.get("bullet_cap_per_tick", 0)) - int(preview.get("max_emit_per_tick", 0))),
-		"performance_budget_status": "within_budget" if int(preview.get("max_emit_per_tick", 0)) <= int(phase_script.get("bullet_cap_per_tick", 0)) else "over_budget",
+		"preview_budget_headroom": int(preview.get("budget_headroom", int(phase_script.get("bullet_cap_per_tick", 0)) - int(preview.get("max_emit_per_tick", 0)))),
+		"performance_budget_status": String(preview.get("performance_budget_status", "within_budget" if int(preview.get("max_emit_per_tick", 0)) <= int(phase_script.get("bullet_cap_per_tick", 0)) else "over_budget")),
 		"density_estimate": density_peak,
 		"danger_estimate": danger_peak,
 		"spawn_rate_per_second": _peak_float(pattern_rows, "spawn_rate_per_second"),

@@ -108,6 +108,12 @@ func phase_config(spellbook_id: String, phase_id: String) -> Dictionary:
 			return phase_dict.duplicate(true)
 	return {}
 
+func phase_script_config(spellbook_id: String, phase_id: String) -> Dictionary:
+	var phase := phase_config(spellbook_id, phase_id)
+	if phase.is_empty():
+		return {}
+	return _phase_script_for(phase)
+
 func total_ticks(spellbook: Dictionary) -> int:
 	var total: int = 0
 	for phase in spellbook.get("phases", []):

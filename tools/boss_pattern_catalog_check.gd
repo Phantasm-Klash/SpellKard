@@ -119,7 +119,14 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 	stale_sample_entry["replay_id"] = "fixture_stale_samples_spellbook_preview"
 	stale_sample_entry["preview_sample_ticks"] = [0, 30, 60]
 	stale_sample_entry["preview_sample_count"] = 3
-	var invalid_entries: Array[Dictionary] = [invalid_entry, authoritative_entry, over_budget_entry]
+	var bad_sample_count_entry := valid_entries[0].duplicate(true)
+	bad_sample_count_entry["replay_id"] = "fixture_bad_sample_count_spellbook_preview"
+	bad_sample_count_entry["preview_sample_count"] = int(bad_sample_count_entry.get("preview_sample_count", 0)) + 1
+	var missing_sample_entry := valid_entries[0].duplicate(true)
+	missing_sample_entry["replay_id"] = "fixture_missing_samples_spellbook_preview"
+	missing_sample_entry["preview_sample_ticks"] = []
+	missing_sample_entry["preview_sample_count"] = 0
+	var invalid_entries: Array[Dictionary] = [invalid_entry, authoritative_entry, over_budget_entry, bad_sample_count_entry, missing_sample_entry]
 	var valid_result: Dictionary = store.validate_index_metadata(valid_entries)
 	if not bool(valid_result.get("ok", false)):
 		failures.append("valid_replay_rejected:%s" % [valid_result.get("failures", [])])
@@ -135,6 +142,10 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 		failures.append("stale_digest_preview_accepted")
 	if bool(store.validate_spellbook_preview_metadata(stale_sample_entry, first_preview).get("ok", false)):
 		failures.append("stale_sample_preview_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(bad_sample_count_entry)).get("ok", false)):
+		failures.append("bad_sample_count_replay_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(missing_sample_entry)).get("ok", false)):
+		failures.append("missing_sample_window_replay_accepted")
 	var replay_list: RefCounted = ReplayListModel.new()
 	replay_list.replay_store = store
 	var list_entries: Array[Dictionary] = valid_entries.duplicate(true)
@@ -191,6 +202,11 @@ func _replay_entry_for_preview(store: RefCounted, spellbook_id: String, phase_id
 		},
 	}
 	return store._build_index_entry(snapshot, "user://replays/fixture_%s_%s.json" % [spellbook_id, phase_id])
+
+func _single_entry_array(entry: Dictionary) -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	entries.append(entry)
+	return entries
 
 func _arrays_equal_ints(left: Variant, right: Variant) -> bool:
 	if typeof(left) != TYPE_ARRAY or typeof(right) != TYPE_ARRAY:
