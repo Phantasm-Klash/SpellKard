@@ -7,6 +7,7 @@ const REPLAY_INDEX_PATH := "user://replays/index.json"
 const MAX_INDEX_ENTRIES := 20
 const SPELLBOOK_PREVIEW_EXPORT_SCHEMA_VERSION := 1
 const SPELLBOOK_PREVIEW_SAMPLE_TICKS: Array[int] = [0, 28, 56, 84, 112, 140]
+const SPELLBOOK_PREVIEW_EXPORT_PREFIX := "boss_spellbook_preview"
 
 var last_error := ""
 
@@ -95,6 +96,12 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 				failures.append("missing_phase_id:%s" % replay_id)
 			if str(entry.get("preview_export_id", "")).is_empty():
 				failures.append("missing_preview_export_id:%s" % replay_id)
+			if str(entry.get("preview_fixture_id", "")).is_empty():
+				failures.append("missing_preview_fixture_id:%s" % replay_id)
+			elif str(entry.get("preview_fixture_id", "")) != _expected_preview_fixture_id(entry):
+				failures.append("preview_fixture_mismatch:%s" % replay_id)
+			if str(entry.get("preview_export_id", "")) != _expected_preview_export_id(entry):
+				failures.append("preview_export_id_mismatch:%s" % replay_id)
 			if int(entry.get("preview_export_schema_version", 0)) != SPELLBOOK_PREVIEW_EXPORT_SCHEMA_VERSION:
 				failures.append("bad_preview_schema:%s" % replay_id)
 			if int(entry.get("preview_signature_digest", 0)) <= 0:
@@ -149,6 +156,8 @@ func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary)
 		failures.append("preview_phase_mismatch:%s" % str(entry.get("replay_id", "")))
 	if String(entry.get("preview_export_id", "")) != String(preview.get("export_id", "")):
 		failures.append("preview_export_mismatch:%s" % str(entry.get("replay_id", "")))
+	if String(entry.get("preview_fixture_id", "")) != _expected_preview_fixture_id(preview):
+		failures.append("preview_fixture_mismatch:%s" % str(entry.get("replay_id", "")))
 	if int(entry.get("preview_export_schema_version", 0)) != int(preview.get("export_schema_version", 0)):
 		failures.append("preview_schema_mismatch:%s" % str(entry.get("replay_id", "")))
 	if int(entry.get("preview_signature_digest", 0)) != int(preview.get("signature_digest", 0)):
@@ -273,6 +282,7 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"phase_id": str(metadata.get("phase_id", "")),
 		"preview_export_schema_version": preview_schema_version,
 		"preview_export_id": str(metadata.get("preview_export_id", "")),
+		"preview_fixture_id": str(metadata.get("preview_fixture_id", _expected_preview_fixture_id_from_parts(str(metadata.get("spellbook_id", "")), str(metadata.get("phase_id", "")), int(snapshot.get("match_seed", 0))))),
 		"preview_signature": str(metadata.get("preview_signature", "")),
 		"preview_signature_digest": preview_digest,
 		"preview_sample_ticks": preview_sample_ticks,
@@ -310,6 +320,11 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 			or str(fields.get("preview_export_id", "")).is_empty() \
 			or preview_digest <= 0:
 		return "missing_spellbook_preview"
+	if str(fields.get("preview_fixture_id", "")).is_empty():
+		return "missing_spellbook_preview"
+	if str(fields.get("preview_fixture_id", "")) != _expected_preview_fixture_id(fields) \
+			or str(fields.get("preview_export_id", "")) != _expected_preview_export_id(fields):
+		return "preview_fixture_mismatch"
 	if int(fields.get("preview_export_schema_version", 0)) != SPELLBOOK_PREVIEW_EXPORT_SCHEMA_VERSION:
 		return "bad_preview_schema"
 	var sample_ticks := _preview_sample_ticks_from_fields(fields)
@@ -339,6 +354,29 @@ func _stable_signature_digest(signature: String) -> int:
 	for index in range(signature.length()):
 		digest = int((digest * 131 + signature.unicode_at(index)) % 1000000007)
 	return digest
+
+func _expected_preview_fixture_id(fields: Dictionary) -> String:
+	return _expected_preview_fixture_id_from_parts(
+		str(fields.get("spellbook_id", "")),
+		str(fields.get("phase_id", "")),
+		int(fields.get("seed", fields.get("match_seed", 0)))
+	)
+
+func _expected_preview_fixture_id_from_parts(spellbook_id: String, phase_id: String, seed: int) -> String:
+	if spellbook_id.is_empty() or phase_id.is_empty() or seed <= 0:
+		return ""
+	return "%s:%s:%d" % [spellbook_id, phase_id, seed]
+
+func _expected_preview_export_id(fields: Dictionary) -> String:
+	var fixture_id := _expected_preview_fixture_id(fields)
+	if fixture_id.is_empty():
+		return ""
+	return "%s_%s_%s_%d" % [
+		SPELLBOOK_PREVIEW_EXPORT_PREFIX,
+		str(fields.get("spellbook_id", "")),
+		str(fields.get("phase_id", "")),
+		int(fields.get("seed", fields.get("match_seed", 0))),
+	]
 
 func _normalized_int_array(value: Variant) -> Array[int]:
 	var result: Array[int] = []

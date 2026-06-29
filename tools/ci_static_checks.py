@@ -181,7 +181,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
 
     for replay_path in [replay_store, replay_list]:
         replay_text = replay_path.read_text(encoding="utf-8")
-        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_schema_version"', '"preview_export_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_signature_digests"', '"preview_sample_emit_counts"', '"preview_sample_count"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
+        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_schema_version"', '"preview_export_id"', '"preview_fixture_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_signature_digests"', '"preview_sample_emit_counts"', '"preview_sample_count"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
             if token not in replay_text:
                 errors.append(f"{replay_path.relative_to(ROOT)}: missing spellbook replay metadata token {token}")
     if "validate_spellbook_preview_metadata" not in replay_store.read_text(encoding="utf-8"):
@@ -206,6 +206,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         '"bad_preview_sample_window"',
         '"bad_preview_schema"',
         '"local_preview_marked_authoritative"',
+        '"preview_fixture_mismatch"',
     ]:
         if token not in replay_store_text:
             errors.append(f"godot/scripts/replay_store.gd: missing spellbook replay metadata status token {token}")
@@ -226,6 +227,8 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "fixture_bad_schema_spellbook_preview",
         "fixture_over_budget_spellbook_preview",
         "fixture_stale_digest_spellbook_preview",
+        "fixture_stale_fixture_spellbook_preview",
+        "fixture_stale_export_spellbook_preview",
         "fixture_stale_samples_spellbook_preview",
         "fixture_stale_sample_digests_spellbook_preview",
         "fixture_stale_sample_emit_counts_spellbook_preview",
@@ -240,6 +243,10 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "bad_schema_replay_accepted",
         "bad_sample_count_replay_accepted",
         "bad_sample_emit_count_replay_accepted",
+        "stale_fixture_replay_accepted",
+        "stale_export_replay_accepted",
+        "stale_fixture_preview_accepted",
+        "stale_export_preview_accepted",
         "stale_sample_digest_preview_accepted",
         "stale_sample_emit_count_preview_accepted",
         "negative_sample_digest_replay_accepted",
@@ -254,6 +261,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "validate_spellbook_preview_metadata",
         "preview_export_schema_version",
         "preview_sample_ticks",
+        "preview_fixture_id",
         "preview_sample_signature_digests",
         "preview_sample_emit_counts",
         "preview_sample_count",
@@ -263,6 +271,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "bad_preview_schema",
         "bad_preview_sample_window",
         "local_preview_marked_authoritative",
+        "preview_fixture_mismatch",
     ]:
         if token not in check_text:
             errors.append(f"tools/boss_pattern_catalog_check.gd: missing catalog check token {token}")
