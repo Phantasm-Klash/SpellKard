@@ -2869,7 +2869,9 @@ func _ui_overlay_snapshot() -> Dictionary:
 	var overlap_check := _ui_visible_control_overlap_check()
 	var focus_check := _ui_visible_focus_health_check()
 	var text_fit_check := _ui_visible_text_fit_check()
+	var label_text_fit_check := _ui_visible_label_text_fit_check()
 	var mouse_check := _ui_visible_mouse_health_check()
+	var metadata_check := _ui_visible_button_metadata_check()
 	var focus_section_check := _ui_focus_section_runtime_check(page_layout)
 	var viewport_size := get_viewport_rect().size
 	var panel_rect := Rect2(ui_panel.position, ui_panel.size) if ui_panel != null else Rect2()
@@ -3007,9 +3009,15 @@ func _ui_overlay_snapshot() -> Dictionary:
 		"visible_control_small_targets": String(text_fit_check.get("small_targets", "")),
 		"visible_text_unclipped_count": int(text_fit_check.get("unclipped_count", 0)),
 		"visible_text_unclipped": String(text_fit_check.get("unclipped", "")),
+		"visible_label_unwrapped_count": int(label_text_fit_check.get("unwrapped_count", 0)),
+		"visible_label_unwrapped": String(label_text_fit_check.get("unwrapped", "")),
 		"visible_mouse_operable_count": int(mouse_check.get("operable_count", 0)),
 		"visible_mouse_blocked_count": int(mouse_check.get("blocked_count", 0)),
 		"visible_mouse_blocked": String(mouse_check.get("blocked", "")),
+		"visible_button_metadata_missing_count": int(metadata_check.get("missing_count", 0)),
+		"visible_button_metadata_missing": String(metadata_check.get("missing", "")),
+		"visible_button_signal_missing_count": int(metadata_check.get("signal_missing_count", 0)),
+		"visible_button_signal_missing": String(metadata_check.get("signal_missing", "")),
 		"debug_status": ui_screen_model.screen_summary() if ui_screen_model != null else "",
 	}
 
@@ -3089,6 +3097,39 @@ func _ui_visible_text_fit_check() -> Dictionary:
 		"unclipped": ",".join(unclipped),
 	}
 
+func _ui_visible_label_text_fit_check() -> Dictionary:
+	var labels: Array[Dictionary] = []
+	_append_visible_label_for_text_fit(labels, "home_portrait", ui_home_portrait_label)
+	_append_visible_label_for_text_fit(labels, "home_status", ui_home_status_label)
+	_append_visible_label_for_text_fit(labels, "nav_path", ui_nav_label)
+	_append_visible_label_for_text_fit(labels, "shell_status", ui_shell_label)
+	_append_visible_label_for_text_fit(labels, "page_summary", ui_page_summary_label)
+	_append_visible_label_for_text_fit(labels, "section_summary", ui_section_label)
+	_append_visible_label_for_text_fit(labels, "control_preview", ui_control_label)
+	_append_visible_label_for_text_fit(labels, "status", ui_status_label)
+	_append_visible_label_for_text_fit(labels, "detail", ui_detail_label)
+	_append_visible_label_for_text_fit(labels, "hint", ui_hint_label)
+	var unwrapped: Array[String] = []
+	for item in labels:
+		var label := item.get("label", null) as Label
+		if label == null:
+			continue
+		if label.autowrap_mode == TextServer.AUTOWRAP_OFF:
+			unwrapped.append(String(item.get("id", "")))
+	return {
+		"label_count": labels.size(),
+		"unwrapped_count": unwrapped.size(),
+		"unwrapped": ",".join(unwrapped),
+	}
+
+func _append_visible_label_for_text_fit(result: Array[Dictionary], label_id: String, label: Label) -> void:
+	if label == null or not label.is_visible_in_tree() or label.text.is_empty():
+		return
+	result.append({
+		"id": label_id,
+		"label": label,
+	})
+
 func _ui_visible_mouse_health_check() -> Dictionary:
 	var controls := _visible_focus_controls()
 	var blocked: Array[String] = []
@@ -3103,6 +3144,40 @@ func _ui_visible_mouse_health_check() -> Dictionary:
 		"blocked_count": blocked.size(),
 		"blocked": ",".join(blocked),
 	}
+
+func _ui_visible_button_metadata_check() -> Dictionary:
+	var controls := _visible_focus_controls()
+	var missing: Array[String] = []
+	var signal_missing: Array[String] = []
+	for item in controls:
+		var control_id := String(item.get("id", ""))
+		var button := item.get("button", null) as Button
+		if button == null:
+			continue
+		if not _ui_button_owned_by_current_screen(button) or not _visible_button_has_action_metadata(control_id, button):
+			missing.append(control_id)
+		if button.pressed.get_connections().is_empty():
+			signal_missing.append(control_id)
+	return {
+		"checked_count": controls.size(),
+		"missing_count": missing.size(),
+		"missing": ",".join(missing),
+		"signal_missing_count": signal_missing.size(),
+		"signal_missing": ",".join(signal_missing),
+	}
+
+func _visible_button_has_action_metadata(control_id: String, button: Button) -> bool:
+	if control_id.begins_with("home"):
+		return int(button.get_meta("row_index", -1)) >= 0 and not String(button.get_meta("screen_id", "")).is_empty()
+	if control_id.begins_with("nav") or control_id.begins_with("category") or control_id.begins_with("status"):
+		return not String(button.get_meta("screen_id", "")).is_empty()
+	if control_id.begins_with("focus") or control_id.begins_with("section") or control_id.begins_with("overview") or control_id.begins_with("row"):
+		return int(button.get_meta("row_index", -1)) >= 0
+	if control_id.begins_with("quick"):
+		return int(button.get_meta("row_index", -1)) >= 0 or not String(button.get_meta("screen_id", "")).is_empty()
+	if control_id.begins_with("control"):
+		return not String(button.get_meta("control_action", "")).is_empty()
+	return true
 
 func _ui_focus_section_runtime_check(page_layout: Dictionary) -> Dictionary:
 	var expected_sections := _ui_string_array(page_layout.get("focus_sections", []))

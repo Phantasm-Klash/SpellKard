@@ -448,8 +448,14 @@ func _assert_page_health(snapshot: Dictionary, label: String, expected_quick_max
 		return _fail("%s visible controls below minimum target size %s" % [label, String(snapshot.get("visible_control_small_targets", ""))])
 	if int(snapshot.get("visible_text_unclipped_count", 0)) != 0:
 		return _fail("%s visible button text is not clipped/ellipsized %s" % [label, String(snapshot.get("visible_text_unclipped", ""))])
+	if int(snapshot.get("visible_label_unwrapped_count", 0)) != 0:
+		return _fail("%s visible labels are not configured to wrap %s" % [label, String(snapshot.get("visible_label_unwrapped", ""))])
 	if int(snapshot.get("visible_mouse_blocked_count", 0)) != 0:
 		return _fail("%s visible buttons are not mouse-operable %s" % [label, String(snapshot.get("visible_mouse_blocked", ""))])
+	if int(snapshot.get("visible_button_metadata_missing_count", 0)) != 0:
+		return _fail("%s visible buttons missing action metadata %s" % [label, String(snapshot.get("visible_button_metadata_missing", ""))])
+	if int(snapshot.get("visible_button_signal_missing_count", 0)) != 0:
+		return _fail("%s visible buttons missing pressed signal handlers %s" % [label, String(snapshot.get("visible_button_signal_missing", ""))])
 	if int(snapshot.get("page_state_region_count", 0)) <= 0 or String(snapshot.get("page_state_regions", "")).is_empty():
 		return _fail("%s missing page state regions %s" % [label, snapshot])
 	if int(snapshot.get("page_layout_slot_count", 0)) <= 0 or String(snapshot.get("page_layout_slots", "")).is_empty():
