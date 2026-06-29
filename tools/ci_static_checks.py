@@ -181,7 +181,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
 
     for replay_path in [replay_store, replay_list]:
         replay_text = replay_path.read_text(encoding="utf-8")
-        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_schema_version"', '"preview_export_id"', '"preview_fixture_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_signature_digests"', '"preview_sample_emit_counts"', '"preview_sample_count"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
+        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_schema_version"', '"preview_export_id"', '"preview_fixture_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_signature_digests"', '"preview_sample_emit_counts"', '"preview_sample_count"', '"preview_max_emit_per_tick"', '"preview_bullet_cap_per_tick"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
             if token not in replay_text:
                 errors.append(f"{replay_path.relative_to(ROOT)}: missing spellbook replay metadata token {token}")
     if "validate_spellbook_preview_metadata" not in replay_store.read_text(encoding="utf-8"):
@@ -249,6 +249,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "stale_export_preview_accepted",
         "stale_sample_digest_preview_accepted",
         "stale_sample_emit_count_preview_accepted",
+        "stale_sample_emit_count_replay_accepted",
         "negative_sample_digest_replay_accepted",
         "negative_sample_emit_count_replay_accepted",
         "missing_sample_window_replay_accepted",
@@ -265,6 +266,8 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "preview_sample_signature_digests",
         "preview_sample_emit_counts",
         "preview_sample_count",
+        "preview_max_emit_per_tick",
+        "preview_bullet_cap_per_tick",
         "preview_budget_headroom",
         "performance_budget_status",
         "preview_budget_overrun",

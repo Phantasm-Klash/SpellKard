@@ -88,6 +88,8 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 			var sample_ticks: Array[int] = _preview_sample_ticks_from_fields(entry)
 			var sample_signature_digests: Array[int] = _preview_sample_signature_digests_from_fields(entry)
 			var sample_emit_counts: Array[int] = _preview_sample_emit_counts_from_fields(entry)
+			var max_emit_per_tick := int(entry.get("preview_max_emit_per_tick", -1))
+			var bullet_cap_per_tick := int(entry.get("preview_bullet_cap_per_tick", -1))
 			var signature_sample_signature_digests: Array[int] = _sample_signature_digests_from_signature(str(entry.get("preview_signature", "")))
 			var signature_sample_emit_counts: Array[int] = _sample_emit_counts_from_signature(str(entry.get("preview_signature", "")))
 			if str(entry.get("spellbook_id", "")).is_empty():
@@ -131,6 +133,14 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 				failures.append("preview_sample_digest_signature_mismatch:%s" % replay_id)
 			if not signature_sample_emit_counts.is_empty() and not _arrays_equal_ints(sample_emit_counts, signature_sample_emit_counts):
 				failures.append("preview_sample_emit_count_signature_mismatch:%s" % replay_id)
+			if max_emit_per_tick < 0:
+				failures.append("missing_preview_max_emit:%s" % replay_id)
+			elif max_emit_per_tick != _max_int(sample_emit_counts):
+				failures.append("preview_max_emit_mismatch:%s" % replay_id)
+			if bullet_cap_per_tick <= 0:
+				failures.append("missing_preview_bullet_cap:%s" % replay_id)
+			elif int(entry.get("preview_budget_headroom", -1)) != bullet_cap_per_tick - max_emit_per_tick:
+				failures.append("preview_budget_headroom_mismatch:%s" % replay_id)
 			if int(entry.get("preview_budget_headroom", -1)) < 0:
 				failures.append("preview_budget_overrun:%s" % replay_id)
 			if str(entry.get("performance_budget_status", "")) != "within_budget":
@@ -166,6 +176,10 @@ func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary)
 		failures.append("preview_headroom_mismatch:%s" % str(entry.get("replay_id", "")))
 	if String(entry.get("performance_budget_status", "")) != String(preview.get("performance_budget_status", "")):
 		failures.append("preview_budget_status_mismatch:%s" % str(entry.get("replay_id", "")))
+	if int(entry.get("preview_max_emit_per_tick", -1)) != int(preview.get("max_emit_per_tick", -2)):
+		failures.append("preview_max_emit_mismatch:%s" % str(entry.get("replay_id", "")))
+	if int(entry.get("preview_bullet_cap_per_tick", -1)) != int(preview.get("bullet_cap_per_tick", -2)):
+		failures.append("preview_bullet_cap_mismatch:%s" % str(entry.get("replay_id", "")))
 	if int(entry.get("preview_sample_count", -1)) != (preview.get("samples", []) as Array).size():
 		failures.append("preview_sample_count_mismatch:%s" % str(entry.get("replay_id", "")))
 	if not _arrays_equal_ints(entry.get("preview_sample_ticks", []), preview.get("sample_ticks", [])):
@@ -265,7 +279,11 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 	var preview_sample_ticks := _preview_sample_ticks_from_fields(metadata)
 	var preview_sample_signature_digests := _preview_sample_signature_digests_from_fields(metadata)
 	var preview_sample_emit_counts := _preview_sample_emit_counts_from_fields(metadata)
-	return {
+	var preview_max_emit_per_tick := int(metadata.get("preview_max_emit_per_tick", _max_int(preview_sample_emit_counts)))
+	var preview_bullet_cap_per_tick := int(metadata.get("preview_bullet_cap_per_tick", 0))
+	if preview_bullet_cap_per_tick <= 0 and preview_max_emit_per_tick >= 0:
+		preview_bullet_cap_per_tick = preview_max_emit_per_tick + int(metadata.get("preview_budget_headroom", 0))
+	var entry := {
 		"replay_id": "%s_%s_%d" % [str(snapshot.get("ruleset_version", "local")), str(snapshot.get("match_seed", 0)), final_hash],
 		"path": path,
 		"saved_at": saved_at,
@@ -289,10 +307,12 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"preview_sample_signature_digests": preview_sample_signature_digests,
 		"preview_sample_emit_counts": preview_sample_emit_counts,
 		"preview_sample_count": int(metadata.get("preview_sample_count", preview_sample_ticks.size())),
+		"preview_max_emit_per_tick": preview_max_emit_per_tick,
+		"preview_bullet_cap_per_tick": preview_bullet_cap_per_tick,
 		"preview_budget_headroom": int(metadata.get("preview_budget_headroom", 0)),
 		"performance_budget_status": str(metadata.get("performance_budget_status", "")),
-		"metadata_valid": _metadata_valid(metadata),
-		"metadata_status": _metadata_status(metadata),
+		"metadata_valid": false,
+		"metadata_status": "unchecked",
 		"server_authoritative": bool(metadata.get("server_authoritative", false)),
 		"opponent": str(metadata.get("opponent", metadata.get("pattern_id", "local"))),
 		"mode": str(metadata.get("mode", "local_practice")),
@@ -300,6 +320,9 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"final_result_hash": final_hash,
 		"favorite": bool(metadata.get("favorite", false)),
 	}
+	entry["metadata_valid"] = _metadata_valid(entry)
+	entry["metadata_status"] = _metadata_status(entry)
+	return entry
 
 func _metadata_valid(metadata: Dictionary) -> bool:
 	return _spellbook_metadata_status_from_fields(metadata) == "valid"
@@ -330,6 +353,8 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 	var sample_ticks := _preview_sample_ticks_from_fields(fields)
 	var sample_signature_digests := _preview_sample_signature_digests_from_fields(fields)
 	var sample_emit_counts := _preview_sample_emit_counts_from_fields(fields)
+	var max_emit_per_tick := int(fields.get("preview_max_emit_per_tick", -1))
+	var bullet_cap_per_tick := int(fields.get("preview_bullet_cap_per_tick", -1))
 	var signature_sample_signature_digests := _sample_signature_digests_from_signature(str(fields.get("preview_signature", "")))
 	var signature_sample_emit_counts := _sample_emit_counts_from_signature(str(fields.get("preview_signature", "")))
 	var sample_count := int(fields.get("preview_sample_count", -1))
@@ -345,6 +370,10 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 		return "bad_preview_sample_window"
 	if not signature_sample_emit_counts.is_empty() and not _arrays_equal_ints(sample_emit_counts, signature_sample_emit_counts):
 		return "bad_preview_sample_window"
+	if max_emit_per_tick < 0 or max_emit_per_tick != _max_int(sample_emit_counts):
+		return "bad_preview_sample_window"
+	if bullet_cap_per_tick <= 0 or int(fields.get("preview_budget_headroom", -1)) != bullet_cap_per_tick - max_emit_per_tick:
+		return "preview_budget_overrun"
 	if int(fields.get("preview_budget_headroom", -1)) < 0 or str(fields.get("performance_budget_status", "")) != "within_budget":
 		return "preview_budget_overrun"
 	return "valid"
@@ -470,3 +499,9 @@ func _all_nonnegative_ints(values: Array[int]) -> bool:
 		if int(value) < 0:
 			return false
 	return true
+
+func _max_int(values: Array[int]) -> int:
+	var result := -1
+	for value in values:
+		result = maxi(result, int(value))
+	return result

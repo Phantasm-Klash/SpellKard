@@ -137,6 +137,8 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"preview_sample_signature_digests": (entry.get("preview_sample_signature_digests", []) as Array).duplicate(),
 		"preview_sample_emit_counts": (entry.get("preview_sample_emit_counts", []) as Array).duplicate(),
 		"preview_sample_count": int(entry.get("preview_sample_count", 0)),
+		"preview_max_emit_per_tick": int(entry.get("preview_max_emit_per_tick", 0)),
+		"preview_bullet_cap_per_tick": int(entry.get("preview_bullet_cap_per_tick", 0)),
 		"preview_budget_headroom": int(entry.get("preview_budget_headroom", 0)),
 		"performance_budget_status": str(entry.get("performance_budget_status", "")),
 		"metadata_valid": metadata_valid,
