@@ -153,6 +153,25 @@ func _entry_metadata_valid(entry: Dictionary) -> bool:
 func _entry_metadata_status(entry: Dictionary, metadata_valid: bool) -> String:
 	if metadata_valid:
 		return "valid"
+	if replay_store != null and replay_store.has_method("metadata_status_for_entry"):
+		return str(replay_store.metadata_status_for_entry(entry))
 	if str(entry.get("catalog_id", "")) == "boss_spellbook" or str(entry.get("mode", "")) == "boss_spellbook_practice":
-		return "missing_spellbook_preview"
+		if str(entry.get("spellbook_id", "")).is_empty() \
+				or str(entry.get("phase_id", "")).is_empty() \
+				or str(entry.get("preview_export_id", "")).is_empty() \
+				or int(entry.get("preview_signature_digest", 0)) <= 0:
+			return "missing_spellbook_preview"
+		var sample_ticks: Array = entry.get("preview_sample_ticks", [])
+		var sample_count := int(entry.get("preview_sample_count", -1))
+		if sample_ticks.is_empty() or sample_count <= 0:
+			return "missing_preview_sample_window"
+		if sample_count != sample_ticks.size():
+			return "preview_sample_count_mismatch"
+		if int(entry.get("preview_budget_headroom", -1)) < 0:
+			return "preview_budget_overrun"
+		if str(entry.get("performance_budget_status", "")) != "within_budget":
+			return "preview_budget_status"
+		if bool(entry.get("server_authoritative", false)):
+			return "local_preview_marked_authoritative"
+		return "invalid"
 	return "invalid"

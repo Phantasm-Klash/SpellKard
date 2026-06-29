@@ -129,14 +129,18 @@ func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary)
 		failures.append("preview_headroom_mismatch:%s" % str(entry.get("replay_id", "")))
 	if String(entry.get("performance_budget_status", "")) != String(preview.get("performance_budget_status", "")):
 		failures.append("preview_budget_status_mismatch:%s" % str(entry.get("replay_id", "")))
-	if int(entry.get("preview_sample_count", -1)) != (preview.get("samples", []) as Array).size():
-		failures.append("preview_sample_count_mismatch:%s" % str(entry.get("replay_id", "")))
 	if not _arrays_equal_ints(entry.get("preview_sample_ticks", []), preview.get("sample_ticks", [])):
 		failures.append("preview_sample_ticks_mismatch:%s" % str(entry.get("replay_id", "")))
+	if int(entry.get("preview_sample_count", -1)) != (preview.get("samples", []) as Array).size():
+		failures.append("preview_sample_count_mismatch:%s" % str(entry.get("replay_id", "")))
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,
+		"status": _preview_validation_status(failures),
 	}
+
+func metadata_status_for_entry(entry: Dictionary) -> String:
+	return _metadata_status(entry)
 
 func save_index(entries: Array[Dictionary]) -> bool:
 	if not _ensure_replay_dir():
@@ -246,25 +250,41 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 	}
 
 func _metadata_valid(metadata: Dictionary) -> bool:
+	return _metadata_status(metadata) == "valid"
+
+func _metadata_status(metadata: Dictionary) -> String:
 	if str(metadata.get("mode", "")) != "boss_spellbook_practice" and str(metadata.get("catalog_id", "")) != "boss_spellbook":
-		return true
+		return "valid"
 	var preview_digest := int(metadata.get("preview_signature_digest", 0))
 	if preview_digest <= 0 and not str(metadata.get("preview_signature", "")).is_empty():
 		preview_digest = _stable_signature_digest(str(metadata.get("preview_signature", "")))
-	return not str(metadata.get("spellbook_id", "")).is_empty() \
-		and not str(metadata.get("phase_id", "")).is_empty() \
-		and not str(metadata.get("preview_export_id", "")).is_empty() \
-		and preview_digest > 0 \
-		and not _normalized_int_array(metadata.get("preview_sample_ticks", [])).is_empty() \
-		and int(metadata.get("preview_sample_count", -1)) == _normalized_int_array(metadata.get("preview_sample_ticks", [])).size() \
-		and int(metadata.get("preview_budget_headroom", -1)) >= 0 \
-		and str(metadata.get("performance_budget_status", "")) == "within_budget" \
-		and not bool(metadata.get("server_authoritative", false))
+	if str(metadata.get("spellbook_id", "")).is_empty() \
+			or str(metadata.get("phase_id", "")).is_empty() \
+			or str(metadata.get("preview_export_id", "")).is_empty() \
+			or preview_digest <= 0:
+		return "missing_spellbook_preview"
+	var sample_ticks: Array[int] = _normalized_int_array(metadata.get("preview_sample_ticks", []))
+	var sample_count := int(metadata.get("preview_sample_count", -1))
+	if sample_ticks.is_empty() or sample_count <= 0:
+		return "missing_preview_sample_window"
+	if sample_count != sample_ticks.size():
+		return "preview_sample_count_mismatch"
+	if int(metadata.get("preview_budget_headroom", -1)) < 0:
+		return "preview_budget_overrun"
+	if str(metadata.get("performance_budget_status", "")) != "within_budget":
+		return "preview_budget_status"
+	if bool(metadata.get("server_authoritative", false)):
+		return "local_preview_marked_authoritative"
+	return "valid"
 
-func _metadata_status(metadata: Dictionary) -> String:
-	if _metadata_valid(metadata):
+func _preview_validation_status(failures: Array[String]) -> String:
+	if failures.is_empty():
 		return "valid"
-	return "missing_spellbook_preview"
+	var first_failure := String(failures[0])
+	var separator := first_failure.find(":")
+	if separator <= 0:
+		return first_failure
+	return first_failure.substr(0, separator)
 
 func _stable_signature_digest(signature: String) -> int:
 	var digest := 0

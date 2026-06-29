@@ -173,11 +173,13 @@ def check_boss_pattern_catalog_contract() -> list[str]:
 
     for replay_path in [replay_store, replay_list]:
         replay_text = replay_path.read_text(encoding="utf-8")
-        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_count"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
+        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_count"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"', '"preview_budget_overrun"', '"preview_sample_count_mismatch"', '"missing_preview_sample_window"', '"local_preview_marked_authoritative"']:
             if token not in replay_text:
                 errors.append(f"{replay_path.relative_to(ROOT)}: missing spellbook replay metadata token {token}")
     if "validate_spellbook_preview_metadata" not in replay_store.read_text(encoding="utf-8"):
         errors.append("godot/scripts/replay_store.gd: missing exact spellbook preview metadata validator")
+    if "metadata_status_for_entry" not in replay_store.read_text(encoding="utf-8"):
+        errors.append("godot/scripts/replay_store.gd: missing replay metadata status helper")
 
     check_text = catalog_check.read_text(encoding="utf-8")
     for token in [
@@ -199,6 +201,14 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "fixture_missing_samples_spellbook_preview",
         "bad_sample_count_replay_accepted",
         "missing_sample_window_replay_accepted",
+        "stale_digest_status_missing",
+        "stale_sample_status_missing",
+        "preview_digest_mismatch",
+        "preview_sample_ticks_mismatch",
+        "preview_budget_overrun",
+        "local_preview_marked_authoritative",
+        "preview_sample_count_mismatch",
+        "missing_preview_sample_window",
         "TightSpellbookBudgetModel",
         "_validate_phase_budget_regression",
         "tight_phase_budget_accepted",
