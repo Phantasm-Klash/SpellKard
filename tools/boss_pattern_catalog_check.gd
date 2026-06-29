@@ -277,10 +277,16 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 	authoritative_entry["server_authoritative"] = true
 	var server_claim_entry := valid_entries[0].duplicate(true)
 	server_claim_entry["replay_id"] = "fixture_server_claim_spellbook_preview"
+	server_claim_entry["boss_instance_id"] = "world_boss_local_s0_001"
+	server_claim_entry["boss_max_hp"] = 500000
 	server_claim_entry["boss_current_hp"] = 420000
 	server_claim_entry["boss_damage"] = 12000
+	server_claim_entry["boss_hp_after_global"] = 408000
+	server_claim_entry["daily_attempts_left"] = 2
+	server_claim_entry["defeated_at"] = "2026-06-29T00:00:00Z"
 	server_claim_entry["reward_grants"] = [{"currency": "spirit", "amount": 25}]
 	server_claim_entry["settlement_status"] = "cleared"
+	server_claim_entry["world_announcement"] = "world_boss_defeated"
 	var wrong_authority_scope_entry := valid_entries[0].duplicate(true)
 	wrong_authority_scope_entry["replay_id"] = "fixture_wrong_authority_scope_spellbook_preview"
 	wrong_authority_scope_entry["preview_authority_scope"] = "server_settlement_authoritative"
@@ -383,7 +389,7 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 	var bad_sample_digest_count_entry := valid_entries[0].duplicate(true)
 	bad_sample_digest_count_entry["replay_id"] = "fixture_bad_sample_digest_count_spellbook_preview"
 	bad_sample_digest_count_entry["preview_sample_signature_digests"] = [int((bad_sample_digest_count_entry.get("preview_sample_signature_digests", []) as Array)[0])]
-	var invalid_entries: Array[Dictionary] = [invalid_entry, bad_schema_entry, authoritative_entry, server_claim_entry, wrong_authority_scope_entry, over_budget_entry, stale_fixture_entry, stale_export_entry, stale_seed_entry, bad_sample_count_entry, bad_sample_emit_count_entry, stale_max_emit_entry, stale_bullet_cap_entry, missing_sample_entry, noncanonical_sample_ticks_entry, stale_sample_window_start_entry, stale_sample_window_end_entry, stale_sample_window_stride_entry, negative_sample_emit_count_entry]
+	var invalid_entries: Array[Dictionary] = [invalid_entry, bad_schema_entry, authoritative_entry, server_claim_entry, wrong_authority_scope_entry, over_budget_entry, stale_fixture_entry, stale_export_entry, stale_seed_entry, bad_sample_count_entry, bad_sample_digest_count_entry, bad_sample_emit_count_entry, stale_max_emit_entry, stale_bullet_cap_entry, missing_sample_entry, noncanonical_sample_ticks_entry, stale_sample_window_start_entry, stale_sample_window_end_entry, stale_sample_window_stride_entry, negative_sample_emit_count_entry]
 	var valid_result: Dictionary = store.validate_index_metadata(valid_entries)
 	if not bool(valid_result.get("ok", false)):
 		failures.append("valid_replay_rejected:%s" % [valid_result.get("failures", [])])
@@ -456,6 +462,8 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		failures.append("bad_schema_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(bad_sample_count_entry)).get("ok", false)):
 		failures.append("bad_sample_count_replay_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(bad_sample_digest_count_entry)).get("ok", false)):
+		failures.append("bad_sample_digest_count_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(bad_sample_emit_count_entry)).get("ok", false)):
 		failures.append("bad_sample_emit_count_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(stale_max_emit_entry)).get("ok", false)):
@@ -532,9 +540,9 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		var server_claim_row: Dictionary = replay_list._row_from_entry(server_claim_entry, rows.size() + 2)
 		if bool(server_claim_row.get("metadata_valid", true)) or String(server_claim_row.get("metadata_status", "")) != "local_preview_server_claim":
 			failures.append("server_claim_row_metadata:%s" % [server_claim_row])
-		if not _string_array_contains(server_claim_row.get("server_authority_claim_fields", []), "boss_current_hp") \
-				or not _string_array_contains(server_claim_row.get("server_authority_claim_fields", []), "reward_grants"):
-			failures.append("server_claim_row_fields:%s" % [server_claim_row])
+		for expected_claim in ["boss_instance_id", "boss_current_hp", "boss_hp_after_global", "daily_attempts_left", "defeated_at", "reward_grants", "world_announcement"]:
+			if not _string_array_contains(server_claim_row.get("server_authority_claim_fields", []), expected_claim):
+				failures.append("server_claim_row_missing_field:%s:%s" % [expected_claim, server_claim_row])
 		var wrong_authority_scope_row: Dictionary = replay_list._row_from_entry(wrong_authority_scope_entry, rows.size() + 3)
 		if bool(wrong_authority_scope_row.get("metadata_valid", true)) or String(wrong_authority_scope_row.get("metadata_status", "")) != "preview_authority_scope_mismatch":
 			failures.append("wrong_authority_scope_row_metadata:%s" % [wrong_authority_scope_row])
