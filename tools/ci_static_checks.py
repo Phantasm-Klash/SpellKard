@@ -276,10 +276,14 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "legacy_preview_metadata_rejected",
         "fixture_bad_sample_count_spellbook_preview",
         "fixture_bad_sample_emit_count_spellbook_preview",
+        "fixture_stale_max_emit_spellbook_preview",
+        "fixture_stale_bullet_cap_spellbook_preview",
         "fixture_missing_samples_spellbook_preview",
         "bad_schema_replay_accepted",
         "bad_sample_count_replay_accepted",
         "bad_sample_emit_count_replay_accepted",
+        "stale_max_emit_replay_accepted",
+        "stale_bullet_cap_replay_accepted",
         "stale_fixture_replay_accepted",
         "stale_export_replay_accepted",
         "stale_fixture_preview_accepted",
@@ -329,6 +333,8 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "pattern_row_sample_count_mismatch",
         "pattern_row_sample_digest_mismatch",
         "pattern_row_sample_emit_count_mismatch",
+        "stale_max_emit_row_metadata",
+        "stale_bullet_cap_row_metadata",
     ]:
         if token not in check_text:
             errors.append(f"tools/boss_pattern_catalog_check.gd: missing catalog check token {token}")

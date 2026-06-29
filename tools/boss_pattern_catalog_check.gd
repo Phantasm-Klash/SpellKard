@@ -362,13 +362,19 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 	var bad_sample_emit_count_entry := valid_entries[0].duplicate(true)
 	bad_sample_emit_count_entry["replay_id"] = "fixture_bad_sample_emit_count_spellbook_preview"
 	bad_sample_emit_count_entry["preview_sample_emit_counts"] = [int((bad_sample_emit_count_entry.get("preview_sample_emit_counts", []) as Array)[0])]
+	var stale_max_emit_entry := valid_entries[0].duplicate(true)
+	stale_max_emit_entry["replay_id"] = "fixture_stale_max_emit_spellbook_preview"
+	stale_max_emit_entry["preview_max_emit_per_tick"] = int(stale_max_emit_entry.get("preview_max_emit_per_tick", 0)) + 1
+	var stale_bullet_cap_entry := valid_entries[0].duplicate(true)
+	stale_bullet_cap_entry["replay_id"] = "fixture_stale_bullet_cap_spellbook_preview"
+	stale_bullet_cap_entry["preview_bullet_cap_per_tick"] = int(stale_bullet_cap_entry.get("preview_bullet_cap_per_tick", 0)) + 1
 	var missing_sample_entry := valid_entries[0].duplicate(true)
 	missing_sample_entry["replay_id"] = "fixture_missing_samples_spellbook_preview"
 	missing_sample_entry["preview_sample_ticks"] = []
 	missing_sample_entry["preview_sample_signature_digests"] = []
 	missing_sample_entry["preview_sample_emit_counts"] = []
 	missing_sample_entry["preview_sample_count"] = 0
-	var invalid_entries: Array[Dictionary] = [invalid_entry, bad_schema_entry, authoritative_entry, wrong_authority_scope_entry, over_budget_entry, stale_fixture_entry, stale_export_entry, stale_seed_entry, bad_sample_count_entry, bad_sample_emit_count_entry, missing_sample_entry, noncanonical_sample_ticks_entry, stale_sample_window_start_entry, stale_sample_window_end_entry, stale_sample_window_stride_entry, negative_sample_emit_count_entry]
+	var invalid_entries: Array[Dictionary] = [invalid_entry, bad_schema_entry, authoritative_entry, wrong_authority_scope_entry, over_budget_entry, stale_fixture_entry, stale_export_entry, stale_seed_entry, bad_sample_count_entry, bad_sample_emit_count_entry, stale_max_emit_entry, stale_bullet_cap_entry, missing_sample_entry, noncanonical_sample_ticks_entry, stale_sample_window_start_entry, stale_sample_window_end_entry, stale_sample_window_stride_entry, negative_sample_emit_count_entry]
 	var valid_result: Dictionary = store.validate_index_metadata(valid_entries)
 	if not bool(valid_result.get("ok", false)):
 		failures.append("valid_replay_rejected:%s" % [valid_result.get("failures", [])])
@@ -422,6 +428,10 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		failures.append("bad_sample_count_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(bad_sample_emit_count_entry)).get("ok", false)):
 		failures.append("bad_sample_emit_count_replay_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(stale_max_emit_entry)).get("ok", false)):
+		failures.append("stale_max_emit_replay_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(stale_bullet_cap_entry)).get("ok", false)):
+		failures.append("stale_bullet_cap_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(missing_sample_entry)).get("ok", false)):
 		failures.append("missing_sample_window_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(noncanonical_sample_ticks_entry)).get("ok", false)):
@@ -528,6 +538,12 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		var stale_digest_row: Dictionary = replay_list._row_from_entry(stale_digest_entry, rows.size() + 16)
 		if bool(stale_digest_row.get("metadata_valid", true)) or String(stale_digest_row.get("metadata_status", "")) != "preview_signature_digest_mismatch":
 			failures.append("stale_digest_row_metadata:%s" % [stale_digest_row])
+		var stale_max_emit_row: Dictionary = replay_list._row_from_entry(stale_max_emit_entry, rows.size() + 17)
+		if bool(stale_max_emit_row.get("metadata_valid", true)) or String(stale_max_emit_row.get("metadata_status", "")) != "bad_preview_sample_window":
+			failures.append("stale_max_emit_row_metadata:%s" % [stale_max_emit_row])
+		var stale_bullet_cap_row: Dictionary = replay_list._row_from_entry(stale_bullet_cap_entry, rows.size() + 18)
+		if bool(stale_bullet_cap_row.get("metadata_valid", true)) or String(stale_bullet_cap_row.get("metadata_status", "")) != "preview_budget_overrun":
+			failures.append("stale_bullet_cap_row_metadata:%s" % [stale_bullet_cap_row])
 	var pattern_lab_rows: Array[Dictionary] = pattern_lab_model.rows_for_spellbook("original_boss_archive", 20260625)
 	for lab_row in pattern_lab_rows:
 		var row_dict: Dictionary = lab_row as Dictionary
