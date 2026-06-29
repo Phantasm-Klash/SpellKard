@@ -458,6 +458,12 @@ func _assert_page_health(snapshot: Dictionary, label: String, expected_quick_max
 		return _fail("%s missing controller actions %s" % [label, snapshot])
 	if int(snapshot.get("page_asset_usage_count", 0)) <= 0 or String(snapshot.get("page_asset_usage", "")).is_empty():
 		return _fail("%s missing asset usage records %s" % [label, snapshot])
+	if int(snapshot.get("page_input_method_count", 0)) <= 0 or not _contains_all(String(snapshot.get("page_input_methods", "")), ["keyboard", "gamepad", "mouse"]):
+		return _fail("%s missing keyboard/gamepad/mouse contract %s" % [label, snapshot])
+	if int(snapshot.get("page_focus_section_count", 0)) <= 0 or String(snapshot.get("page_focus_sections", "")).is_empty():
+		return _fail("%s missing focus section contract %s" % [label, snapshot])
+	if int(snapshot.get("page_text_fit_policy_count", 0)) <= 0 or not _contains_all(String(snapshot.get("page_text_fit_policy", "")), ["clip_button_text", "ellipsis_overrun", "wrap_labels"]):
+		return _fail("%s missing text fit policy %s" % [label, snapshot])
 	if String(snapshot.get("page_visual_asset", "")).is_empty() or String(snapshot.get("page_visual_treatment", "")).is_empty():
 		return _fail("%s missing page visual contract %s" % [label, snapshot])
 	if int(snapshot.get("quick_buttons", 0)) > expected_quick_max:
@@ -486,6 +492,10 @@ func _assert_target_page_contract(snapshot: Dictionary, label: String, layout_to
 		return _fail("%s missing focus action ids %s" % [label, snapshot])
 	if label != "home" and (int(snapshot.get("focus_buttons", 0)) <= 0 or String(snapshot.get("focus_action", "")).is_empty()):
 		return _fail("%s focus panel missing actionable target %s" % [label, snapshot])
+	if label != "home":
+		var focus_sections := String(snapshot.get("page_focus_sections", ""))
+		if not _contains_all(focus_sections, ["category_tabs", "focus_panel", "row_window"]):
+			return _fail("%s focus sections missing category/focus/rows %s" % [label, focus_sections])
 	return true
 
 func _assert_nav_family(snapshot: Dictionary, label: String, expected_tokens: Array[String], blocked_tokens: Array[String]) -> bool:

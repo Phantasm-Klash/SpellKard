@@ -454,6 +454,9 @@ def check_ui_page_contracts() -> list[str]:
         controller_actions = _extract_array_values(block, "controller_actions")
         focus_actions = _extract_array_values(block, "focus_action_ids")
         asset_usage = _extract_array_values(block, "asset_usage")
+        input_methods = _extract_array_values(block, "input_methods")
+        focus_sections = _extract_array_values(block, "focus_sections")
+        text_fit_policy = _extract_array_values(block, "text_fit_policy")
         visual_asset = _extract_string_value(block, "visual_asset")
         treatment = _extract_string_value(block, "visual_treatment")
         if not primary:
@@ -477,6 +480,27 @@ def check_ui_page_contracts() -> list[str]:
             errors.append(f"PAGE_SPECS[{page_id}]: missing focus_action_ids/default")
         if not asset_usage and '"asset_usage"' not in text:
             errors.append(f"PAGE_SPECS[{page_id}]: missing asset_usage/default")
+        if not input_methods and "DEFAULT_INPUT_METHODS" not in text:
+            errors.append(f"PAGE_SPECS[{page_id}]: missing input_methods/default")
+        effective_input_methods = input_methods or ["keyboard", "gamepad", "mouse"]
+        for method in ["keyboard", "gamepad", "mouse"]:
+            if method not in effective_input_methods:
+                errors.append(f"PAGE_SPECS[{page_id}]: input_methods missing {method}")
+        if not focus_sections and "func _focus_sections_for_spec" not in text:
+            errors.append(f"PAGE_SPECS[{page_id}]: missing focus_sections/default")
+        effective_focus_sections = focus_sections
+        if not effective_focus_sections and "func _focus_sections_for_spec" in text:
+            effective_focus_sections = ["navigation_rail", "focus_panel", "row_window"]
+        if page_id in {"play", "collection", "community", "player_settings"}:
+            for section in ["category_tabs", "focus_panel", "row_window"]:
+                if section not in effective_focus_sections:
+                    errors.append(f"PAGE_SPECS[{page_id}]: focus_sections missing {section}")
+        if not text_fit_policy and "DEFAULT_TEXT_FIT_POLICY" not in text:
+            errors.append(f"PAGE_SPECS[{page_id}]: missing text_fit_policy/default")
+        effective_text_fit = text_fit_policy or ["clip_button_text", "ellipsis_overrun", "wrap_labels", "minimum_44x22_targets"]
+        for policy in ["clip_button_text", "ellipsis_overrun", "wrap_labels", "minimum_44x22_targets"]:
+            if policy not in effective_text_fit:
+                errors.append(f"PAGE_SPECS[{page_id}]: text_fit_policy missing {policy}")
         if visual_asset:
             if visual_asset not in manifest_paths:
                 errors.append(f"PAGE_SPECS[{page_id}]: visual_asset not registered: {visual_asset}")
