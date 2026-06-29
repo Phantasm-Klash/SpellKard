@@ -2872,6 +2872,7 @@ func _ui_overlay_snapshot() -> Dictionary:
 	var text_fit_check := _ui_visible_text_fit_check()
 	var mouse_check := _ui_visible_mouse_health_check()
 	var focus_section_check := _ui_focus_section_runtime_check(page_layout)
+	var focus_neighbor_check := _ui_visible_focus_section_neighbor_check(page_layout)
 	var viewport_size := get_viewport_rect().size
 	var panel_rect := Rect2(ui_panel.position, ui_panel.size) if ui_panel != null else Rect2()
 	var portrait_rect := Rect2(ui_home_portrait_panel.global_position, ui_home_portrait_panel.size) if ui_home_portrait_panel != null else Rect2()
@@ -3005,6 +3006,9 @@ func _ui_overlay_snapshot() -> Dictionary:
 		"visible_focusable_count": int(focus_check.get("focusable_count", 0)),
 		"visible_focus_without_neighbor_count": int(focus_check.get("missing_neighbor_count", 0)),
 		"visible_focus_without_neighbor": String(focus_check.get("missing_neighbors", "")),
+		"visible_focus_section_neighbor_mismatch_count": int(focus_neighbor_check.get("mismatch_count", 0)),
+		"visible_focus_section_neighbor_mismatches": String(focus_neighbor_check.get("mismatches", "")),
+		"visible_focus_section_neighbor_map": String(focus_neighbor_check.get("neighbor_map", "")),
 		"visible_control_small_target_count": int(text_fit_check.get("small_target_count", 0)),
 		"visible_control_small_targets": String(text_fit_check.get("small_targets", "")),
 		"visible_text_unclipped_count": int(text_fit_check.get("unclipped_count", 0)),
@@ -3105,6 +3109,48 @@ func _ui_visible_mouse_health_check() -> Dictionary:
 		"blocked_count": blocked.size(),
 		"blocked": ",".join(blocked),
 	}
+
+func _ui_visible_focus_section_neighbor_check(page_layout: Dictionary) -> Dictionary:
+	var sections := _visible_focus_sections_for_layout(page_layout)
+	var mismatches: Array[String] = []
+	var maps: Array[String] = []
+	for section_id in sections:
+		var button := _ui_first_focus_button_for_section(section_id)
+		if button == null:
+			continue
+		var expected_left := _neighbor_section_for(sections, section_id, -1)
+		var expected_right := _neighbor_section_for(sections, section_id, 1)
+		var actual_left := _focus_neighbor_section(button.focus_neighbor_left)
+		var actual_right := _focus_neighbor_section(button.focus_neighbor_right)
+		maps.append("%s<%s>%s" % [actual_left, section_id, actual_right])
+		if not expected_left.is_empty() and actual_left != expected_left:
+			mismatches.append("%s.left=%s!=%s" % [section_id, actual_left, expected_left])
+		if not expected_right.is_empty() and actual_right != expected_right:
+			mismatches.append("%s.right=%s!=%s" % [section_id, actual_right, expected_right])
+	return {
+		"mismatch_count": mismatches.size(),
+		"mismatches": ",".join(mismatches),
+		"neighbor_map": "|".join(maps),
+	}
+
+func _neighbor_section_for(sections: Array[String], section_id: String, direction: int) -> String:
+	if sections.size() <= 1:
+		return section_id
+	var index := sections.find(section_id)
+	if index < 0:
+		return ""
+	var step := -1 if direction < 0 else 1
+	return sections[wrapi(index + step, 0, sections.size())]
+
+func _focus_neighbor_section(path: NodePath) -> String:
+	if path == NodePath():
+		return ""
+	var node := get_node_or_null(path)
+	if node is Button:
+		var button := node as Button
+		if button.is_visible_in_tree() and _ui_button_owned_by_current_screen(button):
+			return String(button.get_meta("focus_section", ""))
+	return ""
 
 func _ui_focus_section_runtime_check(page_layout: Dictionary) -> Dictionary:
 	var expected_sections := _ui_string_array(page_layout.get("focus_sections", []))
@@ -4678,14 +4724,27 @@ func _update_ui_focus_neighbors() -> void:
 		var button := buttons[i]
 		if button == null:
 			continue
-		var previous := buttons[wrapi(i - 1, 0, buttons.size())]
-		var next := buttons[wrapi(i + 1, 0, buttons.size())]
-		var previous_path := previous.get_path() if previous != null else NodePath()
-		var next_path := next.get_path() if next != null else NodePath()
+		var group := _focus_section_button_chain(String(button.get_meta("focus_section", "")))
+		var vertical_previous := _neighbor_button_in_chain(group, button, -1)
+		var vertical_next := _neighbor_button_in_chain(group, button, 1)
+		if vertical_previous == null:
+			vertical_previous = _neighbor_button_in_chain(buttons, button, -1)
+		if vertical_next == null:
+			vertical_next = _neighbor_button_in_chain(buttons, button, 1)
+		var horizontal_previous := _neighbor_button_for_focus_section(button, -1)
+		var horizontal_next := _neighbor_button_for_focus_section(button, 1)
+		if horizontal_previous == null:
+			horizontal_previous = vertical_previous
+		if horizontal_next == null:
+			horizontal_next = vertical_next
+		var previous_path := vertical_previous.get_path() if vertical_previous != null else NodePath()
+		var next_path := vertical_next.get_path() if vertical_next != null else NodePath()
+		var left_path := horizontal_previous.get_path() if horizontal_previous != null else previous_path
+		var right_path := horizontal_next.get_path() if horizontal_next != null else next_path
 		button.focus_neighbor_top = previous_path
 		button.focus_neighbor_bottom = next_path
-		button.focus_neighbor_left = previous_path
-		button.focus_neighbor_right = next_path
+		button.focus_neighbor_left = left_path
+		button.focus_neighbor_right = right_path
 		button.focus_previous = previous_path
 		button.focus_next = next_path
 
@@ -4713,6 +4772,55 @@ func _append_button_to_focus_chain(result: Array[Button], button: Button) -> voi
 	if button == null or not button.is_visible_in_tree() or button.disabled or button.focus_mode == Control.FOCUS_NONE:
 		return
 	result.append(button)
+
+func _focus_section_button_chain(section_id: String) -> Array[Button]:
+	var buttons: Array[Button] = []
+	if section_id.is_empty():
+		return buttons
+	match section_id:
+		"primary_routes":
+			_append_visible_buttons_to_focus_chain(buttons, ui_home_buttons)
+		"navigation_rail":
+			_append_visible_buttons_to_focus_chain(buttons, ui_nav_row_labels)
+		"category_tabs":
+			_append_visible_buttons_to_focus_chain(buttons, ui_category_buttons)
+		"status_cards":
+			_append_visible_buttons_to_focus_chain(buttons, ui_status_cards)
+		"focus_panel":
+			if ui_focus_button != null:
+				_append_button_to_focus_chain(buttons, ui_focus_button)
+		"section_tabs", "social_tabs", "filter_tabs":
+			_append_visible_buttons_to_focus_chain(buttons, ui_section_buttons)
+		"overview_cards", "setting_groups", "mode_cards", "mode_grid", "collection_grid", "notice_board":
+			_append_visible_buttons_to_focus_chain(buttons, ui_overview_buttons)
+		"quick_routes":
+			_append_visible_buttons_to_focus_chain(buttons, ui_quick_buttons)
+		"control_buttons":
+			_append_visible_buttons_to_focus_chain(buttons, ui_control_buttons)
+		"row_window":
+			_append_visible_buttons_to_focus_chain(buttons, ui_row_labels)
+	return buttons
+
+func _neighbor_button_in_chain(buttons: Array[Button], current: Button, direction: int) -> Button:
+	if buttons.is_empty() or current == null:
+		return null
+	var index := buttons.find(current)
+	if index < 0:
+		return null
+	if buttons.size() == 1:
+		return current
+	var step := -1 if direction < 0 else 1
+	return buttons[wrapi(index + step, 0, buttons.size())]
+
+func _neighbor_button_for_focus_section(button: Button, direction: int) -> Button:
+	if button == null:
+		return null
+	var current_section := String(button.get_meta("focus_section", ""))
+	var sections := _visible_focus_sections_for_layout(_ui_page_layout())
+	var target_section := _neighbor_section_for(sections, current_section, direction)
+	if target_section.is_empty() or target_section == current_section:
+		return null
+	return _ui_first_focus_button_for_section(target_section)
 
 func _deactivate_home_ui_controls() -> void:
 	for button in ui_home_buttons:

@@ -458,6 +458,8 @@ func _assert_page_health(snapshot: Dictionary, label: String, expected_quick_max
 		return _fail("%s has no visible focusable controls %s" % [label, snapshot])
 	if int(snapshot.get("visible_focus_without_neighbor_count", 0)) != 0:
 		return _fail("%s visible controls missing focus neighbors %s" % [label, String(snapshot.get("visible_focus_without_neighbor", ""))])
+	if bool(snapshot.get("visible", true)) and int(snapshot.get("visible_focus_section_neighbor_mismatch_count", 0)) != 0:
+		return _fail("%s focus section neighbors mismatch %s map %s" % [label, String(snapshot.get("visible_focus_section_neighbor_mismatches", "")), String(snapshot.get("visible_focus_section_neighbor_map", ""))])
 	if int(snapshot.get("visible_control_small_target_count", 0)) != 0:
 		return _fail("%s visible controls below minimum target size %s" % [label, String(snapshot.get("visible_control_small_targets", ""))])
 	if int(snapshot.get("visible_text_unclipped_count", 0)) != 0:

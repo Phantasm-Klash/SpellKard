@@ -541,9 +541,12 @@ def check_ui_page_contracts() -> list[str]:
         "func _ui_focus_section_runtime_check(page_layout: Dictionary)",
         "func _ui_cycle_focus_section(direction: int) -> Dictionary",
         "func _ui_mark_button_focus_section(button: Button, section_id: String) -> void",
+        "func _ui_visible_focus_section_neighbor_check(page_layout: Dictionary) -> Dictionary",
+        "func _neighbor_button_for_focus_section(button: Button, direction: int) -> Button",
         "func _page_layout_focus_action_ids(screen_id: String) -> Array[String]",
         '"page_focus_sections_missing_visible"',
         '"active_focus_section"',
+        '"visible_focus_section_neighbor_mismatch_count"',
         '"visible_mouse_blocked_count"',
     ]:
         if token not in main_text:
@@ -552,6 +555,7 @@ def check_ui_page_contracts() -> list[str]:
     for token in [
         '"visible_mouse_blocked_count"',
         '"page_focus_section_missing_visible_count"',
+        '"visible_focus_section_neighbor_mismatch_count"',
         '"left navigation should move focus section',
         '"right navigation should move focus section',
         '"community focus action should open activity',
