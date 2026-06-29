@@ -2861,7 +2861,9 @@ func _set_test_viewport_size(size: Vector2) -> Dictionary:
 	return _ui_overlay_snapshot()
 
 func _ui_overlay_snapshot() -> Dictionary:
-	var rows: Array[Dictionary] = _decorate_client_experience_rows(ui_screen_model.screen_rows(64)) if ui_screen_model != null else []
+	var rows: Array[Dictionary] = []
+	if ui_screen_model != null:
+		rows = _decorate_client_experience_rows(ui_screen_model.screen_rows(64))
 	var selected: Dictionary = _decorated_ui_selected_row()
 	var page_layout := _ui_page_layout()
 	var overlap_check := _ui_visible_control_overlap_check()
