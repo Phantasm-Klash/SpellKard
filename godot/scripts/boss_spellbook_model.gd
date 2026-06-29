@@ -169,7 +169,7 @@ func deterministic_phase_preview(spellbook_id: String, phase_id: String, seed: i
 	var max_emit := 0
 	var signature_parts: Array[String] = []
 	for sample_tick in PREVIEW_SAMPLE_TICKS:
-		var local_tick := phase_offset + min(int(sample_tick), max(0, int(phase.get("duration_ticks", 1)) - 1))
+		var local_tick: int = phase_offset + mini(int(sample_tick), maxi(0, int(phase.get("duration_ticks", 1)) - 1))
 		var emitted: Array[Dictionary] = emit_tick(spellbook_id, local_tick, target, 50000 + local_tick, seed)
 		max_emit = maxi(max_emit, emitted.size())
 		var tick_signature := _bullet_signature(emitted)
