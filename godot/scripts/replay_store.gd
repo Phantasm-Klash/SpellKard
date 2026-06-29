@@ -234,6 +234,13 @@ func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary)
 func metadata_status_for_entry(entry: Dictionary) -> String:
 	return _spellbook_metadata_status_from_fields(entry)
 
+func metadata_failures_for_entry(entry: Dictionary) -> Array[String]:
+	var result := validate_index_metadata([entry])
+	var failures: Array[String] = []
+	for failure in result.get("failures", []):
+		failures.append(String(failure))
+	return failures
+
 func save_index(entries: Array[Dictionary]) -> bool:
 	if not _ensure_replay_dir():
 		return false

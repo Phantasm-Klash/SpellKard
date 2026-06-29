@@ -475,6 +475,8 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 			var valid_row: Dictionary = rows[index]
 			if not bool(valid_row.get("metadata_valid", false)) or String(valid_row.get("metadata_status", "")) != "valid":
 				failures.append("valid_row_metadata:%s" % [valid_row])
+			if int(valid_row.get("metadata_failure_count", -1)) != 0 or not (valid_row.get("metadata_failures", []) as Array).is_empty():
+				failures.append("valid_row_metadata_failures:%s" % [valid_row])
 			if int(valid_row.get("preview_budget_headroom", -1)) < 0:
 				failures.append("valid_row_headroom:%s" % [valid_row])
 			if String(valid_row.get("performance_budget_status", "")) != "within_budget":
@@ -504,9 +506,13 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		var invalid_row: Dictionary = rows[valid_entries.size()]
 		if bool(invalid_row.get("metadata_valid", true)) or String(invalid_row.get("metadata_status", "")) != "missing_spellbook_preview":
 			failures.append("invalid_row_metadata:%s" % [invalid_row])
+		if int(invalid_row.get("metadata_failure_count", 0)) <= 0 or not _string_array_contains(invalid_row.get("metadata_failures", []), "missing_preview_export_id:fixture_missing_spellbook_preview"):
+			failures.append("invalid_row_metadata_failures:%s" % [invalid_row])
 		var bad_schema_row: Dictionary = replay_list._row_from_entry(bad_schema_entry, rows.size())
 		if bool(bad_schema_row.get("metadata_valid", true)) or String(bad_schema_row.get("metadata_status", "")) != "bad_preview_schema":
 			failures.append("bad_schema_row_metadata:%s" % [bad_schema_row])
+		if int(bad_schema_row.get("metadata_failure_count", 0)) <= 0 or not _string_array_contains(bad_schema_row.get("metadata_failures", []), "bad_preview_schema:fixture_bad_schema_spellbook_preview"):
+			failures.append("bad_schema_row_metadata_failures:%s" % [bad_schema_row])
 		var over_budget_row: Dictionary = replay_list._row_from_entry(over_budget_entry, rows.size())
 		if bool(over_budget_row.get("metadata_valid", true)) or String(over_budget_row.get("metadata_status", "")) != "preview_budget_headroom_mismatch":
 			failures.append("over_budget_row_metadata:%s" % [over_budget_row])
@@ -685,6 +691,14 @@ func _single_entry_array(entry: Dictionary) -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
 	entries.append(entry)
 	return entries
+
+func _string_array_contains(values: Variant, expected: String) -> bool:
+	if typeof(values) != TYPE_ARRAY:
+		return false
+	for value in values:
+		if String(value) == expected:
+			return true
+	return false
 
 func _arrays_equal_ints(left: Variant, right: Variant) -> bool:
 	if typeof(left) != TYPE_ARRAY or typeof(right) != TYPE_ARRAY:

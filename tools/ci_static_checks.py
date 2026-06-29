@@ -202,6 +202,8 @@ def check_boss_pattern_catalog_contract() -> list[str]:
     replay_list_text = replay_list.read_text(encoding="utf-8")
     if "metadata_status_for_entry" not in replay_store_text or "metadata_status_for_entry" not in replay_list_text:
         errors.append("spellbook replay metadata status contract missing metadata_status_for_entry")
+    if "metadata_failures_for_entry" not in replay_store_text or "metadata_failures_for_entry" not in replay_list_text:
+        errors.append("spellbook replay metadata failure contract missing metadata_failures_for_entry")
     for token in [
         "_preview_sample_ticks_from_fields",
         "_preview_sample_signature_digests_from_fields",
@@ -349,6 +351,8 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "preview_max_emit_mismatch",
         "preview_budget_headroom_mismatch",
         "local_preview_marked_authoritative",
+        "metadata_failure_count",
+        "metadata_failures",
         "pattern_lab_fixture_mismatch",
         "pattern_lab_sample_digest_mismatch",
         "pattern_lab_sample_window_start_mismatch",
@@ -362,6 +366,10 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "pattern_row_sample_emit_count_mismatch",
         "stale_max_emit_row_metadata",
         "stale_bullet_cap_row_metadata",
+        "valid_row_metadata_failures",
+        "invalid_row_metadata_failures",
+        "bad_schema_row_metadata_failures",
+        "_string_array_contains",
         "missing_sample_row_metadata",
         "bad_sample_digest_count_row_metadata",
     ]:

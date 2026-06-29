@@ -112,6 +112,7 @@ func remove_selected_from_index() -> bool:
 func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 	var path := str(entry.get("path", ""))
 	var metadata_valid := _entry_metadata_valid(entry)
+	var metadata_failures := _entry_metadata_failures(entry, metadata_valid)
 	return {
 		"index": index + 1,
 		"replay_id": str(entry.get("replay_id", "")),
@@ -148,6 +149,8 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"performance_budget_status": str(entry.get("performance_budget_status", "")),
 		"metadata_valid": metadata_valid,
 		"metadata_status": _entry_metadata_status(entry, metadata_valid),
+		"metadata_failures": metadata_failures,
+		"metadata_failure_count": metadata_failures.size(),
 		"server_authoritative": bool(entry.get("server_authoritative", false)),
 		"can_play": not path.is_empty() and FileAccess.file_exists(path),
 		"can_favorite": not str(entry.get("replay_id", "")).is_empty(),
@@ -169,3 +172,17 @@ func _entry_metadata_status(entry: Dictionary, metadata_valid: bool) -> String:
 	if str(entry.get("catalog_id", "")) == "boss_spellbook" or str(entry.get("mode", "")) == "boss_spellbook_practice":
 		return "missing_spellbook_preview"
 	return "invalid"
+
+func _entry_metadata_failures(entry: Dictionary, metadata_valid: bool) -> Array[String]:
+	if metadata_valid:
+		return []
+	if replay_store != null and replay_store.has_method("metadata_failures_for_entry"):
+		return replay_store.metadata_failures_for_entry(entry)
+	if replay_store != null and replay_store.has_method("validate_index_metadata"):
+		var entries_to_validate: Array[Dictionary] = [entry]
+		var result: Dictionary = replay_store.validate_index_metadata(entries_to_validate)
+		var failures: Array[String] = []
+		for failure in result.get("failures", []):
+			failures.append(String(failure))
+		return failures
+	return [_entry_metadata_status(entry, metadata_valid)]
