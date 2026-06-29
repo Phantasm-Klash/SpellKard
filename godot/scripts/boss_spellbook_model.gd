@@ -8,6 +8,14 @@ const BulletPatterns := preload("res://scripts/bullet_pattern_library.gd")
 const EXPORT_SCHEMA_VERSION := 1
 const DEFAULT_PREVIEW_SEED := 20260625
 const PREVIEW_SAMPLE_TICKS: Array[int] = [0, 28, 56, 84, 112, 140]
+const PREVIEW_DIGEST_MODULUS := 1000000007
+
+const GOLDEN_PREVIEW_FIXTURES: Dictionary = {
+	"original_boss_archive:nonspell_radial_entry:20260625": {"signature_digest": 905452029, "sample_count": 6, "max_emit_per_tick": 42},
+	"original_boss_archive:spell_laser_field:20260625": {"signature_digest": 187927263, "sample_count": 6, "max_emit_per_tick": 20},
+	"original_boss_archive:spell_summoner_split:20260625": {"signature_digest": 471609142, "sample_count": 6, "max_emit_per_tick": 12},
+	"original_boss_archive:last_spell_morph_bounce:20260625": {"signature_digest": 979716623, "sample_count": 6, "max_emit_per_tick": 30},
+}
 
 var spellbooks: Array[Dictionary] = []
 var spellbook_by_id: Dictionary = {}
@@ -181,6 +189,7 @@ func deterministic_phase_preview(spellbook_id: String, phase_id: String, seed: i
 			"signature": tick_signature,
 		})
 	var signature := "|".join(signature_parts)
+	var signature_digest := _stable_signature_digest(signature)
 	return {
 		"export_schema_version": EXPORT_SCHEMA_VERSION,
 		"export_id": "boss_spellbook_preview_%s_%s_%d" % [spellbook_id, phase_id, seed],
@@ -191,6 +200,7 @@ func deterministic_phase_preview(spellbook_id: String, phase_id: String, seed: i
 		"sample_ticks": PREVIEW_SAMPLE_TICKS.duplicate(),
 		"samples": samples,
 		"signature": signature,
+		"signature_digest": signature_digest,
 		"max_emit_per_tick": max_emit,
 		"bullet_cap_per_tick": int(phase_script.get("bullet_cap_per_tick", BossPatternCatalogLib.MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK)),
 		"source_policy": "original_spell_phase_script",
@@ -220,6 +230,9 @@ func phase_export_data(spellbook_id: String, seed: int = DEFAULT_PREVIEW_SEED) -
 		"provenance": "Generated from BossSpellbookModel phase scripts and deterministic preview samples",
 		"phases": phases,
 	}
+
+func golden_preview_fixtures() -> Dictionary:
+	return GOLDEN_PREVIEW_FIXTURES.duplicate(true)
 
 func validate_spellbooks() -> Dictionary:
 	var failures: Array[String] = []
@@ -292,8 +305,19 @@ func validate_phase_preview_exports(seed: int = DEFAULT_PREVIEW_SEED) -> Diction
 				failures.append("preview_missing_timeout_enrage:%s" % phase_id)
 			if String(preview_a.get("signature", "")) != String(preview_b.get("signature", "")):
 				failures.append("preview_not_reproducible:%s" % phase_id)
+			if int(preview_a.get("signature_digest", 0)) <= 0 or int(preview_a.get("signature_digest", 0)) != int(preview_b.get("signature_digest", 0)):
+				failures.append("preview_digest_not_reproducible:%s" % phase_id)
 			if int(preview_a.get("max_emit_per_tick", 0)) > int(preview_a.get("bullet_cap_per_tick", 0)):
 				failures.append("preview_bullet_cap:%s:%d" % [phase_id, int(preview_a.get("max_emit_per_tick", 0))])
+			var fixture_id := _golden_fixture_id(spellbook_id, phase_id, seed)
+			if GOLDEN_PREVIEW_FIXTURES.has(fixture_id):
+				var fixture: Dictionary = GOLDEN_PREVIEW_FIXTURES[fixture_id]
+				if int(preview_a.get("signature_digest", 0)) != int(fixture.get("signature_digest", 0)):
+					failures.append("golden_preview_digest:%s:%d" % [phase_id, int(preview_a.get("signature_digest", 0))])
+				if (preview_a.get("samples", []) as Array).size() != int(fixture.get("sample_count", 0)):
+					failures.append("golden_preview_samples:%s" % phase_id)
+				if int(preview_a.get("max_emit_per_tick", 0)) != int(fixture.get("max_emit_per_tick", 0)):
+					failures.append("golden_preview_max_emit:%s:%d" % [phase_id, int(preview_a.get("max_emit_per_tick", 0))])
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,
@@ -393,6 +417,15 @@ func _bullet_signature(bullets: Array[Dictionary]) -> String:
 			float(bullet.get("radius", 0.0)),
 		])
 	return "|".join(parts)
+
+func _stable_signature_digest(signature: String) -> int:
+	var digest := 0
+	for index in range(signature.length()):
+		digest = int((digest * 131 + signature.unicode_at(index)) % PREVIEW_DIGEST_MODULUS)
+	return digest
+
+func _golden_fixture_id(spellbook_id: String, phase_id: String, seed: int) -> String:
+	return "%s:%s:%d" % [spellbook_id, phase_id, seed]
 
 func _rebuild_index() -> void:
 	spellbook_by_id.clear()

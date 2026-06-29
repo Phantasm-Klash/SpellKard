@@ -122,9 +122,12 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "EXPORT_SCHEMA_VERSION",
         "DEFAULT_PREVIEW_SEED",
         "PREVIEW_SAMPLE_TICKS",
+        "GOLDEN_PREVIEW_FIXTURES",
         "deterministic_phase_preview",
+        "golden_preview_fixtures",
         "phase_export_data",
         "validate_phase_preview_exports",
+        "signature_digest",
         "phase_script",
         "bullet_cap_per_tick",
         "seed_policy",
@@ -137,6 +140,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "missing_timeout",
         "missing_enrage",
         "preview_not_reproducible",
+        "golden_preview_digest",
         "preview_bullet_cap",
     ]:
         if token not in spellbook_text:
@@ -149,7 +153,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         '"catalog_id"',
         '"phase_id"',
         '"deterministic_preview_signature"',
+        '"deterministic_preview_digest"',
         '"bullet_cap_per_tick"',
+        '"performance_budget_status"',
         '"preview_export_id"',
     ]:
         if token not in pattern_lab_text:
@@ -157,7 +163,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
 
     for replay_path in [replay_store, replay_list]:
         replay_text = replay_path.read_text(encoding="utf-8")
-        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_id"']:
+        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_id"', '"preview_signature_digest"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
             if token not in replay_text:
                 errors.append(f"{replay_path.relative_to(ROOT)}: missing spellbook replay metadata token {token}")
 
@@ -166,8 +172,12 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "validate_official_boss_type_coverage",
         "validate_performance_budgets",
         "validate_spellbook_preview_exports",
+        "_validate_replay_metadata",
         "PatternLabModel",
+        "ReplayStore",
         "preview_count",
+        "golden_preview_count",
+        "replay_metadata",
         "max_spellbook_emit",
     ]:
         if token not in check_text:
