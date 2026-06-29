@@ -97,6 +97,7 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 			var sample_emit_counts: Array[int] = _preview_sample_emit_counts_from_fields(entry)
 			var max_emit_per_tick := int(entry.get("preview_max_emit_per_tick", -1))
 			var bullet_cap_per_tick := int(entry.get("preview_bullet_cap_per_tick", -1))
+			var preview_seed := _preview_seed_from_fields(entry)
 			var signature_sample_signature_digests: Array[int] = _sample_signature_digests_from_signature(str(entry.get("preview_signature", "")))
 			var signature_sample_emit_counts: Array[int] = _sample_emit_counts_from_signature(str(entry.get("preview_signature", "")))
 			var signature_digest := _stable_signature_digest(str(entry.get("preview_signature", ""))) if not str(entry.get("preview_signature", "")).is_empty() else 0
@@ -108,6 +109,10 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 				failures.append("missing_preview_export_id:%s" % replay_id)
 			if str(entry.get("preview_authority_scope", SPELLBOOK_PREVIEW_AUTHORITY_SCOPE)) != SPELLBOOK_PREVIEW_AUTHORITY_SCOPE:
 				failures.append("preview_authority_scope_mismatch:%s" % replay_id)
+			if preview_seed <= 0:
+				failures.append("missing_preview_seed:%s" % replay_id)
+			elif int(entry.get("match_seed", 0)) > 0 and preview_seed != int(entry.get("match_seed", 0)):
+				failures.append("preview_seed_mismatch:%s" % replay_id)
 			if str(entry.get("preview_fixture_id", "")).is_empty():
 				failures.append("missing_preview_fixture_id:%s" % replay_id)
 			elif str(entry.get("preview_fixture_id", "")) != _expected_preview_fixture_id(entry):
@@ -187,6 +192,8 @@ func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary)
 	if String(entry.get("preview_authority_scope", SPELLBOOK_PREVIEW_AUTHORITY_SCOPE)) != SPELLBOOK_PREVIEW_AUTHORITY_SCOPE \
 			or String(preview.get("preview_authority_scope", "")) != SPELLBOOK_PREVIEW_AUTHORITY_SCOPE:
 		failures.append("preview_authority_scope_mismatch:%s" % str(entry.get("replay_id", "")))
+	if _preview_seed_from_fields(entry) != int(preview.get("seed", 0)):
+		failures.append("preview_seed_mismatch:%s" % str(entry.get("replay_id", "")))
 	if String(entry.get("preview_fixture_id", "")) != _expected_preview_fixture_id(preview):
 		failures.append("preview_fixture_mismatch:%s" % str(entry.get("replay_id", "")))
 	if int(entry.get("preview_export_schema_version", 0)) != int(preview.get("export_schema_version", 0)):
@@ -310,6 +317,7 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 	var preview_sample_signature_digests := _preview_sample_signature_digests_from_fields(metadata)
 	var preview_sample_emit_counts := _preview_sample_emit_counts_from_fields(metadata)
 	var preview_max_emit_per_tick := int(metadata.get("preview_max_emit_per_tick", _max_int(preview_sample_emit_counts)))
+	var preview_seed := int(metadata.get("preview_seed", metadata.get("seed", snapshot.get("match_seed", 0))))
 	var preview_bullet_cap_per_tick := int(metadata.get("preview_bullet_cap_per_tick", 0))
 	if preview_bullet_cap_per_tick <= 0 and preview_max_emit_per_tick >= 0:
 		preview_bullet_cap_per_tick = preview_max_emit_per_tick + int(metadata.get("preview_budget_headroom", 0))
@@ -320,6 +328,7 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"game_version": str(snapshot.get("game_version", "prototype")),
 		"ruleset_version": str(snapshot.get("ruleset_version", "ruleset-local-s0")),
 		"match_seed": int(snapshot.get("match_seed", 0)),
+		"preview_seed": preview_seed,
 		"final_tick": int(metadata.get("final_tick", input_stream.size())),
 		"score": int(metadata.get("score", 0)),
 		"graze": int(metadata.get("graze", 0)),
@@ -331,7 +340,7 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"preview_export_schema_version": preview_schema_version,
 		"preview_export_id": str(metadata.get("preview_export_id", "")),
 		"preview_authority_scope": str(metadata.get("preview_authority_scope", SPELLBOOK_PREVIEW_AUTHORITY_SCOPE if is_spellbook_preview else "")),
-		"preview_fixture_id": str(metadata.get("preview_fixture_id", _expected_preview_fixture_id_from_parts(str(metadata.get("spellbook_id", "")), str(metadata.get("phase_id", "")), int(snapshot.get("match_seed", 0))))),
+		"preview_fixture_id": str(metadata.get("preview_fixture_id", _expected_preview_fixture_id_from_parts(str(metadata.get("spellbook_id", "")), str(metadata.get("phase_id", "")), preview_seed))),
 		"preview_signature": str(metadata.get("preview_signature", "")),
 		"preview_signature_digest": preview_digest,
 		"preview_sample_ticks": preview_sample_ticks,
@@ -380,6 +389,11 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 		return "missing_spellbook_preview"
 	if str(fields.get("preview_fixture_id", "")).is_empty():
 		return "missing_spellbook_preview"
+	var preview_seed := _preview_seed_from_fields(fields)
+	if preview_seed <= 0:
+		return "missing_spellbook_preview"
+	if int(fields.get("match_seed", 0)) > 0 and preview_seed != int(fields.get("match_seed", 0)):
+		return "preview_seed_mismatch"
 	if str(fields.get("preview_fixture_id", "")) != _expected_preview_fixture_id(fields) \
 			or str(fields.get("preview_export_id", "")) != _expected_preview_export_id(fields):
 		return "preview_fixture_mismatch"
@@ -434,7 +448,7 @@ func _expected_preview_fixture_id(fields: Dictionary) -> String:
 	return _expected_preview_fixture_id_from_parts(
 		str(fields.get("spellbook_id", "")),
 		str(fields.get("phase_id", "")),
-		int(fields.get("seed", fields.get("match_seed", 0)))
+		_preview_seed_from_fields(fields)
 	)
 
 func _expected_preview_fixture_id_from_parts(spellbook_id: String, phase_id: String, seed: int) -> String:
@@ -450,8 +464,11 @@ func _expected_preview_export_id(fields: Dictionary) -> String:
 		SPELLBOOK_PREVIEW_EXPORT_PREFIX,
 		str(fields.get("spellbook_id", "")),
 		str(fields.get("phase_id", "")),
-		int(fields.get("seed", fields.get("match_seed", 0))),
+		_preview_seed_from_fields(fields),
 	]
+
+func _preview_seed_from_fields(fields: Dictionary) -> int:
+	return int(fields.get("preview_seed", fields.get("seed", fields.get("match_seed", 0))))
 
 func _normalized_int_array(value: Variant) -> Array[int]:
 	var result: Array[int] = []

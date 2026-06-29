@@ -129,6 +129,7 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"catalog_id": str(entry.get("catalog_id", "")),
 		"spellbook_id": str(entry.get("spellbook_id", "")),
 		"phase_id": str(entry.get("phase_id", "")),
+		"preview_seed": int(entry.get("preview_seed", entry.get("match_seed", 0))),
 		"preview_export_schema_version": int(entry.get("preview_export_schema_version", 0)),
 		"preview_export_id": str(entry.get("preview_export_id", "")),
 		"preview_authority_scope": str(entry.get("preview_authority_scope", "")),
