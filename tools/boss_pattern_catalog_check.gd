@@ -136,6 +136,9 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 	stale_sample_entry["replay_id"] = "fixture_stale_samples_spellbook_preview"
 	stale_sample_entry["preview_sample_ticks"] = [0, 30, 60]
 	stale_sample_entry["preview_sample_count"] = 3
+	var noncanonical_sample_ticks_entry := valid_entries[0].duplicate(true)
+	noncanonical_sample_ticks_entry["replay_id"] = "fixture_noncanonical_sample_ticks_spellbook_preview"
+	noncanonical_sample_ticks_entry["preview_sample_ticks"] = [0, 29, 56, 84, 112, 140]
 	var stale_sample_digest_entry := valid_entries[0].duplicate(true)
 	stale_sample_digest_entry["replay_id"] = "fixture_stale_sample_digests_spellbook_preview"
 	var stale_digests: Array = (stale_sample_digest_entry.get("preview_sample_signature_digests", []) as Array).duplicate()
@@ -149,7 +152,7 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 	missing_sample_entry["preview_sample_ticks"] = []
 	missing_sample_entry["preview_sample_signature_digests"] = []
 	missing_sample_entry["preview_sample_count"] = 0
-	var invalid_entries: Array[Dictionary] = [invalid_entry, bad_schema_entry, authoritative_entry, over_budget_entry, bad_sample_count_entry, missing_sample_entry]
+	var invalid_entries: Array[Dictionary] = [invalid_entry, bad_schema_entry, authoritative_entry, over_budget_entry, bad_sample_count_entry, missing_sample_entry, noncanonical_sample_ticks_entry]
 	var valid_result: Dictionary = store.validate_index_metadata(valid_entries)
 	if not bool(valid_result.get("ok", false)):
 		failures.append("valid_replay_rejected:%s" % [valid_result.get("failures", [])])
@@ -173,6 +176,8 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 		failures.append("bad_sample_count_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(missing_sample_entry)).get("ok", false)):
 		failures.append("missing_sample_window_replay_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(noncanonical_sample_ticks_entry)).get("ok", false)):
+		failures.append("noncanonical_sample_ticks_replay_accepted")
 	var replay_list: RefCounted = ReplayListModel.new()
 	replay_list.replay_store = store
 	var list_entries: Array[Dictionary] = valid_entries.duplicate(true)
@@ -209,6 +214,9 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 		var bad_sample_count_row: Dictionary = replay_list._row_from_entry(bad_sample_count_entry, rows.size() + 2)
 		if bool(bad_sample_count_row.get("metadata_valid", true)) or String(bad_sample_count_row.get("metadata_status", "")) != "bad_preview_sample_window":
 			failures.append("bad_sample_count_row_metadata:%s" % [bad_sample_count_row])
+		var noncanonical_sample_ticks_row: Dictionary = replay_list._row_from_entry(noncanonical_sample_ticks_entry, rows.size() + 3)
+		if bool(noncanonical_sample_ticks_row.get("metadata_valid", true)) or String(noncanonical_sample_ticks_row.get("metadata_status", "")) != "bad_preview_sample_window":
+			failures.append("noncanonical_sample_ticks_row_metadata:%s" % [noncanonical_sample_ticks_row])
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,

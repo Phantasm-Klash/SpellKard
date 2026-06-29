@@ -107,6 +107,8 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 				failures.append("preview_sample_count_mismatch:%s" % replay_id)
 			elif sample_count != sample_signature_digests.size():
 				failures.append("preview_sample_digest_count_mismatch:%s" % replay_id)
+			if not _arrays_equal_ints(sample_ticks, SPELLBOOK_PREVIEW_SAMPLE_TICKS):
+				failures.append("preview_sample_ticks_noncanonical:%s" % replay_id)
 			if int(entry.get("preview_budget_headroom", -1)) < 0:
 				failures.append("preview_budget_overrun:%s" % replay_id)
 			if str(entry.get("performance_budget_status", "")) != "within_budget":
@@ -294,6 +296,8 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 	var sample_signature_digests := _preview_sample_signature_digests_from_fields(fields)
 	var sample_count := int(fields.get("preview_sample_count", -1))
 	if sample_ticks.is_empty() or sample_signature_digests.is_empty() or sample_count <= 0 or sample_count != sample_ticks.size() or sample_count != sample_signature_digests.size():
+		return "bad_preview_sample_window"
+	if not _arrays_equal_ints(sample_ticks, SPELLBOOK_PREVIEW_SAMPLE_TICKS):
 		return "bad_preview_sample_window"
 	if int(fields.get("preview_budget_headroom", -1)) < 0 or str(fields.get("performance_budget_status", "")) != "within_budget":
 		return "preview_budget_overrun"

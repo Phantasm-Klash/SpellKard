@@ -189,6 +189,8 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "_preview_sample_ticks_from_fields",
         "_preview_sample_signature_digests_from_fields",
         "_sample_signature_digests_from_signature",
+        "SPELLBOOK_PREVIEW_SAMPLE_TICKS",
+        "preview_sample_ticks_noncanonical",
     ]:
         if token not in replay_store_text:
             errors.append(f"godot/scripts/replay_store.gd: missing legacy preview-signature backfill token {token}")
@@ -219,6 +221,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "fixture_stale_digest_spellbook_preview",
         "fixture_stale_samples_spellbook_preview",
         "fixture_stale_sample_digests_spellbook_preview",
+        "fixture_noncanonical_sample_ticks_spellbook_preview",
         "_legacy_replay_entry_for_preview",
         "legacy_preview_metadata_rejected",
         "fixture_bad_sample_count_spellbook_preview",
@@ -227,6 +230,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "bad_sample_count_replay_accepted",
         "stale_sample_digest_preview_accepted",
         "missing_sample_window_replay_accepted",
+        "noncanonical_sample_ticks_replay_accepted",
         "validate_spellbook_preview_metadata",
         "preview_export_schema_version",
         "preview_sample_ticks",
