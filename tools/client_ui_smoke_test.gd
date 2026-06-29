@@ -206,12 +206,16 @@ func _validate_menu_independence() -> bool:
 	await _settle_frames(2)
 	if String(left_result.get("before_screen", "")) != "play" or String(left_result.get("after_screen", "")) != "play":
 		return _fail("left navigation should stay on current screen %s" % [left_result])
+	if not bool(left_result.get("ok", false)) or String(left_result.get("action", "")) != "focus_section":
+		return _fail("left navigation should move focus section %s" % [left_result])
 	var right_result: Dictionary = main_node.call("_ui_navigation_probe", "right")
 	await _settle_frames(2)
 	if String(right_result.get("before_screen", "")) != "play" or String(right_result.get("after_screen", "")) != "play":
 		return _fail("right navigation should stay on current screen %s" % [right_result])
-	if bool(right_result.get("ok", false)) or String(right_result.get("reason", "")) != "no_action":
-		return _fail("right navigation on play summary should be a no-op %s" % [right_result])
+	if not bool(right_result.get("ok", false)) or String(right_result.get("action", "")) != "focus_section":
+		return _fail("right navigation should move focus section %s" % [right_result])
+	if String(left_result.get("after_section", "")) == String(right_result.get("after_section", "")):
+		return _fail("left/right navigation should target different page sections %s %s" % [left_result, right_result])
 
 	snapshot = await _open_snapshot("community")
 	if not _assert_nav_family(snapshot, "community", _text_keys(["screen.main.community", "screen.main.events", "screen.main.friends", "screen.main.social", "screen.main.promotions"]), _text_keys(["screen.main.play", "screen.main.collection", "screen.main.player_settings", "screen.main.deck", "screen.main.start_match"])):

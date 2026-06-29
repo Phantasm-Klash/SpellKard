@@ -531,9 +531,9 @@ func _handle_ui_navigation_controls() -> void:
 	if _ui_navigation_just_pressed("ui_down", KEY_DOWN):
 		_ui_select(1)
 	if _ui_navigation_just_pressed("ui_left", KEY_LEFT):
-		_ui_adjust_selected_control(-1)
+		_ui_cycle_focus_section(-1)
 	if _ui_navigation_just_pressed("ui_right", KEY_RIGHT):
-		_ui_adjust_selected_control(1)
+		_ui_cycle_focus_section(1)
 	if _ui_navigation_just_pressed("ui_accept", KEY_ENTER):
 		_ui_accept_selected()
 
@@ -549,9 +549,9 @@ func _ui_navigation_probe(action: String) -> Dictionary:
 			_ui_select(1)
 			result["ok"] = true
 		"left":
-			result = _ui_adjust_selected_control(-1)
+			result = _ui_cycle_focus_section(-1)
 		"right":
-			result = _ui_adjust_selected_control(1)
+			result = _ui_cycle_focus_section(1)
 		"accept":
 			result = _ui_accept_selected()
 		_:
@@ -560,6 +560,7 @@ func _ui_navigation_probe(action: String) -> Dictionary:
 	result["after_screen"] = String(ui_screen_model.current_screen if ui_screen_model != null else "")
 	result["before_cursor"] = before_cursor
 	result["after_cursor"] = int(ui_screen_model.cursor if ui_screen_model != null else 0)
+	result["active_focus_section"] = _ui_active_focus_section_id()
 	return result
 
 func _ui_navigation_just_pressed(action: StringName, keycode: Key) -> bool:
@@ -2913,6 +2914,7 @@ func _ui_overlay_snapshot() -> Dictionary:
 		"page_focus_sections": ",".join(_ui_string_array(page_layout.get("focus_sections", []))),
 		"page_focus_sections_visible": String(focus_section_check.get("visible_sections", "")),
 		"page_focus_sections_missing_visible": String(focus_section_check.get("missing_sections", "")),
+		"active_focus_section": _ui_active_focus_section_id(),
 		"page_text_fit_policy": ",".join(_ui_string_array(page_layout.get("text_fit_policy", []))),
 		"page_visual_asset": String(page_layout.get("visual_asset", "")),
 		"page_visual_treatment": String(page_layout.get("visual_treatment", "")),
@@ -3150,6 +3152,127 @@ func _ui_focus_section_visible_count(section_id: String) -> int:
 		"control_preview":
 			return 1 if ui_control_label != null and ui_control_label.is_visible_in_tree() and not ui_control_label.text.is_empty() else 0
 	return 0
+
+func _ui_cycle_focus_section(direction: int) -> Dictionary:
+	if ui_screen_model == null:
+		return {"ok": false, "action": "missing_ui"}
+	if _selected_row_accepts_directional_adjust() and _ui_active_focus_section_id() in ["", "row_window", "control_buttons"]:
+		return _ui_adjust_selected_control(direction)
+	var page_layout := _ui_page_layout()
+	var sections := _visible_focus_sections_for_layout(page_layout)
+	if sections.size() <= 1:
+		return _ui_adjust_selected_control(direction)
+	var current_section := _ui_active_focus_section_id()
+	var current_index := sections.find(current_section)
+	if current_index < 0:
+		current_index = 0
+	var step := -1 if direction < 0 else 1
+	for offset in range(1, sections.size() + 1):
+		var target_section: String = sections[wrapi(current_index + step * offset, 0, sections.size())]
+		var focus_result := _ui_focus_first_control_in_section(target_section)
+		if bool(focus_result.get("ok", false)):
+			focus_result["action"] = "focus_section"
+			focus_result["direction"] = step
+			focus_result["before_section"] = current_section
+			focus_result["after_section"] = target_section
+			return focus_result
+	return _ui_adjust_selected_control(direction)
+
+func _selected_row_accepts_directional_adjust() -> bool:
+	if ui_screen_model == null:
+		return false
+	return _row_accepts_directional_adjust(ui_screen_model.selected_row())
+
+func _visible_focus_sections_for_layout(page_layout: Dictionary) -> Array[String]:
+	var result: Array[String] = []
+	var expected_sections := _ui_string_array(page_layout.get("focus_sections", []))
+	for section_id in expected_sections:
+		if _ui_focus_section_visible_count(section_id) > 0 and not result.has(section_id):
+			result.append(section_id)
+	return result
+
+func _ui_active_focus_section_id() -> String:
+	var focused := get_viewport().gui_get_focus_owner()
+	if focused != null and focused is Button:
+		var button := focused as Button
+		if button.is_visible_in_tree() and _ui_button_owned_by_current_screen(button):
+			return String(button.get_meta("focus_section", ""))
+	if ui_screen_model == null:
+		return ""
+	var selected := _decorated_ui_selected_row()
+	var selected_section := _row_section_id(selected)
+	if _ui_focus_section_visible_count("row_window") > 0:
+		return "row_window"
+	if not selected_section.is_empty() and _ui_focus_section_visible_count("section_tabs") > 0:
+		return "section_tabs"
+	return ""
+
+func _ui_focus_first_control_in_section(section_id: String) -> Dictionary:
+	var button := _ui_first_focus_button_for_section(section_id)
+	if button == null:
+		return {"ok": false, "action": "focus_section", "section": section_id, "reason": "empty"}
+	button.grab_focus()
+	if section_id == "focus_panel":
+		_on_ui_focus_button_focus_entered()
+	elif section_id in ["row_window", "setting_groups", "overview_cards", "mode_cards", "mode_grid", "collection_grid", "notice_board"]:
+		_on_ui_overview_button_focus_entered(button)
+	elif section_id in ["section_tabs", "social_tabs", "filter_tabs"]:
+		_on_ui_section_button_pressed(button)
+	return {
+		"ok": true,
+		"section": section_id,
+		"focus_owner": String(button.name),
+	}
+
+func _ui_first_focus_button_for_section(section_id: String) -> Button:
+	match section_id:
+		"primary_routes":
+			return _first_visible_focus_button(ui_home_buttons)
+		"navigation_rail":
+			return _first_visible_focus_button(ui_nav_row_labels)
+		"category_tabs":
+			return _first_visible_focus_button(ui_category_buttons)
+		"status_cards":
+			return _first_visible_focus_button(ui_status_cards)
+		"focus_panel":
+			if ui_focus_button != null and ui_focus_button.is_visible_in_tree() and not ui_focus_button.disabled and ui_focus_button.focus_mode != Control.FOCUS_NONE:
+				return ui_focus_button
+		"section_tabs", "social_tabs", "filter_tabs":
+			return _first_visible_focus_button(ui_section_buttons)
+		"overview_cards", "setting_groups", "mode_cards", "mode_grid", "collection_grid", "notice_board":
+			return _first_visible_focus_button(ui_overview_buttons)
+		"quick_routes":
+			return _first_visible_focus_button(ui_quick_buttons)
+		"control_buttons":
+			return _first_visible_focus_button(ui_control_buttons)
+		"row_window":
+			return _first_visible_focus_button(ui_row_labels)
+	return null
+
+func _page_section_tabs_focus_section_id() -> String:
+	var page_layout := _ui_page_layout()
+	var focus_sections := _ui_string_array(page_layout.get("focus_sections", []))
+	for section_id in ["section_tabs", "social_tabs", "filter_tabs"]:
+		if focus_sections.has(section_id):
+			return section_id
+	return "section_tabs"
+
+func _page_overview_focus_section_id() -> String:
+	var page_layout := _ui_page_layout()
+	var focus_sections := _ui_string_array(page_layout.get("focus_sections", []))
+	for section_id in ["setting_groups", "mode_cards", "mode_grid", "collection_grid", "notice_board", "overview_cards"]:
+		if focus_sections.has(section_id):
+			return section_id
+	return "overview_cards"
+
+func _first_visible_focus_button(buttons: Array[Button]) -> Button:
+	for button in buttons:
+		if button == null or not button.is_visible_in_tree() or button.disabled or button.focus_mode == Control.FOCUS_NONE:
+			continue
+		if not _ui_button_owned_by_current_screen(button):
+			continue
+		return button
+	return null
 
 func _visible_focus_controls() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
@@ -3554,6 +3677,7 @@ func _update_ui_home_surface(rows: Array[Dictionary]) -> void:
 		button.visible = true
 		button.disabled = row_index < 0 or target_screen.is_empty()
 		_ui_mark_button_owner(button)
+		_ui_mark_button_focus_section(button, "primary_routes")
 		button.set_meta("row_index", row_index)
 		button.set_meta("row_id", String(row.get("id", "")))
 		button.set_meta("screen_id", target_screen)
@@ -3576,6 +3700,7 @@ func _update_ui_home_dashboard() -> void:
 		button.visible = true
 		button.disabled = screen_id.is_empty()
 		_ui_mark_button_owner(button)
+		_ui_mark_button_focus_section(button, "primary_routes")
 		button.set_meta("screen_id", screen_id)
 		button.set_meta("dashboard_id", String(card.get("id", "")))
 		var label_text := String(card.get("label", ""))
@@ -4522,6 +4647,10 @@ func _ui_mark_button_owner(button: Button) -> void:
 	if button != null:
 		button.set_meta("owner_screen", _ui_current_owner_screen())
 
+func _ui_mark_button_focus_section(button: Button, section_id: String) -> void:
+	if button != null:
+		button.set_meta("focus_section", section_id)
+
 func _ui_clear_button_owner(button: Button) -> void:
 	if button != null and button.has_meta("owner_screen"):
 		button.remove_meta("owner_screen")
@@ -4537,6 +4666,8 @@ func _ui_deactivate_button(button: Button, meta_keys: Array = []) -> void:
 	button.disabled = true
 	button.tooltip_text = ""
 	_ui_clear_button_owner(button)
+	if button.has_meta("focus_section"):
+		button.remove_meta("focus_section")
 	for key in meta_keys:
 		if button.has_meta(key):
 			button.remove_meta(key)
@@ -4665,6 +4796,7 @@ func _update_ui_overlay() -> void:
 		var prefix := "> " if absolute_index == ui_screen_model.cursor else "  "
 		label.disabled = false
 		_ui_mark_button_owner(label)
+		_ui_mark_button_focus_section(label, "row_window")
 		label.set_meta("row_index", absolute_index)
 		label.text = _format_ui_overlay_row(rows[i], prefix, all_rows, absolute_index)
 	_update_ui_focus_neighbors()
@@ -4739,6 +4871,7 @@ func _update_ui_nav_overlay(nav_rows: Array[Dictionary]) -> void:
 			edge_marker = "v "
 		label.disabled = false
 		_ui_mark_button_owner(label)
+		_ui_mark_button_focus_section(label, "navigation_rail")
 		label.set_meta("screen_id", String(row.get("screen", "")))
 		label.text = "%s%s%s" % [edge_marker, marker, _row_label_text(row)]
 
@@ -4753,6 +4886,7 @@ func _update_ui_category_tabs(nav_rows: Array[Dictionary]) -> void:
 		button.visible = true
 		button.disabled = false
 		_ui_mark_button_owner(button)
+		_ui_mark_button_focus_section(button, "category_tabs")
 		button.set_meta("screen_id", String(tab.get("screen", "")))
 		button.set_meta("category_id", String(tab.get("category_id", "")))
 		var marker := "> " if bool(tab.get("active", false)) else ""
@@ -4808,6 +4942,7 @@ func _update_ui_section_tabs(rows: Array[Dictionary], selected: Dictionary) -> v
 		button.visible = true
 		button.disabled = false
 		_ui_mark_button_owner(button)
+		_ui_mark_button_focus_section(button, _page_section_tabs_focus_section_id())
 		button.set_meta("row_index", int(section_row.get("row_index", 0)))
 		button.set_meta("section_id", section_id)
 		button.text = "%s%s" % [active_marker, String(section_row.get("label", section_id))]
@@ -4893,6 +5028,7 @@ func _update_ui_status_cards() -> void:
 		button.visible = true
 		button.disabled = target_screen.is_empty()
 		_ui_mark_button_owner(button)
+		_ui_mark_button_focus_section(button, "status_cards")
 		button.set_meta("screen_id", target_screen)
 		button.set_meta("status_id", String(card.get("id", "")))
 		var label_text := _row_label_text(card)
@@ -4946,6 +5082,7 @@ func _update_ui_focus_panel(rows: Array[Dictionary], selected: Dictionary) -> vo
 	ui_focus_button.visible = true
 	ui_focus_button.disabled = row_index < 0
 	_ui_mark_button_owner(ui_focus_button)
+	_ui_mark_button_focus_section(ui_focus_button, "focus_panel")
 	ui_focus_button.set_meta("row_index", row_index)
 	ui_focus_button.set_meta("row_id", String(focus.get("row_id", "")))
 	ui_focus_button.set_meta("focus_id", String(focus.get("id", "")))
@@ -5090,6 +5227,7 @@ func _update_ui_overview_cards(rows: Array[Dictionary], selected: Dictionary) ->
 		button.visible = true
 		button.disabled = row_index < 0 or not bool(row.get("enabled", true))
 		_ui_mark_button_owner(button)
+		_ui_mark_button_focus_section(button, _page_overview_focus_section_id())
 		button.set_meta("row_index", row_index)
 		button.set_meta("row_id", String(row.get("id", "")))
 		button.text = _format_ui_overview_card(card)
@@ -5297,6 +5435,7 @@ func _update_ui_quick_actions(rows: Array[Dictionary], selected: Dictionary) -> 
 		var screen_id := String(action_row.get("screen", ""))
 		button.disabled = row_index < 0 and screen_id.is_empty()
 		_ui_mark_button_owner(button)
+		_ui_mark_button_focus_section(button, "quick_routes")
 		button.set_meta("row_index", row_index)
 		button.set_meta("row_id", String(action_row.get("row_id", "")))
 		button.set_meta("screen_id", screen_id)
@@ -5429,6 +5568,7 @@ func _update_ui_control_buttons(row: Dictionary) -> void:
 		button.visible = true
 		button.disabled = false
 		_ui_mark_button_owner(button)
+		_ui_mark_button_focus_section(button, "control_buttons")
 		button.text = String(control_action.get("label", ""))
 		button.tooltip_text = String(control_action.get("tooltip", button.text))
 		button.set_meta("control_action", String(control_action.get("action", "")))
