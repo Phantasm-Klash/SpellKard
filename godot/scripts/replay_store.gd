@@ -103,6 +103,33 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 		"spellbook_entries": spellbook_entries,
 	}
 
+func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary) -> Dictionary:
+	var failures: Array[String] = []
+	var base_result := validate_index_metadata([entry])
+	if not bool(base_result.get("ok", false)):
+		for failure in base_result.get("failures", []):
+			failures.append(String(failure))
+	if String(entry.get("spellbook_id", "")) != String(preview.get("spellbook_id", "")):
+		failures.append("preview_spellbook_mismatch:%s" % str(entry.get("replay_id", "")))
+	if String(entry.get("phase_id", "")) != String(preview.get("phase_id", "")):
+		failures.append("preview_phase_mismatch:%s" % str(entry.get("replay_id", "")))
+	if String(entry.get("preview_export_id", "")) != String(preview.get("export_id", "")):
+		failures.append("preview_export_mismatch:%s" % str(entry.get("replay_id", "")))
+	if int(entry.get("preview_signature_digest", 0)) != int(preview.get("signature_digest", 0)):
+		failures.append("preview_digest_mismatch:%s" % str(entry.get("replay_id", "")))
+	if int(entry.get("preview_budget_headroom", -1)) != int(preview.get("budget_headroom", -2)):
+		failures.append("preview_headroom_mismatch:%s" % str(entry.get("replay_id", "")))
+	if String(entry.get("performance_budget_status", "")) != String(preview.get("performance_budget_status", "")):
+		failures.append("preview_budget_status_mismatch:%s" % str(entry.get("replay_id", "")))
+	if int(entry.get("preview_sample_count", -1)) != (preview.get("samples", []) as Array).size():
+		failures.append("preview_sample_count_mismatch:%s" % str(entry.get("replay_id", "")))
+	if not _arrays_equal_ints(entry.get("preview_sample_ticks", []), preview.get("sample_ticks", [])):
+		failures.append("preview_sample_ticks_mismatch:%s" % str(entry.get("replay_id", "")))
+	return {
+		"ok": failures.is_empty(),
+		"failures": failures,
+	}
+
 func save_index(entries: Array[Dictionary]) -> bool:
 	if not _ensure_replay_dir():
 		return false
@@ -196,6 +223,8 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"phase_id": str(metadata.get("phase_id", "")),
 		"preview_export_id": str(metadata.get("preview_export_id", "")),
 		"preview_signature_digest": preview_digest,
+		"preview_sample_ticks": _normalized_int_array(metadata.get("preview_sample_ticks", [])),
+		"preview_sample_count": int(metadata.get("preview_sample_count", _normalized_int_array(metadata.get("preview_sample_ticks", [])).size())),
 		"preview_budget_headroom": int(metadata.get("preview_budget_headroom", 0)),
 		"performance_budget_status": str(metadata.get("performance_budget_status", "")),
 		"metadata_valid": _metadata_valid(metadata),
@@ -232,3 +261,23 @@ func _stable_signature_digest(signature: String) -> int:
 	for index in range(signature.length()):
 		digest = int((digest * 131 + signature.unicode_at(index)) % 1000000007)
 	return digest
+
+func _normalized_int_array(value: Variant) -> Array[int]:
+	var result: Array[int] = []
+	if typeof(value) != TYPE_ARRAY:
+		return result
+	for item in value:
+		result.append(int(item))
+	return result
+
+func _arrays_equal_ints(left: Variant, right: Variant) -> bool:
+	if typeof(left) != TYPE_ARRAY or typeof(right) != TYPE_ARRAY:
+		return false
+	var left_array: Array = left
+	var right_array: Array = right
+	if left_array.size() != right_array.size():
+		return false
+	for index in range(left_array.size()):
+		if int(left_array[index]) != int(right_array[index]):
+			return false
+	return true
