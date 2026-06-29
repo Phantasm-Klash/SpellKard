@@ -168,9 +168,11 @@ def check_boss_pattern_catalog_contract() -> list[str]:
 
     for replay_path in [replay_store, replay_list]:
         replay_text = replay_path.read_text(encoding="utf-8")
-        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_id"', '"preview_signature_digest"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
+        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_count"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
             if token not in replay_text:
                 errors.append(f"{replay_path.relative_to(ROOT)}: missing spellbook replay metadata token {token}")
+    if "validate_spellbook_preview_metadata" not in replay_store.read_text(encoding="utf-8"):
+        errors.append("godot/scripts/replay_store.gd: missing exact spellbook preview metadata validator")
 
     check_text = catalog_check.read_text(encoding="utf-8")
     for token in [
@@ -186,6 +188,11 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "max_spellbook_emit",
         "fixture_authoritative_spellbook_preview",
         "fixture_over_budget_spellbook_preview",
+        "fixture_stale_digest_spellbook_preview",
+        "fixture_stale_samples_spellbook_preview",
+        "validate_spellbook_preview_metadata",
+        "preview_sample_ticks",
+        "preview_sample_count",
         "preview_budget_headroom",
         "performance_budget_status",
     ]:

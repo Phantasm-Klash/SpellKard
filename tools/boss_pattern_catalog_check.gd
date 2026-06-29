@@ -90,10 +90,17 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 			var preview: Dictionary = spellbook_model.deterministic_phase_preview(String(spellbook_id), phase_id, 20260625)
 			var entry := _replay_entry_for_preview(store, String(spellbook_id), phase_id, preview)
 			valid_entries.append(entry)
+			var exact_result: Dictionary = store.validate_spellbook_preview_metadata(entry, preview)
+			if not bool(exact_result.get("ok", false)):
+				failures.append("valid_preview_metadata_rejected:%s:%s" % [phase_id, exact_result.get("failures", [])])
 			if int(entry.get("preview_budget_headroom", -1)) != int(preview.get("budget_headroom", -2)):
 				failures.append("entry_headroom_mismatch:%s" % phase_id)
 			if String(entry.get("performance_budget_status", "")) != String(preview.get("performance_budget_status", "")):
 				failures.append("entry_budget_status_mismatch:%s" % phase_id)
+			if int(entry.get("preview_sample_count", -1)) != (preview.get("samples", []) as Array).size():
+				failures.append("entry_sample_count_mismatch:%s" % phase_id)
+			if not _arrays_equal_ints(entry.get("preview_sample_ticks", []), preview.get("sample_ticks", [])):
+				failures.append("entry_sample_ticks_mismatch:%s" % phase_id)
 	var invalid_entry := valid_entries[0].duplicate(true)
 	invalid_entry["replay_id"] = "fixture_missing_spellbook_preview"
 	invalid_entry["preview_export_id"] = ""
@@ -105,6 +112,13 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 	over_budget_entry["replay_id"] = "fixture_over_budget_spellbook_preview"
 	over_budget_entry["preview_budget_headroom"] = -1
 	over_budget_entry["performance_budget_status"] = "over_budget"
+	var stale_digest_entry := valid_entries[0].duplicate(true)
+	stale_digest_entry["replay_id"] = "fixture_stale_digest_spellbook_preview"
+	stale_digest_entry["preview_signature_digest"] = int(stale_digest_entry.get("preview_signature_digest", 0)) + 1
+	var stale_sample_entry := valid_entries[0].duplicate(true)
+	stale_sample_entry["replay_id"] = "fixture_stale_samples_spellbook_preview"
+	stale_sample_entry["preview_sample_ticks"] = [0, 30, 60]
+	stale_sample_entry["preview_sample_count"] = 3
 	var invalid_entries: Array[Dictionary] = [invalid_entry, authoritative_entry, over_budget_entry]
 	var valid_result: Dictionary = store.validate_index_metadata(valid_entries)
 	if not bool(valid_result.get("ok", false)):
@@ -112,6 +126,15 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 	var invalid_result: Dictionary = store.validate_index_metadata(invalid_entries)
 	if bool(invalid_result.get("ok", false)):
 		failures.append("invalid_replay_accepted")
+	var first_preview: Dictionary = spellbook_model.deterministic_phase_preview(
+		String(valid_entries[0].get("spellbook_id", "")),
+		String(valid_entries[0].get("phase_id", "")),
+		20260625
+	)
+	if bool(store.validate_spellbook_preview_metadata(stale_digest_entry, first_preview).get("ok", false)):
+		failures.append("stale_digest_preview_accepted")
+	if bool(store.validate_spellbook_preview_metadata(stale_sample_entry, first_preview).get("ok", false)):
+		failures.append("stale_sample_preview_accepted")
 	var replay_list: RefCounted = ReplayListModel.new()
 	replay_list.replay_store = store
 	var list_entries: Array[Dictionary] = valid_entries.duplicate(true)
@@ -129,6 +152,8 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 				failures.append("valid_row_headroom:%s" % [valid_row])
 			if String(valid_row.get("performance_budget_status", "")) != "within_budget":
 				failures.append("valid_row_budget_status:%s" % [valid_row])
+			if int(valid_row.get("preview_sample_count", -1)) <= 0:
+				failures.append("valid_row_sample_count:%s" % [valid_row])
 		var invalid_row: Dictionary = rows[valid_entries.size()]
 		if bool(invalid_row.get("metadata_valid", true)) or String(invalid_row.get("metadata_status", "")) != "missing_spellbook_preview":
 			failures.append("invalid_row_metadata:%s" % [invalid_row])
@@ -157,6 +182,8 @@ func _replay_entry_for_preview(store: RefCounted, spellbook_id: String, phase_id
 			"phase_id": phase_id,
 			"preview_export_id": String(preview.get("export_id", "")),
 			"preview_signature_digest": int(preview.get("signature_digest", 0)),
+			"preview_sample_ticks": (preview.get("sample_ticks", []) as Array).duplicate(),
+			"preview_sample_count": (preview.get("samples", []) as Array).size(),
 			"preview_budget_headroom": int(preview.get("budget_headroom", 0)),
 			"performance_budget_status": String(preview.get("performance_budget_status", "")),
 			"server_authoritative": false,
@@ -164,3 +191,15 @@ func _replay_entry_for_preview(store: RefCounted, spellbook_id: String, phase_id
 		},
 	}
 	return store._build_index_entry(snapshot, "user://replays/fixture_%s_%s.json" % [spellbook_id, phase_id])
+
+func _arrays_equal_ints(left: Variant, right: Variant) -> bool:
+	if typeof(left) != TYPE_ARRAY or typeof(right) != TYPE_ARRAY:
+		return false
+	var left_array: Array = left
+	var right_array: Array = right
+	if left_array.size() != right_array.size():
+		return false
+	for index in range(left_array.size()):
+		if int(left_array[index]) != int(right_array[index]):
+			return false
+	return true
