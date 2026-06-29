@@ -131,6 +131,8 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"phase_id": str(entry.get("phase_id", "")),
 		"preview_export_id": str(entry.get("preview_export_id", "")),
 		"preview_signature_digest": int(entry.get("preview_signature_digest", 0)),
+		"preview_budget_headroom": int(entry.get("preview_budget_headroom", 0)),
+		"performance_budget_status": str(entry.get("performance_budget_status", "")),
 		"metadata_valid": metadata_valid,
 		"metadata_status": _entry_metadata_status(entry, metadata_valid),
 		"server_authoritative": bool(entry.get("server_authoritative", false)),

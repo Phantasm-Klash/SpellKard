@@ -141,7 +141,11 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "missing_enrage",
         "preview_not_reproducible",
         "golden_preview_digest",
+        "missing_golden_preview",
+        "golden_preview_headroom",
         "preview_bullet_cap",
+        "budget_headroom",
+        "performance_budget_status",
     ]:
         if token not in spellbook_text:
             errors.append(f"godot/scripts/boss_spellbook_model.gd: missing timeout/enrage token {token}")
@@ -163,7 +167,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
 
     for replay_path in [replay_store, replay_list]:
         replay_text = replay_path.read_text(encoding="utf-8")
-        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_id"', '"preview_signature_digest"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
+        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_id"', '"preview_signature_digest"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
             if token not in replay_text:
                 errors.append(f"{replay_path.relative_to(ROOT)}: missing spellbook replay metadata token {token}")
 
@@ -179,6 +183,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "golden_preview_count",
         "replay_metadata",
         "max_spellbook_emit",
+        "fixture_authoritative_spellbook_preview",
+        "preview_budget_headroom",
+        "performance_budget_status",
     ]:
         if token not in check_text:
             errors.append(f"tools/boss_pattern_catalog_check.gd: missing catalog check token {token}")
