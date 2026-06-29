@@ -483,11 +483,36 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 		var export: Dictionary = spellbook_model.phase_export_data(String(spellbook_id), seed)
 		if String(export.get("license", "")).is_empty() or String(export.get("provenance", "")).is_empty():
 			failures.append("export_missing_provenance:%s" % String(spellbook_id))
+		var expected_bundle_id := "boss_spellbook_preview_bundle_%s_%d" % [String(spellbook_id), seed]
+		if String(export.get("preview_bundle_id", "")) != expected_bundle_id:
+			failures.append("preview_bundle_id_mismatch:%s" % String(spellbook_id))
+		var export_phases: Array = export.get("phases", [])
+		if int(export.get("preview_phase_count", 0)) != export_phases.size():
+			failures.append("preview_bundle_phase_count_mismatch:%s" % String(spellbook_id))
+		if int(export.get("preview_bundle_signature_digest", 0)) <= 0:
+			failures.append("preview_bundle_digest_missing:%s" % String(spellbook_id))
+		var expected_phase_ids: Array[String] = []
+		var expected_phase_digests: Array[int] = []
+		for exported_phase in export_phases:
+			var exported_phase_dict: Dictionary = exported_phase as Dictionary
+			var exported_preview: Dictionary = exported_phase_dict.get("deterministic_preview", {})
+			expected_phase_ids.append(String(exported_phase_dict.get("phase_id", "")))
+			expected_phase_digests.append(int(exported_preview.get("signature_digest", 0)))
+		if not _arrays_equal_strings(export.get("preview_phase_ids", []), expected_phase_ids):
+			failures.append("preview_bundle_phase_ids_mismatch:%s" % String(spellbook_id))
+		if not _arrays_equal_ints(export.get("preview_phase_signature_digests", []), expected_phase_digests):
+			failures.append("preview_bundle_phase_digests_mismatch:%s" % String(spellbook_id))
 		for row in spellbook_model.timeline_rows(String(spellbook_id)):
 			var phase_id := String((row as Dictionary).get("phase_id", ""))
 			var phase_script: Dictionary = (row as Dictionary).get("phase_script", {})
 			var preview_a: Dictionary = spellbook_model.deterministic_phase_preview(String(spellbook_id), phase_id, seed)
 			var preview_b: Dictionary = spellbook_model.deterministic_phase_preview(String(spellbook_id), phase_id, seed)
+			preview_a["preview_bundle_id"] = String(export.get("preview_bundle_id", ""))
+			preview_a["preview_bundle_signature_digest"] = int(export.get("preview_bundle_signature_digest", 0))
+			preview_a["preview_phase_count"] = int(export.get("preview_phase_count", 0))
+			preview_b["preview_bundle_id"] = String(export.get("preview_bundle_id", ""))
+			preview_b["preview_bundle_signature_digest"] = int(export.get("preview_bundle_signature_digest", 0))
+			preview_b["preview_phase_count"] = int(export.get("preview_phase_count", 0))
 			preview_count += 1
 			if String(preview_a.get("preview_authority_scope", "")) != "local_practice_preview_only":
 				failures.append("preview_authority_scope:%s" % phase_id)
@@ -545,6 +570,12 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 						failures.append("pattern_lab_fixture_mismatch:%s" % phase_id)
 					if String(coverage.get("preview_authority_scope", "")) != String(preview_a.get("preview_authority_scope", "")):
 						failures.append("pattern_lab_authority_scope_mismatch:%s" % phase_id)
+					if String(coverage.get("preview_bundle_id", "")) != String(export.get("preview_bundle_id", "")):
+						failures.append("pattern_lab_bundle_id_mismatch:%s" % phase_id)
+					if int(coverage.get("preview_bundle_signature_digest", 0)) != int(export.get("preview_bundle_signature_digest", 0)):
+						failures.append("pattern_lab_bundle_digest_mismatch:%s" % phase_id)
+					if int(coverage.get("preview_phase_count", 0)) != int(export.get("preview_phase_count", 0)):
+						failures.append("pattern_lab_bundle_phase_count_mismatch:%s" % phase_id)
 					if int(coverage.get("max_preview_emit", 0)) != int(preview_a.get("max_emit_per_tick", 0)):
 						failures.append("pattern_lab_max_emit_mismatch:%s" % phase_id)
 					if int(coverage.get("preview_budget_headroom", 0)) != int(preview_a.get("budget_headroom", 0)):
@@ -745,6 +776,18 @@ static func _arrays_equal_ints(left: Variant, right: Variant) -> bool:
 		return false
 	for index in range(left_array.size()):
 		if int(left_array[index]) != int(right_array[index]):
+			return false
+	return true
+
+static func _arrays_equal_strings(left: Variant, right: Variant) -> bool:
+	if typeof(left) != TYPE_ARRAY or typeof(right) != TYPE_ARRAY:
+		return false
+	var left_array: Array = left
+	var right_array: Array = right
+	if left_array.size() != right_array.size():
+		return false
+	for index in range(left_array.size()):
+		if String(left_array[index]) != String(right_array[index]):
 			return false
 	return true
 

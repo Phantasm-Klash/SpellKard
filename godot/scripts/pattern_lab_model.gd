@@ -53,6 +53,7 @@ func rows_for_spellbook_phase(catalog_id: String, phase_id: String, spellbook_id
 	if phase.is_empty():
 		return []
 	var preview: Dictionary = boss_spellbook_model.deterministic_phase_preview(spellbook_id, phase_id, seed)
+	var export: Dictionary = boss_spellbook_model.phase_export_data(spellbook_id, seed) if boss_spellbook_model.has_method("phase_export_data") else {}
 	var phase_script: Dictionary = phase.get("phase_script", {})
 	if phase_script.is_empty() and boss_spellbook_model.has_method("phase_script_config"):
 		phase_script = boss_spellbook_model.phase_script_config(spellbook_id, phase_id)
@@ -71,6 +72,9 @@ func rows_for_spellbook_phase(catalog_id: String, phase_id: String, spellbook_id
 		row["name"] = String(pattern_dict.get("id", ""))
 		row["source_policy"] = "original_spell_phase_script"
 		row["preview_export_schema_version"] = int(preview.get("export_schema_version", 0))
+		row["preview_bundle_id"] = String(export.get("preview_bundle_id", ""))
+		row["preview_bundle_signature_digest"] = int(export.get("preview_bundle_signature_digest", 0))
+		row["preview_phase_count"] = int(export.get("preview_phase_count", 0))
 		row["preview_export_id"] = String(preview.get("export_id", ""))
 		row["preview_fixture_id"] = String(preview.get("preview_fixture_id", ""))
 		row["preview_authority_scope"] = String(preview.get("preview_authority_scope", ""))
@@ -90,7 +94,7 @@ func rows_for_spellbook_phase(catalog_id: String, phase_id: String, spellbook_id
 		row["performance_budget_status"] = String(preview.get("performance_budget_status", ""))
 		row["enabled"] = true
 		pattern_rows.append(row)
-	var coverage_row := _spellbook_phase_coverage_row(catalog_id, spellbook_id, phase, phase_script, preview, pattern_rows)
+	var coverage_row := _spellbook_phase_coverage_row(catalog_id, spellbook_id, phase, phase_script, preview, export, pattern_rows)
 	var rows: Array[Dictionary] = [coverage_row]
 	rows.append_array(pattern_rows)
 	return rows
@@ -146,7 +150,7 @@ func analyze_pattern(pattern: Dictionary) -> Dictionary:
 		"readability_hint": _readability_hint(pattern_type, density_per_second, speed),
 	}
 
-func _spellbook_phase_coverage_row(catalog_id: String, spellbook_id: String, phase: Dictionary, phase_script: Dictionary, preview: Dictionary, pattern_rows: Array[Dictionary]) -> Dictionary:
+func _spellbook_phase_coverage_row(catalog_id: String, spellbook_id: String, phase: Dictionary, phase_script: Dictionary, preview: Dictionary, export: Dictionary, pattern_rows: Array[Dictionary]) -> Dictionary:
 	var density_peak := _peak_band(pattern_rows, "density_estimate", ["low", "medium", "high", "extreme"])
 	var danger_peak := _peak_band(pattern_rows, "danger_estimate", ["low", "medium", "high", "severe"])
 	var families: Array[String] = []
@@ -168,6 +172,9 @@ func _spellbook_phase_coverage_row(catalog_id: String, spellbook_id: String, pha
 		"enrage_after_ticks": int(phase_script.get("enrage_after_ticks", phase.get("enrage_after_ticks", 0))),
 		"bullet_cap_per_tick": int(phase_script.get("bullet_cap_per_tick", 0)),
 		"preview_export_schema_version": int(preview.get("export_schema_version", 0)),
+		"preview_bundle_id": String(export.get("preview_bundle_id", "")),
+		"preview_bundle_signature_digest": int(export.get("preview_bundle_signature_digest", 0)),
+		"preview_phase_count": int(export.get("preview_phase_count", 0)),
 		"preview_export_id": String(preview.get("export_id", "")),
 		"preview_fixture_id": String(preview.get("preview_fixture_id", "")),
 		"preview_authority_scope": String(preview.get("preview_authority_scope", "")),

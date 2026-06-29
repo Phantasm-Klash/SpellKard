@@ -195,9 +195,13 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 	var store: RefCounted = ReplayStore.new()
 	var valid_entries: Array[Dictionary] = []
 	for spellbook_id in spellbook_model.spellbook_ids():
+		var phase_export: Dictionary = spellbook_model.phase_export_data(String(spellbook_id), 20260625)
 		for phase_row in spellbook_model.timeline_rows(String(spellbook_id)):
 			var phase_id := String((phase_row as Dictionary).get("phase_id", ""))
 			var preview: Dictionary = spellbook_model.deterministic_phase_preview(String(spellbook_id), phase_id, 20260625)
+			preview["preview_bundle_id"] = String(phase_export.get("preview_bundle_id", ""))
+			preview["preview_bundle_signature_digest"] = int(phase_export.get("preview_bundle_signature_digest", 0))
+			preview["preview_phase_count"] = int(phase_export.get("preview_phase_count", 0))
 			var entry := _replay_entry_for_preview(store, String(spellbook_id), phase_id, preview)
 			valid_entries.append(entry)
 			var exact_result: Dictionary = store.validate_spellbook_preview_metadata(entry, preview)
@@ -213,6 +217,12 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 				failures.append("entry_bullet_cap_mismatch:%s" % phase_id)
 			if int(entry.get("preview_export_schema_version", 0)) != int(preview.get("export_schema_version", 0)):
 				failures.append("entry_schema_mismatch:%s" % phase_id)
+			if String(entry.get("preview_bundle_id", "")) != String(preview.get("preview_bundle_id", "")):
+				failures.append("entry_bundle_id_mismatch:%s" % phase_id)
+			if int(entry.get("preview_bundle_signature_digest", 0)) != int(preview.get("preview_bundle_signature_digest", 0)):
+				failures.append("entry_bundle_digest_mismatch:%s" % phase_id)
+			if int(entry.get("preview_phase_count", 0)) != int(preview.get("preview_phase_count", 0)):
+				failures.append("entry_bundle_phase_count_mismatch:%s" % phase_id)
 			if String(entry.get("preview_authority_scope", "")) != String(preview.get("preview_authority_scope", "")):
 				failures.append("entry_authority_scope_mismatch:%s" % phase_id)
 			if String(preview.get("preview_fixture_id", "")) != "%s:%s:%d" % [String(spellbook_id), phase_id, int(preview.get("seed", 0))]:
@@ -311,6 +321,15 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 	var stale_seed_entry := valid_entries[0].duplicate(true)
 	stale_seed_entry["replay_id"] = "fixture_stale_seed_spellbook_preview"
 	stale_seed_entry["preview_seed"] = int(stale_seed_entry.get("preview_seed", 0)) + 1
+	var stale_bundle_id_entry := valid_entries[0].duplicate(true)
+	stale_bundle_id_entry["replay_id"] = "fixture_stale_bundle_id_spellbook_preview"
+	stale_bundle_id_entry["preview_bundle_id"] = "boss_spellbook_preview_bundle_wrong_spellbook_20260625"
+	var stale_bundle_digest_entry := valid_entries[0].duplicate(true)
+	stale_bundle_digest_entry["replay_id"] = "fixture_stale_bundle_digest_spellbook_preview"
+	stale_bundle_digest_entry["preview_bundle_signature_digest"] = int(stale_bundle_digest_entry.get("preview_bundle_signature_digest", 0)) + 1
+	var stale_bundle_phase_count_entry := valid_entries[0].duplicate(true)
+	stale_bundle_phase_count_entry["replay_id"] = "fixture_stale_bundle_phase_count_spellbook_preview"
+	stale_bundle_phase_count_entry["preview_phase_count"] = int(stale_bundle_phase_count_entry.get("preview_phase_count", 0)) + 1
 	var stale_sample_entry := valid_entries[0].duplicate(true)
 	stale_sample_entry["replay_id"] = "fixture_stale_samples_spellbook_preview"
 	stale_sample_entry["preview_sample_ticks"] = [0, 30, 60]
@@ -389,7 +408,7 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 	var bad_sample_digest_count_entry := valid_entries[0].duplicate(true)
 	bad_sample_digest_count_entry["replay_id"] = "fixture_bad_sample_digest_count_spellbook_preview"
 	bad_sample_digest_count_entry["preview_sample_signature_digests"] = [int((bad_sample_digest_count_entry.get("preview_sample_signature_digests", []) as Array)[0])]
-	var invalid_entries: Array[Dictionary] = [invalid_entry, bad_schema_entry, authoritative_entry, server_claim_entry, wrong_authority_scope_entry, over_budget_entry, stale_fixture_entry, stale_export_entry, stale_seed_entry, bad_sample_count_entry, bad_sample_digest_count_entry, bad_sample_emit_count_entry, stale_max_emit_entry, stale_bullet_cap_entry, missing_sample_entry, noncanonical_sample_ticks_entry, stale_sample_window_start_entry, stale_sample_window_end_entry, stale_sample_window_stride_entry, negative_sample_emit_count_entry]
+	var invalid_entries: Array[Dictionary] = [invalid_entry, bad_schema_entry, authoritative_entry, server_claim_entry, wrong_authority_scope_entry, over_budget_entry, stale_fixture_entry, stale_export_entry, stale_seed_entry, stale_bundle_id_entry, stale_bundle_digest_entry, stale_bundle_phase_count_entry, bad_sample_count_entry, bad_sample_digest_count_entry, bad_sample_emit_count_entry, stale_max_emit_entry, stale_bullet_cap_entry, missing_sample_entry, noncanonical_sample_ticks_entry, stale_sample_window_start_entry, stale_sample_window_end_entry, stale_sample_window_stride_entry, negative_sample_emit_count_entry]
 	var valid_result: Dictionary = store.validate_index_metadata(valid_entries)
 	if not bool(valid_result.get("ok", false)):
 		failures.append("valid_replay_rejected:%s" % [valid_result.get("failures", [])])
@@ -419,6 +438,12 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		failures.append("stale_export_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(stale_seed_entry)).get("ok", false)):
 		failures.append("stale_seed_replay_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(stale_bundle_id_entry)).get("ok", false)):
+		failures.append("stale_bundle_id_replay_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(stale_bundle_digest_entry)).get("ok", false)):
+		failures.append("stale_bundle_digest_replay_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(stale_bundle_phase_count_entry)).get("ok", false)):
+		failures.append("stale_bundle_phase_count_replay_accepted")
 	if bool(store.validate_spellbook_preview_metadata(stale_fixture_entry, first_preview).get("ok", false)):
 		failures.append("stale_fixture_preview_accepted")
 	if bool(store.validate_spellbook_preview_metadata(stale_export_entry, first_preview).get("ok", false)):
@@ -523,6 +548,12 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 				failures.append("valid_row_bullet_cap:%s" % [valid_row])
 			if String(valid_row.get("preview_authority_scope", "")) != "local_practice_preview_only":
 				failures.append("valid_row_authority_scope:%s" % [valid_row])
+			if String(valid_row.get("preview_bundle_id", "")) != String((valid_entries[index] as Dictionary).get("preview_bundle_id", "")):
+				failures.append("valid_row_bundle_id:%s" % [valid_row])
+			if int(valid_row.get("preview_bundle_signature_digest", 0)) != int((valid_entries[index] as Dictionary).get("preview_bundle_signature_digest", -1)):
+				failures.append("valid_row_bundle_digest:%s" % [valid_row])
+			if int(valid_row.get("preview_phase_count", 0)) != int((valid_entries[index] as Dictionary).get("preview_phase_count", -1)):
+				failures.append("valid_row_bundle_phase_count:%s" % [valid_row])
 		var invalid_row: Dictionary = rows[valid_entries.size()]
 		if bool(invalid_row.get("metadata_valid", true)) or String(invalid_row.get("metadata_status", "")) != "missing_spellbook_preview":
 			failures.append("invalid_row_metadata:%s" % [invalid_row])
@@ -587,6 +618,15 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		var stale_seed_row: Dictionary = replay_list._row_from_entry(stale_seed_entry, rows.size() + 13)
 		if bool(stale_seed_row.get("metadata_valid", true)) or String(stale_seed_row.get("metadata_status", "")) != "preview_seed_mismatch":
 			failures.append("stale_seed_row_metadata:%s" % [stale_seed_row])
+		var stale_bundle_id_row: Dictionary = replay_list._row_from_entry(stale_bundle_id_entry, rows.size() + 21)
+		if bool(stale_bundle_id_row.get("metadata_valid", true)) or String(stale_bundle_id_row.get("metadata_status", "")) != "preview_bundle_id_mismatch":
+			failures.append("stale_bundle_id_row_metadata:%s" % [stale_bundle_id_row])
+		var stale_bundle_digest_row: Dictionary = replay_list._row_from_entry(stale_bundle_digest_entry, rows.size() + 22)
+		if bool(stale_bundle_digest_row.get("metadata_valid", true)) or String(stale_bundle_digest_row.get("metadata_status", "")) != "preview_bundle_digest_mismatch":
+			failures.append("stale_bundle_digest_row_metadata:%s" % [stale_bundle_digest_row])
+		var stale_bundle_phase_count_row: Dictionary = replay_list._row_from_entry(stale_bundle_phase_count_entry, rows.size() + 23)
+		if bool(stale_bundle_phase_count_row.get("metadata_valid", true)) or String(stale_bundle_phase_count_row.get("metadata_status", "")) != "preview_bundle_phase_count_mismatch":
+			failures.append("stale_bundle_phase_count_row_metadata:%s" % [stale_bundle_phase_count_row])
 		var legacy_signature_digest_mismatch_row: Dictionary = replay_list._row_from_entry(legacy_signature_digest_mismatch_entry, rows.size() + 14)
 		if bool(legacy_signature_digest_mismatch_row.get("metadata_valid", true)) or String(legacy_signature_digest_mismatch_row.get("metadata_status", "")) != "preview_sample_digest_mismatch":
 			failures.append("legacy_signature_digest_mismatch_row_metadata:%s" % [legacy_signature_digest_mismatch_row])
@@ -617,6 +657,13 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 			continue
 		if int(row_dict.get("deterministic_preview_digest", 0)) != int(lab_preview.get("signature_digest", 0)):
 			failures.append("pattern_row_digest_mismatch:%s" % lab_phase_id)
+		var lab_export: Dictionary = spellbook_model.phase_export_data("original_boss_archive", 20260625)
+		if String(row_dict.get("preview_bundle_id", "")) != String(lab_export.get("preview_bundle_id", "")):
+			failures.append("pattern_row_bundle_id_mismatch:%s" % lab_phase_id)
+		if int(row_dict.get("preview_bundle_signature_digest", 0)) != int(lab_export.get("preview_bundle_signature_digest", 0)):
+			failures.append("pattern_row_bundle_digest_mismatch:%s" % lab_phase_id)
+		if int(row_dict.get("preview_phase_count", 0)) != int(lab_export.get("preview_phase_count", 0)):
+			failures.append("pattern_row_bundle_phase_count_mismatch:%s" % lab_phase_id)
 		if String(row_dict.get("preview_authority_scope", "")) != String(lab_preview.get("preview_authority_scope", "")):
 			failures.append("pattern_row_authority_scope_mismatch:%s" % lab_phase_id)
 		if String(row_dict.get("preview_export_id", "")) != String(lab_preview.get("export_id", "")):
@@ -666,6 +713,9 @@ func _replay_entry_for_preview(store: RefCounted, spellbook_id: String, phase_id
 			"spellbook_id": spellbook_id,
 			"phase_id": phase_id,
 			"preview_export_schema_version": int(preview.get("export_schema_version", 0)),
+			"preview_bundle_id": String(preview.get("preview_bundle_id", "")),
+			"preview_bundle_signature_digest": int(preview.get("preview_bundle_signature_digest", 0)),
+			"preview_phase_count": int(preview.get("preview_phase_count", 0)),
 			"preview_export_id": String(preview.get("export_id", "")),
 			"preview_authority_scope": String(preview.get("preview_authority_scope", "")),
 			"preview_fixture_id": "%s:%s:%d" % [spellbook_id, phase_id, int(preview.get("seed", 0))],

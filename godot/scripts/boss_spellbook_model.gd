@@ -242,19 +242,40 @@ func phase_export_data(spellbook_id: String, seed: int = DEFAULT_PREVIEW_SEED) -
 	if spellbook.is_empty():
 		return {}
 	var phases: Array[Dictionary] = []
+	var phase_ids: Array[String] = []
+	var phase_signature_digests: Array[int] = []
+	var max_emit_per_tick := 0
+	var min_budget_headroom := BossPatternCatalogLib.MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK
+	var performance_budget_status := "within_budget"
 	for phase in spellbook.get("phases", []):
 		var phase_id := String((phase as Dictionary).get("id", ""))
+		var preview := deterministic_phase_preview(spellbook_id, phase_id, seed)
+		phase_ids.append(phase_id)
+		phase_signature_digests.append(int(preview.get("signature_digest", 0)))
+		max_emit_per_tick = maxi(max_emit_per_tick, int(preview.get("max_emit_per_tick", 0)))
+		min_budget_headroom = mini(min_budget_headroom, int(preview.get("budget_headroom", min_budget_headroom)))
+		if String(preview.get("performance_budget_status", "")) != "within_budget":
+			performance_budget_status = String(preview.get("performance_budget_status", "over_budget"))
 		phases.append({
 			"phase_id": phase_id,
 			"phase_script": _phase_script_for(phase as Dictionary),
-			"deterministic_preview": deterministic_phase_preview(spellbook_id, phase_id, seed),
+			"deterministic_preview": preview,
 		})
+	var bundle_signature := _phase_export_bundle_signature(spellbook_id, seed, phases)
 	return {
 		"export_schema_version": EXPORT_SCHEMA_VERSION,
 		"catalog_id": "boss_spellbook",
 		"spellbook_id": spellbook_id,
 		"seed": seed,
 		"preview_authority_scope": PREVIEW_AUTHORITY_SCOPE,
+		"preview_bundle_id": _phase_export_bundle_id(spellbook_id, seed),
+		"preview_bundle_signature_digest": _stable_signature_digest(bundle_signature),
+		"preview_phase_count": phases.size(),
+		"preview_phase_ids": phase_ids,
+		"preview_phase_signature_digests": phase_signature_digests,
+		"max_preview_emit_per_tick": max_emit_per_tick,
+		"min_preview_budget_headroom": min_budget_headroom,
+		"performance_budget_status": performance_budget_status,
 		"source_policy": String(spellbook.get("source_policy", "")),
 		"license": "SpellKard original metadata; recipe references remain mechanism-only",
 		"provenance": "Generated from BossSpellbookModel phase scripts and deterministic preview samples",
@@ -455,6 +476,25 @@ func _stable_signature_digest(signature: String) -> int:
 
 func _golden_fixture_id(spellbook_id: String, phase_id: String, seed: int) -> String:
 	return "%s:%s:%d" % [spellbook_id, phase_id, seed]
+
+func _phase_export_bundle_id(spellbook_id: String, seed: int) -> String:
+	return "boss_spellbook_preview_bundle_%s_%d" % [spellbook_id, seed]
+
+func _phase_export_bundle_signature(spellbook_id: String, seed: int, phases: Array[Dictionary]) -> String:
+	var parts: Array[String] = ["%s:%d" % [spellbook_id, seed]]
+	for phase in phases:
+		var preview: Dictionary = phase.get("deterministic_preview", {})
+		parts.append("%s:%s:%s:%d:%d:%d:%d:%d" % [
+			String(phase.get("phase_id", "")),
+			String(preview.get("export_id", "")),
+			String(preview.get("preview_fixture_id", "")),
+			int(preview.get("signature_digest", 0)),
+			int(preview.get("sample_count", (preview.get("samples", []) as Array).size())),
+			int(preview.get("max_emit_per_tick", 0)),
+			int(preview.get("bullet_cap_per_tick", 0)),
+			int(preview.get("budget_headroom", 0)),
+		])
+	return "|".join(parts)
 
 func _validate_golden_fixture(fixture_id: String, phase_id: String, preview: Dictionary, fixture: Dictionary) -> Array[String]:
 	var failures: Array[String] = []
