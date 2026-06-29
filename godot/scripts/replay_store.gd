@@ -64,6 +64,41 @@ func latest_index_entry() -> Dictionary:
 		return {}
 	return entries[0]
 
+func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
+	var replay_entries := entries
+	if replay_entries.is_empty():
+		replay_entries = load_index()
+	var failures: Array[String] = []
+	var checked := 0
+	var spellbook_entries := 0
+	for entry in replay_entries:
+		checked += 1
+		var replay_id := str(entry.get("replay_id", ""))
+		if replay_id.is_empty():
+			failures.append("missing_replay_id:%d" % checked)
+		if str(entry.get("ruleset_version", "")).is_empty():
+			failures.append("missing_ruleset:%s" % replay_id)
+		if int(entry.get("final_tick", 0)) < 0:
+			failures.append("bad_final_tick:%s" % replay_id)
+		if str(entry.get("mode", "")) == "boss_spellbook_practice" or str(entry.get("catalog_id", "")) == "boss_spellbook":
+			spellbook_entries += 1
+			if str(entry.get("spellbook_id", "")).is_empty():
+				failures.append("missing_spellbook_id:%s" % replay_id)
+			if str(entry.get("phase_id", "")).is_empty():
+				failures.append("missing_phase_id:%s" % replay_id)
+			if str(entry.get("preview_export_id", "")).is_empty():
+				failures.append("missing_preview_export_id:%s" % replay_id)
+			if int(entry.get("preview_signature_digest", 0)) <= 0:
+				failures.append("missing_preview_digest:%s" % replay_id)
+			if bool(entry.get("server_authoritative", false)):
+				failures.append("local_preview_marked_authoritative:%s" % replay_id)
+	return {
+		"ok": failures.is_empty(),
+		"failures": failures,
+		"checked": checked,
+		"spellbook_entries": spellbook_entries,
+	}
+
 func save_index(entries: Array[Dictionary]) -> bool:
 	if not _ensure_replay_dir():
 		return false
@@ -137,6 +172,9 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 	var metadata: Dictionary = snapshot.get("metadata", {})
 	var final_hash := int(snapshot.get("final_result_hash", 0))
 	var saved_at := str(metadata.get("saved_at", Time.get_datetime_string_from_system(true, true)))
+	var preview_digest := int(metadata.get("preview_signature_digest", snapshot.get("preview_signature_digest", 0)))
+	if preview_digest <= 0 and not str(metadata.get("preview_signature", "")).is_empty():
+		preview_digest = _stable_signature_digest(str(metadata.get("preview_signature", "")))
 	return {
 		"replay_id": "%s_%s_%d" % [str(snapshot.get("ruleset_version", "local")), str(snapshot.get("match_seed", 0)), final_hash],
 		"path": path,
@@ -153,9 +191,36 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"spellbook_id": str(metadata.get("spellbook_id", "")),
 		"phase_id": str(metadata.get("phase_id", "")),
 		"preview_export_id": str(metadata.get("preview_export_id", "")),
+		"preview_signature_digest": preview_digest,
+		"metadata_valid": _metadata_valid(metadata),
+		"metadata_status": _metadata_status(metadata),
+		"server_authoritative": bool(metadata.get("server_authoritative", false)),
 		"opponent": str(metadata.get("opponent", metadata.get("pattern_id", "local"))),
 		"mode": str(metadata.get("mode", "local_practice")),
 		"result": str(metadata.get("result", "practice")),
 		"final_result_hash": final_hash,
 		"favorite": bool(metadata.get("favorite", false)),
 	}
+
+func _metadata_valid(metadata: Dictionary) -> bool:
+	if str(metadata.get("mode", "")) != "boss_spellbook_practice" and str(metadata.get("catalog_id", "")) != "boss_spellbook":
+		return true
+	var preview_digest := int(metadata.get("preview_signature_digest", 0))
+	if preview_digest <= 0 and not str(metadata.get("preview_signature", "")).is_empty():
+		preview_digest = _stable_signature_digest(str(metadata.get("preview_signature", "")))
+	return not str(metadata.get("spellbook_id", "")).is_empty() \
+		and not str(metadata.get("phase_id", "")).is_empty() \
+		and not str(metadata.get("preview_export_id", "")).is_empty() \
+		and preview_digest > 0 \
+		and not bool(metadata.get("server_authoritative", false))
+
+func _metadata_status(metadata: Dictionary) -> String:
+	if _metadata_valid(metadata):
+		return "valid"
+	return "missing_spellbook_preview"
+
+func _stable_signature_digest(signature: String) -> int:
+	var digest := 0
+	for index in range(signature.length()):
+		digest = int((digest * 131 + signature.unicode_at(index)) % 1000000007)
+	return digest

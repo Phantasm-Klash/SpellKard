@@ -451,10 +451,16 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 	var failures: Array[String] = []
 	if spellbook_model == null:
 		return {"ok": false, "failures": ["missing_spellbook_model"], "preview_count": 0}
-	for method_name in ["spellbook_ids", "timeline_rows", "deterministic_phase_preview", "phase_export_data"]:
+	for method_name in ["spellbook_ids", "timeline_rows", "deterministic_phase_preview", "phase_export_data", "validate_phase_preview_exports", "golden_preview_fixtures"]:
 		if not spellbook_model.has_method(method_name):
 			return {"ok": false, "failures": ["missing_method:%s" % method_name], "preview_count": 0}
+	var model_export_validation: Dictionary = spellbook_model.validate_phase_preview_exports(seed)
+	if not bool(model_export_validation.get("ok", false)):
+		for failure in model_export_validation.get("failures", []):
+			failures.append("spellbook_model_%s" % String(failure))
 	var preview_count := 0
+	var golden_preview_count := 0
+	var golden_fixtures: Dictionary = spellbook_model.golden_preview_fixtures()
 	for spellbook_id in spellbook_model.spellbook_ids():
 		var export: Dictionary = spellbook_model.phase_export_data(String(spellbook_id), seed)
 		if String(export.get("license", "")).is_empty() or String(export.get("provenance", "")).is_empty():
@@ -473,8 +479,20 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 				failures.append("script_missing_bullet_cap:%s" % phase_id)
 			if String(preview_a.get("signature", "")) != String(preview_b.get("signature", "")):
 				failures.append("preview_not_reproducible:%s" % phase_id)
+			if int(preview_a.get("signature_digest", 0)) <= 0 or int(preview_a.get("signature_digest", 0)) != int(preview_b.get("signature_digest", 0)):
+				failures.append("preview_digest_not_reproducible:%s" % phase_id)
 			if int(preview_a.get("max_emit_per_tick", 0)) > int(preview_a.get("bullet_cap_per_tick", 0)):
 				failures.append("preview_bullet_cap:%s:%d" % [phase_id, int(preview_a.get("max_emit_per_tick", 0))])
+			var fixture_id := "%s:%s:%d" % [String(spellbook_id), phase_id, seed]
+			if golden_fixtures.has(fixture_id):
+				var fixture: Dictionary = golden_fixtures[fixture_id]
+				golden_preview_count += 1
+				if int(preview_a.get("signature_digest", 0)) != int(fixture.get("signature_digest", 0)):
+					failures.append("golden_preview_digest:%s:%d" % [phase_id, int(preview_a.get("signature_digest", 0))])
+				if (preview_a.get("samples", []) as Array).size() != int(fixture.get("sample_count", 0)):
+					failures.append("golden_preview_samples:%s" % phase_id)
+				if int(preview_a.get("max_emit_per_tick", 0)) != int(fixture.get("max_emit_per_tick", 0)):
+					failures.append("golden_preview_max_emit:%s:%d" % [phase_id, int(preview_a.get("max_emit_per_tick", 0))])
 			if pattern_lab_model != null and pattern_lab_model.has_method("rows_for_spellbook_phase"):
 				var lab_rows: Array = pattern_lab_model.rows_for_spellbook_phase("boss_spellbook", phase_id, String(spellbook_id), seed)
 				if lab_rows.is_empty():
@@ -489,6 +507,7 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 		"ok": failures.is_empty(),
 		"failures": failures,
 		"preview_count": preview_count,
+		"golden_preview_count": golden_preview_count,
 	}
 
 static func validate_open_source_recipes() -> Dictionary:

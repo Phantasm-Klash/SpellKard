@@ -111,6 +111,7 @@ func remove_selected_from_index() -> bool:
 
 func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 	var path := str(entry.get("path", ""))
+	var metadata_valid := _entry_metadata_valid(entry)
 	return {
 		"index": index + 1,
 		"replay_id": str(entry.get("replay_id", "")),
@@ -129,7 +130,25 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"spellbook_id": str(entry.get("spellbook_id", "")),
 		"phase_id": str(entry.get("phase_id", "")),
 		"preview_export_id": str(entry.get("preview_export_id", "")),
+		"preview_signature_digest": int(entry.get("preview_signature_digest", 0)),
+		"metadata_valid": metadata_valid,
+		"metadata_status": _entry_metadata_status(entry, metadata_valid),
+		"server_authoritative": bool(entry.get("server_authoritative", false)),
 		"can_play": not path.is_empty() and FileAccess.file_exists(path),
 		"can_favorite": not str(entry.get("replay_id", "")).is_empty(),
 		"can_remove": not str(entry.get("replay_id", "")).is_empty(),
 	}
+
+func _entry_metadata_valid(entry: Dictionary) -> bool:
+	if replay_store != null and replay_store.has_method("validate_index_metadata"):
+		var entries_to_validate: Array[Dictionary] = [entry]
+		var result: Dictionary = replay_store.validate_index_metadata(entries_to_validate)
+		return bool(result.get("ok", false))
+	return true
+
+func _entry_metadata_status(entry: Dictionary, metadata_valid: bool) -> String:
+	if metadata_valid:
+		return "valid"
+	if str(entry.get("catalog_id", "")) == "boss_spellbook" or str(entry.get("mode", "")) == "boss_spellbook_practice":
+		return "missing_spellbook_preview"
+	return "invalid"
