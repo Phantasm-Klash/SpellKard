@@ -374,6 +374,9 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 	missing_sample_entry["preview_sample_signature_digests"] = []
 	missing_sample_entry["preview_sample_emit_counts"] = []
 	missing_sample_entry["preview_sample_count"] = 0
+	var bad_sample_digest_count_entry := valid_entries[0].duplicate(true)
+	bad_sample_digest_count_entry["replay_id"] = "fixture_bad_sample_digest_count_spellbook_preview"
+	bad_sample_digest_count_entry["preview_sample_signature_digests"] = [int((bad_sample_digest_count_entry.get("preview_sample_signature_digests", []) as Array)[0])]
 	var invalid_entries: Array[Dictionary] = [invalid_entry, bad_schema_entry, authoritative_entry, wrong_authority_scope_entry, over_budget_entry, stale_fixture_entry, stale_export_entry, stale_seed_entry, bad_sample_count_entry, bad_sample_emit_count_entry, stale_max_emit_entry, stale_bullet_cap_entry, missing_sample_entry, noncanonical_sample_ticks_entry, stale_sample_window_start_entry, stale_sample_window_end_entry, stale_sample_window_stride_entry, negative_sample_emit_count_entry]
 	var valid_result: Dictionary = store.validate_index_metadata(valid_entries)
 	if not bool(valid_result.get("ok", false)):
@@ -505,7 +508,7 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		if bool(bad_schema_row.get("metadata_valid", true)) or String(bad_schema_row.get("metadata_status", "")) != "bad_preview_schema":
 			failures.append("bad_schema_row_metadata:%s" % [bad_schema_row])
 		var over_budget_row: Dictionary = replay_list._row_from_entry(over_budget_entry, rows.size())
-		if bool(over_budget_row.get("metadata_valid", true)) or String(over_budget_row.get("metadata_status", "")) != "preview_budget_overrun":
+		if bool(over_budget_row.get("metadata_valid", true)) or String(over_budget_row.get("metadata_status", "")) != "preview_budget_headroom_mismatch":
 			failures.append("over_budget_row_metadata:%s" % [over_budget_row])
 		var authoritative_row: Dictionary = replay_list._row_from_entry(authoritative_entry, rows.size() + 1)
 		if bool(authoritative_row.get("metadata_valid", true)) or String(authoritative_row.get("metadata_status", "")) != "local_preview_marked_authoritative":
@@ -514,28 +517,34 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		if bool(wrong_authority_scope_row.get("metadata_valid", true)) or String(wrong_authority_scope_row.get("metadata_status", "")) != "preview_authority_scope_mismatch":
 			failures.append("wrong_authority_scope_row_metadata:%s" % [wrong_authority_scope_row])
 		var bad_sample_count_row: Dictionary = replay_list._row_from_entry(bad_sample_count_entry, rows.size() + 3)
-		if bool(bad_sample_count_row.get("metadata_valid", true)) or String(bad_sample_count_row.get("metadata_status", "")) != "bad_preview_sample_window":
+		if bool(bad_sample_count_row.get("metadata_valid", true)) or String(bad_sample_count_row.get("metadata_status", "")) != "preview_sample_count_mismatch":
 			failures.append("bad_sample_count_row_metadata:%s" % [bad_sample_count_row])
+		var missing_sample_row: Dictionary = replay_list._row_from_entry(missing_sample_entry, rows.size() + 19)
+		if bool(missing_sample_row.get("metadata_valid", true)) or String(missing_sample_row.get("metadata_status", "")) != "missing_preview_samples":
+			failures.append("missing_sample_row_metadata:%s" % [missing_sample_row])
+		var bad_sample_digest_count_row: Dictionary = replay_list._row_from_entry(bad_sample_digest_count_entry, rows.size() + 20)
+		if bool(bad_sample_digest_count_row.get("metadata_valid", true)) or String(bad_sample_digest_count_row.get("metadata_status", "")) != "preview_sample_digest_count_mismatch":
+			failures.append("bad_sample_digest_count_row_metadata:%s" % [bad_sample_digest_count_row])
 		var noncanonical_sample_ticks_row: Dictionary = replay_list._row_from_entry(noncanonical_sample_ticks_entry, rows.size() + 4)
-		if bool(noncanonical_sample_ticks_row.get("metadata_valid", true)) or String(noncanonical_sample_ticks_row.get("metadata_status", "")) != "bad_preview_sample_window":
+		if bool(noncanonical_sample_ticks_row.get("metadata_valid", true)) or String(noncanonical_sample_ticks_row.get("metadata_status", "")) != "preview_sample_ticks_noncanonical":
 			failures.append("noncanonical_sample_ticks_row_metadata:%s" % [noncanonical_sample_ticks_row])
 		var stale_sample_window_start_row: Dictionary = replay_list._row_from_entry(stale_sample_window_start_entry, rows.size() + 5)
-		if bool(stale_sample_window_start_row.get("metadata_valid", true)) or String(stale_sample_window_start_row.get("metadata_status", "")) != "bad_preview_sample_window":
+		if bool(stale_sample_window_start_row.get("metadata_valid", true)) or String(stale_sample_window_start_row.get("metadata_status", "")) != "preview_sample_window_mismatch":
 			failures.append("stale_sample_window_start_row_metadata:%s" % [stale_sample_window_start_row])
 		var stale_sample_window_end_row: Dictionary = replay_list._row_from_entry(stale_sample_window_end_entry, rows.size() + 6)
-		if bool(stale_sample_window_end_row.get("metadata_valid", true)) or String(stale_sample_window_end_row.get("metadata_status", "")) != "bad_preview_sample_window":
+		if bool(stale_sample_window_end_row.get("metadata_valid", true)) or String(stale_sample_window_end_row.get("metadata_status", "")) != "preview_sample_window_mismatch":
 			failures.append("stale_sample_window_end_row_metadata:%s" % [stale_sample_window_end_row])
 		var stale_sample_window_stride_row: Dictionary = replay_list._row_from_entry(stale_sample_window_stride_entry, rows.size() + 7)
-		if bool(stale_sample_window_stride_row.get("metadata_valid", true)) or String(stale_sample_window_stride_row.get("metadata_status", "")) != "bad_preview_sample_window":
+		if bool(stale_sample_window_stride_row.get("metadata_valid", true)) or String(stale_sample_window_stride_row.get("metadata_status", "")) != "preview_sample_window_mismatch":
 			failures.append("stale_sample_window_stride_row_metadata:%s" % [stale_sample_window_stride_row])
 		var negative_sample_digest_row: Dictionary = replay_list._row_from_entry(negative_sample_digest_entry, rows.size() + 8)
-		if bool(negative_sample_digest_row.get("metadata_valid", true)) or String(negative_sample_digest_row.get("metadata_status", "")) != "bad_preview_sample_window":
+		if bool(negative_sample_digest_row.get("metadata_valid", true)) or String(negative_sample_digest_row.get("metadata_status", "")) != "preview_sample_digest_negative":
 			failures.append("negative_sample_digest_row_metadata:%s" % [negative_sample_digest_row])
 		var stale_sample_emit_count_row: Dictionary = replay_list._row_from_entry(stale_sample_emit_count_entry, rows.size() + 9)
-		if bool(stale_sample_emit_count_row.get("metadata_valid", true)) or String(stale_sample_emit_count_row.get("metadata_status", "")) != "bad_preview_sample_window":
+		if bool(stale_sample_emit_count_row.get("metadata_valid", true)) or String(stale_sample_emit_count_row.get("metadata_status", "")) != "preview_max_emit_mismatch":
 			failures.append("stale_sample_emit_count_row_metadata:%s" % [stale_sample_emit_count_row])
 		var negative_sample_emit_count_row: Dictionary = replay_list._row_from_entry(negative_sample_emit_count_entry, rows.size() + 10)
-		if bool(negative_sample_emit_count_row.get("metadata_valid", true)) or String(negative_sample_emit_count_row.get("metadata_status", "")) != "bad_preview_sample_window":
+		if bool(negative_sample_emit_count_row.get("metadata_valid", true)) or String(negative_sample_emit_count_row.get("metadata_status", "")) != "preview_sample_emit_count_negative":
 			failures.append("negative_sample_emit_count_row_metadata:%s" % [negative_sample_emit_count_row])
 		var stale_fixture_row: Dictionary = replay_list._row_from_entry(stale_fixture_entry, rows.size() + 11)
 		if bool(stale_fixture_row.get("metadata_valid", true)) or String(stale_fixture_row.get("metadata_status", "")) != "preview_fixture_mismatch":
@@ -547,19 +556,19 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		if bool(stale_seed_row.get("metadata_valid", true)) or String(stale_seed_row.get("metadata_status", "")) != "preview_seed_mismatch":
 			failures.append("stale_seed_row_metadata:%s" % [stale_seed_row])
 		var legacy_signature_digest_mismatch_row: Dictionary = replay_list._row_from_entry(legacy_signature_digest_mismatch_entry, rows.size() + 14)
-		if bool(legacy_signature_digest_mismatch_row.get("metadata_valid", true)) or String(legacy_signature_digest_mismatch_row.get("metadata_status", "")) != "bad_preview_sample_window":
+		if bool(legacy_signature_digest_mismatch_row.get("metadata_valid", true)) or String(legacy_signature_digest_mismatch_row.get("metadata_status", "")) != "preview_sample_digest_mismatch":
 			failures.append("legacy_signature_digest_mismatch_row_metadata:%s" % [legacy_signature_digest_mismatch_row])
 		var legacy_signature_emit_count_mismatch_row: Dictionary = replay_list._row_from_entry(legacy_signature_emit_count_mismatch_entry, rows.size() + 15)
-		if bool(legacy_signature_emit_count_mismatch_row.get("metadata_valid", true)) or String(legacy_signature_emit_count_mismatch_row.get("metadata_status", "")) != "bad_preview_sample_window":
+		if bool(legacy_signature_emit_count_mismatch_row.get("metadata_valid", true)) or String(legacy_signature_emit_count_mismatch_row.get("metadata_status", "")) != "preview_sample_emit_count_mismatch":
 			failures.append("legacy_signature_emit_count_mismatch_row_metadata:%s" % [legacy_signature_emit_count_mismatch_row])
 		var stale_digest_row: Dictionary = replay_list._row_from_entry(stale_digest_entry, rows.size() + 16)
 		if bool(stale_digest_row.get("metadata_valid", true)) or String(stale_digest_row.get("metadata_status", "")) != "preview_signature_digest_mismatch":
 			failures.append("stale_digest_row_metadata:%s" % [stale_digest_row])
 		var stale_max_emit_row: Dictionary = replay_list._row_from_entry(stale_max_emit_entry, rows.size() + 17)
-		if bool(stale_max_emit_row.get("metadata_valid", true)) or String(stale_max_emit_row.get("metadata_status", "")) != "bad_preview_sample_window":
+		if bool(stale_max_emit_row.get("metadata_valid", true)) or String(stale_max_emit_row.get("metadata_status", "")) != "preview_max_emit_mismatch":
 			failures.append("stale_max_emit_row_metadata:%s" % [stale_max_emit_row])
 		var stale_bullet_cap_row: Dictionary = replay_list._row_from_entry(stale_bullet_cap_entry, rows.size() + 18)
-		if bool(stale_bullet_cap_row.get("metadata_valid", true)) or String(stale_bullet_cap_row.get("metadata_status", "")) != "preview_budget_overrun":
+		if bool(stale_bullet_cap_row.get("metadata_valid", true)) or String(stale_bullet_cap_row.get("metadata_status", "")) != "preview_budget_headroom_mismatch":
 			failures.append("stale_bullet_cap_row_metadata:%s" % [stale_bullet_cap_row])
 	var pattern_lab_rows: Array[Dictionary] = pattern_lab_model.rows_for_spellbook("original_boss_archive", 20260625)
 	for lab_row in pattern_lab_rows:

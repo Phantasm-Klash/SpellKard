@@ -420,25 +420,31 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 	var signature_sample_emit_counts := _sample_emit_counts_from_signature(str(fields.get("preview_signature", "")))
 	var sample_count := int(fields.get("preview_sample_count", -1))
 	if sample_ticks.is_empty() or sample_signature_digests.is_empty() or sample_emit_counts.is_empty() or sample_count <= 0:
-		return "bad_preview_sample_window"
-	if sample_count != sample_ticks.size() or sample_count != sample_signature_digests.size() or sample_count != sample_emit_counts.size():
-		return "bad_preview_sample_window"
+		return "missing_preview_samples"
+	if sample_count != sample_ticks.size():
+		return "preview_sample_count_mismatch"
+	if sample_count != sample_signature_digests.size():
+		return "preview_sample_digest_count_mismatch"
+	if sample_count != sample_emit_counts.size():
+		return "preview_sample_emit_count_mismatch"
 	if not _arrays_equal_ints(sample_ticks, SPELLBOOK_PREVIEW_SAMPLE_TICKS):
-		return "bad_preview_sample_window"
+		return "preview_sample_ticks_noncanonical"
 	if sample_window_start_tick != SPELLBOOK_PREVIEW_SAMPLE_WINDOW_START_TICK \
 			or sample_window_end_tick != SPELLBOOK_PREVIEW_SAMPLE_WINDOW_END_TICK \
 			or sample_window_stride_ticks != SPELLBOOK_PREVIEW_SAMPLE_WINDOW_STRIDE_TICKS:
-		return "bad_preview_sample_window"
-	if not _all_nonnegative_ints(sample_signature_digests) or not _all_nonnegative_ints(sample_emit_counts):
-		return "bad_preview_sample_window"
+		return "preview_sample_window_mismatch"
+	if not _all_nonnegative_ints(sample_signature_digests):
+		return "preview_sample_digest_negative"
+	if not _all_nonnegative_ints(sample_emit_counts):
+		return "preview_sample_emit_count_negative"
 	if not signature_sample_signature_digests.is_empty() and not _arrays_equal_ints(sample_signature_digests, signature_sample_signature_digests):
-		return "bad_preview_sample_window"
+		return "preview_sample_digest_mismatch"
 	if not signature_sample_emit_counts.is_empty() and not _arrays_equal_ints(sample_emit_counts, signature_sample_emit_counts):
-		return "bad_preview_sample_window"
+		return "preview_sample_emit_count_mismatch"
 	if max_emit_per_tick < 0 or max_emit_per_tick != _max_int(sample_emit_counts):
-		return "bad_preview_sample_window"
+		return "preview_max_emit_mismatch"
 	if bullet_cap_per_tick <= 0 or int(fields.get("preview_budget_headroom", -1)) != bullet_cap_per_tick - max_emit_per_tick:
-		return "preview_budget_overrun"
+		return "preview_budget_headroom_mismatch"
 	if int(fields.get("preview_budget_headroom", -1)) < 0 or str(fields.get("performance_budget_status", "")) != "within_budget":
 		return "preview_budget_overrun"
 	return "valid"
