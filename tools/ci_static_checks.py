@@ -207,6 +207,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         '"bad_preview_schema"',
         '"local_preview_marked_authoritative"',
         '"preview_fixture_mismatch"',
+        '"preview_signature_digest_mismatch"',
     ]:
         if token not in replay_store_text:
             errors.append(f"godot/scripts/replay_store.gd: missing spellbook replay metadata status token {token}")
@@ -227,6 +228,8 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "fixture_bad_schema_spellbook_preview",
         "fixture_over_budget_spellbook_preview",
         "fixture_stale_digest_spellbook_preview",
+        "stale_digest_replay_accepted",
+        "preview_signature_digest_mismatch",
         "fixture_stale_fixture_spellbook_preview",
         "fixture_stale_export_spellbook_preview",
         "fixture_stale_samples_spellbook_preview",

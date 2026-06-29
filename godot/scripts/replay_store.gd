@@ -92,6 +92,7 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 			var bullet_cap_per_tick := int(entry.get("preview_bullet_cap_per_tick", -1))
 			var signature_sample_signature_digests: Array[int] = _sample_signature_digests_from_signature(str(entry.get("preview_signature", "")))
 			var signature_sample_emit_counts: Array[int] = _sample_emit_counts_from_signature(str(entry.get("preview_signature", "")))
+			var signature_digest := _stable_signature_digest(str(entry.get("preview_signature", ""))) if not str(entry.get("preview_signature", "")).is_empty() else 0
 			if str(entry.get("spellbook_id", "")).is_empty():
 				failures.append("missing_spellbook_id:%s" % replay_id)
 			if str(entry.get("phase_id", "")).is_empty():
@@ -108,6 +109,8 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 				failures.append("bad_preview_schema:%s" % replay_id)
 			if int(entry.get("preview_signature_digest", 0)) <= 0:
 				failures.append("missing_preview_digest:%s" % replay_id)
+			elif signature_digest > 0 and int(entry.get("preview_signature_digest", 0)) != signature_digest:
+				failures.append("preview_signature_digest_mismatch:%s" % replay_id)
 			var sample_count := int(entry.get("preview_sample_count", -1))
 			if sample_ticks.is_empty():
 				failures.append("missing_preview_sample_ticks:%s" % replay_id)
@@ -336,6 +339,7 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 	var preview_digest := int(fields.get("preview_signature_digest", 0))
 	if preview_digest <= 0 and not str(fields.get("preview_signature", "")).is_empty():
 		preview_digest = _stable_signature_digest(str(fields.get("preview_signature", "")))
+	var signature_digest := _stable_signature_digest(str(fields.get("preview_signature", ""))) if not str(fields.get("preview_signature", "")).is_empty() else 0
 	if bool(fields.get("server_authoritative", false)):
 		return "local_preview_marked_authoritative"
 	if str(fields.get("spellbook_id", "")).is_empty() \
@@ -350,6 +354,8 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 		return "preview_fixture_mismatch"
 	if int(fields.get("preview_export_schema_version", 0)) != SPELLBOOK_PREVIEW_EXPORT_SCHEMA_VERSION:
 		return "bad_preview_schema"
+	if signature_digest > 0 and preview_digest != signature_digest:
+		return "preview_signature_digest_mismatch"
 	var sample_ticks := _preview_sample_ticks_from_fields(fields)
 	var sample_signature_digests := _preview_sample_signature_digests_from_fields(fields)
 	var sample_emit_counts := _preview_sample_emit_counts_from_fields(fields)

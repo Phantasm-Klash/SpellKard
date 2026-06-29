@@ -201,6 +201,11 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 	over_budget_entry["performance_budget_status"] = "over_budget"
 	var stale_digest_entry := valid_entries[0].duplicate(true)
 	stale_digest_entry["replay_id"] = "fixture_stale_digest_spellbook_preview"
+	stale_digest_entry["preview_signature"] = String(spellbook_model.deterministic_phase_preview(
+		String(stale_digest_entry.get("spellbook_id", "")),
+		String(stale_digest_entry.get("phase_id", "")),
+		20260625
+	).get("signature", ""))
 	stale_digest_entry["preview_signature_digest"] = int(stale_digest_entry.get("preview_signature_digest", 0)) + 1
 	var stale_fixture_entry := valid_entries[0].duplicate(true)
 	stale_fixture_entry["replay_id"] = "fixture_stale_fixture_spellbook_preview"
@@ -282,6 +287,8 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 	)
 	if bool(store.validate_spellbook_preview_metadata(stale_digest_entry, first_preview).get("ok", false)):
 		failures.append("stale_digest_preview_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(stale_digest_entry)).get("ok", false)):
+		failures.append("stale_digest_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(stale_fixture_entry)).get("ok", false)):
 		failures.append("stale_fixture_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(stale_export_entry)).get("ok", false)):
@@ -384,6 +391,9 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 		var legacy_signature_emit_count_mismatch_row: Dictionary = replay_list._row_from_entry(legacy_signature_emit_count_mismatch_entry, rows.size() + 10)
 		if bool(legacy_signature_emit_count_mismatch_row.get("metadata_valid", true)) or String(legacy_signature_emit_count_mismatch_row.get("metadata_status", "")) != "bad_preview_sample_window":
 			failures.append("legacy_signature_emit_count_mismatch_row_metadata:%s" % [legacy_signature_emit_count_mismatch_row])
+		var stale_digest_row: Dictionary = replay_list._row_from_entry(stale_digest_entry, rows.size() + 11)
+		if bool(stale_digest_row.get("metadata_valid", true)) or String(stale_digest_row.get("metadata_status", "")) != "preview_signature_digest_mismatch":
+			failures.append("stale_digest_row_metadata:%s" % [stale_digest_row])
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,
