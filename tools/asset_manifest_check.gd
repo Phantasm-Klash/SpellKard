@@ -58,7 +58,11 @@ func _check_asset_manifest() -> void:
 func _check_asset_record(record: Dictionary) -> void:
 	var required_fields: Array[String] = ["path", "source_url", "provenance", "author", "license", "modified", "imported_at"]
 	for field in required_fields:
-		if String(record.get(field, "")).is_empty():
+		if not record.has(field):
+			_fail("asset record missing %s" % field)
+		elif field == "modified" and typeof(record.get(field)) != TYPE_BOOL:
+			_fail("asset record modified must be bool: %s" % String(record.get("path", "")))
+		elif field != "modified" and String(record.get(field, "")).is_empty():
 			_fail("asset record missing %s" % field)
 	var path := String(record.get("path", ""))
 	if not path.is_empty() and not FileAccess.file_exists(path):
