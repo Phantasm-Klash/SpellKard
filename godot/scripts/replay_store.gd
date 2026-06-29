@@ -101,6 +101,8 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 				failures.append("missing_preview_sample_ticks:%s" % replay_id)
 			if sample_signature_digests.is_empty():
 				failures.append("missing_preview_sample_digests:%s" % replay_id)
+			elif not _all_nonnegative_ints(sample_signature_digests):
+				failures.append("preview_sample_digest_negative:%s" % replay_id)
 			if sample_count <= 0:
 				failures.append("missing_preview_sample_count:%s" % replay_id)
 			elif sample_count != sample_ticks.size():
@@ -299,6 +301,8 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 		return "bad_preview_sample_window"
 	if not _arrays_equal_ints(sample_ticks, SPELLBOOK_PREVIEW_SAMPLE_TICKS):
 		return "bad_preview_sample_window"
+	if not _all_nonnegative_ints(sample_signature_digests):
+		return "bad_preview_sample_window"
 	if int(fields.get("preview_budget_headroom", -1)) < 0 or str(fields.get("performance_budget_status", "")) != "within_budget":
 		return "preview_budget_overrun"
 	return "valid"
@@ -378,5 +382,11 @@ func _arrays_equal_ints(left: Variant, right: Variant) -> bool:
 		return false
 	for index in range(left_array.size()):
 		if int(left_array[index]) != int(right_array[index]):
+			return false
+	return true
+
+func _all_nonnegative_ints(values: Array[int]) -> bool:
+	for value in values:
+		if int(value) < 0:
 			return false
 	return true

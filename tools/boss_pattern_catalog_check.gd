@@ -144,6 +144,11 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 	var stale_digests: Array = (stale_sample_digest_entry.get("preview_sample_signature_digests", []) as Array).duplicate()
 	stale_digests[0] = int(stale_digests[0]) + 1
 	stale_sample_digest_entry["preview_sample_signature_digests"] = stale_digests
+	var negative_sample_digest_entry := valid_entries[0].duplicate(true)
+	negative_sample_digest_entry["replay_id"] = "fixture_negative_sample_digest_spellbook_preview"
+	var negative_digests: Array = (negative_sample_digest_entry.get("preview_sample_signature_digests", []) as Array).duplicate()
+	negative_digests[0] = -1
+	negative_sample_digest_entry["preview_sample_signature_digests"] = negative_digests
 	var bad_sample_count_entry := valid_entries[0].duplicate(true)
 	bad_sample_count_entry["replay_id"] = "fixture_bad_sample_count_spellbook_preview"
 	bad_sample_count_entry["preview_sample_count"] = int(bad_sample_count_entry.get("preview_sample_count", 0)) + 1
@@ -170,6 +175,8 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 		failures.append("stale_sample_preview_accepted")
 	if bool(store.validate_spellbook_preview_metadata(stale_sample_digest_entry, first_preview).get("ok", false)):
 		failures.append("stale_sample_digest_preview_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(negative_sample_digest_entry)).get("ok", false)):
+		failures.append("negative_sample_digest_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(bad_schema_entry)).get("ok", false)):
 		failures.append("bad_schema_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(bad_sample_count_entry)).get("ok", false)):
@@ -217,6 +224,9 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 		var noncanonical_sample_ticks_row: Dictionary = replay_list._row_from_entry(noncanonical_sample_ticks_entry, rows.size() + 3)
 		if bool(noncanonical_sample_ticks_row.get("metadata_valid", true)) or String(noncanonical_sample_ticks_row.get("metadata_status", "")) != "bad_preview_sample_window":
 			failures.append("noncanonical_sample_ticks_row_metadata:%s" % [noncanonical_sample_ticks_row])
+		var negative_sample_digest_row: Dictionary = replay_list._row_from_entry(negative_sample_digest_entry, rows.size() + 4)
+		if bool(negative_sample_digest_row.get("metadata_valid", true)) or String(negative_sample_digest_row.get("metadata_status", "")) != "bad_preview_sample_window":
+			failures.append("negative_sample_digest_row_metadata:%s" % [negative_sample_digest_row])
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,
