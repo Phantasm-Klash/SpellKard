@@ -2871,6 +2871,7 @@ func _ui_overlay_snapshot() -> Dictionary:
 	var text_fit_check := _ui_visible_text_fit_check()
 	var mouse_check := _ui_visible_mouse_health_check()
 	var focus_section_check := _ui_focus_section_runtime_check(page_layout)
+	var focus_lane_check := _ui_focus_lane_runtime_check(page_layout)
 	var viewport_size := get_viewport_rect().size
 	var panel_rect := Rect2(ui_panel.position, ui_panel.size) if ui_panel != null else Rect2()
 	var portrait_rect := Rect2(ui_home_portrait_panel.global_position, ui_home_portrait_panel.size) if ui_home_portrait_panel != null else Rect2()
@@ -2913,6 +2914,9 @@ func _ui_overlay_snapshot() -> Dictionary:
 		"page_focus_sections": ",".join(_ui_string_array(page_layout.get("focus_sections", []))),
 		"page_focus_sections_visible": String(focus_section_check.get("visible_sections", "")),
 		"page_focus_sections_missing_visible": String(focus_section_check.get("missing_sections", "")),
+		"page_focus_lanes": ",".join(_ui_string_array(page_layout.get("focus_lanes", []))),
+		"page_focus_lanes_visible": String(focus_lane_check.get("visible_lanes", "")),
+		"page_focus_lanes_missing_visible": String(focus_lane_check.get("missing_lanes", "")),
 		"page_text_fit_policy": ",".join(_ui_string_array(page_layout.get("text_fit_policy", []))),
 		"page_visual_asset": String(page_layout.get("visual_asset", "")),
 		"page_visual_treatment": String(page_layout.get("visual_treatment", "")),
@@ -2933,6 +2937,9 @@ func _ui_overlay_snapshot() -> Dictionary:
 		"page_focus_section_count": int(page_layout.get("focus_section_count", 0)),
 		"page_focus_section_visible_count": int(focus_section_check.get("visible_count", 0)),
 		"page_focus_section_missing_visible_count": int(focus_section_check.get("missing_count", 0)),
+		"page_focus_lane_count": int(page_layout.get("focus_lane_count", 0)),
+		"page_focus_lane_visible_count": int(focus_lane_check.get("visible_count", 0)),
+		"page_focus_lane_missing_visible_count": int(focus_lane_check.get("missing_count", 0)),
 		"page_text_fit_policy_count": int(page_layout.get("text_fit_policy_count", 0)),
 		"viewport_size": viewport_size,
 		"home_visible": _is_home_screen() and ui_home_box != null and ui_home_box.visible,
@@ -3122,6 +3129,24 @@ func _ui_focus_section_runtime_check(page_layout: Dictionary) -> Dictionary:
 		"missing_sections": ",".join(missing_sections),
 	}
 
+func _ui_focus_lane_runtime_check(page_layout: Dictionary) -> Dictionary:
+	var expected_lanes := _ui_string_array(page_layout.get("focus_lanes", []))
+	var visible_lanes: Array[String] = []
+	var missing_lanes: Array[String] = []
+	for lane_id in expected_lanes:
+		if _ui_focus_lane_visible_count(lane_id) > 0:
+			visible_lanes.append(lane_id)
+		elif _ui_focus_section_is_contextual(lane_id):
+			continue
+		else:
+			missing_lanes.append(lane_id)
+	return {
+		"visible_count": visible_lanes.size(),
+		"missing_count": missing_lanes.size(),
+		"visible_lanes": ",".join(visible_lanes),
+		"missing_lanes": ",".join(missing_lanes),
+	}
+
 func _ui_focus_section_is_contextual(section_id: String) -> bool:
 	return section_id in ["control_buttons", "control_preview"]
 
@@ -3151,6 +3176,14 @@ func _ui_focus_section_visible_count(section_id: String) -> int:
 			return 1 if ui_control_label != null and ui_control_label.is_visible_in_tree() and not ui_control_label.text.is_empty() else 0
 	return 0
 
+func _ui_focus_lane_visible_count(lane_id: String) -> int:
+	var count := 0
+	for item in _visible_focus_controls():
+		var button := item.get("button", null) as Button
+		if button != null and String(button.get_meta("focus_lane", "")) == lane_id:
+			count += 1
+	return count
+
 func _visible_focus_controls() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	_append_visible_focus_controls(result, "home", ui_home_buttons)
@@ -3177,6 +3210,7 @@ func _append_focus_button_for_health(result: Array[Dictionary], control_id: Stri
 		return
 	result.append({
 		"id": control_id,
+		"lane": String(button.get_meta("focus_lane", "")),
 		"button": button,
 	})
 
@@ -3554,6 +3588,7 @@ func _update_ui_home_surface(rows: Array[Dictionary]) -> void:
 		button.visible = true
 		button.disabled = row_index < 0 or target_screen.is_empty()
 		_ui_mark_button_owner(button)
+		_ui_mark_button_focus_lane(button, "primary_routes")
 		button.set_meta("row_index", row_index)
 		button.set_meta("row_id", String(row.get("id", "")))
 		button.set_meta("screen_id", target_screen)
@@ -3576,6 +3611,7 @@ func _update_ui_home_dashboard() -> void:
 		button.visible = true
 		button.disabled = screen_id.is_empty()
 		_ui_mark_button_owner(button)
+		_ui_mark_button_focus_lane(button, "home_status")
 		button.set_meta("screen_id", screen_id)
 		button.set_meta("dashboard_id", String(card.get("id", "")))
 		var label_text := String(card.get("label", ""))
@@ -4117,11 +4153,27 @@ func _active_section_binding_name() -> String:
 		return "FilterTabs"
 	return "SectionTabs"
 
+func _active_focus_section_lane_name() -> String:
+	var scene_id := _current_ui_scene_id()
+	if scene_id == "community_panel":
+		return "social_tabs"
+	if scene_id == "collection_panel":
+		return "filter_tabs"
+	return "section_tabs"
+
 func _active_overview_binding_name() -> String:
 	var scene_id := _current_ui_scene_id()
 	if scene_id == "matchmaking_panel":
 		return "ModeCards"
 	return "OverviewCards"
+
+func _active_overview_focus_lane_name() -> String:
+	var page_layout := _ui_page_layout()
+	var slots := _ui_string_array(page_layout.get("layout_slots", []))
+	for candidate in ["mode_grid", "collection_grid", "notice_board", "mode_cards", "room_actions", "setting_groups", "overview_cards"]:
+		if slots.has(candidate):
+			return candidate
+	return "overview_cards"
 
 func _ui_bind_or_new_box(scene_id: String, binding_name: String, fallback_name: String, vertical: bool) -> BoxContainer:
 	var node := _ui_bound_node(scene_id, binding_name)
@@ -4526,6 +4578,14 @@ func _ui_clear_button_owner(button: Button) -> void:
 	if button != null and button.has_meta("owner_screen"):
 		button.remove_meta("owner_screen")
 
+func _ui_mark_button_focus_lane(button: Button, lane_id: String) -> void:
+	if button != null:
+		button.set_meta("focus_lane", lane_id)
+
+func _ui_clear_button_focus_lane(button: Button) -> void:
+	if button != null and button.has_meta("focus_lane"):
+		button.remove_meta("focus_lane")
+
 func _ui_button_owned_by_current_screen(button: Button) -> bool:
 	return button != null and String(button.get_meta("owner_screen", "")) == _ui_current_owner_screen()
 
@@ -4537,6 +4597,7 @@ func _ui_deactivate_button(button: Button, meta_keys: Array = []) -> void:
 	button.disabled = true
 	button.tooltip_text = ""
 	_ui_clear_button_owner(button)
+	_ui_clear_button_focus_lane(button)
 	for key in meta_keys:
 		if button.has_meta(key):
 			button.remove_meta(key)
@@ -4665,6 +4726,7 @@ func _update_ui_overlay() -> void:
 		var prefix := "> " if absolute_index == ui_screen_model.cursor else "  "
 		label.disabled = false
 		_ui_mark_button_owner(label)
+		_ui_mark_button_focus_lane(label, "row_window")
 		label.set_meta("row_index", absolute_index)
 		label.text = _format_ui_overlay_row(rows[i], prefix, all_rows, absolute_index)
 	_update_ui_focus_neighbors()
@@ -4739,6 +4801,7 @@ func _update_ui_nav_overlay(nav_rows: Array[Dictionary]) -> void:
 			edge_marker = "v "
 		label.disabled = false
 		_ui_mark_button_owner(label)
+		_ui_mark_button_focus_lane(label, "navigation_rail")
 		label.set_meta("screen_id", String(row.get("screen", "")))
 		label.text = "%s%s%s" % [edge_marker, marker, _row_label_text(row)]
 
@@ -4753,6 +4816,7 @@ func _update_ui_category_tabs(nav_rows: Array[Dictionary]) -> void:
 		button.visible = true
 		button.disabled = false
 		_ui_mark_button_owner(button)
+		_ui_mark_button_focus_lane(button, "category_tabs")
 		button.set_meta("screen_id", String(tab.get("screen", "")))
 		button.set_meta("category_id", String(tab.get("category_id", "")))
 		var marker := "> " if bool(tab.get("active", false)) else ""
@@ -4808,6 +4872,7 @@ func _update_ui_section_tabs(rows: Array[Dictionary], selected: Dictionary) -> v
 		button.visible = true
 		button.disabled = false
 		_ui_mark_button_owner(button)
+		_ui_mark_button_focus_lane(button, _active_focus_section_lane_name())
 		button.set_meta("row_index", int(section_row.get("row_index", 0)))
 		button.set_meta("section_id", section_id)
 		button.text = "%s%s" % [active_marker, String(section_row.get("label", section_id))]
@@ -4893,6 +4958,7 @@ func _update_ui_status_cards() -> void:
 		button.visible = true
 		button.disabled = target_screen.is_empty()
 		_ui_mark_button_owner(button)
+		_ui_mark_button_focus_lane(button, "status_cards")
 		button.set_meta("screen_id", target_screen)
 		button.set_meta("status_id", String(card.get("id", "")))
 		var label_text := _row_label_text(card)
@@ -4946,6 +5012,7 @@ func _update_ui_focus_panel(rows: Array[Dictionary], selected: Dictionary) -> vo
 	ui_focus_button.visible = true
 	ui_focus_button.disabled = row_index < 0
 	_ui_mark_button_owner(ui_focus_button)
+	_ui_mark_button_focus_lane(ui_focus_button, "focus_panel")
 	ui_focus_button.set_meta("row_index", row_index)
 	ui_focus_button.set_meta("row_id", String(focus.get("row_id", "")))
 	ui_focus_button.set_meta("focus_id", String(focus.get("id", "")))
@@ -5079,6 +5146,7 @@ func _update_ui_overview_cards(rows: Array[Dictionary], selected: Dictionary) ->
 		button.visible = true
 		button.disabled = row_index < 0 or not bool(row.get("enabled", true))
 		_ui_mark_button_owner(button)
+		_ui_mark_button_focus_lane(button, _active_overview_focus_lane_name())
 		button.set_meta("row_index", row_index)
 		button.set_meta("row_id", String(row.get("id", "")))
 		button.text = _format_ui_overview_card(card)
@@ -5286,6 +5354,7 @@ func _update_ui_quick_actions(rows: Array[Dictionary], selected: Dictionary) -> 
 		var screen_id := String(action_row.get("screen", ""))
 		button.disabled = row_index < 0 and screen_id.is_empty()
 		_ui_mark_button_owner(button)
+		_ui_mark_button_focus_lane(button, "quick_routes")
 		button.set_meta("row_index", row_index)
 		button.set_meta("row_id", String(action_row.get("row_id", "")))
 		button.set_meta("screen_id", screen_id)
@@ -5418,6 +5487,7 @@ func _update_ui_control_buttons(row: Dictionary) -> void:
 		button.visible = true
 		button.disabled = false
 		_ui_mark_button_owner(button)
+		_ui_mark_button_focus_lane(button, "control_buttons")
 		button.text = String(control_action.get("label", ""))
 		button.tooltip_text = String(control_action.get("tooltip", button.text))
 		button.set_meta("control_action", String(control_action.get("action", "")))

@@ -463,6 +463,7 @@ def check_ui_page_contracts() -> list[str]:
         asset_usage = _extract_array_values(block, "asset_usage")
         input_methods = _extract_array_values(block, "input_methods")
         focus_sections = _extract_array_values(block, "focus_sections")
+        focus_lanes = _extract_array_values(block, "focus_lanes")
         text_fit_policy = _extract_array_values(block, "text_fit_policy")
         visual_asset = _extract_string_value(block, "visual_asset")
         treatment = _extract_string_value(block, "visual_treatment")
@@ -495,13 +496,20 @@ def check_ui_page_contracts() -> list[str]:
                 errors.append(f"PAGE_SPECS[{page_id}]: input_methods missing {method}")
         if not focus_sections and "func _focus_sections_for_spec" not in text:
             errors.append(f"PAGE_SPECS[{page_id}]: missing focus_sections/default")
+        if not focus_lanes and "func _focus_lanes_for_spec" not in text:
+            errors.append(f"PAGE_SPECS[{page_id}]: missing focus_lanes/default")
         effective_focus_sections = focus_sections
         if not effective_focus_sections and "func _focus_sections_for_spec" in text:
             effective_focus_sections = ["navigation_rail", "focus_panel", "row_window"]
+        effective_focus_lanes = focus_lanes
+        if not effective_focus_lanes and "func _focus_lanes_for_spec" in text:
+            effective_focus_lanes = effective_focus_sections
         if page_id in {"play", "collection", "community", "player_settings"}:
             for section in ["category_tabs", "focus_panel", "row_window"]:
                 if section not in effective_focus_sections:
                     errors.append(f"PAGE_SPECS[{page_id}]: focus_sections missing {section}")
+                if section not in effective_focus_lanes:
+                    errors.append(f"PAGE_SPECS[{page_id}]: focus_lanes missing {section}")
         if not text_fit_policy and "DEFAULT_TEXT_FIT_POLICY" not in text:
             errors.append(f"PAGE_SPECS[{page_id}]: missing text_fit_policy/default")
         effective_text_fit = text_fit_policy or ["clip_button_text", "ellipsis_overrun", "wrap_labels", "minimum_44x22_targets"]
@@ -539,7 +547,9 @@ def check_ui_page_contracts() -> list[str]:
     for token in [
         "func _ui_visible_mouse_health_check()",
         "func _ui_focus_section_runtime_check(page_layout: Dictionary)",
+        "func _ui_focus_lane_runtime_check(page_layout: Dictionary)",
         '"page_focus_sections_missing_visible"',
+        '"page_focus_lanes_missing_visible"',
         '"visible_mouse_blocked_count"',
     ]:
         if token not in main_text:
@@ -548,6 +558,7 @@ def check_ui_page_contracts() -> list[str]:
     for token in [
         '"visible_mouse_blocked_count"',
         '"page_focus_section_missing_visible_count"',
+        '"page_focus_lane_missing_visible_count"',
     ]:
         if token not in ui_smoke_text:
             errors.append(f"tools/client_ui_smoke_test.gd: missing UI interaction smoke token {token}")

@@ -466,6 +466,10 @@ func _assert_page_health(snapshot: Dictionary, label: String, expected_quick_max
 		return _fail("%s missing focus section contract %s" % [label, snapshot])
 	if bool(snapshot.get("visible", true)) and int(snapshot.get("page_focus_section_missing_visible_count", 0)) != 0:
 		return _fail("%s missing visible controls for focus sections %s in %s" % [label, String(snapshot.get("page_focus_sections_missing_visible", "")), String(snapshot.get("page_focus_sections", ""))])
+	if int(snapshot.get("page_focus_lane_count", 0)) <= 0 or String(snapshot.get("page_focus_lanes", "")).is_empty():
+		return _fail("%s missing focus lane contract %s" % [label, snapshot])
+	if bool(snapshot.get("visible", true)) and int(snapshot.get("page_focus_lane_missing_visible_count", 0)) != 0:
+		return _fail("%s missing visible controls for focus lanes %s in %s" % [label, String(snapshot.get("page_focus_lanes_missing_visible", "")), String(snapshot.get("page_focus_lanes", ""))])
 	if int(snapshot.get("page_text_fit_policy_count", 0)) <= 0 or not _contains_all(String(snapshot.get("page_text_fit_policy", "")), ["clip_button_text", "ellipsis_overrun", "wrap_labels"]):
 		return _fail("%s missing text fit policy %s" % [label, snapshot])
 	if String(snapshot.get("page_visual_asset", "")).is_empty() or String(snapshot.get("page_visual_treatment", "")).is_empty():
@@ -500,7 +504,22 @@ func _assert_target_page_contract(snapshot: Dictionary, label: String, layout_to
 		var focus_sections := String(snapshot.get("page_focus_sections", ""))
 		if not _contains_all(focus_sections, ["category_tabs", "focus_panel", "row_window"]):
 			return _fail("%s focus sections missing category/focus/rows %s" % [label, focus_sections])
+		var focus_lanes := String(snapshot.get("page_focus_lanes", ""))
+		if not _contains_all(focus_lanes, _expected_focus_lanes_for(label)):
+			return _fail("%s focus lanes missing expected runtime lanes %s" % [label, focus_lanes])
 	return true
+
+func _expected_focus_lanes_for(label: String) -> Array[String]:
+	match label:
+		"play":
+			return ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "mode_grid", "row_window", "quick_routes"]
+		"collection":
+			return ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "filter_tabs", "collection_grid", "row_window", "quick_routes"]
+		"community":
+			return ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "notice_board", "social_tabs", "row_window", "quick_routes"]
+		"player_settings":
+			return ["navigation_rail", "category_tabs", "focus_panel", "section_tabs", "setting_groups", "control_preview", "control_buttons", "row_window", "quick_routes"]
+	return ["focus_panel", "row_window"]
 
 func _assert_nav_family(snapshot: Dictionary, label: String, expected_tokens: Array[String], blocked_tokens: Array[String]) -> bool:
 	var nav_text := String(snapshot.get("nav_text", ""))

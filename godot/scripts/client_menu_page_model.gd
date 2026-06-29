@@ -638,6 +638,7 @@ func page_spec(screen_id: String, overrides: Dictionary = {}) -> Dictionary:
 	spec["asset_usage"] = _string_array(spec.get("asset_usage", []))
 	spec["input_methods"] = _string_array(spec.get("input_methods", []))
 	spec["focus_sections"] = _string_array(spec.get("focus_sections", []))
+	spec["focus_lanes"] = _string_array(spec.get("focus_lanes", []))
 	spec["text_fit_policy"] = _string_array(spec.get("text_fit_policy", []))
 	if _string_array(spec.get("status_region_ids", [])).is_empty():
 		spec["status_region_ids"] = _string_array(spec.get("state_regions", []))
@@ -653,6 +654,8 @@ func page_spec(screen_id: String, overrides: Dictionary = {}) -> Dictionary:
 		spec["input_methods"] = DEFAULT_INPUT_METHODS.duplicate()
 	if _string_array(spec.get("focus_sections", [])).is_empty():
 		spec["focus_sections"] = _focus_sections_for_spec(spec)
+	if _string_array(spec.get("focus_lanes", [])).is_empty():
+		spec["focus_lanes"] = _focus_lanes_for_spec(spec)
 	if _string_array(spec.get("text_fit_policy", [])).is_empty():
 		spec["text_fit_policy"] = DEFAULT_TEXT_FIT_POLICY.duplicate()
 	spec["player_task_groups"] = _player_task_groups(source_screen, spec)
@@ -673,6 +676,7 @@ func page_spec(screen_id: String, overrides: Dictionary = {}) -> Dictionary:
 	spec["asset_usage_count"] = _string_array(spec.get("asset_usage", [])).size()
 	spec["input_method_count"] = _string_array(spec.get("input_methods", [])).size()
 	spec["focus_section_count"] = _string_array(spec.get("focus_sections", [])).size()
+	spec["focus_lane_count"] = _string_array(spec.get("focus_lanes", [])).size()
 	spec["text_fit_policy_count"] = _string_array(spec.get("text_fit_policy", [])).size()
 	return spec
 
@@ -802,13 +806,47 @@ func _focus_sections_for_spec(spec: Dictionary) -> Array[String]:
 			return ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "social_tabs", "overview_cards", "quick_routes", "row_window"]
 		"collection":
 			return ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "filter_tabs", "overview_cards", "quick_routes", "row_window"]
-		"matchmaking", "network_room":
+		"matchmaking":
 			return ["category_tabs", "focus_panel", "mode_cards", "quick_routes", "row_window"]
+		"network_room":
+			return ["category_tabs", "focus_panel", "room_actions", "quick_routes", "row_window"]
 		"hub", "mode_select":
 			return ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "section_tabs", "overview_cards", "quick_routes", "row_window"]
 		"playfield", "battle_room":
 			return []
 	return ["navigation_rail", "focus_panel", "row_window"]
+
+func _focus_lanes_for_spec(spec: Dictionary) -> Array[String]:
+	var kind := String(spec.get("kind", ""))
+	var category := String(spec.get("category", ""))
+	var slots := _string_array(spec.get("layout_slots", []))
+	if category == "community" and slots.has("social_tabs"):
+		return ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "notice_board", "social_tabs", "row_window", "quick_routes"]
+	match kind:
+		"home_lobby":
+			return ["primary_routes"]
+		"settings":
+			return ["navigation_rail", "category_tabs", "focus_panel", "section_tabs", "setting_groups", "control_preview", "control_buttons", "row_window", "quick_routes"]
+		"community":
+			return ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "notice_board", "social_tabs", "row_window", "quick_routes"]
+		"collection":
+			return ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "filter_tabs", "collection_grid", "row_window", "quick_routes"]
+		"matchmaking":
+			return ["category_tabs", "focus_panel", "mode_cards", "quick_routes", "row_window"]
+		"network_room":
+			return ["category_tabs", "focus_panel", "room_actions", "quick_routes", "row_window"]
+		"hub", "mode_select":
+			return ["navigation_rail", "category_tabs", "status_cards", "focus_panel", _overview_lane_for_spec(spec), "row_window", "quick_routes"]
+		"playfield", "battle_room":
+			return []
+	return _string_array(spec.get("focus_sections", []))
+
+func _overview_lane_for_spec(spec: Dictionary) -> String:
+	var slots := _string_array(spec.get("layout_slots", []))
+	for candidate in ["mode_grid", "collection_grid", "notice_board", "mode_cards", "room_actions", "setting_groups", "overview_cards"]:
+		if slots.has(candidate):
+			return candidate
+	return "overview_cards"
 
 func _default_focus_action_ids(spec: Dictionary) -> Array[String]:
 	var primary := _string_array(spec.get("primary_row_ids", []))
