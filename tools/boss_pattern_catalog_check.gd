@@ -524,7 +524,7 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		if bool(stale_fixture_row.get("metadata_valid", true)) or String(stale_fixture_row.get("metadata_status", "")) != "preview_fixture_mismatch":
 			failures.append("stale_fixture_row_metadata:%s" % [stale_fixture_row])
 		var stale_export_row: Dictionary = replay_list._row_from_entry(stale_export_entry, rows.size() + 12)
-		if bool(stale_export_row.get("metadata_valid", true)) or String(stale_export_row.get("metadata_status", "")) != "preview_fixture_mismatch":
+		if bool(stale_export_row.get("metadata_valid", true)) or String(stale_export_row.get("metadata_status", "")) != "preview_export_id_mismatch":
 			failures.append("stale_export_row_metadata:%s" % [stale_export_row])
 		var stale_seed_row: Dictionary = replay_list._row_from_entry(stale_seed_entry, rows.size() + 13)
 		if bool(stale_seed_row.get("metadata_valid", true)) or String(stale_seed_row.get("metadata_status", "")) != "preview_seed_mismatch":

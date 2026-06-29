@@ -394,9 +394,10 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 		return "missing_spellbook_preview"
 	if int(fields.get("match_seed", 0)) > 0 and preview_seed != int(fields.get("match_seed", 0)):
 		return "preview_seed_mismatch"
-	if str(fields.get("preview_fixture_id", "")) != _expected_preview_fixture_id(fields) \
-			or str(fields.get("preview_export_id", "")) != _expected_preview_export_id(fields):
+	if str(fields.get("preview_fixture_id", "")) != _expected_preview_fixture_id(fields):
 		return "preview_fixture_mismatch"
+	if str(fields.get("preview_export_id", "")) != _expected_preview_export_id(fields):
+		return "preview_export_id_mismatch"
 	if str(fields.get("preview_authority_scope", SPELLBOOK_PREVIEW_AUTHORITY_SCOPE)) != SPELLBOOK_PREVIEW_AUTHORITY_SCOPE:
 		return "preview_authority_scope_mismatch"
 	if int(fields.get("preview_export_schema_version", 0)) != SPELLBOOK_PREVIEW_EXPORT_SCHEMA_VERSION:
