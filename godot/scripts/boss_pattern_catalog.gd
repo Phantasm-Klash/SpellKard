@@ -505,6 +505,10 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 					failures.append("golden_preview_digest:%s:%d" % [phase_id, int(preview_a.get("signature_digest", 0))])
 				if (preview_a.get("samples", []) as Array).size() != int(fixture.get("sample_count", 0)):
 					failures.append("golden_preview_samples:%s" % phase_id)
+				if not _arrays_equal_ints(preview_a.get("sample_ticks", []), fixture.get("sample_ticks", [])):
+					failures.append("golden_preview_sample_ticks:%s" % phase_id)
+				if not _arrays_equal_ints(preview_a.get("sample_emit_counts", []), fixture.get("sample_emit_counts", [])):
+					failures.append("golden_preview_sample_emit_counts:%s" % phase_id)
 				if int(preview_a.get("max_emit_per_tick", 0)) != int(fixture.get("max_emit_per_tick", 0)):
 					failures.append("golden_preview_max_emit:%s:%d" % [phase_id, int(preview_a.get("max_emit_per_tick", 0))])
 				if int(preview_a.get("bullet_cap_per_tick", 0)) != int(fixture.get("bullet_cap_per_tick", 0)):
@@ -523,6 +527,8 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 						failures.append("pattern_lab_missing_preview:%s" % phase_id)
 					if int(coverage.get("deterministic_preview_digest", 0)) != int(preview_a.get("signature_digest", 0)):
 						failures.append("pattern_lab_digest_mismatch:%s" % phase_id)
+					if not _arrays_equal_ints(coverage.get("preview_sample_emit_counts", []), preview_a.get("sample_emit_counts", [])):
+						failures.append("pattern_lab_sample_emit_counts_mismatch:%s" % phase_id)
 					if int(coverage.get("max_preview_emit", 0)) != int(preview_a.get("max_emit_per_tick", 0)):
 						failures.append("pattern_lab_max_emit_mismatch:%s" % phase_id)
 					if int(coverage.get("preview_budget_headroom", 0)) != int(preview_a.get("budget_headroom", 0)):
@@ -603,6 +609,18 @@ static func _adapter_field_empty(value: Variant) -> bool:
 	if typeof(value) == TYPE_ARRAY:
 		return (value as Array).is_empty()
 	return String(value).is_empty()
+
+static func _arrays_equal_ints(left: Variant, right: Variant) -> bool:
+	if typeof(left) != TYPE_ARRAY or typeof(right) != TYPE_ARRAY:
+		return false
+	var left_array: Array = left
+	var right_array: Array = right
+	if left_array.size() != right_array.size():
+		return false
+	for index in range(left_array.size()):
+		if int(left_array[index]) != int(right_array[index]):
+			return false
+	return true
 
 static func _stage_sample_by_type(stage_model: RefCounted) -> Dictionary:
 	var samples: Dictionary = {}

@@ -101,6 +101,10 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 				failures.append("entry_sample_count_mismatch:%s" % phase_id)
 			if not _arrays_equal_ints(entry.get("preview_sample_ticks", []), preview.get("sample_ticks", [])):
 				failures.append("entry_sample_ticks_mismatch:%s" % phase_id)
+			if not _arrays_equal_ints(entry.get("preview_sample_emit_counts", []), preview.get("sample_emit_counts", [])):
+				failures.append("entry_sample_emit_counts_mismatch:%s" % phase_id)
+			if int(entry.get("max_preview_emit", -1)) != int(preview.get("max_emit_per_tick", -2)):
+				failures.append("entry_max_preview_emit_mismatch:%s" % phase_id)
 	var invalid_entry := valid_entries[0].duplicate(true)
 	invalid_entry["replay_id"] = "fixture_missing_spellbook_preview"
 	invalid_entry["preview_export_id"] = ""
@@ -125,8 +129,18 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 	var missing_sample_entry := valid_entries[0].duplicate(true)
 	missing_sample_entry["replay_id"] = "fixture_missing_samples_spellbook_preview"
 	missing_sample_entry["preview_sample_ticks"] = []
+	missing_sample_entry["preview_sample_emit_counts"] = []
 	missing_sample_entry["preview_sample_count"] = 0
-	var invalid_entries: Array[Dictionary] = [invalid_entry, authoritative_entry, over_budget_entry, bad_sample_count_entry, missing_sample_entry]
+	var stale_sample_emit_entry := valid_entries[0].duplicate(true)
+	stale_sample_emit_entry["replay_id"] = "fixture_stale_sample_emit_counts_spellbook_preview"
+	var stale_counts: Array = (stale_sample_emit_entry.get("preview_sample_emit_counts", []) as Array).duplicate()
+	if not stale_counts.is_empty():
+		stale_counts[0] = int(stale_counts[0]) + 1
+	stale_sample_emit_entry["preview_sample_emit_counts"] = stale_counts
+	var bad_max_emit_entry := valid_entries[0].duplicate(true)
+	bad_max_emit_entry["replay_id"] = "fixture_bad_max_emit_spellbook_preview"
+	bad_max_emit_entry["max_preview_emit"] = int(bad_max_emit_entry.get("max_preview_emit", 0)) + 1
+	var invalid_entries: Array[Dictionary] = [invalid_entry, authoritative_entry, over_budget_entry, bad_sample_count_entry, missing_sample_entry, bad_max_emit_entry]
 	var valid_result: Dictionary = store.validate_index_metadata(valid_entries)
 	if not bool(valid_result.get("ok", false)):
 		failures.append("valid_replay_rejected:%s" % [valid_result.get("failures", [])])
@@ -142,10 +156,14 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 		failures.append("stale_digest_preview_accepted")
 	if bool(store.validate_spellbook_preview_metadata(stale_sample_entry, first_preview).get("ok", false)):
 		failures.append("stale_sample_preview_accepted")
+	if bool(store.validate_spellbook_preview_metadata(stale_sample_emit_entry, first_preview).get("ok", false)):
+		failures.append("stale_sample_emit_counts_preview_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(bad_sample_count_entry)).get("ok", false)):
 		failures.append("bad_sample_count_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(missing_sample_entry)).get("ok", false)):
 		failures.append("missing_sample_window_replay_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(bad_max_emit_entry)).get("ok", false)):
+		failures.append("bad_max_emit_replay_accepted")
 	var replay_list: RefCounted = ReplayListModel.new()
 	replay_list.replay_store = store
 	var list_entries: Array[Dictionary] = valid_entries.duplicate(true)
@@ -165,6 +183,10 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 				failures.append("valid_row_budget_status:%s" % [valid_row])
 			if int(valid_row.get("preview_sample_count", -1)) <= 0:
 				failures.append("valid_row_sample_count:%s" % [valid_row])
+			if (valid_row.get("preview_sample_emit_counts", []) as Array).is_empty():
+				failures.append("valid_row_sample_emit_counts:%s" % [valid_row])
+			if int(valid_row.get("max_preview_emit", -1)) <= 0:
+				failures.append("valid_row_max_preview_emit:%s" % [valid_row])
 		var invalid_row: Dictionary = rows[valid_entries.size()]
 		if bool(invalid_row.get("metadata_valid", true)) or String(invalid_row.get("metadata_status", "")) != "missing_spellbook_preview":
 			failures.append("invalid_row_metadata:%s" % [invalid_row])
@@ -194,7 +216,9 @@ func _replay_entry_for_preview(store: RefCounted, spellbook_id: String, phase_id
 			"preview_export_id": String(preview.get("export_id", "")),
 			"preview_signature_digest": int(preview.get("signature_digest", 0)),
 			"preview_sample_ticks": (preview.get("sample_ticks", []) as Array).duplicate(),
+			"preview_sample_emit_counts": (preview.get("sample_emit_counts", []) as Array).duplicate(),
 			"preview_sample_count": (preview.get("samples", []) as Array).size(),
+			"max_preview_emit": int(preview.get("max_emit_per_tick", 0)),
 			"preview_budget_headroom": int(preview.get("budget_headroom", 0)),
 			"performance_budget_status": String(preview.get("performance_budget_status", "")),
 			"server_authoritative": false,

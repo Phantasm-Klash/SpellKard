@@ -155,6 +155,7 @@ func _spellbook_phase_coverage_row(catalog_id: String, spellbook_id: String, pha
 		"deterministic_preview_digest": int(preview.get("signature_digest", 0)),
 		"seed": int(preview.get("seed", 0)),
 		"preview_sample_ticks": (preview.get("sample_ticks", []) as Array).duplicate(),
+		"preview_sample_emit_counts": (preview.get("sample_emit_counts", []) as Array).duplicate(),
 		"preview_sample_count": (preview.get("samples", []) as Array).size(),
 		"max_preview_emit": int(preview.get("max_emit_per_tick", 0)),
 		"preview_budget_headroom": int(preview.get("budget_headroom", int(phase_script.get("bullet_cap_per_tick", 0)) - int(preview.get("max_emit_per_tick", 0)))),

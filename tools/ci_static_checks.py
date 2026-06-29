@@ -113,6 +113,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "validate_performance_budgets",
         "validate_official_boss_type_coverage",
         "validate_spellbook_preview_exports",
+        "pattern_lab_sample_emit_counts_mismatch",
     ]:
         if token not in catalog_text:
             errors.append(f"godot/scripts/boss_pattern_catalog.gd: missing catalog contract token {token}")
@@ -145,6 +146,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "missing_golden_preview",
         "golden_preview_headroom",
         "golden_preview_sample_ticks",
+        "golden_preview_sample_emit_counts",
         "preview_bullet_cap",
         "budget_headroom",
         "performance_budget_status",
@@ -164,14 +166,16 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         '"performance_budget_status"',
         '"preview_export_id"',
         '"preview_sample_ticks"',
+        '"preview_sample_emit_counts"',
         '"preview_sample_count"',
+        '"max_preview_emit"',
     ]:
         if token not in pattern_lab_text:
             errors.append(f"godot/scripts/pattern_lab_model.gd: missing spellbook Pattern Lab token {token}")
 
     for replay_path in [replay_store, replay_list]:
         replay_text = replay_path.read_text(encoding="utf-8")
-        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_count"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
+        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_emit_counts"', '"preview_sample_count"', '"max_preview_emit"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
             if token not in replay_text:
                 errors.append(f"{replay_path.relative_to(ROOT)}: missing spellbook replay metadata token {token}")
     if "validate_spellbook_preview_metadata" not in replay_store.read_text(encoding="utf-8"):
@@ -193,13 +197,18 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "fixture_over_budget_spellbook_preview",
         "fixture_stale_digest_spellbook_preview",
         "fixture_stale_samples_spellbook_preview",
+        "fixture_stale_sample_emit_counts_spellbook_preview",
         "fixture_bad_sample_count_spellbook_preview",
         "fixture_missing_samples_spellbook_preview",
+        "fixture_bad_max_emit_spellbook_preview",
         "bad_sample_count_replay_accepted",
         "missing_sample_window_replay_accepted",
+        "bad_max_emit_replay_accepted",
         "validate_spellbook_preview_metadata",
         "preview_sample_ticks",
+        "preview_sample_emit_counts",
         "preview_sample_count",
+        "max_preview_emit",
         "preview_budget_headroom",
         "performance_budget_status",
     ]:

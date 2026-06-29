@@ -91,13 +91,21 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 			if int(entry.get("preview_signature_digest", 0)) <= 0:
 				failures.append("missing_preview_digest:%s" % replay_id)
 			var sample_ticks: Array[int] = _normalized_int_array(entry.get("preview_sample_ticks", []))
+			var sample_emit_counts: Array[int] = _normalized_int_array(entry.get("preview_sample_emit_counts", []))
 			var sample_count := int(entry.get("preview_sample_count", -1))
 			if sample_ticks.is_empty():
 				failures.append("missing_preview_sample_ticks:%s" % replay_id)
+			if sample_emit_counts.is_empty():
+				failures.append("missing_preview_sample_emit_counts:%s" % replay_id)
 			if sample_count <= 0:
 				failures.append("missing_preview_sample_count:%s" % replay_id)
 			elif sample_count != sample_ticks.size():
 				failures.append("preview_sample_count_mismatch:%s" % replay_id)
+			elif sample_count != sample_emit_counts.size():
+				failures.append("preview_sample_emit_count_mismatch:%s" % replay_id)
+			var max_sample_emit := _max_int(sample_emit_counts)
+			if max_sample_emit != int(entry.get("max_preview_emit", max_sample_emit)):
+				failures.append("preview_max_emit_mismatch:%s" % replay_id)
 			if int(entry.get("preview_budget_headroom", -1)) < 0:
 				failures.append("preview_budget_overrun:%s" % replay_id)
 			if str(entry.get("performance_budget_status", "")) != "within_budget":
@@ -133,6 +141,10 @@ func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary)
 		failures.append("preview_sample_count_mismatch:%s" % str(entry.get("replay_id", "")))
 	if not _arrays_equal_ints(entry.get("preview_sample_ticks", []), preview.get("sample_ticks", [])):
 		failures.append("preview_sample_ticks_mismatch:%s" % str(entry.get("replay_id", "")))
+	if not _arrays_equal_ints(entry.get("preview_sample_emit_counts", []), preview.get("sample_emit_counts", [])):
+		failures.append("preview_sample_emit_counts_mismatch:%s" % str(entry.get("replay_id", "")))
+	if int(entry.get("max_preview_emit", -1)) != int(preview.get("max_emit_per_tick", -2)):
+		failures.append("preview_max_emit_mismatch:%s" % str(entry.get("replay_id", "")))
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,
@@ -232,7 +244,9 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"preview_export_id": str(metadata.get("preview_export_id", "")),
 		"preview_signature_digest": preview_digest,
 		"preview_sample_ticks": _normalized_int_array(metadata.get("preview_sample_ticks", [])),
+		"preview_sample_emit_counts": _normalized_int_array(metadata.get("preview_sample_emit_counts", [])),
 		"preview_sample_count": int(metadata.get("preview_sample_count", _normalized_int_array(metadata.get("preview_sample_ticks", [])).size())),
+		"max_preview_emit": int(metadata.get("max_preview_emit", _max_int(_normalized_int_array(metadata.get("preview_sample_emit_counts", []))))),
 		"preview_budget_headroom": int(metadata.get("preview_budget_headroom", 0)),
 		"performance_budget_status": str(metadata.get("performance_budget_status", "")),
 		"metadata_valid": _metadata_valid(metadata),
@@ -251,12 +265,18 @@ func _metadata_valid(metadata: Dictionary) -> bool:
 	var preview_digest := int(metadata.get("preview_signature_digest", 0))
 	if preview_digest <= 0 and not str(metadata.get("preview_signature", "")).is_empty():
 		preview_digest = _stable_signature_digest(str(metadata.get("preview_signature", "")))
+	var sample_ticks := _normalized_int_array(metadata.get("preview_sample_ticks", []))
+	var sample_emit_counts := _normalized_int_array(metadata.get("preview_sample_emit_counts", []))
+	var sample_count := int(metadata.get("preview_sample_count", -1))
 	return not str(metadata.get("spellbook_id", "")).is_empty() \
 		and not str(metadata.get("phase_id", "")).is_empty() \
 		and not str(metadata.get("preview_export_id", "")).is_empty() \
 		and preview_digest > 0 \
-		and not _normalized_int_array(metadata.get("preview_sample_ticks", [])).is_empty() \
-		and int(metadata.get("preview_sample_count", -1)) == _normalized_int_array(metadata.get("preview_sample_ticks", [])).size() \
+		and not sample_ticks.is_empty() \
+		and not sample_emit_counts.is_empty() \
+		and sample_count == sample_ticks.size() \
+		and sample_count == sample_emit_counts.size() \
+		and int(metadata.get("max_preview_emit", _max_int(sample_emit_counts))) == _max_int(sample_emit_counts) \
 		and int(metadata.get("preview_budget_headroom", -1)) >= 0 \
 		and str(metadata.get("performance_budget_status", "")) == "within_budget" \
 		and not bool(metadata.get("server_authoritative", false))
@@ -278,6 +298,12 @@ func _normalized_int_array(value: Variant) -> Array[int]:
 		return result
 	for item in value:
 		result.append(int(item))
+	return result
+
+func _max_int(values: Array[int]) -> int:
+	var result := 0
+	for value in values:
+		result = maxi(result, value)
 	return result
 
 func _arrays_equal_ints(left: Variant, right: Variant) -> bool:
