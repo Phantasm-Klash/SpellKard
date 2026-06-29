@@ -18,6 +18,18 @@ const DEFAULT_LAYOUT_SLOTS := {
 	"playfield": ["gameplay_hud", "compact_menu", "focus_panel", "quick_routes"],
 	"battle_room": ["gameplay_hud", "server_projection", "network_status"],
 }
+const DEFAULT_FOCUS_LANES := {
+	"home_lobby": ["primary_routes"],
+	"hub": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "overview_cards", "row_window", "quick_routes"],
+	"community": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "social_tabs", "overview_cards", "row_window", "quick_routes"],
+	"settings": ["navigation_rail", "category_tabs", "focus_panel", "section_tabs", "setting_groups", "control_preview", "control_buttons", "row_window", "quick_routes"],
+	"matchmaking": ["category_tabs", "focus_panel", "mode_cards", "row_window", "quick_routes"],
+	"network_room": ["category_tabs", "focus_panel", "room_actions", "business_transport", "battle_transport", "row_window", "quick_routes"],
+	"mode_select": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "mode_grid", "row_window", "quick_routes"],
+	"collection": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "filter_tabs", "collection_grid", "row_window", "quick_routes"],
+	"playfield": ["gameplay_hud", "compact_menu", "quick_routes"],
+	"battle_room": ["gameplay_hud", "server_projection", "network_status"],
+}
 
 const PAGE_SPECS := {
 	"main_menu": {
@@ -32,6 +44,7 @@ const PAGE_SPECS := {
 		"asset_usage": ["standee:home_portrait:res://themes/base/ui/lobby_standee.svg"],
 		"layout_slots": ["portrait_art", "lobby_status", "primary_routes", "safe_margin"],
 		"focus_sections": ["primary_routes"],
+		"focus_lanes": ["primary_routes"],
 		"input_methods": ["keyboard", "gamepad", "mouse"],
 		"text_fit_policy": ["clip_button_text", "ellipsis_overrun", "wrap_labels", "minimum_44x22_targets"],
 		"state_regions": ["hero_art", "status_strip", "primary_routes"],
@@ -62,6 +75,7 @@ const PAGE_SPECS := {
 		"asset_usage": ["frame:mode_cards:res://themes/base/ui/mode_card_frame.svg"],
 		"layout_slots": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "mode_grid", "row_window", "quick_routes"],
 		"focus_sections": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "section_tabs", "overview_cards", "quick_routes", "row_window"],
+		"focus_lanes": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "mode_grid", "row_window", "quick_routes"],
 		"input_methods": ["keyboard", "gamepad", "mouse"],
 		"text_fit_policy": ["clip_button_text", "ellipsis_overrun", "wrap_labels", "minimum_44x22_targets"],
 		"state_regions": ["navigation", "status_cards", "focus_panel", "overview_cards", "route_rows"],
@@ -232,6 +246,7 @@ const PAGE_SPECS := {
 		"asset_usage": ["frame:collection_cards:res://themes/base/ui/collection_card_frame.svg"],
 		"layout_slots": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "collection_grid", "filter_tabs", "row_window", "quick_routes"],
 		"focus_sections": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "filter_tabs", "overview_cards", "quick_routes", "row_window"],
+		"focus_lanes": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "filter_tabs", "collection_grid", "row_window", "quick_routes"],
 		"input_methods": ["keyboard", "gamepad", "mouse"],
 		"text_fit_policy": ["clip_button_text", "ellipsis_overrun", "wrap_labels", "minimum_44x22_targets"],
 		"state_regions": ["status_cards", "deck", "chest", "replay", "workshop"],
@@ -262,6 +277,7 @@ const PAGE_SPECS := {
 		"asset_usage": ["frame:community_notice_cards:res://themes/base/ui/mode_card_frame.svg"],
 		"layout_slots": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "notice_board", "social_tabs", "row_window", "quick_routes"],
 		"focus_sections": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "social_tabs", "overview_cards", "quick_routes", "row_window"],
+		"focus_lanes": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "notice_board", "social_tabs", "row_window", "quick_routes"],
 		"input_methods": ["keyboard", "gamepad", "mouse"],
 		"text_fit_policy": ["clip_button_text", "ellipsis_overrun", "wrap_labels", "minimum_44x22_targets"],
 		"state_regions": ["announcements", "friends", "social_links", "promotion_links"],
@@ -412,6 +428,7 @@ const PAGE_SPECS := {
 		"asset_usage": ["frame:settings_control_cards:res://themes/base/ui/mode_card_frame.svg"],
 		"layout_slots": ["navigation_rail", "category_tabs", "focus_panel", "setting_groups", "control_preview", "control_buttons", "row_window", "quick_routes"],
 		"focus_sections": ["navigation_rail", "category_tabs", "focus_panel", "section_tabs", "setting_groups", "control_buttons", "quick_routes", "row_window"],
+		"focus_lanes": ["navigation_rail", "category_tabs", "focus_panel", "section_tabs", "setting_groups", "control_preview", "control_buttons", "row_window", "quick_routes"],
 		"input_methods": ["keyboard", "gamepad", "mouse"],
 		"text_fit_policy": ["clip_button_text", "ellipsis_overrun", "wrap_labels", "minimum_44x22_targets"],
 		"state_regions": ["language", "input", "audio", "display", "storage"],
@@ -625,6 +642,7 @@ func page_spec(screen_id: String, overrides: Dictionary = {}) -> Dictionary:
 	spec["asset_usage"] = _string_array(spec.get("asset_usage", []))
 	spec["input_methods"] = _string_array(spec.get("input_methods", []))
 	spec["focus_sections"] = _string_array(spec.get("focus_sections", []))
+	spec["focus_lanes"] = _string_array(spec.get("focus_lanes", []))
 	spec["text_fit_policy"] = _string_array(spec.get("text_fit_policy", []))
 	if _string_array(spec.get("status_region_ids", [])).is_empty():
 		spec["status_region_ids"] = _string_array(spec.get("state_regions", []))
@@ -640,6 +658,8 @@ func page_spec(screen_id: String, overrides: Dictionary = {}) -> Dictionary:
 		spec["input_methods"] = DEFAULT_INPUT_METHODS.duplicate()
 	if _string_array(spec.get("focus_sections", [])).is_empty():
 		spec["focus_sections"] = _focus_sections_for_spec(spec)
+	if _string_array(spec.get("focus_lanes", [])).is_empty():
+		spec["focus_lanes"] = _focus_lanes_for_spec(spec)
 	if _string_array(spec.get("text_fit_policy", [])).is_empty():
 		spec["text_fit_policy"] = DEFAULT_TEXT_FIT_POLICY.duplicate()
 	spec["player_task_groups"] = _player_task_groups(source_screen, spec)
@@ -660,6 +680,7 @@ func page_spec(screen_id: String, overrides: Dictionary = {}) -> Dictionary:
 	spec["asset_usage_count"] = _string_array(spec.get("asset_usage", [])).size()
 	spec["input_method_count"] = _string_array(spec.get("input_methods", [])).size()
 	spec["focus_section_count"] = _string_array(spec.get("focus_sections", [])).size()
+	spec["focus_lane_count"] = _string_array(spec.get("focus_lanes", [])).size()
 	spec["text_fit_policy_count"] = _string_array(spec.get("text_fit_policy", [])).size()
 	return spec
 
@@ -796,6 +817,12 @@ func _focus_sections_for_spec(spec: Dictionary) -> Array[String]:
 		"playfield", "battle_room":
 			return []
 	return ["navigation_rail", "focus_panel", "row_window"]
+
+func _focus_lanes_for_spec(spec: Dictionary) -> Array[String]:
+	var kind := String(spec.get("kind", ""))
+	if DEFAULT_FOCUS_LANES.has(kind):
+		return _string_array(DEFAULT_FOCUS_LANES[kind])
+	return _focus_sections_for_spec(spec)
 
 func _default_focus_action_ids(spec: Dictionary) -> Array[String]:
 	var primary := _string_array(spec.get("primary_row_ids", []))
