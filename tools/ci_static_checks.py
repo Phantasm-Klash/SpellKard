@@ -314,9 +314,16 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "bad_preview_schema",
         "bad_preview_sample_window",
         "local_preview_marked_authoritative",
+        "pattern_lab_fixture_mismatch",
+        "pattern_lab_sample_digest_mismatch",
+        "pattern_lab_sample_window_start_mismatch",
         "preview_fixture_mismatch",
+        "pattern_row_authority_scope_mismatch",
         "pattern_row_digest_mismatch",
         "pattern_row_fixture_mismatch",
+        "pattern_row_sample_count_mismatch",
+        "pattern_row_sample_digest_mismatch",
+        "pattern_row_sample_emit_count_mismatch",
     ]:
         if token not in check_text:
             errors.append(f"tools/boss_pattern_catalog_check.gd: missing catalog check token {token}")

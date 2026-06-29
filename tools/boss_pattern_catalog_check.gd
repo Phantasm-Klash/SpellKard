@@ -457,16 +457,38 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 	var pattern_lab_rows: Array[Dictionary] = pattern_lab_model.rows_for_spellbook("original_boss_archive", 20260625)
 	for lab_row in pattern_lab_rows:
 		var row_dict: Dictionary = lab_row as Dictionary
-		if String(row_dict.get("coverage_kind", "")) == "spellbook_phase":
-			continue
 		var lab_phase_id := String(row_dict.get("phase_id", ""))
 		var lab_preview: Dictionary = spellbook_model.deterministic_phase_preview("original_boss_archive", lab_phase_id, 20260625)
+		if String(row_dict.get("coverage_kind", "")) == "spellbook_phase":
+			if String(row_dict.get("preview_fixture_id", "")) != String(lab_preview.get("preview_fixture_id", "")):
+				failures.append("pattern_lab_fixture_mismatch:%s" % lab_phase_id)
+			if not _arrays_equal_ints(row_dict.get("preview_sample_signature_digests", []), lab_preview.get("sample_signature_digests", [])):
+				failures.append("pattern_lab_sample_digest_mismatch:%s" % lab_phase_id)
+			if int(row_dict.get("preview_sample_window_start_tick", -1)) != int(lab_preview.get("sample_window_start_tick", -2)):
+				failures.append("pattern_lab_sample_window_start_mismatch:%s" % lab_phase_id)
+			continue
 		if int(row_dict.get("deterministic_preview_digest", 0)) != int(lab_preview.get("signature_digest", 0)):
 			failures.append("pattern_row_digest_mismatch:%s" % lab_phase_id)
+		if String(row_dict.get("preview_authority_scope", "")) != String(lab_preview.get("preview_authority_scope", "")):
+			failures.append("pattern_row_authority_scope_mismatch:%s" % lab_phase_id)
 		if String(row_dict.get("preview_export_id", "")) != String(lab_preview.get("export_id", "")):
 			failures.append("pattern_row_export_mismatch:%s" % lab_phase_id)
 		if String(row_dict.get("preview_fixture_id", "")) != String(lab_preview.get("preview_fixture_id", "")):
 			failures.append("pattern_row_fixture_mismatch:%s" % lab_phase_id)
+		if int(row_dict.get("preview_sample_count", -1)) != (lab_preview.get("samples", []) as Array).size():
+			failures.append("pattern_row_sample_count_mismatch:%s" % lab_phase_id)
+		if not _arrays_equal_ints(row_dict.get("preview_sample_ticks", []), lab_preview.get("sample_ticks", [])):
+			failures.append("pattern_row_sample_ticks_mismatch:%s" % lab_phase_id)
+		if int(row_dict.get("preview_sample_window_start_tick", -1)) != int(lab_preview.get("sample_window_start_tick", -2)):
+			failures.append("pattern_row_sample_window_start_mismatch:%s" % lab_phase_id)
+		if int(row_dict.get("preview_sample_window_end_tick", -1)) != int(lab_preview.get("sample_window_end_tick", -2)):
+			failures.append("pattern_row_sample_window_end_mismatch:%s" % lab_phase_id)
+		if int(row_dict.get("preview_sample_window_stride_ticks", -1)) != int(lab_preview.get("sample_window_stride_ticks", -2)):
+			failures.append("pattern_row_sample_window_stride_mismatch:%s" % lab_phase_id)
+		if not _arrays_equal_ints(row_dict.get("preview_sample_signature_digests", []), lab_preview.get("sample_signature_digests", [])):
+			failures.append("pattern_row_sample_digest_mismatch:%s" % lab_phase_id)
+		if not _arrays_equal_ints(row_dict.get("preview_sample_emit_counts", []), lab_preview.get("sample_emit_counts", [])):
+			failures.append("pattern_row_sample_emit_count_mismatch:%s" % lab_phase_id)
 		if int(row_dict.get("max_preview_emit", -1)) != int(lab_preview.get("max_emit_per_tick", -2)):
 			failures.append("pattern_row_max_emit_mismatch:%s" % lab_phase_id)
 		if int(row_dict.get("bullet_cap_per_tick", -1)) != int(lab_preview.get("bullet_cap_per_tick", -2)):

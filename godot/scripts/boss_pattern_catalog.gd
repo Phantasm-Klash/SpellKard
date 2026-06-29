@@ -536,6 +536,8 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 						failures.append("pattern_lab_missing_preview:%s" % phase_id)
 					if int(coverage.get("deterministic_preview_digest", 0)) != int(preview_a.get("signature_digest", 0)):
 						failures.append("pattern_lab_digest_mismatch:%s" % phase_id)
+					if String(coverage.get("preview_fixture_id", "")) != String(preview_a.get("preview_fixture_id", "")):
+						failures.append("pattern_lab_fixture_mismatch:%s" % phase_id)
 					if String(coverage.get("preview_authority_scope", "")) != String(preview_a.get("preview_authority_scope", "")):
 						failures.append("pattern_lab_authority_scope_mismatch:%s" % phase_id)
 					if int(coverage.get("max_preview_emit", 0)) != int(preview_a.get("max_emit_per_tick", 0)):
@@ -544,6 +546,16 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 						failures.append("pattern_lab_headroom_mismatch:%s" % phase_id)
 					if String(coverage.get("performance_budget_status", "")) != String(preview_a.get("performance_budget_status", "")):
 						failures.append("pattern_lab_budget_status_mismatch:%s" % phase_id)
+					if not _arrays_equal_ints(coverage.get("preview_sample_ticks", []), preview_a.get("sample_ticks", [])):
+						failures.append("pattern_lab_sample_ticks_mismatch:%s" % phase_id)
+					if int(coverage.get("preview_sample_window_start_tick", -1)) != int(preview_a.get("sample_window_start_tick", -2)):
+						failures.append("pattern_lab_sample_window_start_mismatch:%s" % phase_id)
+					if int(coverage.get("preview_sample_window_end_tick", -1)) != int(preview_a.get("sample_window_end_tick", -2)):
+						failures.append("pattern_lab_sample_window_end_mismatch:%s" % phase_id)
+					if int(coverage.get("preview_sample_window_stride_ticks", -1)) != int(preview_a.get("sample_window_stride_ticks", -2)):
+						failures.append("pattern_lab_sample_window_stride_mismatch:%s" % phase_id)
+					if not _arrays_equal_ints(coverage.get("preview_sample_signature_digests", []), preview_a.get("sample_signature_digests", [])):
+						failures.append("pattern_lab_sample_digest_mismatch:%s" % phase_id)
 					if not _arrays_equal_ints(coverage.get("preview_sample_emit_counts", []), preview_a.get("sample_emit_counts", [])):
 						failures.append("pattern_lab_sample_emit_counts_mismatch:%s" % phase_id)
 	for fixture_id in golden_fixtures.keys():

@@ -169,6 +169,7 @@ func _spellbook_phase_coverage_row(catalog_id: String, spellbook_id: String, pha
 		"bullet_cap_per_tick": int(phase_script.get("bullet_cap_per_tick", 0)),
 		"preview_export_schema_version": int(preview.get("export_schema_version", 0)),
 		"preview_export_id": String(preview.get("export_id", "")),
+		"preview_fixture_id": String(preview.get("preview_fixture_id", "")),
 		"preview_authority_scope": String(preview.get("preview_authority_scope", "")),
 		"deterministic_preview_signature": String(preview.get("signature", "")),
 		"deterministic_preview_digest": int(preview.get("signature_digest", 0)),
