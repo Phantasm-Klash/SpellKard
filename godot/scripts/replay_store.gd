@@ -5,6 +5,8 @@ const REPLAY_DIR := "user://replays"
 const LATEST_REPLAY_PATH := "user://replays/latest_local_replay.json"
 const REPLAY_INDEX_PATH := "user://replays/index.json"
 const MAX_INDEX_ENTRIES := 20
+const SPELLBOOK_PREVIEW_EXPORT_SCHEMA_VERSION := 1
+const SPELLBOOK_PREVIEW_SAMPLE_TICKS: Array[int] = [0, 28, 56, 84, 112, 140]
 
 var last_error := ""
 
@@ -82,22 +84,29 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 			failures.append("bad_final_tick:%s" % replay_id)
 		if str(entry.get("mode", "")) == "boss_spellbook_practice" or str(entry.get("catalog_id", "")) == "boss_spellbook":
 			spellbook_entries += 1
+			var sample_ticks: Array[int] = _preview_sample_ticks_from_fields(entry)
+			var sample_signature_digests: Array[int] = _preview_sample_signature_digests_from_fields(entry)
 			if str(entry.get("spellbook_id", "")).is_empty():
 				failures.append("missing_spellbook_id:%s" % replay_id)
 			if str(entry.get("phase_id", "")).is_empty():
 				failures.append("missing_phase_id:%s" % replay_id)
 			if str(entry.get("preview_export_id", "")).is_empty():
 				failures.append("missing_preview_export_id:%s" % replay_id)
+			if int(entry.get("preview_export_schema_version", 0)) != SPELLBOOK_PREVIEW_EXPORT_SCHEMA_VERSION:
+				failures.append("bad_preview_schema:%s" % replay_id)
 			if int(entry.get("preview_signature_digest", 0)) <= 0:
 				failures.append("missing_preview_digest:%s" % replay_id)
-			var sample_ticks: Array[int] = _normalized_int_array(entry.get("preview_sample_ticks", []))
 			var sample_count := int(entry.get("preview_sample_count", -1))
 			if sample_ticks.is_empty():
 				failures.append("missing_preview_sample_ticks:%s" % replay_id)
+			if sample_signature_digests.is_empty():
+				failures.append("missing_preview_sample_digests:%s" % replay_id)
 			if sample_count <= 0:
 				failures.append("missing_preview_sample_count:%s" % replay_id)
 			elif sample_count != sample_ticks.size():
 				failures.append("preview_sample_count_mismatch:%s" % replay_id)
+			elif sample_count != sample_signature_digests.size():
+				failures.append("preview_sample_digest_count_mismatch:%s" % replay_id)
 			if int(entry.get("preview_budget_headroom", -1)) < 0:
 				failures.append("preview_budget_overrun:%s" % replay_id)
 			if str(entry.get("performance_budget_status", "")) != "within_budget":
@@ -123,6 +132,8 @@ func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary)
 		failures.append("preview_phase_mismatch:%s" % str(entry.get("replay_id", "")))
 	if String(entry.get("preview_export_id", "")) != String(preview.get("export_id", "")):
 		failures.append("preview_export_mismatch:%s" % str(entry.get("replay_id", "")))
+	if int(entry.get("preview_export_schema_version", 0)) != int(preview.get("export_schema_version", 0)):
+		failures.append("preview_schema_mismatch:%s" % str(entry.get("replay_id", "")))
 	if int(entry.get("preview_signature_digest", 0)) != int(preview.get("signature_digest", 0)):
 		failures.append("preview_digest_mismatch:%s" % str(entry.get("replay_id", "")))
 	if int(entry.get("preview_budget_headroom", -1)) != int(preview.get("budget_headroom", -2)):
@@ -133,6 +144,8 @@ func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary)
 		failures.append("preview_sample_count_mismatch:%s" % str(entry.get("replay_id", "")))
 	if not _arrays_equal_ints(entry.get("preview_sample_ticks", []), preview.get("sample_ticks", [])):
 		failures.append("preview_sample_ticks_mismatch:%s" % str(entry.get("replay_id", "")))
+	if not _arrays_equal_ints(entry.get("preview_sample_signature_digests", []), preview.get("sample_signature_digests", [])):
+		failures.append("preview_sample_digest_mismatch:%s" % str(entry.get("replay_id", "")))
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,
@@ -217,6 +230,12 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 	var preview_digest := int(metadata.get("preview_signature_digest", snapshot.get("preview_signature_digest", 0)))
 	if preview_digest <= 0 and not str(metadata.get("preview_signature", "")).is_empty():
 		preview_digest = _stable_signature_digest(str(metadata.get("preview_signature", "")))
+	var is_spellbook_preview := str(metadata.get("mode", "")) == "boss_spellbook_practice" or str(metadata.get("catalog_id", "")) == "boss_spellbook"
+	var preview_schema_version := int(metadata.get("preview_export_schema_version", 0))
+	if preview_schema_version <= 0 and is_spellbook_preview and not str(metadata.get("preview_signature", "")).is_empty():
+		preview_schema_version = SPELLBOOK_PREVIEW_EXPORT_SCHEMA_VERSION
+	var preview_sample_ticks := _preview_sample_ticks_from_fields(metadata)
+	var preview_sample_signature_digests := _preview_sample_signature_digests_from_fields(metadata)
 	return {
 		"replay_id": "%s_%s_%d" % [str(snapshot.get("ruleset_version", "local")), str(snapshot.get("match_seed", 0)), final_hash],
 		"path": path,
@@ -232,10 +251,12 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"catalog_id": str(metadata.get("catalog_id", "")),
 		"spellbook_id": str(metadata.get("spellbook_id", "")),
 		"phase_id": str(metadata.get("phase_id", "")),
+		"preview_export_schema_version": preview_schema_version,
 		"preview_export_id": str(metadata.get("preview_export_id", "")),
 		"preview_signature_digest": preview_digest,
-		"preview_sample_ticks": _normalized_int_array(metadata.get("preview_sample_ticks", [])),
-		"preview_sample_count": int(metadata.get("preview_sample_count", _normalized_int_array(metadata.get("preview_sample_ticks", [])).size())),
+		"preview_sample_ticks": preview_sample_ticks,
+		"preview_sample_signature_digests": preview_sample_signature_digests,
+		"preview_sample_count": int(metadata.get("preview_sample_count", preview_sample_ticks.size())),
 		"preview_budget_headroom": int(metadata.get("preview_budget_headroom", 0)),
 		"performance_budget_status": str(metadata.get("performance_budget_status", "")),
 		"metadata_valid": _metadata_valid(metadata),
@@ -267,9 +288,12 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 			or str(fields.get("preview_export_id", "")).is_empty() \
 			or preview_digest <= 0:
 		return "missing_spellbook_preview"
-	var sample_ticks := _normalized_int_array(fields.get("preview_sample_ticks", []))
+	if int(fields.get("preview_export_schema_version", 0)) != SPELLBOOK_PREVIEW_EXPORT_SCHEMA_VERSION:
+		return "bad_preview_schema"
+	var sample_ticks := _preview_sample_ticks_from_fields(fields)
+	var sample_signature_digests := _preview_sample_signature_digests_from_fields(fields)
 	var sample_count := int(fields.get("preview_sample_count", -1))
-	if sample_ticks.is_empty() or sample_count <= 0 or sample_count != sample_ticks.size():
+	if sample_ticks.is_empty() or sample_signature_digests.is_empty() or sample_count <= 0 or sample_count != sample_ticks.size() or sample_count != sample_signature_digests.size():
 		return "bad_preview_sample_window"
 	if int(fields.get("preview_budget_headroom", -1)) < 0 or str(fields.get("performance_budget_status", "")) != "within_budget":
 		return "preview_budget_overrun"
@@ -288,6 +312,58 @@ func _normalized_int_array(value: Variant) -> Array[int]:
 	for item in value:
 		result.append(int(item))
 	return result
+
+func _preview_sample_ticks_from_fields(fields: Dictionary) -> Array[int]:
+	var direct := _normalized_int_array(fields.get("preview_sample_ticks", []))
+	if not direct.is_empty():
+		return direct
+	return _sample_ticks_from_signature(str(fields.get("preview_signature", "")))
+
+func _preview_sample_signature_digests_from_fields(fields: Dictionary) -> Array[int]:
+	var direct := _normalized_int_array(fields.get("preview_sample_signature_digests", []))
+	if not direct.is_empty():
+		return direct
+	return _sample_signature_digests_from_signature(str(fields.get("preview_signature", "")))
+
+func _sample_ticks_from_signature(signature: String) -> Array[int]:
+	if _sample_signature_segments_from_signature(signature).is_empty():
+		return []
+	return SPELLBOOK_PREVIEW_SAMPLE_TICKS.duplicate()
+
+func _sample_signature_digests_from_signature(signature: String) -> Array[int]:
+	var digests: Array[int] = []
+	for segment in _sample_signature_segments_from_signature(signature):
+		digests.append(_stable_signature_digest(String(segment)))
+	return digests
+
+func _sample_signature_segments_from_signature(signature: String) -> Array[String]:
+	var segments: Array[String] = []
+	if signature.is_empty():
+		return segments
+	var cursor := 0
+	for index in range(SPELLBOOK_PREVIEW_SAMPLE_TICKS.size()):
+		var tick := SPELLBOOK_PREVIEW_SAMPLE_TICKS[index]
+		var marker := "%d:" % tick
+		var marker_index := 0
+		if index == 0:
+			if not signature.begins_with(marker):
+				return []
+			marker_index = 0
+		else:
+			marker_index = signature.find("|%s" % marker, cursor)
+			if marker_index < 0:
+				return []
+			marker_index += 1
+		var content_start := marker_index + marker.length()
+		var content_end := signature.length()
+		if index + 1 < SPELLBOOK_PREVIEW_SAMPLE_TICKS.size():
+			var next_marker_index := signature.find("|%d:" % int(SPELLBOOK_PREVIEW_SAMPLE_TICKS[index + 1]), content_start)
+			if next_marker_index < 0:
+				return []
+			content_end = next_marker_index
+		segments.append(signature.substr(content_start, content_end - content_start))
+		cursor = content_end
+	return segments
 
 func _arrays_equal_ints(left: Variant, right: Variant) -> bool:
 	if typeof(left) != TYPE_ARRAY or typeof(right) != TYPE_ARRAY:

@@ -97,14 +97,31 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 				failures.append("entry_headroom_mismatch:%s" % phase_id)
 			if String(entry.get("performance_budget_status", "")) != String(preview.get("performance_budget_status", "")):
 				failures.append("entry_budget_status_mismatch:%s" % phase_id)
+			if int(entry.get("preview_export_schema_version", 0)) != int(preview.get("export_schema_version", 0)):
+				failures.append("entry_schema_mismatch:%s" % phase_id)
 			if int(entry.get("preview_sample_count", -1)) != (preview.get("samples", []) as Array).size():
 				failures.append("entry_sample_count_mismatch:%s" % phase_id)
 			if not _arrays_equal_ints(entry.get("preview_sample_ticks", []), preview.get("sample_ticks", [])):
 				failures.append("entry_sample_ticks_mismatch:%s" % phase_id)
+			if not _arrays_equal_ints(entry.get("preview_sample_signature_digests", []), preview.get("sample_signature_digests", [])):
+				failures.append("entry_sample_digest_mismatch:%s" % phase_id)
+			var legacy_entry := _legacy_replay_entry_for_preview(store, String(spellbook_id), phase_id, preview)
+			var legacy_result: Dictionary = store.validate_spellbook_preview_metadata(legacy_entry, preview)
+			if not bool(legacy_result.get("ok", false)):
+				failures.append("legacy_preview_metadata_rejected:%s:%s" % [phase_id, legacy_result.get("failures", [])])
+			if int(legacy_entry.get("preview_export_schema_version", 0)) != int(preview.get("export_schema_version", 0)):
+				failures.append("legacy_entry_schema_mismatch:%s" % phase_id)
+			if not _arrays_equal_ints(legacy_entry.get("preview_sample_ticks", []), preview.get("sample_ticks", [])):
+				failures.append("legacy_entry_sample_ticks_mismatch:%s" % phase_id)
+			if not _arrays_equal_ints(legacy_entry.get("preview_sample_signature_digests", []), preview.get("sample_signature_digests", [])):
+				failures.append("legacy_entry_sample_digest_mismatch:%s" % phase_id)
 	var invalid_entry := valid_entries[0].duplicate(true)
 	invalid_entry["replay_id"] = "fixture_missing_spellbook_preview"
 	invalid_entry["preview_export_id"] = ""
 	invalid_entry["preview_signature_digest"] = 0
+	var bad_schema_entry := valid_entries[0].duplicate(true)
+	bad_schema_entry["replay_id"] = "fixture_bad_schema_spellbook_preview"
+	bad_schema_entry["preview_export_schema_version"] = 0
 	var authoritative_entry := valid_entries[0].duplicate(true)
 	authoritative_entry["replay_id"] = "fixture_authoritative_spellbook_preview"
 	authoritative_entry["server_authoritative"] = true
@@ -119,14 +136,20 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 	stale_sample_entry["replay_id"] = "fixture_stale_samples_spellbook_preview"
 	stale_sample_entry["preview_sample_ticks"] = [0, 30, 60]
 	stale_sample_entry["preview_sample_count"] = 3
+	var stale_sample_digest_entry := valid_entries[0].duplicate(true)
+	stale_sample_digest_entry["replay_id"] = "fixture_stale_sample_digests_spellbook_preview"
+	var stale_digests: Array = (stale_sample_digest_entry.get("preview_sample_signature_digests", []) as Array).duplicate()
+	stale_digests[0] = int(stale_digests[0]) + 1
+	stale_sample_digest_entry["preview_sample_signature_digests"] = stale_digests
 	var bad_sample_count_entry := valid_entries[0].duplicate(true)
 	bad_sample_count_entry["replay_id"] = "fixture_bad_sample_count_spellbook_preview"
 	bad_sample_count_entry["preview_sample_count"] = int(bad_sample_count_entry.get("preview_sample_count", 0)) + 1
 	var missing_sample_entry := valid_entries[0].duplicate(true)
 	missing_sample_entry["replay_id"] = "fixture_missing_samples_spellbook_preview"
 	missing_sample_entry["preview_sample_ticks"] = []
+	missing_sample_entry["preview_sample_signature_digests"] = []
 	missing_sample_entry["preview_sample_count"] = 0
-	var invalid_entries: Array[Dictionary] = [invalid_entry, authoritative_entry, over_budget_entry, bad_sample_count_entry, missing_sample_entry]
+	var invalid_entries: Array[Dictionary] = [invalid_entry, bad_schema_entry, authoritative_entry, over_budget_entry, bad_sample_count_entry, missing_sample_entry]
 	var valid_result: Dictionary = store.validate_index_metadata(valid_entries)
 	if not bool(valid_result.get("ok", false)):
 		failures.append("valid_replay_rejected:%s" % [valid_result.get("failures", [])])
@@ -142,6 +165,10 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 		failures.append("stale_digest_preview_accepted")
 	if bool(store.validate_spellbook_preview_metadata(stale_sample_entry, first_preview).get("ok", false)):
 		failures.append("stale_sample_preview_accepted")
+	if bool(store.validate_spellbook_preview_metadata(stale_sample_digest_entry, first_preview).get("ok", false)):
+		failures.append("stale_sample_digest_preview_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(bad_schema_entry)).get("ok", false)):
+		failures.append("bad_schema_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(bad_sample_count_entry)).get("ok", false)):
 		failures.append("bad_sample_count_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(missing_sample_entry)).get("ok", false)):
@@ -165,9 +192,14 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 				failures.append("valid_row_budget_status:%s" % [valid_row])
 			if int(valid_row.get("preview_sample_count", -1)) <= 0:
 				failures.append("valid_row_sample_count:%s" % [valid_row])
+			if (valid_row.get("preview_sample_signature_digests", []) as Array).is_empty():
+				failures.append("valid_row_sample_digests:%s" % [valid_row])
 		var invalid_row: Dictionary = rows[valid_entries.size()]
 		if bool(invalid_row.get("metadata_valid", true)) or String(invalid_row.get("metadata_status", "")) != "missing_spellbook_preview":
 			failures.append("invalid_row_metadata:%s" % [invalid_row])
+		var bad_schema_row: Dictionary = replay_list._row_from_entry(bad_schema_entry, rows.size())
+		if bool(bad_schema_row.get("metadata_valid", true)) or String(bad_schema_row.get("metadata_status", "")) != "bad_preview_schema":
+			failures.append("bad_schema_row_metadata:%s" % [bad_schema_row])
 		var over_budget_row: Dictionary = replay_list._row_from_entry(over_budget_entry, rows.size())
 		if bool(over_budget_row.get("metadata_valid", true)) or String(over_budget_row.get("metadata_status", "")) != "preview_budget_overrun":
 			failures.append("over_budget_row_metadata:%s" % [over_budget_row])
@@ -197,9 +229,11 @@ func _replay_entry_for_preview(store: RefCounted, spellbook_id: String, phase_id
 			"catalog_id": "boss_spellbook",
 			"spellbook_id": spellbook_id,
 			"phase_id": phase_id,
+			"preview_export_schema_version": int(preview.get("export_schema_version", 0)),
 			"preview_export_id": String(preview.get("export_id", "")),
 			"preview_signature_digest": int(preview.get("signature_digest", 0)),
 			"preview_sample_ticks": (preview.get("sample_ticks", []) as Array).duplicate(),
+			"preview_sample_signature_digests": (preview.get("sample_signature_digests", []) as Array).duplicate(),
 			"preview_sample_count": (preview.get("samples", []) as Array).size(),
 			"preview_budget_headroom": int(preview.get("budget_headroom", 0)),
 			"performance_budget_status": String(preview.get("performance_budget_status", "")),
@@ -208,6 +242,30 @@ func _replay_entry_for_preview(store: RefCounted, spellbook_id: String, phase_id
 		},
 	}
 	return store._build_index_entry(snapshot, "user://replays/fixture_%s_%s.json" % [spellbook_id, phase_id])
+
+func _legacy_replay_entry_for_preview(store: RefCounted, spellbook_id: String, phase_id: String, preview: Dictionary) -> Dictionary:
+	var snapshot := {
+		"ruleset_version": "ruleset-local-s0",
+		"game_version": "prototype",
+		"match_seed": int(preview.get("seed", 0)),
+		"final_result_hash": int(preview.get("signature_digest", 0)),
+		"input_stream": [],
+		"metadata": {
+			"saved_at": "2026-06-29T04:19:00Z",
+			"final_tick": 180,
+			"mode": "boss_spellbook_practice",
+			"catalog_id": "boss_spellbook",
+			"spellbook_id": spellbook_id,
+			"phase_id": phase_id,
+			"preview_export_id": String(preview.get("export_id", "")),
+			"preview_signature": String(preview.get("signature", "")),
+			"preview_budget_headroom": int(preview.get("budget_headroom", 0)),
+			"performance_budget_status": String(preview.get("performance_budget_status", "")),
+			"server_authoritative": false,
+			"result": "practice",
+		},
+	}
+	return store._build_index_entry(snapshot, "user://replays/legacy_fixture_%s_%s.json" % [spellbook_id, phase_id])
 
 func _single_entry_array(entry: Dictionary) -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []

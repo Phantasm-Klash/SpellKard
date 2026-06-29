@@ -11,10 +11,10 @@ const PREVIEW_SAMPLE_TICKS: Array[int] = [0, 28, 56, 84, 112, 140]
 const PREVIEW_DIGEST_MODULUS := 1000000007
 
 const GOLDEN_PREVIEW_FIXTURES: Dictionary = {
-	"original_boss_archive:nonspell_radial_entry:20260625": {"signature_digest": 905452029, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_count": 6, "max_emit_per_tick": 42, "bullet_cap_per_tick": 192, "budget_headroom": 150, "performance_budget_status": "within_budget"},
-	"original_boss_archive:spell_laser_field:20260625": {"signature_digest": 187927263, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_count": 6, "max_emit_per_tick": 20, "bullet_cap_per_tick": 192, "budget_headroom": 172, "performance_budget_status": "within_budget"},
-	"original_boss_archive:spell_summoner_split:20260625": {"signature_digest": 471609142, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_count": 6, "max_emit_per_tick": 12, "bullet_cap_per_tick": 192, "budget_headroom": 180, "performance_budget_status": "within_budget"},
-	"original_boss_archive:last_spell_morph_bounce:20260625": {"signature_digest": 979716623, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_count": 6, "max_emit_per_tick": 30, "bullet_cap_per_tick": 192, "budget_headroom": 162, "performance_budget_status": "within_budget"},
+	"original_boss_archive:nonspell_radial_entry:20260625": {"export_schema_version": 1, "signature_digest": 905452029, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_signature_digests": [429408177, 651507191, 705589077, 266214312, 882357878, 75020320], "sample_count": 6, "max_emit_per_tick": 42, "bullet_cap_per_tick": 192, "budget_headroom": 150, "performance_budget_status": "within_budget"},
+	"original_boss_archive:spell_laser_field:20260625": {"export_schema_version": 1, "signature_digest": 187927263, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_signature_digests": [450260093, 75256905, 0, 862484991, 934817433, 0], "sample_count": 6, "max_emit_per_tick": 20, "bullet_cap_per_tick": 192, "budget_headroom": 172, "performance_budget_status": "within_budget"},
+	"original_boss_archive:spell_summoner_split:20260625": {"export_schema_version": 1, "signature_digest": 471609142, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_signature_digests": [368982465, 0, 0, 0, 0, 742323659], "sample_count": 6, "max_emit_per_tick": 12, "bullet_cap_per_tick": 192, "budget_headroom": 180, "performance_budget_status": "within_budget"},
+	"original_boss_archive:last_spell_morph_bounce:20260625": {"export_schema_version": 1, "signature_digest": 979716623, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_signature_digests": [769410047, 0, 0, 0, 0, 0], "sample_count": 6, "max_emit_per_tick": 30, "bullet_cap_per_tick": 192, "budget_headroom": 162, "performance_budget_status": "within_budget"},
 }
 
 var spellbooks: Array[Dictionary] = []
@@ -182,6 +182,7 @@ func deterministic_phase_preview(spellbook_id: String, phase_id: String, seed: i
 	var target: Vector2 = phase_script.get("preview_target", Vector2(480, 600))
 	var phase_offset: int = _phase_start_tick(spellbook_id, phase_id)
 	var samples: Array[Dictionary] = []
+	var sample_signature_digests: Array[int] = []
 	var max_emit := 0
 	var signature_parts: Array[String] = []
 	for sample_tick in PREVIEW_SAMPLE_TICKS:
@@ -189,12 +190,15 @@ func deterministic_phase_preview(spellbook_id: String, phase_id: String, seed: i
 		var emitted: Array[Dictionary] = emit_tick(spellbook_id, local_tick, target, 50000 + local_tick, seed)
 		max_emit = maxi(max_emit, emitted.size())
 		var tick_signature := _bullet_signature(emitted)
+		var tick_signature_digest := _stable_signature_digest(tick_signature)
 		signature_parts.append("%d:%s" % [sample_tick, tick_signature])
+		sample_signature_digests.append(tick_signature_digest)
 		samples.append({
 			"phase_tick": int(sample_tick),
 			"local_tick": local_tick,
 			"emit_count": emitted.size(),
 			"signature": tick_signature,
+			"signature_digest": tick_signature_digest,
 		})
 	var signature := "|".join(signature_parts)
 	var signature_digest := _stable_signature_digest(signature)
@@ -208,6 +212,7 @@ func deterministic_phase_preview(spellbook_id: String, phase_id: String, seed: i
 		"phase_id": phase_id,
 		"seed": seed,
 		"sample_ticks": PREVIEW_SAMPLE_TICKS.duplicate(),
+		"sample_signature_digests": sample_signature_digests,
 		"samples": samples,
 		"signature": signature,
 		"signature_digest": signature_digest,
@@ -438,6 +443,8 @@ func _golden_fixture_id(spellbook_id: String, phase_id: String, seed: int) -> St
 
 func _validate_golden_fixture(fixture_id: String, phase_id: String, preview: Dictionary, fixture: Dictionary) -> Array[String]:
 	var failures: Array[String] = []
+	if int(fixture.get("export_schema_version", 0)) != EXPORT_SCHEMA_VERSION:
+		failures.append("golden_preview_schema:%s:%d" % [phase_id, int(fixture.get("export_schema_version", 0))])
 	if int(preview.get("signature_digest", 0)) != int(fixture.get("signature_digest", 0)):
 		failures.append("golden_preview_digest:%s:%d" % [phase_id, int(preview.get("signature_digest", 0))])
 	if (preview.get("samples", []) as Array).size() != int(fixture.get("sample_count", 0)):
@@ -454,6 +461,14 @@ func _validate_golden_fixture(fixture_id: String, phase_id: String, preview: Dic
 		failures.append("golden_preview_sample_count_contract:%s:%s" % [phase_id, fixture_id])
 	if not _arrays_equal_ints(fixture.get("sample_ticks", []), PREVIEW_SAMPLE_TICKS):
 		failures.append("golden_preview_sample_ticks_contract:%s:%s" % [phase_id, fixture_id])
+	if not _arrays_equal_ints(preview.get("sample_signature_digests", []), fixture.get("sample_signature_digests", [])):
+		failures.append("golden_preview_sample_digests:%s:%s expected=%s" % [
+			phase_id,
+			fixture_id,
+			preview.get("sample_signature_digests", []),
+		])
+	if (fixture.get("sample_signature_digests", []) as Array).size() != PREVIEW_SAMPLE_TICKS.size():
+		failures.append("golden_preview_sample_digest_contract:%s:%s" % [phase_id, fixture_id])
 	if int(fixture.get("budget_headroom", -1)) < 0:
 		failures.append("golden_preview_over_budget:%s:%d" % [phase_id, int(fixture.get("budget_headroom", -1))])
 	if String(fixture.get("performance_budget_status", "")) != String(preview.get("performance_budget_status", "")):

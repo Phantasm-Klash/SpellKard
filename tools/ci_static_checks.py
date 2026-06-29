@@ -133,6 +133,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "bullet_cap_per_tick",
         "seed_policy",
         "preview_export_id",
+        "export_schema_version",
         '"license"',
         '"provenance"',
         "timeout_ticks",
@@ -145,7 +146,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "missing_golden_preview",
         "golden_preview_headroom",
         "golden_preview_sample_ticks",
+        "golden_preview_sample_digests",
         "preview_bullet_cap",
+        "sample_signature_digests",
         "budget_headroom",
         "performance_budget_status",
     ]:
@@ -161,9 +164,11 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         '"deterministic_preview_signature"',
         '"deterministic_preview_digest"',
         '"bullet_cap_per_tick"',
+        '"preview_export_schema_version"',
         '"performance_budget_status"',
         '"preview_export_id"',
         '"preview_sample_ticks"',
+        '"preview_sample_signature_digests"',
         '"preview_sample_count"',
     ]:
         if token not in pattern_lab_text:
@@ -171,7 +176,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
 
     for replay_path in [replay_store, replay_list]:
         replay_text = replay_path.read_text(encoding="utf-8")
-        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_count"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
+        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_schema_version"', '"preview_export_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_signature_digests"', '"preview_sample_count"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
             if token not in replay_text:
                 errors.append(f"{replay_path.relative_to(ROOT)}: missing spellbook replay metadata token {token}")
     if "validate_spellbook_preview_metadata" not in replay_store.read_text(encoding="utf-8"):
@@ -181,8 +186,16 @@ def check_boss_pattern_catalog_contract() -> list[str]:
     if "metadata_status_for_entry" not in replay_store_text or "metadata_status_for_entry" not in replay_list_text:
         errors.append("spellbook replay metadata status contract missing metadata_status_for_entry")
     for token in [
+        "_preview_sample_ticks_from_fields",
+        "_preview_sample_signature_digests_from_fields",
+        "_sample_signature_digests_from_signature",
+    ]:
+        if token not in replay_store_text:
+            errors.append(f"godot/scripts/replay_store.gd: missing legacy preview-signature backfill token {token}")
+    for token in [
         '"preview_budget_overrun"',
         '"bad_preview_sample_window"',
+        '"bad_preview_schema"',
         '"local_preview_marked_authoritative"',
     ]:
         if token not in replay_store_text:
@@ -201,19 +214,28 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "replay_metadata",
         "max_spellbook_emit",
         "fixture_authoritative_spellbook_preview",
+        "fixture_bad_schema_spellbook_preview",
         "fixture_over_budget_spellbook_preview",
         "fixture_stale_digest_spellbook_preview",
         "fixture_stale_samples_spellbook_preview",
+        "fixture_stale_sample_digests_spellbook_preview",
+        "_legacy_replay_entry_for_preview",
+        "legacy_preview_metadata_rejected",
         "fixture_bad_sample_count_spellbook_preview",
         "fixture_missing_samples_spellbook_preview",
+        "bad_schema_replay_accepted",
         "bad_sample_count_replay_accepted",
+        "stale_sample_digest_preview_accepted",
         "missing_sample_window_replay_accepted",
         "validate_spellbook_preview_metadata",
+        "preview_export_schema_version",
         "preview_sample_ticks",
+        "preview_sample_signature_digests",
         "preview_sample_count",
         "preview_budget_headroom",
         "performance_budget_status",
         "preview_budget_overrun",
+        "bad_preview_schema",
         "bad_preview_sample_window",
         "local_preview_marked_authoritative",
     ]:
