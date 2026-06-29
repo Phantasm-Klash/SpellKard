@@ -90,6 +90,10 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 				failures.append("missing_preview_export_id:%s" % replay_id)
 			if int(entry.get("preview_signature_digest", 0)) <= 0:
 				failures.append("missing_preview_digest:%s" % replay_id)
+			if int(entry.get("preview_budget_headroom", -1)) < 0:
+				failures.append("preview_budget_overrun:%s" % replay_id)
+			if str(entry.get("performance_budget_status", "")) != "within_budget":
+				failures.append("preview_budget_status:%s" % replay_id)
 			if bool(entry.get("server_authoritative", false)):
 				failures.append("local_preview_marked_authoritative:%s" % replay_id)
 	return {
@@ -214,6 +218,8 @@ func _metadata_valid(metadata: Dictionary) -> bool:
 		and not str(metadata.get("phase_id", "")).is_empty() \
 		and not str(metadata.get("preview_export_id", "")).is_empty() \
 		and preview_digest > 0 \
+		and int(metadata.get("preview_budget_headroom", -1)) >= 0 \
+		and str(metadata.get("performance_budget_status", "")) == "within_budget" \
 		and not bool(metadata.get("server_authoritative", false))
 
 func _metadata_status(metadata: Dictionary) -> String:
