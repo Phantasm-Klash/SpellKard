@@ -4,6 +4,8 @@ extends RefCounted
 const DEFAULT_CONTROLLER_ACTIONS: Array[String] = ["ui_up", "ui_down", "ui_accept", "ui_cancel_back"]
 const HUB_CONTROLLER_ACTIONS: Array[String] = ["ui_up", "ui_down", "ui_left_control", "ui_right_control", "ui_accept", "category_tab", "status_card", "focus_action"]
 const SETTINGS_CONTROLLER_ACTIONS: Array[String] = ["ui_up", "ui_down", "ui_left_control", "ui_right_control", "ui_accept", "category_tab", "status_card", "focus_action", "capture_binding", "reset_control"]
+const DEFAULT_INPUT_METHODS: Array[String] = ["keyboard", "gamepad", "mouse"]
+const DEFAULT_TEXT_FIT_POLICY: Array[String] = ["clip_button_text", "ellipsis_overrun", "wrap_labels", "minimum_44x22_targets"]
 const DEFAULT_LAYOUT_SLOTS := {
 	"home_lobby": ["portrait_art", "lobby_status", "primary_routes", "safe_margin"],
 	"hub": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "overview_cards", "row_window", "quick_routes"],
@@ -29,6 +31,9 @@ const PAGE_SPECS := {
 		"frame_asset": "",
 		"asset_usage": ["standee:home_portrait:res://themes/base/ui/lobby_standee.svg"],
 		"layout_slots": ["portrait_art", "lobby_status", "primary_routes", "safe_margin"],
+		"focus_sections": ["primary_routes"],
+		"input_methods": ["keyboard", "gamepad", "mouse"],
+		"text_fit_policy": ["clip_button_text", "ellipsis_overrun", "wrap_labels", "minimum_44x22_targets"],
 		"state_regions": ["hero_art", "status_strip", "primary_routes"],
 		"status_region_ids": ["home_status", "client_summary", "primary_focus"],
 		"focus_action_ids": ["play"],
@@ -56,6 +61,9 @@ const PAGE_SPECS := {
 		"frame_asset": "res://themes/base/ui/mode_card_frame.svg",
 		"asset_usage": ["frame:mode_cards:res://themes/base/ui/mode_card_frame.svg"],
 		"layout_slots": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "mode_grid", "row_window", "quick_routes"],
+		"focus_sections": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "section_tabs", "overview_cards", "quick_routes", "row_window"],
+		"input_methods": ["keyboard", "gamepad", "mouse"],
+		"text_fit_policy": ["clip_button_text", "ellipsis_overrun", "wrap_labels", "minimum_44x22_targets"],
 		"state_regions": ["navigation", "status_cards", "focus_panel", "overview_cards", "route_rows"],
 		"status_region_ids": ["status_play", "status_collection", "status_community", "status_settings", "queue_state", "deck_state"],
 		"focus_action_ids": ["play_matchmaking", "play_practice", "play_room"],
@@ -223,6 +231,9 @@ const PAGE_SPECS := {
 		"frame_asset": "res://themes/base/ui/collection_card_frame.svg",
 		"asset_usage": ["frame:collection_cards:res://themes/base/ui/collection_card_frame.svg"],
 		"layout_slots": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "collection_grid", "filter_tabs", "row_window", "quick_routes"],
+		"focus_sections": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "filter_tabs", "overview_cards", "quick_routes", "row_window"],
+		"input_methods": ["keyboard", "gamepad", "mouse"],
+		"text_fit_policy": ["clip_button_text", "ellipsis_overrun", "wrap_labels", "minimum_44x22_targets"],
 		"state_regions": ["status_cards", "deck", "chest", "replay", "workshop"],
 		"status_region_ids": ["status_collection", "deck_state", "chest_state", "replay_state", "workshop_state"],
 		"focus_action_ids": ["collection_deck", "collection_chest", "collection_replay"],
@@ -250,6 +261,9 @@ const PAGE_SPECS := {
 		"frame_asset": "res://themes/base/ui/mode_card_frame.svg",
 		"asset_usage": ["frame:community_notice_cards:res://themes/base/ui/mode_card_frame.svg"],
 		"layout_slots": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "notice_board", "social_tabs", "row_window", "quick_routes"],
+		"focus_sections": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "social_tabs", "overview_cards", "quick_routes", "row_window"],
+		"input_methods": ["keyboard", "gamepad", "mouse"],
+		"text_fit_policy": ["clip_button_text", "ellipsis_overrun", "wrap_labels", "minimum_44x22_targets"],
 		"state_regions": ["announcements", "friends", "social_links", "promotion_links"],
 		"status_region_ids": ["status_community", "announcement_state", "friend_presence", "promotion_state"],
 		"focus_action_ids": ["community_events", "community_friends", "community_social", "community_promotions"],
@@ -397,6 +411,9 @@ const PAGE_SPECS := {
 		"frame_asset": "res://themes/base/ui/mode_card_frame.svg",
 		"asset_usage": ["frame:settings_control_cards:res://themes/base/ui/mode_card_frame.svg"],
 		"layout_slots": ["navigation_rail", "category_tabs", "focus_panel", "setting_groups", "control_preview", "control_buttons", "row_window", "quick_routes"],
+		"focus_sections": ["navigation_rail", "category_tabs", "focus_panel", "section_tabs", "setting_groups", "control_buttons", "quick_routes", "row_window"],
+		"input_methods": ["keyboard", "gamepad", "mouse"],
+		"text_fit_policy": ["clip_button_text", "ellipsis_overrun", "wrap_labels", "minimum_44x22_targets"],
 		"state_regions": ["language", "input", "audio", "display", "storage"],
 		"status_region_ids": ["input_profile_state", "gamepad_state", "audio_state", "display_state", "storage_state"],
 		"focus_action_ids": ["settings_gamepad_curve", "settings_keybinds", "settings_volume", "settings_resolution"],
@@ -606,6 +623,9 @@ func page_spec(screen_id: String, overrides: Dictionary = {}) -> Dictionary:
 	spec["controller_actions"] = _string_array(spec.get("controller_actions", []))
 	spec["focus_action_ids"] = _string_array(spec.get("focus_action_ids", []))
 	spec["asset_usage"] = _string_array(spec.get("asset_usage", []))
+	spec["input_methods"] = _string_array(spec.get("input_methods", []))
+	spec["focus_sections"] = _string_array(spec.get("focus_sections", []))
+	spec["text_fit_policy"] = _string_array(spec.get("text_fit_policy", []))
 	if _string_array(spec.get("status_region_ids", [])).is_empty():
 		spec["status_region_ids"] = _string_array(spec.get("state_regions", []))
 	if _string_array(spec.get("layout_slots", [])).is_empty():
@@ -616,6 +636,12 @@ func page_spec(screen_id: String, overrides: Dictionary = {}) -> Dictionary:
 		spec["focus_action_ids"] = _default_focus_action_ids(spec)
 	if _string_array(spec.get("asset_usage", [])).is_empty() and not String(spec.get("visual_asset", "")).is_empty():
 		spec["asset_usage"] = ["visual:%s:%s" % [String(spec.get("visual_treatment", "")), String(spec.get("visual_asset", ""))]]
+	if _string_array(spec.get("input_methods", [])).is_empty():
+		spec["input_methods"] = DEFAULT_INPUT_METHODS.duplicate()
+	if _string_array(spec.get("focus_sections", [])).is_empty():
+		spec["focus_sections"] = _focus_sections_for_spec(spec)
+	if _string_array(spec.get("text_fit_policy", [])).is_empty():
+		spec["text_fit_policy"] = DEFAULT_TEXT_FIT_POLICY.duplicate()
 	spec["player_task_groups"] = _player_task_groups(source_screen, spec)
 	spec["asset_license_required"] = not String(spec.get("visual_asset", "")).is_empty()
 	spec["primary_count"] = _string_array(spec.get("primary_row_ids", [])).size()
@@ -632,6 +658,9 @@ func page_spec(screen_id: String, overrides: Dictionary = {}) -> Dictionary:
 	spec["controller_action_count"] = _string_array(spec.get("controller_actions", [])).size()
 	spec["focus_action_count"] = _string_array(spec.get("focus_action_ids", [])).size()
 	spec["asset_usage_count"] = _string_array(spec.get("asset_usage", [])).size()
+	spec["input_method_count"] = _string_array(spec.get("input_methods", [])).size()
+	spec["focus_section_count"] = _string_array(spec.get("focus_sections", [])).size()
+	spec["text_fit_policy_count"] = _string_array(spec.get("text_fit_policy", [])).size()
 	return spec
 
 func primary_row_ids(screen_id: String) -> Array[String]:
@@ -748,6 +777,25 @@ func _controller_actions_for_spec(spec: Dictionary) -> Array[String]:
 	if kind in ["hub", "community", "collection", "matchmaking", "network_room", "mode_select"]:
 		return HUB_CONTROLLER_ACTIONS.duplicate()
 	return DEFAULT_CONTROLLER_ACTIONS.duplicate()
+
+func _focus_sections_for_spec(spec: Dictionary) -> Array[String]:
+	var kind := String(spec.get("kind", ""))
+	match kind:
+		"home_lobby":
+			return ["primary_routes"]
+		"settings":
+			return ["navigation_rail", "category_tabs", "focus_panel", "section_tabs", "setting_groups", "control_buttons", "quick_routes", "row_window"]
+		"community":
+			return ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "social_tabs", "overview_cards", "quick_routes", "row_window"]
+		"collection":
+			return ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "filter_tabs", "overview_cards", "quick_routes", "row_window"]
+		"matchmaking", "network_room":
+			return ["category_tabs", "focus_panel", "mode_cards", "quick_routes", "row_window"]
+		"hub", "mode_select":
+			return ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "section_tabs", "overview_cards", "quick_routes", "row_window"]
+		"playfield", "battle_room":
+			return []
+	return ["navigation_rail", "focus_panel", "row_window"]
 
 func _default_focus_action_ids(spec: Dictionary) -> Array[String]:
 	var primary := _string_array(spec.get("primary_row_ids", []))

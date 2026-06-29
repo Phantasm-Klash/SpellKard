@@ -2907,6 +2907,9 @@ func _ui_overlay_snapshot() -> Dictionary:
 		"page_controller_actions": ",".join(_ui_string_array(page_layout.get("controller_actions", []))),
 		"page_focus_action_ids": ",".join(_ui_string_array(page_layout.get("focus_action_ids", []))),
 		"page_asset_usage": ",".join(_ui_string_array(page_layout.get("asset_usage", []))),
+		"page_input_methods": ",".join(_ui_string_array(page_layout.get("input_methods", []))),
+		"page_focus_sections": ",".join(_ui_string_array(page_layout.get("focus_sections", []))),
+		"page_text_fit_policy": ",".join(_ui_string_array(page_layout.get("text_fit_policy", []))),
 		"page_visual_asset": String(page_layout.get("visual_asset", "")),
 		"page_visual_treatment": String(page_layout.get("visual_treatment", "")),
 		"page_standee_asset": String(page_layout.get("standee_asset", "")),
@@ -2922,6 +2925,9 @@ func _ui_overlay_snapshot() -> Dictionary:
 		"page_controller_action_count": int(page_layout.get("controller_action_count", 0)),
 		"page_focus_action_count": int(page_layout.get("focus_action_count", 0)),
 		"page_asset_usage_count": int(page_layout.get("asset_usage_count", 0)),
+		"page_input_method_count": int(page_layout.get("input_method_count", 0)),
+		"page_focus_section_count": int(page_layout.get("focus_section_count", 0)),
+		"page_text_fit_policy_count": int(page_layout.get("text_fit_policy_count", 0)),
 		"viewport_size": viewport_size,
 		"home_visible": _is_home_screen() and ui_home_box != null and ui_home_box.visible,
 		"secondary_visible": not _is_home_screen() and ui_root_box != null and ui_root_box.visible,
@@ -3047,7 +3053,7 @@ func _ui_visible_focus_health_check() -> Dictionary:
 		var button := item.get("button", null) as Button
 		if button == null:
 			continue
-		if button.focus_neighbor_top == NodePath() or button.focus_neighbor_bottom == NodePath():
+		if button.focus_neighbor_top == NodePath() or button.focus_neighbor_bottom == NodePath() or button.focus_neighbor_left == NodePath() or button.focus_neighbor_right == NodePath():
 			missing.append(String(item.get("id", "")))
 	return {
 		"focusable_count": controls.size(),
