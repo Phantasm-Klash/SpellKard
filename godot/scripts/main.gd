@@ -531,9 +531,9 @@ func _handle_ui_navigation_controls() -> void:
 	if _ui_navigation_just_pressed("ui_down", KEY_DOWN):
 		_ui_select(1)
 	if _ui_navigation_just_pressed("ui_left", KEY_LEFT):
-		_ui_adjust_selected_control(-1)
+		_ui_adjust_or_step_category(-1)
 	if _ui_navigation_just_pressed("ui_right", KEY_RIGHT):
-		_ui_adjust_selected_control(1)
+		_ui_adjust_or_step_category(1)
 	if _ui_navigation_just_pressed("ui_accept", KEY_ENTER):
 		_ui_accept_selected()
 
@@ -549,9 +549,9 @@ func _ui_navigation_probe(action: String) -> Dictionary:
 			_ui_select(1)
 			result["ok"] = true
 		"left":
-			result = _ui_adjust_selected_control(-1)
+			result = _ui_adjust_or_step_category(-1)
 		"right":
-			result = _ui_adjust_selected_control(1)
+			result = _ui_adjust_or_step_category(1)
 		"accept":
 			result = _ui_accept_selected()
 		_:
@@ -4793,6 +4793,41 @@ func _category_tab_rows(nav_rows: Array[Dictionary]) -> Array[Dictionary]:
 			"active": category_id == active_category,
 		})
 	return tabs
+
+func _ui_adjust_or_step_category(direction: int) -> Dictionary:
+	var adjust_result := _ui_adjust_selected_control(direction)
+	if bool(adjust_result.get("ok", false)):
+		return adjust_result
+	if not String(adjust_result.get("reason", "")) in ["no_action", "unsupported_control"]:
+		return adjust_result
+	return _ui_step_category_tab(direction)
+
+func _ui_step_category_tab(direction: int) -> Dictionary:
+	if ui_screen_model == null:
+		return {"ok": false, "action": "category_step", "reason": "missing_ui"}
+	var tabs := _category_tab_rows(ui_screen_model.navigation_rows())
+	if tabs.is_empty():
+		return {"ok": false, "action": "category_step", "reason": "no_tabs"}
+	var active_index := -1
+	for i in range(tabs.size()):
+		if bool((tabs[i] as Dictionary).get("active", false)):
+			active_index = i
+			break
+	if active_index < 0:
+		active_index = 0
+	var next_index := wrapi(active_index + (-1 if direction < 0 else 1), 0, tabs.size())
+	var tab: Dictionary = tabs[next_index]
+	var screen_id := String(tab.get("screen", ""))
+	if screen_id.is_empty():
+		return {"ok": false, "action": "category_step", "reason": "missing_screen"}
+	_open_ui_screen(screen_id)
+	return {
+		"ok": true,
+		"action": "category_step",
+		"direction": -1 if direction < 0 else 1,
+		"category": String(tab.get("category_id", "")),
+		"screen": screen_id,
+	}
 
 func _update_ui_section_tabs(rows: Array[Dictionary], selected: Dictionary) -> void:
 	var section_rows := _section_jump_rows(rows)

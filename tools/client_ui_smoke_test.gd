@@ -202,16 +202,20 @@ func _validate_menu_independence() -> bool:
 		return false
 	if not _contains_all(String(snapshot.get("category_tabs_text", "")), _text_keys(["screen.main.play", "screen.main.collection", "screen.main.community", "screen.main.settings"])):
 		return _fail("category tabs should expose top-level menu families %s" % String(snapshot.get("category_tabs_text", "")))
-	var left_result: Dictionary = main_node.call("_ui_navigation_probe", "left")
-	await _settle_frames(2)
-	if String(left_result.get("before_screen", "")) != "play" or String(left_result.get("after_screen", "")) != "play":
-		return _fail("left navigation should stay on current screen %s" % [left_result])
 	var right_result: Dictionary = main_node.call("_ui_navigation_probe", "right")
 	await _settle_frames(2)
-	if String(right_result.get("before_screen", "")) != "play" or String(right_result.get("after_screen", "")) != "play":
-		return _fail("right navigation should stay on current screen %s" % [right_result])
-	if bool(right_result.get("ok", false)) or String(right_result.get("reason", "")) != "no_action":
-		return _fail("right navigation on play summary should be a no-op %s" % [right_result])
+	if String(right_result.get("before_screen", "")) != "play" or String(right_result.get("after_screen", "")) != "collection" or String(right_result.get("category", "")) != "collection":
+		return _fail("right navigation should open the next top-level category %s" % [right_result])
+	snapshot = main_node.call("_ui_overlay_snapshot")
+	if String(snapshot.get("screen", "")) != "collection" or not String(snapshot.get("category_tabs_text", "")).contains("> %s" % _text("screen.main.collection")):
+		return _fail("collection category tab should be active after right navigation %s" % [snapshot])
+	var left_result: Dictionary = main_node.call("_ui_navigation_probe", "left")
+	await _settle_frames(2)
+	if String(left_result.get("before_screen", "")) != "collection" or String(left_result.get("after_screen", "")) != "play" or String(left_result.get("category", "")) != "play":
+		return _fail("left navigation should return to the previous top-level category %s" % [left_result])
+	snapshot = main_node.call("_ui_overlay_snapshot")
+	if String(snapshot.get("screen", "")) != "play" or not String(snapshot.get("category_tabs_text", "")).contains("> %s" % _text("screen.main.play")):
+		return _fail("play category tab should be active after left navigation %s" % [snapshot])
 
 	snapshot = await _open_snapshot("community")
 	if not _assert_nav_family(snapshot, "community", _text_keys(["screen.main.community", "screen.main.events", "screen.main.friends", "screen.main.social", "screen.main.promotions"]), _text_keys(["screen.main.play", "screen.main.collection", "screen.main.player_settings", "screen.main.deck", "screen.main.start_match"])):
