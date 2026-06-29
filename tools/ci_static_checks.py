@@ -113,6 +113,8 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "validate_performance_budgets",
         "validate_official_boss_type_coverage",
         "validate_spellbook_preview_exports",
+        "_spellbook_phase_bullet_cap",
+        "spellbook_phase_emit_budget",
     ]:
         if token not in catalog_text:
             errors.append(f"godot/scripts/boss_pattern_catalog.gd: missing catalog contract token {token}")
@@ -147,8 +149,10 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "golden_preview_headroom",
         "golden_preview_sample_ticks",
         "golden_preview_sample_digests",
+        "golden_preview_sample_emit_counts",
         "preview_bullet_cap",
         "sample_signature_digests",
+        "sample_emit_counts",
         "budget_headroom",
         "performance_budget_status",
     ]:
@@ -169,6 +173,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         '"preview_export_id"',
         '"preview_sample_ticks"',
         '"preview_sample_signature_digests"',
+        '"preview_sample_emit_counts"',
         '"preview_sample_count"',
     ]:
         if token not in pattern_lab_text:
@@ -176,7 +181,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
 
     for replay_path in [replay_store, replay_list]:
         replay_text = replay_path.read_text(encoding="utf-8")
-        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_schema_version"', '"preview_export_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_signature_digests"', '"preview_sample_count"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
+        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_schema_version"', '"preview_export_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_signature_digests"', '"preview_sample_emit_counts"', '"preview_sample_count"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
             if token not in replay_text:
                 errors.append(f"{replay_path.relative_to(ROOT)}: missing spellbook replay metadata token {token}")
     if "validate_spellbook_preview_metadata" not in replay_store.read_text(encoding="utf-8"):
@@ -188,7 +193,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
     for token in [
         "_preview_sample_ticks_from_fields",
         "_preview_sample_signature_digests_from_fields",
+        "_preview_sample_emit_counts_from_fields",
         "_sample_signature_digests_from_signature",
+        "_sample_emit_counts_from_signature",
         "SPELLBOOK_PREVIEW_SAMPLE_TICKS",
         "preview_sample_ticks_noncanonical",
     ]:
@@ -221,22 +228,34 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "fixture_stale_digest_spellbook_preview",
         "fixture_stale_samples_spellbook_preview",
         "fixture_stale_sample_digests_spellbook_preview",
+        "fixture_stale_sample_emit_counts_spellbook_preview",
         "fixture_negative_sample_digest_spellbook_preview",
+        "fixture_negative_sample_emit_counts_spellbook_preview",
         "fixture_noncanonical_sample_ticks_spellbook_preview",
         "_legacy_replay_entry_for_preview",
         "legacy_preview_metadata_rejected",
         "fixture_bad_sample_count_spellbook_preview",
+        "fixture_bad_sample_emit_count_spellbook_preview",
         "fixture_missing_samples_spellbook_preview",
         "bad_schema_replay_accepted",
         "bad_sample_count_replay_accepted",
+        "bad_sample_emit_count_replay_accepted",
         "stale_sample_digest_preview_accepted",
+        "stale_sample_emit_count_preview_accepted",
         "negative_sample_digest_replay_accepted",
+        "negative_sample_emit_count_replay_accepted",
         "missing_sample_window_replay_accepted",
         "noncanonical_sample_ticks_replay_accepted",
+        "TightSpellbookBudgetModel",
+        "_validate_phase_budget_regression",
+        "tight_phase_budget_accepted",
+        "tight_phase_budget_failure_missing",
+        "tight_phase_budget_row_missing",
         "validate_spellbook_preview_metadata",
         "preview_export_schema_version",
         "preview_sample_ticks",
         "preview_sample_signature_digests",
+        "preview_sample_emit_counts",
         "preview_sample_count",
         "preview_budget_headroom",
         "performance_budget_status",

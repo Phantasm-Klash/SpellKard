@@ -441,6 +441,13 @@ static func validate_performance_budgets(stage_model: RefCounted, spellbook_mode
 	var max_spellbook_emit := int(spellbook_budget.get("max_emit_per_tick", 0))
 	if max_spellbook_emit > MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK:
 		failures.append("spellbook_emit_budget:%d" % max_spellbook_emit)
+	for row in spellbook_budget.get("rows", []):
+		var row_dict: Dictionary = row as Dictionary
+		if String(row_dict.get("performance_budget_status", "")) == "over_budget":
+			failures.append("spellbook_phase_emit_budget:%s:%d" % [
+				String(row_dict.get("phase_id", "")),
+				int(row_dict.get("max_emit_per_tick", 0)),
+			])
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,
@@ -511,6 +518,8 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 					failures.append("golden_preview_cap:%s:%d" % [phase_id, int(preview_a.get("bullet_cap_per_tick", 0))])
 				if int(preview_a.get("budget_headroom", 0)) != int(fixture.get("budget_headroom", 0)):
 					failures.append("golden_preview_headroom:%s:%d" % [phase_id, int(preview_a.get("budget_headroom", 0))])
+				if not _arrays_equal_ints(preview_a.get("sample_emit_counts", []), fixture.get("sample_emit_counts", [])):
+					failures.append("golden_preview_sample_emit_counts:%s" % phase_id)
 			if pattern_lab_model != null and pattern_lab_model.has_method("rows_for_spellbook_phase"):
 				var lab_rows: Array = pattern_lab_model.rows_for_spellbook_phase("boss_spellbook", phase_id, String(spellbook_id), seed)
 				if lab_rows.is_empty():
@@ -529,6 +538,8 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 						failures.append("pattern_lab_headroom_mismatch:%s" % phase_id)
 					if String(coverage.get("performance_budget_status", "")) != String(preview_a.get("performance_budget_status", "")):
 						failures.append("pattern_lab_budget_status_mismatch:%s" % phase_id)
+					if not _arrays_equal_ints(coverage.get("preview_sample_emit_counts", []), preview_a.get("sample_emit_counts", [])):
+						failures.append("pattern_lab_sample_emit_counts_mismatch:%s" % phase_id)
 	for fixture_id in golden_fixtures.keys():
 		if String(fixture_id).ends_with(":%d" % seed) and not seen_fixture_ids.has(String(fixture_id)):
 			failures.append("orphan_golden_preview:%s" % String(fixture_id))
@@ -674,14 +685,15 @@ static func _spellbook_emit_budget_report(spellbook_model: RefCounted, target: V
 				if emitted.size() > max_emit:
 					max_emit = emitted.size()
 					max_phase_id = phase_id
+			var phase_bullet_cap := _spellbook_phase_bullet_cap(spellbook_model, String(spellbook_id), phase_dict)
 			rows.append({
 				"spellbook_id": String(spellbook_id),
 				"phase_id": phase_id,
 				"max_emit_per_tick": phase_max_emit,
 				"max_emit_local_tick": phase_max_tick,
-				"bullet_cap_per_tick": MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK,
-				"budget_headroom": MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK - phase_max_emit,
-				"performance_budget_status": "within_budget" if phase_max_emit <= MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK else "over_budget",
+				"bullet_cap_per_tick": phase_bullet_cap,
+				"budget_headroom": phase_bullet_cap - phase_max_emit,
+				"performance_budget_status": "within_budget" if phase_max_emit <= phase_bullet_cap else "over_budget",
 			})
 			phase_start += duration
 	return {
@@ -690,6 +702,28 @@ static func _spellbook_emit_budget_report(spellbook_model: RefCounted, target: V
 		"rows": rows,
 		"status": "within_budget" if max_emit <= MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK else "over_budget",
 	}
+
+static func _spellbook_phase_bullet_cap(spellbook_model: RefCounted, spellbook_id: String, phase: Dictionary) -> int:
+	if spellbook_model != null and spellbook_model.has_method("phase_script_config"):
+		var phase_script: Dictionary = spellbook_model.phase_script_config(spellbook_id, String(phase.get("id", "")))
+		if int(phase_script.get("bullet_cap_per_tick", 0)) > 0:
+			return int(phase_script.get("bullet_cap_per_tick", 0))
+	var inline_script: Dictionary = phase.get("phase_script", {})
+	if int(inline_script.get("bullet_cap_per_tick", 0)) > 0:
+		return int(inline_script.get("bullet_cap_per_tick", 0))
+	return MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK
+
+static func _arrays_equal_ints(left: Variant, right: Variant) -> bool:
+	if typeof(left) != TYPE_ARRAY or typeof(right) != TYPE_ARRAY:
+		return false
+	var left_array: Array = left
+	var right_array: Array = right
+	if left_array.size() != right_array.size():
+		return false
+	for index in range(left_array.size()):
+		if int(left_array[index]) != int(right_array[index]):
+			return false
+	return true
 
 static func _has_shaped_laser(bullets: Array[Dictionary]) -> bool:
 	for bullet in bullets:

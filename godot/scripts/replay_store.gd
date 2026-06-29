@@ -86,6 +86,7 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 			spellbook_entries += 1
 			var sample_ticks: Array[int] = _preview_sample_ticks_from_fields(entry)
 			var sample_signature_digests: Array[int] = _preview_sample_signature_digests_from_fields(entry)
+			var sample_emit_counts: Array[int] = _preview_sample_emit_counts_from_fields(entry)
 			if str(entry.get("spellbook_id", "")).is_empty():
 				failures.append("missing_spellbook_id:%s" % replay_id)
 			if str(entry.get("phase_id", "")).is_empty():
@@ -103,12 +104,18 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 				failures.append("missing_preview_sample_digests:%s" % replay_id)
 			elif not _all_nonnegative_ints(sample_signature_digests):
 				failures.append("preview_sample_digest_negative:%s" % replay_id)
+			if sample_emit_counts.is_empty():
+				failures.append("missing_preview_sample_emit_counts:%s" % replay_id)
+			elif not _all_nonnegative_ints(sample_emit_counts):
+				failures.append("preview_sample_emit_count_negative:%s" % replay_id)
 			if sample_count <= 0:
 				failures.append("missing_preview_sample_count:%s" % replay_id)
 			elif sample_count != sample_ticks.size():
 				failures.append("preview_sample_count_mismatch:%s" % replay_id)
 			elif sample_count != sample_signature_digests.size():
 				failures.append("preview_sample_digest_count_mismatch:%s" % replay_id)
+			elif sample_count != sample_emit_counts.size():
+				failures.append("preview_sample_emit_count_mismatch:%s" % replay_id)
 			if not _arrays_equal_ints(sample_ticks, SPELLBOOK_PREVIEW_SAMPLE_TICKS):
 				failures.append("preview_sample_ticks_noncanonical:%s" % replay_id)
 			if int(entry.get("preview_budget_headroom", -1)) < 0:
@@ -150,6 +157,8 @@ func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary)
 		failures.append("preview_sample_ticks_mismatch:%s" % str(entry.get("replay_id", "")))
 	if not _arrays_equal_ints(entry.get("preview_sample_signature_digests", []), preview.get("sample_signature_digests", [])):
 		failures.append("preview_sample_digest_mismatch:%s" % str(entry.get("replay_id", "")))
+	if not _arrays_equal_ints(entry.get("preview_sample_emit_counts", []), preview.get("sample_emit_counts", [])):
+		failures.append("preview_sample_emit_count_mismatch:%s" % str(entry.get("replay_id", "")))
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,
@@ -240,6 +249,7 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		preview_schema_version = SPELLBOOK_PREVIEW_EXPORT_SCHEMA_VERSION
 	var preview_sample_ticks := _preview_sample_ticks_from_fields(metadata)
 	var preview_sample_signature_digests := _preview_sample_signature_digests_from_fields(metadata)
+	var preview_sample_emit_counts := _preview_sample_emit_counts_from_fields(metadata)
 	return {
 		"replay_id": "%s_%s_%d" % [str(snapshot.get("ruleset_version", "local")), str(snapshot.get("match_seed", 0)), final_hash],
 		"path": path,
@@ -260,6 +270,7 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"preview_signature_digest": preview_digest,
 		"preview_sample_ticks": preview_sample_ticks,
 		"preview_sample_signature_digests": preview_sample_signature_digests,
+		"preview_sample_emit_counts": preview_sample_emit_counts,
 		"preview_sample_count": int(metadata.get("preview_sample_count", preview_sample_ticks.size())),
 		"preview_budget_headroom": int(metadata.get("preview_budget_headroom", 0)),
 		"performance_budget_status": str(metadata.get("performance_budget_status", "")),
@@ -296,12 +307,15 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 		return "bad_preview_schema"
 	var sample_ticks := _preview_sample_ticks_from_fields(fields)
 	var sample_signature_digests := _preview_sample_signature_digests_from_fields(fields)
+	var sample_emit_counts := _preview_sample_emit_counts_from_fields(fields)
 	var sample_count := int(fields.get("preview_sample_count", -1))
-	if sample_ticks.is_empty() or sample_signature_digests.is_empty() or sample_count <= 0 or sample_count != sample_ticks.size() or sample_count != sample_signature_digests.size():
+	if sample_ticks.is_empty() or sample_signature_digests.is_empty() or sample_emit_counts.is_empty() or sample_count <= 0:
+		return "bad_preview_sample_window"
+	if sample_count != sample_ticks.size() or sample_count != sample_signature_digests.size() or sample_count != sample_emit_counts.size():
 		return "bad_preview_sample_window"
 	if not _arrays_equal_ints(sample_ticks, SPELLBOOK_PREVIEW_SAMPLE_TICKS):
 		return "bad_preview_sample_window"
-	if not _all_nonnegative_ints(sample_signature_digests):
+	if not _all_nonnegative_ints(sample_signature_digests) or not _all_nonnegative_ints(sample_emit_counts):
 		return "bad_preview_sample_window"
 	if int(fields.get("preview_budget_headroom", -1)) < 0 or str(fields.get("performance_budget_status", "")) != "within_budget":
 		return "preview_budget_overrun"
@@ -333,6 +347,12 @@ func _preview_sample_signature_digests_from_fields(fields: Dictionary) -> Array[
 		return direct
 	return _sample_signature_digests_from_signature(str(fields.get("preview_signature", "")))
 
+func _preview_sample_emit_counts_from_fields(fields: Dictionary) -> Array[int]:
+	var direct := _normalized_int_array(fields.get("preview_sample_emit_counts", []))
+	if not direct.is_empty():
+		return direct
+	return _sample_emit_counts_from_signature(str(fields.get("preview_signature", "")))
+
 func _sample_ticks_from_signature(signature: String) -> Array[int]:
 	if _sample_signature_segments_from_signature(signature).is_empty():
 		return []
@@ -343,6 +363,15 @@ func _sample_signature_digests_from_signature(signature: String) -> Array[int]:
 	for segment in _sample_signature_segments_from_signature(signature):
 		digests.append(_stable_signature_digest(String(segment)))
 	return digests
+
+func _sample_emit_counts_from_signature(signature: String) -> Array[int]:
+	var emit_counts: Array[int] = []
+	for segment in _sample_signature_segments_from_signature(signature):
+		if String(segment).is_empty():
+			emit_counts.append(0)
+		else:
+			emit_counts.append(String(segment).split("|", false).size())
+	return emit_counts
 
 func _sample_signature_segments_from_signature(signature: String) -> Array[String]:
 	var segments: Array[String] = []
