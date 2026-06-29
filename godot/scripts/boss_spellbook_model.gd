@@ -8,13 +8,16 @@ const BulletPatterns := preload("res://scripts/bullet_pattern_library.gd")
 const EXPORT_SCHEMA_VERSION := 1
 const DEFAULT_PREVIEW_SEED := 20260625
 const PREVIEW_SAMPLE_TICKS: Array[int] = [0, 28, 56, 84, 112, 140]
+const PREVIEW_SAMPLE_WINDOW_START_TICK := 0
+const PREVIEW_SAMPLE_WINDOW_END_TICK := 140
+const PREVIEW_SAMPLE_WINDOW_STRIDE_TICKS := 28
 const PREVIEW_DIGEST_MODULUS := 1000000007
 
 const GOLDEN_PREVIEW_FIXTURES: Dictionary = {
-	"original_boss_archive:nonspell_radial_entry:20260625": {"export_schema_version": 1, "signature_digest": 905452029, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_signature_digests": [429408177, 651507191, 705589077, 266214312, 882357878, 75020320], "sample_emit_counts": [24, 42, 24, 24, 42, 24], "sample_count": 6, "max_emit_per_tick": 42, "bullet_cap_per_tick": 192, "budget_headroom": 150, "performance_budget_status": "within_budget"},
-	"original_boss_archive:spell_laser_field:20260625": {"export_schema_version": 1, "signature_digest": 187927263, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_signature_digests": [450260093, 75256905, 0, 862484991, 934817433, 0], "sample_emit_counts": [3, 2, 0, 12, 20, 0], "sample_count": 6, "max_emit_per_tick": 20, "bullet_cap_per_tick": 192, "budget_headroom": 172, "performance_budget_status": "within_budget"},
-	"original_boss_archive:spell_summoner_split:20260625": {"export_schema_version": 1, "signature_digest": 471609142, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_signature_digests": [368982465, 0, 0, 0, 0, 742323659], "sample_emit_counts": [4, 0, 0, 0, 0, 12], "sample_count": 6, "max_emit_per_tick": 12, "bullet_cap_per_tick": 192, "budget_headroom": 180, "performance_budget_status": "within_budget"},
-	"original_boss_archive:last_spell_morph_bounce:20260625": {"export_schema_version": 1, "signature_digest": 979716623, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_signature_digests": [769410047, 0, 0, 0, 0, 0], "sample_emit_counts": [30, 0, 0, 0, 0, 0], "sample_count": 6, "max_emit_per_tick": 30, "bullet_cap_per_tick": 192, "budget_headroom": 162, "performance_budget_status": "within_budget"},
+	"original_boss_archive:nonspell_radial_entry:20260625": {"export_schema_version": 1, "signature_digest": 905452029, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [429408177, 651507191, 705589077, 266214312, 882357878, 75020320], "sample_emit_counts": [24, 42, 24, 24, 42, 24], "sample_count": 6, "max_emit_per_tick": 42, "bullet_cap_per_tick": 192, "budget_headroom": 150, "performance_budget_status": "within_budget"},
+	"original_boss_archive:spell_laser_field:20260625": {"export_schema_version": 1, "signature_digest": 187927263, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [450260093, 75256905, 0, 862484991, 934817433, 0], "sample_emit_counts": [3, 2, 0, 12, 20, 0], "sample_count": 6, "max_emit_per_tick": 20, "bullet_cap_per_tick": 192, "budget_headroom": 172, "performance_budget_status": "within_budget"},
+	"original_boss_archive:spell_summoner_split:20260625": {"export_schema_version": 1, "signature_digest": 471609142, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [368982465, 0, 0, 0, 0, 742323659], "sample_emit_counts": [4, 0, 0, 0, 0, 12], "sample_count": 6, "max_emit_per_tick": 12, "bullet_cap_per_tick": 192, "budget_headroom": 180, "performance_budget_status": "within_budget"},
+	"original_boss_archive:last_spell_morph_bounce:20260625": {"export_schema_version": 1, "signature_digest": 979716623, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [769410047, 0, 0, 0, 0, 0], "sample_emit_counts": [30, 0, 0, 0, 0, 0], "sample_count": 6, "max_emit_per_tick": 30, "bullet_cap_per_tick": 192, "budget_headroom": 162, "performance_budget_status": "within_budget"},
 }
 
 var spellbooks: Array[Dictionary] = []
@@ -214,6 +217,9 @@ func deterministic_phase_preview(spellbook_id: String, phase_id: String, seed: i
 		"phase_id": phase_id,
 		"seed": seed,
 		"sample_ticks": PREVIEW_SAMPLE_TICKS.duplicate(),
+		"sample_window_start_tick": PREVIEW_SAMPLE_WINDOW_START_TICK,
+		"sample_window_end_tick": PREVIEW_SAMPLE_WINDOW_END_TICK,
+		"sample_window_stride_ticks": PREVIEW_SAMPLE_WINDOW_STRIDE_TICKS,
 		"sample_signature_digests": sample_signature_digests,
 		"sample_emit_counts": sample_emit_counts,
 		"samples": samples,
@@ -454,6 +460,12 @@ func _validate_golden_fixture(fixture_id: String, phase_id: String, preview: Dic
 		failures.append("golden_preview_samples:%s" % phase_id)
 	if not _arrays_equal_ints(preview.get("sample_ticks", []), fixture.get("sample_ticks", [])):
 		failures.append("golden_preview_sample_ticks:%s:%s" % [phase_id, fixture_id])
+	if int(preview.get("sample_window_start_tick", -1)) != int(fixture.get("sample_window_start_tick", -2)):
+		failures.append("golden_preview_sample_window_start:%s:%s" % [phase_id, fixture_id])
+	if int(preview.get("sample_window_end_tick", -1)) != int(fixture.get("sample_window_end_tick", -2)):
+		failures.append("golden_preview_sample_window_end:%s:%s" % [phase_id, fixture_id])
+	if int(preview.get("sample_window_stride_ticks", -1)) != int(fixture.get("sample_window_stride_ticks", -2)):
+		failures.append("golden_preview_sample_window_stride:%s:%s" % [phase_id, fixture_id])
 	if not _arrays_equal_ints(preview.get("sample_emit_counts", []), fixture.get("sample_emit_counts", [])):
 		failures.append("golden_preview_sample_emit_counts:%s:%s" % [phase_id, fixture_id])
 	if int(preview.get("max_emit_per_tick", 0)) != int(fixture.get("max_emit_per_tick", 0)):
@@ -466,6 +478,12 @@ func _validate_golden_fixture(fixture_id: String, phase_id: String, preview: Dic
 		failures.append("golden_preview_sample_count_contract:%s:%s" % [phase_id, fixture_id])
 	if not _arrays_equal_ints(fixture.get("sample_ticks", []), PREVIEW_SAMPLE_TICKS):
 		failures.append("golden_preview_sample_ticks_contract:%s:%s" % [phase_id, fixture_id])
+	if int(fixture.get("sample_window_start_tick", -1)) != PREVIEW_SAMPLE_WINDOW_START_TICK:
+		failures.append("golden_preview_sample_window_start_contract:%s:%s" % [phase_id, fixture_id])
+	if int(fixture.get("sample_window_end_tick", -1)) != PREVIEW_SAMPLE_WINDOW_END_TICK:
+		failures.append("golden_preview_sample_window_end_contract:%s:%s" % [phase_id, fixture_id])
+	if int(fixture.get("sample_window_stride_ticks", -1)) != PREVIEW_SAMPLE_WINDOW_STRIDE_TICKS:
+		failures.append("golden_preview_sample_window_stride_contract:%s:%s" % [phase_id, fixture_id])
 	if not _arrays_equal_ints(preview.get("sample_signature_digests", []), fixture.get("sample_signature_digests", [])):
 		failures.append("golden_preview_sample_digests:%s:%s expected=%s" % [
 			phase_id,

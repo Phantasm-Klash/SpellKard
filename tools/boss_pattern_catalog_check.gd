@@ -161,6 +161,12 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 				failures.append("entry_sample_count_mismatch:%s" % phase_id)
 			if not _arrays_equal_ints(entry.get("preview_sample_ticks", []), preview.get("sample_ticks", [])):
 				failures.append("entry_sample_ticks_mismatch:%s" % phase_id)
+			if int(entry.get("preview_sample_window_start_tick", -1)) != int(preview.get("sample_window_start_tick", -2)):
+				failures.append("entry_sample_window_start_mismatch:%s" % phase_id)
+			if int(entry.get("preview_sample_window_end_tick", -1)) != int(preview.get("sample_window_end_tick", -2)):
+				failures.append("entry_sample_window_end_mismatch:%s" % phase_id)
+			if int(entry.get("preview_sample_window_stride_ticks", -1)) != int(preview.get("sample_window_stride_ticks", -2)):
+				failures.append("entry_sample_window_stride_mismatch:%s" % phase_id)
 			if not _arrays_equal_ints(entry.get("preview_sample_signature_digests", []), preview.get("sample_signature_digests", [])):
 				failures.append("entry_sample_digest_mismatch:%s" % phase_id)
 			if not _arrays_equal_ints(entry.get("preview_sample_emit_counts", []), preview.get("sample_emit_counts", [])):
@@ -179,6 +185,12 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 				failures.append("legacy_entry_fixture_mismatch:%s" % phase_id)
 			if not _arrays_equal_ints(legacy_entry.get("preview_sample_ticks", []), preview.get("sample_ticks", [])):
 				failures.append("legacy_entry_sample_ticks_mismatch:%s" % phase_id)
+			if int(legacy_entry.get("preview_sample_window_start_tick", -1)) != int(preview.get("sample_window_start_tick", -2)):
+				failures.append("legacy_entry_sample_window_start_mismatch:%s" % phase_id)
+			if int(legacy_entry.get("preview_sample_window_end_tick", -1)) != int(preview.get("sample_window_end_tick", -2)):
+				failures.append("legacy_entry_sample_window_end_mismatch:%s" % phase_id)
+			if int(legacy_entry.get("preview_sample_window_stride_ticks", -1)) != int(preview.get("sample_window_stride_ticks", -2)):
+				failures.append("legacy_entry_sample_window_stride_mismatch:%s" % phase_id)
 			if not _arrays_equal_ints(legacy_entry.get("preview_sample_signature_digests", []), preview.get("sample_signature_digests", [])):
 				failures.append("legacy_entry_sample_digest_mismatch:%s" % phase_id)
 			if not _arrays_equal_ints(legacy_entry.get("preview_sample_emit_counts", []), preview.get("sample_emit_counts", [])):
@@ -220,6 +232,15 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 	var noncanonical_sample_ticks_entry := valid_entries[0].duplicate(true)
 	noncanonical_sample_ticks_entry["replay_id"] = "fixture_noncanonical_sample_ticks_spellbook_preview"
 	noncanonical_sample_ticks_entry["preview_sample_ticks"] = [0, 29, 56, 84, 112, 140]
+	var stale_sample_window_start_entry := valid_entries[0].duplicate(true)
+	stale_sample_window_start_entry["replay_id"] = "fixture_stale_sample_window_start_spellbook_preview"
+	stale_sample_window_start_entry["preview_sample_window_start_tick"] = 1
+	var stale_sample_window_end_entry := valid_entries[0].duplicate(true)
+	stale_sample_window_end_entry["replay_id"] = "fixture_stale_sample_window_end_spellbook_preview"
+	stale_sample_window_end_entry["preview_sample_window_end_tick"] = 112
+	var stale_sample_window_stride_entry := valid_entries[0].duplicate(true)
+	stale_sample_window_stride_entry["replay_id"] = "fixture_stale_sample_window_stride_spellbook_preview"
+	stale_sample_window_stride_entry["preview_sample_window_stride_ticks"] = 14
 	var stale_sample_digest_entry := valid_entries[0].duplicate(true)
 	stale_sample_digest_entry["replay_id"] = "fixture_stale_sample_digests_spellbook_preview"
 	var stale_digests: Array = (stale_sample_digest_entry.get("preview_sample_signature_digests", []) as Array).duplicate()
@@ -273,7 +294,7 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 	missing_sample_entry["preview_sample_signature_digests"] = []
 	missing_sample_entry["preview_sample_emit_counts"] = []
 	missing_sample_entry["preview_sample_count"] = 0
-	var invalid_entries: Array[Dictionary] = [invalid_entry, bad_schema_entry, authoritative_entry, over_budget_entry, stale_fixture_entry, stale_export_entry, bad_sample_count_entry, bad_sample_emit_count_entry, missing_sample_entry, noncanonical_sample_ticks_entry, negative_sample_emit_count_entry]
+	var invalid_entries: Array[Dictionary] = [invalid_entry, bad_schema_entry, authoritative_entry, over_budget_entry, stale_fixture_entry, stale_export_entry, bad_sample_count_entry, bad_sample_emit_count_entry, missing_sample_entry, noncanonical_sample_ticks_entry, stale_sample_window_start_entry, stale_sample_window_end_entry, stale_sample_window_stride_entry, negative_sample_emit_count_entry]
 	var valid_result: Dictionary = store.validate_index_metadata(valid_entries)
 	if not bool(valid_result.get("ok", false)):
 		failures.append("valid_replay_rejected:%s" % [valid_result.get("failures", [])])
@@ -323,6 +344,12 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 		failures.append("missing_sample_window_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(noncanonical_sample_ticks_entry)).get("ok", false)):
 		failures.append("noncanonical_sample_ticks_replay_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(stale_sample_window_start_entry)).get("ok", false)):
+		failures.append("stale_sample_window_start_replay_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(stale_sample_window_end_entry)).get("ok", false)):
+		failures.append("stale_sample_window_end_replay_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(stale_sample_window_stride_entry)).get("ok", false)):
+		failures.append("stale_sample_window_stride_replay_accepted")
 	var replay_list: RefCounted = ReplayListModel.new()
 	replay_list.replay_store = store
 	var list_entries: Array[Dictionary] = valid_entries.duplicate(true)
@@ -342,6 +369,12 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 				failures.append("valid_row_budget_status:%s" % [valid_row])
 			if int(valid_row.get("preview_sample_count", -1)) <= 0:
 				failures.append("valid_row_sample_count:%s" % [valid_row])
+			if int(valid_row.get("preview_sample_window_start_tick", -1)) != int((valid_entries[index] as Dictionary).get("preview_sample_window_start_tick", -2)):
+				failures.append("valid_row_sample_window_start:%s" % [valid_row])
+			if int(valid_row.get("preview_sample_window_end_tick", -1)) != int((valid_entries[index] as Dictionary).get("preview_sample_window_end_tick", -2)):
+				failures.append("valid_row_sample_window_end:%s" % [valid_row])
+			if int(valid_row.get("preview_sample_window_stride_ticks", -1)) != int((valid_entries[index] as Dictionary).get("preview_sample_window_stride_ticks", -2)):
+				failures.append("valid_row_sample_window_stride:%s" % [valid_row])
 			if String(valid_row.get("preview_fixture_id", "")).is_empty():
 				failures.append("valid_row_fixture_id:%s" % [valid_row])
 			if (valid_row.get("preview_sample_signature_digests", []) as Array).is_empty():
@@ -370,28 +403,37 @@ func _validate_replay_metadata(spellbook_model: RefCounted) -> Dictionary:
 		var noncanonical_sample_ticks_row: Dictionary = replay_list._row_from_entry(noncanonical_sample_ticks_entry, rows.size() + 3)
 		if bool(noncanonical_sample_ticks_row.get("metadata_valid", true)) or String(noncanonical_sample_ticks_row.get("metadata_status", "")) != "bad_preview_sample_window":
 			failures.append("noncanonical_sample_ticks_row_metadata:%s" % [noncanonical_sample_ticks_row])
-		var negative_sample_digest_row: Dictionary = replay_list._row_from_entry(negative_sample_digest_entry, rows.size() + 4)
+		var stale_sample_window_start_row: Dictionary = replay_list._row_from_entry(stale_sample_window_start_entry, rows.size() + 4)
+		if bool(stale_sample_window_start_row.get("metadata_valid", true)) or String(stale_sample_window_start_row.get("metadata_status", "")) != "bad_preview_sample_window":
+			failures.append("stale_sample_window_start_row_metadata:%s" % [stale_sample_window_start_row])
+		var stale_sample_window_end_row: Dictionary = replay_list._row_from_entry(stale_sample_window_end_entry, rows.size() + 5)
+		if bool(stale_sample_window_end_row.get("metadata_valid", true)) or String(stale_sample_window_end_row.get("metadata_status", "")) != "bad_preview_sample_window":
+			failures.append("stale_sample_window_end_row_metadata:%s" % [stale_sample_window_end_row])
+		var stale_sample_window_stride_row: Dictionary = replay_list._row_from_entry(stale_sample_window_stride_entry, rows.size() + 6)
+		if bool(stale_sample_window_stride_row.get("metadata_valid", true)) or String(stale_sample_window_stride_row.get("metadata_status", "")) != "bad_preview_sample_window":
+			failures.append("stale_sample_window_stride_row_metadata:%s" % [stale_sample_window_stride_row])
+		var negative_sample_digest_row: Dictionary = replay_list._row_from_entry(negative_sample_digest_entry, rows.size() + 7)
 		if bool(negative_sample_digest_row.get("metadata_valid", true)) or String(negative_sample_digest_row.get("metadata_status", "")) != "bad_preview_sample_window":
 			failures.append("negative_sample_digest_row_metadata:%s" % [negative_sample_digest_row])
-		var stale_sample_emit_count_row: Dictionary = replay_list._row_from_entry(stale_sample_emit_count_entry, rows.size() + 5)
+		var stale_sample_emit_count_row: Dictionary = replay_list._row_from_entry(stale_sample_emit_count_entry, rows.size() + 8)
 		if bool(stale_sample_emit_count_row.get("metadata_valid", true)) or String(stale_sample_emit_count_row.get("metadata_status", "")) != "bad_preview_sample_window":
 			failures.append("stale_sample_emit_count_row_metadata:%s" % [stale_sample_emit_count_row])
-		var negative_sample_emit_count_row: Dictionary = replay_list._row_from_entry(negative_sample_emit_count_entry, rows.size() + 6)
+		var negative_sample_emit_count_row: Dictionary = replay_list._row_from_entry(negative_sample_emit_count_entry, rows.size() + 9)
 		if bool(negative_sample_emit_count_row.get("metadata_valid", true)) or String(negative_sample_emit_count_row.get("metadata_status", "")) != "bad_preview_sample_window":
 			failures.append("negative_sample_emit_count_row_metadata:%s" % [negative_sample_emit_count_row])
-		var stale_fixture_row: Dictionary = replay_list._row_from_entry(stale_fixture_entry, rows.size() + 7)
+		var stale_fixture_row: Dictionary = replay_list._row_from_entry(stale_fixture_entry, rows.size() + 10)
 		if bool(stale_fixture_row.get("metadata_valid", true)) or String(stale_fixture_row.get("metadata_status", "")) != "preview_fixture_mismatch":
 			failures.append("stale_fixture_row_metadata:%s" % [stale_fixture_row])
-		var stale_export_row: Dictionary = replay_list._row_from_entry(stale_export_entry, rows.size() + 8)
+		var stale_export_row: Dictionary = replay_list._row_from_entry(stale_export_entry, rows.size() + 11)
 		if bool(stale_export_row.get("metadata_valid", true)) or String(stale_export_row.get("metadata_status", "")) != "preview_fixture_mismatch":
 			failures.append("stale_export_row_metadata:%s" % [stale_export_row])
-		var legacy_signature_digest_mismatch_row: Dictionary = replay_list._row_from_entry(legacy_signature_digest_mismatch_entry, rows.size() + 9)
+		var legacy_signature_digest_mismatch_row: Dictionary = replay_list._row_from_entry(legacy_signature_digest_mismatch_entry, rows.size() + 12)
 		if bool(legacy_signature_digest_mismatch_row.get("metadata_valid", true)) or String(legacy_signature_digest_mismatch_row.get("metadata_status", "")) != "bad_preview_sample_window":
 			failures.append("legacy_signature_digest_mismatch_row_metadata:%s" % [legacy_signature_digest_mismatch_row])
-		var legacy_signature_emit_count_mismatch_row: Dictionary = replay_list._row_from_entry(legacy_signature_emit_count_mismatch_entry, rows.size() + 10)
+		var legacy_signature_emit_count_mismatch_row: Dictionary = replay_list._row_from_entry(legacy_signature_emit_count_mismatch_entry, rows.size() + 13)
 		if bool(legacy_signature_emit_count_mismatch_row.get("metadata_valid", true)) or String(legacy_signature_emit_count_mismatch_row.get("metadata_status", "")) != "bad_preview_sample_window":
 			failures.append("legacy_signature_emit_count_mismatch_row_metadata:%s" % [legacy_signature_emit_count_mismatch_row])
-		var stale_digest_row: Dictionary = replay_list._row_from_entry(stale_digest_entry, rows.size() + 11)
+		var stale_digest_row: Dictionary = replay_list._row_from_entry(stale_digest_entry, rows.size() + 14)
 		if bool(stale_digest_row.get("metadata_valid", true)) or String(stale_digest_row.get("metadata_status", "")) != "preview_signature_digest_mismatch":
 			failures.append("stale_digest_row_metadata:%s" % [stale_digest_row])
 	return {
@@ -419,6 +461,9 @@ func _replay_entry_for_preview(store: RefCounted, spellbook_id: String, phase_id
 			"preview_fixture_id": "%s:%s:%d" % [spellbook_id, phase_id, int(preview.get("seed", 0))],
 			"preview_signature_digest": int(preview.get("signature_digest", 0)),
 			"preview_sample_ticks": (preview.get("sample_ticks", []) as Array).duplicate(),
+			"preview_sample_window_start_tick": int(preview.get("sample_window_start_tick", 0)),
+			"preview_sample_window_end_tick": int(preview.get("sample_window_end_tick", 0)),
+			"preview_sample_window_stride_ticks": int(preview.get("sample_window_stride_ticks", 0)),
 			"preview_sample_signature_digests": (preview.get("sample_signature_digests", []) as Array).duplicate(),
 			"preview_sample_emit_counts": (preview.get("sample_emit_counts", []) as Array).duplicate(),
 			"preview_sample_count": (preview.get("samples", []) as Array).size(),

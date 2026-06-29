@@ -148,6 +148,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "missing_golden_preview",
         "golden_preview_headroom",
         "golden_preview_sample_ticks",
+        "golden_preview_sample_window_start",
+        "golden_preview_sample_window_end",
+        "golden_preview_sample_window_stride",
         "golden_preview_sample_digests",
         "golden_preview_sample_emit_counts",
         "preview_bullet_cap",
@@ -172,6 +175,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         '"performance_budget_status"',
         '"preview_export_id"',
         '"preview_sample_ticks"',
+        '"preview_sample_window_start_tick"',
+        '"preview_sample_window_end_tick"',
+        '"preview_sample_window_stride_ticks"',
         '"preview_sample_signature_digests"',
         '"preview_sample_emit_counts"',
         '"preview_sample_count"',
@@ -181,7 +187,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
 
     for replay_path in [replay_store, replay_list]:
         replay_text = replay_path.read_text(encoding="utf-8")
-        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_schema_version"', '"preview_export_id"', '"preview_fixture_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_signature_digests"', '"preview_sample_emit_counts"', '"preview_sample_count"', '"preview_max_emit_per_tick"', '"preview_bullet_cap_per_tick"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
+        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_export_schema_version"', '"preview_export_id"', '"preview_fixture_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_window_start_tick"', '"preview_sample_window_end_tick"', '"preview_sample_window_stride_ticks"', '"preview_sample_signature_digests"', '"preview_sample_emit_counts"', '"preview_sample_count"', '"preview_max_emit_per_tick"', '"preview_bullet_cap_per_tick"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
             if token not in replay_text:
                 errors.append(f"{replay_path.relative_to(ROOT)}: missing spellbook replay metadata token {token}")
     if "validate_spellbook_preview_metadata" not in replay_store.read_text(encoding="utf-8"):
@@ -194,10 +200,19 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "_preview_sample_ticks_from_fields",
         "_preview_sample_signature_digests_from_fields",
         "_preview_sample_emit_counts_from_fields",
+        "_preview_sample_window_start_tick_from_signature",
+        "_preview_sample_window_end_tick_from_signature",
+        "_preview_sample_window_stride_ticks_from_signature",
         "_sample_signature_digests_from_signature",
         "_sample_emit_counts_from_signature",
         "SPELLBOOK_PREVIEW_SAMPLE_TICKS",
+        "SPELLBOOK_PREVIEW_SAMPLE_WINDOW_START_TICK",
+        "SPELLBOOK_PREVIEW_SAMPLE_WINDOW_END_TICK",
+        "SPELLBOOK_PREVIEW_SAMPLE_WINDOW_STRIDE_TICKS",
         "preview_sample_ticks_noncanonical",
+        "preview_sample_window_start_mismatch",
+        "preview_sample_window_end_mismatch",
+        "preview_sample_window_stride_mismatch",
     ]:
         if token not in replay_store_text:
             errors.append(f"godot/scripts/replay_store.gd: missing legacy preview-signature backfill token {token}")
@@ -238,6 +253,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "fixture_negative_sample_digest_spellbook_preview",
         "fixture_negative_sample_emit_counts_spellbook_preview",
         "fixture_noncanonical_sample_ticks_spellbook_preview",
+        "fixture_stale_sample_window_start_spellbook_preview",
+        "fixture_stale_sample_window_end_spellbook_preview",
+        "fixture_stale_sample_window_stride_spellbook_preview",
         "_legacy_replay_entry_for_preview",
         "legacy_preview_metadata_rejected",
         "fixture_bad_sample_count_spellbook_preview",
@@ -257,6 +275,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "negative_sample_emit_count_replay_accepted",
         "missing_sample_window_replay_accepted",
         "noncanonical_sample_ticks_replay_accepted",
+        "stale_sample_window_start_replay_accepted",
+        "stale_sample_window_end_replay_accepted",
+        "stale_sample_window_stride_replay_accepted",
         "TightSpellbookBudgetModel",
         "_validate_phase_budget_regression",
         "tight_phase_budget_accepted",
@@ -265,6 +286,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "validate_spellbook_preview_metadata",
         "preview_export_schema_version",
         "preview_sample_ticks",
+        "preview_sample_window_start_tick",
+        "preview_sample_window_end_tick",
+        "preview_sample_window_stride_ticks",
         "preview_fixture_id",
         "preview_sample_signature_digests",
         "preview_sample_emit_counts",

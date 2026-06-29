@@ -7,6 +7,9 @@ const REPLAY_INDEX_PATH := "user://replays/index.json"
 const MAX_INDEX_ENTRIES := 20
 const SPELLBOOK_PREVIEW_EXPORT_SCHEMA_VERSION := 1
 const SPELLBOOK_PREVIEW_SAMPLE_TICKS: Array[int] = [0, 28, 56, 84, 112, 140]
+const SPELLBOOK_PREVIEW_SAMPLE_WINDOW_START_TICK := 0
+const SPELLBOOK_PREVIEW_SAMPLE_WINDOW_END_TICK := 140
+const SPELLBOOK_PREVIEW_SAMPLE_WINDOW_STRIDE_TICKS := 28
 const SPELLBOOK_PREVIEW_EXPORT_PREFIX := "boss_spellbook_preview"
 
 var last_error := ""
@@ -86,6 +89,9 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 		if str(entry.get("mode", "")) == "boss_spellbook_practice" or str(entry.get("catalog_id", "")) == "boss_spellbook":
 			spellbook_entries += 1
 			var sample_ticks: Array[int] = _preview_sample_ticks_from_fields(entry)
+			var sample_window_start_tick := int(entry.get("preview_sample_window_start_tick", _preview_sample_window_start_tick_from_signature(str(entry.get("preview_signature", "")))))
+			var sample_window_end_tick := int(entry.get("preview_sample_window_end_tick", _preview_sample_window_end_tick_from_signature(str(entry.get("preview_signature", "")))))
+			var sample_window_stride_ticks := int(entry.get("preview_sample_window_stride_ticks", _preview_sample_window_stride_ticks_from_signature(str(entry.get("preview_signature", "")))))
 			var sample_signature_digests: Array[int] = _preview_sample_signature_digests_from_fields(entry)
 			var sample_emit_counts: Array[int] = _preview_sample_emit_counts_from_fields(entry)
 			var max_emit_per_tick := int(entry.get("preview_max_emit_per_tick", -1))
@@ -132,6 +138,12 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 				failures.append("preview_sample_emit_count_mismatch:%s" % replay_id)
 			if not _arrays_equal_ints(sample_ticks, SPELLBOOK_PREVIEW_SAMPLE_TICKS):
 				failures.append("preview_sample_ticks_noncanonical:%s" % replay_id)
+			if sample_window_start_tick != SPELLBOOK_PREVIEW_SAMPLE_WINDOW_START_TICK:
+				failures.append("preview_sample_window_start_mismatch:%s" % replay_id)
+			if sample_window_end_tick != SPELLBOOK_PREVIEW_SAMPLE_WINDOW_END_TICK:
+				failures.append("preview_sample_window_end_mismatch:%s" % replay_id)
+			if sample_window_stride_ticks != SPELLBOOK_PREVIEW_SAMPLE_WINDOW_STRIDE_TICKS:
+				failures.append("preview_sample_window_stride_mismatch:%s" % replay_id)
 			if not signature_sample_signature_digests.is_empty() and not _arrays_equal_ints(sample_signature_digests, signature_sample_signature_digests):
 				failures.append("preview_sample_digest_signature_mismatch:%s" % replay_id)
 			if not signature_sample_emit_counts.is_empty() and not _arrays_equal_ints(sample_emit_counts, signature_sample_emit_counts):
@@ -187,6 +199,12 @@ func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary)
 		failures.append("preview_sample_count_mismatch:%s" % str(entry.get("replay_id", "")))
 	if not _arrays_equal_ints(entry.get("preview_sample_ticks", []), preview.get("sample_ticks", [])):
 		failures.append("preview_sample_ticks_mismatch:%s" % str(entry.get("replay_id", "")))
+	if int(entry.get("preview_sample_window_start_tick", -1)) != int(preview.get("sample_window_start_tick", -2)):
+		failures.append("preview_sample_window_start_mismatch:%s" % str(entry.get("replay_id", "")))
+	if int(entry.get("preview_sample_window_end_tick", -1)) != int(preview.get("sample_window_end_tick", -2)):
+		failures.append("preview_sample_window_end_mismatch:%s" % str(entry.get("replay_id", "")))
+	if int(entry.get("preview_sample_window_stride_ticks", -1)) != int(preview.get("sample_window_stride_ticks", -2)):
+		failures.append("preview_sample_window_stride_mismatch:%s" % str(entry.get("replay_id", "")))
 	if not _arrays_equal_ints(entry.get("preview_sample_signature_digests", []), preview.get("sample_signature_digests", [])):
 		failures.append("preview_sample_digest_mismatch:%s" % str(entry.get("replay_id", "")))
 	if not _arrays_equal_ints(entry.get("preview_sample_emit_counts", []), preview.get("sample_emit_counts", [])):
@@ -280,6 +298,9 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 	if preview_schema_version <= 0 and is_spellbook_preview and not str(metadata.get("preview_signature", "")).is_empty():
 		preview_schema_version = SPELLBOOK_PREVIEW_EXPORT_SCHEMA_VERSION
 	var preview_sample_ticks := _preview_sample_ticks_from_fields(metadata)
+	var preview_sample_window_start_tick := int(metadata.get("preview_sample_window_start_tick", _preview_sample_window_start_tick_from_signature(str(metadata.get("preview_signature", "")))))
+	var preview_sample_window_end_tick := int(metadata.get("preview_sample_window_end_tick", _preview_sample_window_end_tick_from_signature(str(metadata.get("preview_signature", "")))))
+	var preview_sample_window_stride_ticks := int(metadata.get("preview_sample_window_stride_ticks", _preview_sample_window_stride_ticks_from_signature(str(metadata.get("preview_signature", "")))))
 	var preview_sample_signature_digests := _preview_sample_signature_digests_from_fields(metadata)
 	var preview_sample_emit_counts := _preview_sample_emit_counts_from_fields(metadata)
 	var preview_max_emit_per_tick := int(metadata.get("preview_max_emit_per_tick", _max_int(preview_sample_emit_counts)))
@@ -307,6 +328,9 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"preview_signature": str(metadata.get("preview_signature", "")),
 		"preview_signature_digest": preview_digest,
 		"preview_sample_ticks": preview_sample_ticks,
+		"preview_sample_window_start_tick": preview_sample_window_start_tick,
+		"preview_sample_window_end_tick": preview_sample_window_end_tick,
+		"preview_sample_window_stride_ticks": preview_sample_window_stride_ticks,
 		"preview_sample_signature_digests": preview_sample_signature_digests,
 		"preview_sample_emit_counts": preview_sample_emit_counts,
 		"preview_sample_count": int(metadata.get("preview_sample_count", preview_sample_ticks.size())),
@@ -357,6 +381,9 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 	if signature_digest > 0 and preview_digest != signature_digest:
 		return "preview_signature_digest_mismatch"
 	var sample_ticks := _preview_sample_ticks_from_fields(fields)
+	var sample_window_start_tick := int(fields.get("preview_sample_window_start_tick", _preview_sample_window_start_tick_from_signature(str(fields.get("preview_signature", "")))))
+	var sample_window_end_tick := int(fields.get("preview_sample_window_end_tick", _preview_sample_window_end_tick_from_signature(str(fields.get("preview_signature", "")))))
+	var sample_window_stride_ticks := int(fields.get("preview_sample_window_stride_ticks", _preview_sample_window_stride_ticks_from_signature(str(fields.get("preview_signature", "")))))
 	var sample_signature_digests := _preview_sample_signature_digests_from_fields(fields)
 	var sample_emit_counts := _preview_sample_emit_counts_from_fields(fields)
 	var max_emit_per_tick := int(fields.get("preview_max_emit_per_tick", -1))
@@ -369,6 +396,10 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 	if sample_count != sample_ticks.size() or sample_count != sample_signature_digests.size() or sample_count != sample_emit_counts.size():
 		return "bad_preview_sample_window"
 	if not _arrays_equal_ints(sample_ticks, SPELLBOOK_PREVIEW_SAMPLE_TICKS):
+		return "bad_preview_sample_window"
+	if sample_window_start_tick != SPELLBOOK_PREVIEW_SAMPLE_WINDOW_START_TICK \
+			or sample_window_end_tick != SPELLBOOK_PREVIEW_SAMPLE_WINDOW_END_TICK \
+			or sample_window_stride_ticks != SPELLBOOK_PREVIEW_SAMPLE_WINDOW_STRIDE_TICKS:
 		return "bad_preview_sample_window"
 	if not _all_nonnegative_ints(sample_signature_digests) or not _all_nonnegative_ints(sample_emit_counts):
 		return "bad_preview_sample_window"
@@ -443,6 +474,15 @@ func _sample_ticks_from_signature(signature: String) -> Array[int]:
 	if _sample_signature_segments_from_signature(signature).is_empty():
 		return []
 	return SPELLBOOK_PREVIEW_SAMPLE_TICKS.duplicate()
+
+func _preview_sample_window_start_tick_from_signature(signature: String) -> int:
+	return SPELLBOOK_PREVIEW_SAMPLE_WINDOW_START_TICK if not _sample_signature_segments_from_signature(signature).is_empty() else -1
+
+func _preview_sample_window_end_tick_from_signature(signature: String) -> int:
+	return SPELLBOOK_PREVIEW_SAMPLE_WINDOW_END_TICK if not _sample_signature_segments_from_signature(signature).is_empty() else -1
+
+func _preview_sample_window_stride_ticks_from_signature(signature: String) -> int:
+	return SPELLBOOK_PREVIEW_SAMPLE_WINDOW_STRIDE_TICKS if not _sample_signature_segments_from_signature(signature).is_empty() else -1
 
 func _sample_signature_digests_from_signature(signature: String) -> Array[int]:
 	var digests: Array[int] = []

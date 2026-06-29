@@ -72,8 +72,13 @@ func rows_for_spellbook_phase(catalog_id: String, phase_id: String, spellbook_id
 		row["source_policy"] = "original_spell_phase_script"
 		row["preview_export_schema_version"] = int(preview.get("export_schema_version", 0))
 		row["deterministic_preview_signature"] = String(preview.get("signature", ""))
+		row["preview_sample_ticks"] = (preview.get("sample_ticks", []) as Array).duplicate()
+		row["preview_sample_window_start_tick"] = int(preview.get("sample_window_start_tick", 0))
+		row["preview_sample_window_end_tick"] = int(preview.get("sample_window_end_tick", 0))
+		row["preview_sample_window_stride_ticks"] = int(preview.get("sample_window_stride_ticks", 0))
 		row["preview_sample_signature_digests"] = (preview.get("sample_signature_digests", []) as Array).duplicate()
 		row["preview_sample_emit_counts"] = (preview.get("sample_emit_counts", []) as Array).duplicate()
+		row["preview_sample_count"] = (preview.get("samples", []) as Array).size()
 		row["enabled"] = true
 		pattern_rows.append(row)
 	var coverage_row := _spellbook_phase_coverage_row(catalog_id, spellbook_id, phase, phase_script, preview, pattern_rows)
@@ -159,6 +164,9 @@ func _spellbook_phase_coverage_row(catalog_id: String, spellbook_id: String, pha
 		"deterministic_preview_digest": int(preview.get("signature_digest", 0)),
 		"seed": int(preview.get("seed", 0)),
 		"preview_sample_ticks": (preview.get("sample_ticks", []) as Array).duplicate(),
+		"preview_sample_window_start_tick": int(preview.get("sample_window_start_tick", 0)),
+		"preview_sample_window_end_tick": int(preview.get("sample_window_end_tick", 0)),
+		"preview_sample_window_stride_ticks": int(preview.get("sample_window_stride_ticks", 0)),
 		"preview_sample_signature_digests": (preview.get("sample_signature_digests", []) as Array).duplicate(),
 		"preview_sample_emit_counts": (preview.get("sample_emit_counts", []) as Array).duplicate(),
 		"preview_sample_count": (preview.get("samples", []) as Array).size(),
