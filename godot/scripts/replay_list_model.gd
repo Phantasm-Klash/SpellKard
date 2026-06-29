@@ -113,6 +113,7 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 	var path := str(entry.get("path", ""))
 	var metadata_valid := _entry_metadata_valid(entry)
 	var metadata_failures := _entry_metadata_failures(entry, metadata_valid)
+	var server_claim_fields := _entry_server_authority_claim_fields(entry)
 	return {
 		"index": index + 1,
 		"replay_id": str(entry.get("replay_id", "")),
@@ -152,6 +153,7 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"metadata_failures": metadata_failures,
 		"metadata_failure_count": metadata_failures.size(),
 		"server_authoritative": bool(entry.get("server_authoritative", false)),
+		"server_authority_claim_fields": server_claim_fields,
 		"can_play": not path.is_empty() and FileAccess.file_exists(path),
 		"can_favorite": not str(entry.get("replay_id", "")).is_empty(),
 		"can_remove": not str(entry.get("replay_id", "")).is_empty(),
@@ -186,3 +188,10 @@ func _entry_metadata_failures(entry: Dictionary, metadata_valid: bool) -> Array[
 			failures.append(String(failure))
 		return failures
 	return [_entry_metadata_status(entry, metadata_valid)]
+
+func _entry_server_authority_claim_fields(entry: Dictionary) -> Array[String]:
+	if replay_store != null and replay_store.has_method("server_authority_claim_fields_for_entry"):
+		return replay_store.server_authority_claim_fields_for_entry(entry)
+	if typeof(entry.get("server_authority_claim_fields", [])) == TYPE_ARRAY:
+		return (entry.get("server_authority_claim_fields", []) as Array).duplicate()
+	return []

@@ -12,6 +12,19 @@ const SPELLBOOK_PREVIEW_SAMPLE_WINDOW_END_TICK := 140
 const SPELLBOOK_PREVIEW_SAMPLE_WINDOW_STRIDE_TICKS := 28
 const SPELLBOOK_PREVIEW_EXPORT_PREFIX := "boss_spellbook_preview"
 const SPELLBOOK_PREVIEW_AUTHORITY_SCOPE := "local_practice_preview_only"
+const SPELLBOOK_PREVIEW_SERVER_AUTHORITY_FIELDS: Array[String] = [
+	"boss_current_hp",
+	"boss_hp_delta",
+	"boss_damage",
+	"damage_dealt",
+	"reward_grants",
+	"settlement_receipt",
+	"settlement_status",
+	"world_boss_defeated",
+	"instance_boss_clear",
+	"clear_stars",
+	"server_result_hash",
+]
 
 var last_error := ""
 
@@ -170,6 +183,9 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 				failures.append("preview_budget_status:%s" % replay_id)
 			if bool(entry.get("server_authoritative", false)):
 				failures.append("local_preview_marked_authoritative:%s" % replay_id)
+			var authority_claim_fields := _server_authority_claim_fields(entry)
+			if not authority_claim_fields.is_empty():
+				failures.append("local_preview_server_claim:%s:%s" % [replay_id, ",".join(authority_claim_fields)])
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,
@@ -240,6 +256,9 @@ func metadata_failures_for_entry(entry: Dictionary) -> Array[String]:
 	for failure in result.get("failures", []):
 		failures.append(String(failure))
 	return failures
+
+func server_authority_claim_fields_for_entry(entry: Dictionary) -> Array[String]:
+	return _server_authority_claim_fields(entry)
 
 func save_index(entries: Array[Dictionary]) -> bool:
 	if not _ensure_replay_dir():
@@ -332,6 +351,7 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 	var preview_bullet_cap_per_tick := int(metadata.get("preview_bullet_cap_per_tick", 0))
 	if preview_bullet_cap_per_tick <= 0 and preview_max_emit_per_tick >= 0:
 		preview_bullet_cap_per_tick = preview_max_emit_per_tick + int(metadata.get("preview_budget_headroom", 0))
+	var server_authority_claim_fields := _server_authority_claim_fields(metadata)
 	var entry := {
 		"replay_id": "%s_%s_%d" % [str(snapshot.get("ruleset_version", "local")), str(snapshot.get("match_seed", 0)), final_hash],
 		"path": path,
@@ -368,6 +388,7 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"metadata_valid": false,
 		"metadata_status": "unchecked",
 		"server_authoritative": bool(metadata.get("server_authoritative", false)),
+		"server_authority_claim_fields": server_authority_claim_fields,
 		"opponent": str(metadata.get("opponent", metadata.get("pattern_id", "local"))),
 		"mode": str(metadata.get("mode", "local_practice")),
 		"result": str(metadata.get("result", "practice")),
@@ -393,6 +414,8 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 	var signature_digest := _stable_signature_digest(str(fields.get("preview_signature", ""))) if not str(fields.get("preview_signature", "")).is_empty() else 0
 	if bool(fields.get("server_authoritative", false)):
 		return "local_preview_marked_authoritative"
+	if not _server_authority_claim_fields(fields).is_empty():
+		return "local_preview_server_claim"
 	if str(fields.get("spellbook_id", "")).is_empty() \
 			or str(fields.get("phase_id", "")).is_empty() \
 			or str(fields.get("preview_export_id", "")).is_empty() \
@@ -487,6 +510,18 @@ func _expected_preview_export_id(fields: Dictionary) -> String:
 
 func _preview_seed_from_fields(fields: Dictionary) -> int:
 	return int(fields.get("preview_seed", fields.get("seed", fields.get("match_seed", 0))))
+
+func _server_authority_claim_fields(fields: Dictionary) -> Array[String]:
+	var claims: Array[String] = []
+	if typeof(fields.get("server_authority_claim_fields", [])) == TYPE_ARRAY:
+		for field in fields.get("server_authority_claim_fields", []):
+			var field_name := String(field)
+			if not field_name.is_empty() and not claims.has(field_name):
+				claims.append(field_name)
+	for field_name in SPELLBOOK_PREVIEW_SERVER_AUTHORITY_FIELDS:
+		if fields.has(field_name) and not claims.has(field_name):
+			claims.append(field_name)
+	return claims
 
 func _normalized_int_array(value: Variant) -> Array[int]:
 	var result: Array[int] = []
