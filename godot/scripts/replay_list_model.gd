@@ -177,6 +177,7 @@ func selected_action_rows() -> Array[Dictionary]:
 	var has_replay := not replay_id.is_empty()
 	var source_index := _source_index_for_replay_id(replay_id)
 	var selected_row_model := _row_from_entry(entry, source_index) if has_replay and source_index >= 0 else {}
+	var action_context := _selected_action_context(selected_row_model)
 	return [
 		{
 			"id": "replay_action_load",
@@ -202,7 +203,7 @@ func selected_action_rows() -> Array[Dictionary]:
 			"ui_control": "replay",
 			"ui_action": "load_replay",
 			"enabled": has_replay and bool(selected_row_model.get("can_play", false)),
-		},
+		}.merged(action_context, true),
 		{
 			"id": "replay_action_favorite",
 			"label_key": "screen.replay.favorite",
@@ -220,7 +221,7 @@ func selected_action_rows() -> Array[Dictionary]:
 			"ui_control": "button",
 			"ui_action": "toggle_replay_favorite",
 			"enabled": has_replay,
-		},
+		}.merged(action_context, true),
 		{
 			"id": "replay_action_remove",
 			"label_key": "screen.replay.remove",
@@ -238,7 +239,7 @@ func selected_action_rows() -> Array[Dictionary]:
 			"ui_control": "button",
 			"ui_action": "remove_replay_from_index",
 			"enabled": has_replay,
-		},
+		}.merged(action_context, true),
 	]
 
 func set_verification_filter(filter_id: String) -> bool:
@@ -399,6 +400,30 @@ func _entry_metadata_valid(entry: Dictionary) -> bool:
 		var result: Dictionary = replay_store.validate_index_metadata(entries_to_validate)
 		return bool(result.get("ok", false))
 	return true
+
+func _selected_action_context(row: Dictionary) -> Dictionary:
+	if row.is_empty():
+		return {
+			"selected_verification_status": "none",
+			"selected_verification_summary": "",
+			"selected_filter_navigation_label": "0/0",
+			"selected_replay_authority_scope": "none",
+			"selected_server_audit_status": "not_required",
+			"selected_local_playback_authority": "none",
+			"selected_filtered_index": 0,
+			"selected_filtered_count": 0,
+		}
+	return {
+		"selected_verification_status": String(row.get("verification_status", "")),
+		"selected_verification_section": String(row.get("section", "")),
+		"selected_verification_summary": String(row.get("verification_summary", "")),
+		"selected_filter_navigation_label": String(row.get("filter_navigation_label", "")),
+		"selected_replay_authority_scope": String(row.get("replay_authority_scope", "")),
+		"selected_server_audit_status": String(row.get("server_audit_status", "")),
+		"selected_local_playback_authority": String(row.get("local_playback_authority", "")),
+		"selected_filtered_index": int(row.get("filtered_index", 0)),
+		"selected_filtered_count": int(row.get("filtered_count", 0)),
+	}
 
 func _entry_verification_status(entry: Dictionary, final_result_hash: int, metadata_valid: bool) -> String:
 	if not metadata_valid:

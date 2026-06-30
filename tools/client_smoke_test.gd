@@ -4424,6 +4424,17 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: server replay summary selected load policy invalid %s" % [server_replay_summary])
 		quit(1)
 		return true
+	var server_replay_action_rows: Array[Dictionary] = replay_list_model.selected_action_rows()
+	var server_replay_load_action: Dictionary = _find_row_by_id(server_replay_action_rows, "replay_action_load")
+	if String(server_replay_load_action.get("selected_verification_status", "")) != "server_record_pending_audit" \
+			or String(server_replay_load_action.get("selected_verification_section", "")) != "replay_server_pending" \
+			or String(server_replay_load_action.get("selected_server_audit_status", "")) != "pending" \
+			or String(server_replay_load_action.get("selected_replay_authority_scope", "")) != "server_authoritative_record" \
+			or bool(server_replay_load_action.get("can_play", true)) \
+			or bool(server_replay_load_action.get("enabled", true)):
+		push_error("Smoke test failed: server replay action context invalid %s" % [server_replay_load_action])
+		quit(1)
+		return true
 	if main_node.call("_load_selected_replay_snapshot") or String(main_node.get("replay_file_status")) != "load_failed" or String(main_node.get("replay_index_action_status")) != "server_record_pending_audit":
 		push_error("Smoke test failed: server replay local load was not blocked status=%s action=%s" % [main_node.get("replay_file_status"), main_node.get("replay_index_action_status")])
 		quit(1)
@@ -4474,6 +4485,16 @@ func _process(_delta: float) -> bool:
 		return true
 	if String(load_action_row.get("local_load_policy", "")) != "loadable_local_practice" or not bool(load_action_row.get("can_play", false)) or bool(load_action_row.get("requires_server_audit", true)) or String(load_action_row.get("local_hash_authority", "")) != "local_practice_verification_only":
 		push_error("Smoke test failed: replay load action policy invalid %s" % [load_action_row])
+		quit(1)
+		return true
+	if String(load_action_row.get("selected_verification_status", "")) != "local_final_hash_ready" \
+			or not String(load_action_row.get("selected_verification_summary", "")).contains("local practice final hash ready") \
+			or String(load_action_row.get("selected_replay_authority_scope", "")) != "local_practice_record" \
+			or String(load_action_row.get("selected_local_playback_authority", "")) != "local_practice_hash" \
+			or int(load_action_row.get("selected_filtered_index", 0)) <= 0 \
+			or int(load_action_row.get("selected_filtered_count", 0)) <= 0 \
+			or not String(load_action_row.get("selected_filter_navigation_label", "")).contains("/"):
+		push_error("Smoke test failed: replay load action verification context invalid %s" % [load_action_row])
 		quit(1)
 		return true
 	main_node.call("_ui_set_cursor", _row_index_by_id(ui_replay_rows, "replay_action_load"))
