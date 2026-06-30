@@ -3419,6 +3419,7 @@ func _player_settings_snapshot_summary() -> String:
 func _page_experience_summary(rows: Array[Dictionary], selected: Dictionary, page_layout: Dictionary) -> Dictionary:
 	var screen_id := String(page_layout.get("screen", ui_screen_model.current_screen if ui_screen_model != null else ""))
 	var task_groups := _ui_string_array(page_layout.get("player_task_groups", []))
+	var authority_summary := _page_authority_summary(screen_id, rows, selected)
 	return {
 		"screen": screen_id,
 		"title": _screen_title(screen_id),
@@ -3432,6 +3433,10 @@ func _page_experience_summary(rows: Array[Dictionary], selected: Dictionary, pag
 		"selected_section": _row_section_text(selected),
 		"selected_control": _row_control_text(selected),
 		"snapshot": _page_context_snapshot(screen_id),
+		"authority_text": String(authority_summary.get("text", "")),
+		"authority_scope": String(authority_summary.get("scope", "")),
+		"authority_requires_server": bool(authority_summary.get("requires_server", false)),
+		"authority_client_result_authoritative": bool(authority_summary.get("client_result_authoritative", false)),
 		"visual_asset": String(page_layout.get("visual_asset", "")),
 		"visual_treatment": String(page_layout.get("visual_treatment", "")),
 		"state_regions": _ui_string_array(page_layout.get("state_regions", [])),
@@ -3450,7 +3455,62 @@ func _page_experience_text(summary: Dictionary) -> String:
 	var primary_text := String(summary.get("primary_text", ""))
 	if not primary_text.is_empty():
 		parts.append(_trim_ui_card_text(primary_text, 72))
+	var authority_text := String(summary.get("authority_text", ""))
+	if not authority_text.is_empty():
+		parts.append(_trim_ui_card_text(authority_text, 72))
 	return " | ".join(parts)
+
+func _page_authority_summary(screen_id: String, rows: Array[Dictionary], selected: Dictionary) -> Dictionary:
+	if ["play", "match", "modes"].has(screen_id):
+		var boss_row := _first_boss_authority_row(rows)
+		if not boss_row.is_empty():
+			return {
+				"text": "Boss display local; damage rewards settlement server",
+				"scope": "boss_server_settlement",
+				"requires_server": bool(boss_row.get("requires_server_confirmation", true)),
+				"client_result_authoritative": false,
+				"row_id": String(boss_row.get("id", "")),
+			}
+	if screen_id == "replay":
+		var replay_row := selected if not selected.is_empty() else _ui_find_row_by_id(rows, "replay_verification_summary")
+		if replay_row.is_empty():
+			replay_row = _first_replay_authority_row(rows)
+		return {
+			"text": "Replay hash local practice only; settlement rewards server",
+			"scope": String(replay_row.get("local_hash_authority", "local_practice_verification_only")),
+			"requires_server": bool(replay_row.get("requires_server_audit", false)),
+			"client_result_authoritative": false,
+			"row_id": String(replay_row.get("id", "")),
+		}
+	if String(selected.get("settlement_authority", "")) == "server" or String(selected.get("reward_authority", "")) == "server":
+		return {
+			"text": "Online outcome server authoritative",
+			"scope": "server_settlement",
+			"requires_server": bool(selected.get("requires_server_confirmation", false)),
+			"client_result_authoritative": false,
+			"row_id": String(selected.get("id", "")),
+		}
+	return {
+		"text": "",
+		"scope": "",
+		"requires_server": false,
+		"client_result_authoritative": false,
+		"row_id": "",
+	}
+
+func _first_boss_authority_row(rows: Array[Dictionary]) -> Dictionary:
+	for row in rows:
+		if String(row.get("mode_category", "")) != "boss":
+			continue
+		if String(row.get("settlement_authority", "")) == "server" or bool(row.get("requires_server_confirmation", false)):
+			return row
+	return {}
+
+func _first_replay_authority_row(rows: Array[Dictionary]) -> Dictionary:
+	for row in rows:
+		if not String(row.get("replay_id", "")).is_empty():
+			return row
+	return {}
 
 func _page_task_text(task_groups: Array[String]) -> String:
 	var labels: Array[String] = []

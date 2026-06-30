@@ -1048,12 +1048,20 @@ def check_ui_page_contracts() -> list[str]:
         "func _ui_visible_label_text_fit_check()",
         "func _ui_focus_section_runtime_check(page_layout: Dictionary)",
         "func _ui_selected_row_window_check()",
+        "func _page_authority_summary(screen_id: String, rows: Array[Dictionary], selected: Dictionary)",
+        "func _first_boss_authority_row(rows: Array[Dictionary])",
+        "func _first_replay_authority_row(rows: Array[Dictionary])",
         '"page_focus_sections_missing_visible"',
         '"selected_row_visible"',
         '"visible_row_window_ids"',
         '"visible_mouse_blocked_count"',
         '"visible_label_unwrapped_count"',
         '"visible_label_out_of_panel_count"',
+        '"authority_text"',
+        '"authority_scope"',
+        '"authority_client_result_authoritative"',
+        '"boss_server_settlement"',
+        '"local_practice_verification_only"',
     ]:
         if token not in main_text:
             errors.append(f"godot/scripts/main.gd: missing UI runtime interaction health token {token}")
@@ -1063,8 +1071,12 @@ def check_ui_page_contracts() -> list[str]:
         '"page_focus_section_missing_visible_count"',
         '"selected_row_visible"',
         "func _assert_deep_row_visible(screen_id: String, row_id: String)",
+        "func _assert_page_authority_contract(snapshot: Dictionary, label: String, expected_scope: String, expected_text: String)",
         '"visible_label_unwrapped_count"',
         '"visible_label_out_of_panel_count"',
+        '"boss_server_settlement"',
+        '"local_practice_verification_only"',
+        '"authority_client_result_authoritative"',
     ]:
         if token not in ui_smoke_text:
             errors.append(f"tools/client_ui_smoke_test.gd: missing UI interaction smoke token {token}")
