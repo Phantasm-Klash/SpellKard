@@ -6502,6 +6502,7 @@ func _boss_playfield_draw_snapshot() -> Dictionary:
 			"client_result_authoritative": false,
 		}
 	var projection: Dictionary = game_mode_model.boss_playfield_projection(mode_id, PLAYFIELD)
+	var hud_projection: Dictionary = game_mode_model.boss_hud_projection(mode_id, PLAYFIELD) if game_mode_model.has_method("boss_hud_projection") else {}
 	var slots: Array = projection.get("display_slots", [])
 	return {
 		"enabled": bool(projection.get("ok", false)) and slots.size() > 0,
@@ -6511,10 +6512,12 @@ func _boss_playfield_draw_snapshot() -> Dictionary:
 		"hp_ratio": float(projection.get("hp_ratio", 0.0)),
 		"projection_scope": String(projection.get("projection_scope", "")),
 		"damage_authority": String(projection.get("damage_authority", "")),
+		"reward_authority": String(hud_projection.get("reward_authority", "server")),
 		"settlement_authority": String(projection.get("settlement_authority", "")),
 		"friendly_fire_warning": String(projection.get("friendly_fire_warning", "none")),
 		"gameplay_visible": _should_draw_gameplay_scene(),
 		"projection": projection,
+		"hud_projection": hud_projection,
 		"server_authoritative": bool(projection.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 	}

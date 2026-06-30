@@ -4820,11 +4820,13 @@ func _validate_boss_draw_snapshot(snapshot: Dictionary, mode_id: String, expecte
 	if String(snapshot.get("mode_id", "")) != mode_id or int(snapshot.get("slot_count", 0)) != expected_count:
 		push_error("Smoke test failed: boss draw snapshot identity invalid %s" % [snapshot])
 		return false
-	if String(snapshot.get("projection_scope", "")) != "local_display_only" or String(snapshot.get("damage_authority", "")) != "server" or String(snapshot.get("settlement_authority", "")) != "server" or bool(snapshot.get("client_result_authoritative", true)):
+	if String(snapshot.get("projection_scope", "")) != "local_display_only" or String(snapshot.get("damage_authority", "")) != "server" or String(snapshot.get("reward_authority", "")) != "server" or String(snapshot.get("settlement_authority", "")) != "server" or bool(snapshot.get("client_result_authoritative", true)):
 		push_error("Smoke test failed: boss draw snapshot authority invalid %s" % [snapshot])
 		return false
 	if absf(float(snapshot.get("hp_ratio", -1.0)) - expected_hp_ratio) > 0.001:
 		push_error("Smoke test failed: boss draw snapshot hp invalid %s" % [snapshot])
+		return false
+	if not _validate_boss_hud_projection({"hud_projection": snapshot.get("hud_projection", {})}, mode_id, expected_count, expected_hp_ratio):
 		return false
 	return _validate_boss_playfield_projection({"playfield_projection": snapshot.get("projection", {})}, mode_id, expected_count, expected_hp_ratio)
 
