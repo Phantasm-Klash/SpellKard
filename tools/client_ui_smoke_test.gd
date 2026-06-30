@@ -303,6 +303,13 @@ func _validate_gameplay_view_unobstructed() -> bool:
 		return _fail("practice should disable secondary shell %s" % [snapshot])
 	if not _assert_page_authority_contract(snapshot, "practice", "local_practice_verification_only", "Practice hash local practice only"):
 		return false
+	var practice_authority: Dictionary = snapshot.get("page_experience", {})
+	if String(practice_authority.get("authority_row_id", "")) != "practice_validation_status" \
+			or String(practice_authority.get("authority_verification_status", "")) != "practice_recording" \
+			or String(practice_authority.get("authority_local_playback_authority", "")) != "local_practice_hash" \
+			or String(practice_authority.get("authority_settlement_authority", "")) != "server" \
+			or String(practice_authority.get("authority_reward_authority", "")) != "server":
+		return _fail("practice page authority structured fields invalid %s" % [practice_authority])
 	if int(snapshot.get("nav_buttons", 0)) != 0 or int(snapshot.get("row_buttons", 0)) != 0 or int(snapshot.get("quick_buttons", 0)) != 0:
 		return _fail("practice should not expose menu controls %s" % [snapshot])
 	var nav_result: Dictionary = main_node.call("_ui_press_visible_nav", 0)

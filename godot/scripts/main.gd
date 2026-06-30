@@ -3532,6 +3532,11 @@ func _page_experience_summary(rows: Array[Dictionary], selected: Dictionary, pag
 		"authority_scope": String(authority_summary.get("scope", "")),
 		"authority_requires_server": bool(authority_summary.get("requires_server", false)),
 		"authority_client_result_authoritative": bool(authority_summary.get("client_result_authoritative", false)),
+		"authority_row_id": String(authority_summary.get("row_id", "")),
+		"authority_verification_status": String(authority_summary.get("verification_status", "")),
+		"authority_local_playback_authority": String(authority_summary.get("local_playback_authority", "")),
+		"authority_settlement_authority": String(authority_summary.get("settlement_authority", "")),
+		"authority_reward_authority": String(authority_summary.get("reward_authority", "")),
 		"visual_asset": String(page_layout.get("visual_asset", "")),
 		"visual_treatment": String(page_layout.get("visual_treatment", "")),
 		"state_regions": _ui_string_array(page_layout.get("state_regions", [])),
@@ -3567,16 +3572,23 @@ func _page_authority_summary(screen_id: String, rows: Array[Dictionary], selecte
 				"row_id": String(boss_row.get("id", "")),
 			}
 	if screen_id == "practice":
-		var practice_row := _ui_find_row_by_id(rows, "practice_validation_status")
+		var practice_row := _ui_full_row_by_id(rows, "practice_validation_status")
+		if practice_row.is_empty():
+			practice_row = _practice_verification_contract()
+			practice_row["id"] = "practice_validation_status"
 		return {
 			"text": "Practice hash local practice only; online damage rewards settlement server",
 			"scope": String(practice_row.get("local_hash_authority", "local_practice_verification_only")),
 			"requires_server": bool(practice_row.get("requires_server_confirmation", false)),
 			"client_result_authoritative": false,
 			"row_id": String(practice_row.get("id", "practice_validation_status")),
+			"verification_status": String(practice_row.get("verification_status", "")),
+			"local_playback_authority": String(practice_row.get("local_playback_authority", "")),
+			"settlement_authority": String(practice_row.get("settlement_authority", "")),
+			"reward_authority": String(practice_row.get("reward_authority", "")),
 		}
 	if screen_id == "replay":
-		var replay_row := selected if not selected.is_empty() else _ui_find_row_by_id(rows, "replay_verification_summary")
+		var replay_row := selected if not selected.is_empty() else _ui_full_row_by_id(rows, "replay_verification_summary")
 		if replay_row.is_empty():
 			replay_row = _first_replay_authority_row(rows)
 		return {
@@ -3585,6 +3597,10 @@ func _page_authority_summary(screen_id: String, rows: Array[Dictionary], selecte
 			"requires_server": bool(replay_row.get("requires_server_audit", false)),
 			"client_result_authoritative": false,
 			"row_id": String(replay_row.get("id", "")),
+			"verification_status": String(replay_row.get("verification_status", replay_row.get("selected_verification_status", ""))),
+			"local_playback_authority": String(replay_row.get("local_playback_authority", replay_row.get("selected_local_playback_authority", ""))),
+			"settlement_authority": String(replay_row.get("settlement_authority", "")),
+			"reward_authority": String(replay_row.get("reward_authority", "")),
 		}
 	if String(selected.get("settlement_authority", "")) == "server" or String(selected.get("reward_authority", "")) == "server":
 		return {
@@ -3593,6 +3609,8 @@ func _page_authority_summary(screen_id: String, rows: Array[Dictionary], selecte
 			"requires_server": bool(selected.get("requires_server_confirmation", false)),
 			"client_result_authoritative": false,
 			"row_id": String(selected.get("id", "")),
+			"settlement_authority": String(selected.get("settlement_authority", "")),
+			"reward_authority": String(selected.get("reward_authority", "")),
 		}
 	return {
 		"text": "",
@@ -3601,6 +3619,14 @@ func _page_authority_summary(screen_id: String, rows: Array[Dictionary], selecte
 		"client_result_authoritative": false,
 		"row_id": "",
 	}
+
+func _ui_full_row_by_id(rows: Array[Dictionary], row_id: String) -> Dictionary:
+	if row_id.is_empty():
+		return {}
+	for row in rows:
+		if String(row.get("id", "")) == row_id:
+			return (row as Dictionary).duplicate(true)
+	return {}
 
 func _first_boss_authority_row(rows: Array[Dictionary]) -> Dictionary:
 	for row in rows:
