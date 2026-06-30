@@ -159,6 +159,7 @@ func _process(_delta: float) -> bool:
 		return true
 	var play_page_spec: Dictionary = client_menu_page_model.page_spec("play")
 	var modes_page_spec: Dictionary = client_menu_page_model.page_spec("modes")
+	var replay_page_spec: Dictionary = client_menu_page_model.page_spec("replay")
 	var settings_page_spec: Dictionary = client_menu_page_model.page_spec("player_settings")
 	if String(play_page_spec.get("kind", "")) != "hub" or not (play_page_spec.get("mode_groups", []) as Array).has("pvp") or not (play_page_spec.get("mode_groups", []) as Array).has("boss"):
 		push_error("Smoke test failed: play page spec invalid %s" % [play_page_spec])
@@ -166,6 +167,18 @@ func _process(_delta: float) -> bool:
 		return true
 	if String(modes_page_spec.get("kind", "")) != "mode_select" or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_rules") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_authority") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_entry") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_formation") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_display") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_playfield") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_hud") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_practice_preview") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_result") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_rules") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_authority") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_entry") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_formation") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_display") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_playfield") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_hud") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_practice_preview") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_result"):
 		push_error("Smoke test failed: modes page spec Boss rules/result rows invalid %s" % [modes_page_spec])
+		quit(1)
+		return true
+	if String(replay_page_spec.get("kind", "")) != "collection" \
+			or not (replay_page_spec.get("state_regions", []) as Array).has("authority_summary") \
+			or not (replay_page_spec.get("state_regions", []) as Array).has("playability_summary") \
+			or not (replay_page_spec.get("primary_row_ids", []) as Array).has("replay_authority_summary") \
+			or not (replay_page_spec.get("primary_row_ids", []) as Array).has("replay_playability_summary") \
+			or not (replay_page_spec.get("secondary_row_ids", []) as Array).has("replay_boss_practice_verification") \
+			or not (replay_page_spec.get("focus_action_ids", []) as Array).has("replay_authority_summary") \
+			or not (replay_page_spec.get("focus_action_ids", []) as Array).has("replay_playability_summary") \
+			or not (replay_page_spec.get("focus_action_ids", []) as Array).has("replay_boss_practice_verification"):
+		push_error("Smoke test failed: replay page spec authority rows invalid %s" % [replay_page_spec])
 		quit(1)
 		return true
 	if String(settings_page_spec.get("kind", "")) != "settings" or not (settings_page_spec.get("setting_groups", []) as Array).has("gamepad") or not (settings_page_spec.get("setting_groups", []) as Array).has("resolution"):

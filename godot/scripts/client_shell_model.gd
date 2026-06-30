@@ -325,8 +325,8 @@ func page_focus(screen_id: String) -> Dictionary:
 			return _focus_payload(
 				"focus_replay",
 				"Replay",
-				"local replay filters and playback verification",
-				["replay_filter_replay_local_ready", "replay_action_load", "replay_action_favorite", "replay_action_remove"],
+				"local replay filters, playback guard, and server audit boundary",
+				["replay_filter_replay_local_ready", "replay_authority_summary", "replay_playability_summary", "replay_action_load"],
 				"Verified Replays"
 			)
 		"settings":
