@@ -159,6 +159,7 @@ func _process(_delta: float) -> bool:
 		return true
 	var play_page_spec: Dictionary = client_menu_page_model.page_spec("play")
 	var modes_page_spec: Dictionary = client_menu_page_model.page_spec("modes")
+	var replay_page_spec: Dictionary = client_menu_page_model.page_spec("replay")
 	var settings_page_spec: Dictionary = client_menu_page_model.page_spec("player_settings")
 	if String(play_page_spec.get("kind", "")) != "hub" or not (play_page_spec.get("mode_groups", []) as Array).has("pvp") or not (play_page_spec.get("mode_groups", []) as Array).has("boss"):
 		push_error("Smoke test failed: play page spec invalid %s" % [play_page_spec])
@@ -166,6 +167,18 @@ func _process(_delta: float) -> bool:
 		return true
 	if String(modes_page_spec.get("kind", "")) != "mode_select" or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_rules") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_authority") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_entry") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_formation") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_display") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_playfield") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_hud") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_practice_preview") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_result") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_rules") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_authority") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_entry") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_formation") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_display") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_playfield") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_hud") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_practice_preview") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_result"):
 		push_error("Smoke test failed: modes page spec Boss rules/result rows invalid %s" % [modes_page_spec])
+		quit(1)
+		return true
+	if String(replay_page_spec.get("kind", "")) != "collection" \
+			or not (replay_page_spec.get("state_regions", []) as Array).has("authority_summary") \
+			or not (replay_page_spec.get("state_regions", []) as Array).has("playability_summary") \
+			or not (replay_page_spec.get("primary_row_ids", []) as Array).has("replay_authority_summary") \
+			or not (replay_page_spec.get("primary_row_ids", []) as Array).has("replay_playability_summary") \
+			or not (replay_page_spec.get("secondary_row_ids", []) as Array).has("replay_boss_practice_verification") \
+			or not (replay_page_spec.get("focus_action_ids", []) as Array).has("replay_authority_summary") \
+			or not (replay_page_spec.get("focus_action_ids", []) as Array).has("replay_playability_summary") \
+			or not (replay_page_spec.get("focus_action_ids", []) as Array).has("replay_boss_practice_verification"):
+		push_error("Smoke test failed: replay page spec authority rows invalid %s" % [replay_page_spec])
 		quit(1)
 		return true
 	if String(settings_page_spec.get("kind", "")) != "settings" or not (settings_page_spec.get("setting_groups", []) as Array).has("gamepad") or not (settings_page_spec.get("setting_groups", []) as Array).has("resolution"):
@@ -5978,11 +5991,55 @@ func _validate_boss_action_availability(projection: Dictionary, mode_id: String,
 	if not bool(projection.get("can_request_transfer", false)):
 		push_error("Smoke test failed: boss action availability should allow transfer intent for valid party %s" % [projection])
 		return false
+	if not _validate_boss_ui_action_cards(projection.get("ui_action_cards", []), mode_id, expected_entry_ok, true, expected_reason):
+		return false
 	if not _validate_boss_entry_preview(projection.get("entry_preflight", {}), mode_id, expected_entry_ok, expected_reason):
 		return false
 	if not _validate_boss_playfield_projection({"playfield_projection": projection.get("playfield_projection", {})}, mode_id, expected_count, 1.0):
 		return false
 	return _validate_boss_hud_projection({"hud_projection": projection.get("hud_projection", {})}, mode_id, expected_count, 1.0)
+
+func _validate_boss_ui_action_cards(cards: Array, mode_id: String, expected_entry_enabled: bool, expected_transfer_enabled: bool, expected_entry_reason: String) -> bool:
+	if cards.size() != 2:
+		push_error("Smoke test failed: boss action cards count invalid %s" % [cards])
+		return false
+	var expected_kinds := ["boss_entry_intent", "boss_card_transfer_intent"]
+	var expected_actions := ["request_boss_entry", "request_boss_transfer"]
+	var expected_enabled := [expected_entry_enabled, expected_transfer_enabled]
+	for i in range(cards.size()):
+		if typeof(cards[i]) != TYPE_DICTIONARY:
+			push_error("Smoke test failed: boss action card not dictionary %s" % [cards])
+			return false
+		var card: Dictionary = cards[i]
+		if String(card.get("mode_id", "")) != mode_id or String(card.get("mode_category", "")) != "boss":
+			push_error("Smoke test failed: boss action card identity invalid %s" % [card])
+			return false
+		if String(card.get("action_card_kind", "")) != expected_kinds[i] or String(card.get("ui_action", "")) != expected_actions[i]:
+			push_error("Smoke test failed: boss action card action invalid %s" % [card])
+			return false
+		if String(card.get("ui_control", "")) != "card" or bool(card.get("enabled", false)) != bool(expected_enabled[i]):
+			push_error("Smoke test failed: boss action card UI state invalid %s" % [card])
+			return false
+		if String(card.get("request_scope", "")) != "intent_only" or not bool(card.get("requires_server_confirmation", false)):
+			push_error("Smoke test failed: boss action card request scope invalid %s" % [card])
+			return false
+		if String(card.get("damage_authority", "")) != "server" or String(card.get("reward_authority", "")) != "server" or String(card.get("settlement_authority", "")) != "server" or bool(card.get("client_result_authoritative", true)):
+			push_error("Smoke test failed: boss action card authority invalid %s" % [card])
+			return false
+		if i == 0:
+			var expected_status := "ready_for_server_confirmation" if expected_entry_enabled else "blocked_local"
+			var expected_confirmation := "required" if expected_entry_enabled else "blocked_local"
+			if String(card.get("action_status", "")) != expected_status or String(card.get("server_confirmation_status", "")) != expected_confirmation:
+				push_error("Smoke test failed: boss entry action card status invalid %s" % [card])
+				return false
+			if not expected_entry_enabled and String(card.get("blocked_reason", "")) != expected_entry_reason:
+				push_error("Smoke test failed: boss entry action card blocker invalid %s expected=%s" % [card, expected_entry_reason])
+				return false
+		else:
+			if String(card.get("action_status", "")) != "ready_for_server_confirmation" or String(card.get("server_confirmation_status", "")) != "required":
+				push_error("Smoke test failed: boss transfer action card status invalid %s" % [card])
+				return false
+	return true
 
 func _validate_boss_transfer_preview(preview: Dictionary, mode_id: String, expected_ok: bool, expected_reason: String) -> bool:
 	if preview.is_empty():
