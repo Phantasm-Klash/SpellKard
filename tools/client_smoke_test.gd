@@ -2025,6 +2025,10 @@ func _process(_delta: float) -> bool:
 	if not _validate_boss_entry_preview(world_entry_preview, "world_boss", true, "none"):
 		quit(1)
 		return true
+	var world_action_availability: Dictionary = game_mode_model.boss_action_availability_projection("world_boss")
+	if not _validate_boss_action_availability(world_action_availability, "world_boss", true, "none", 4):
+		quit(1)
+		return true
 	var transfer_preview: Dictionary = game_mode_model.boss_transfer_preview("world_boss", "p1", "p2", "focus_lens")
 	if not _validate_boss_transfer_preview(transfer_preview, "world_boss", true, "none"):
 		quit(1)
@@ -2262,6 +2266,10 @@ func _process(_delta: float) -> bool:
 	if not _validate_boss_entry_preview(locked_entry_preview, "instance_boss", false, "entry_locked"):
 		quit(1)
 		return true
+	var locked_action_availability: Dictionary = game_mode_model.boss_action_availability_projection("instance_boss")
+	if not _validate_boss_action_availability(locked_action_availability, "instance_boss", false, "entry_locked", 8):
+		quit(1)
+		return true
 	var locked_entry_request: Dictionary = main_node.call("_request_boss_entry", "instance_boss")
 	if bool(locked_entry_request.get("ok", true)) or String(locked_entry_request.get("last_error_code", "")) != "entry_locked":
 		push_error("Smoke test failed: locked instance entry request invalid %s" % [locked_entry_request])
@@ -2296,6 +2304,9 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	if not _validate_boss_entry_preview(instance_entry_row.get("entry_preflight", {}), "instance_boss", true, "none"):
+		quit(1)
+		return true
+	if not _validate_boss_action_availability(instance_entry_row.get("action_availability", {}), "instance_boss", true, "none", 8):
 		quit(1)
 		return true
 	var instance_rules_row_after_access: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_rules")
@@ -5310,6 +5321,52 @@ func _validate_boss_entry_preview(preview: Dictionary, mode_id: String, expected
 		push_error("Smoke test failed: boss entry preview confirmation status invalid %s expected=%s" % [preview, expected_confirmation])
 		return false
 	return true
+
+func _validate_boss_action_availability(projection: Dictionary, mode_id: String, expected_entry_ok: bool, expected_reason: String, expected_count: int) -> bool:
+	if projection.is_empty():
+		push_error("Smoke test failed: boss action availability missing for %s" % mode_id)
+		return false
+	if String(projection.get("mode_id", "")) != mode_id or String(projection.get("mode_category", "")) != "boss":
+		push_error("Smoke test failed: boss action availability identity invalid %s" % [projection])
+		return false
+	if String(projection.get("projection_scope", "")) != "local_display_only" or String(projection.get("intent_authority", "")) != "client_request_only":
+		push_error("Smoke test failed: boss action availability scope invalid %s" % [projection])
+		return false
+	if String(projection.get("damage_authority", "")) != "server" or String(projection.get("reward_authority", "")) != "server" or String(projection.get("settlement_authority", "")) != "server":
+		push_error("Smoke test failed: boss action availability authority labels invalid %s" % [projection])
+		return false
+	if bool(projection.get("client_result_authoritative", true)) or not bool(projection.get("requires_server_confirmation", false)):
+		push_error("Smoke test failed: boss action availability authority flags invalid %s" % [projection])
+		return false
+	if bool(projection.get("entry_valid", false)) != expected_entry_ok or bool(projection.get("can_request_entry", false)) != expected_entry_ok:
+		push_error("Smoke test failed: boss action availability entry state invalid %s expected=%s" % [projection, expected_entry_ok])
+		return false
+	if String(projection.get("reason", "")) != expected_reason:
+		push_error("Smoke test failed: boss action availability reason invalid %s expected=%s" % [projection, expected_reason])
+		return false
+	var blockers: Array = projection.get("local_blockers", [])
+	if expected_entry_ok:
+		if not blockers.is_empty() or String(projection.get("action_status", "")) != "ready_for_server_entry" or String(projection.get("server_confirmation_status", "")) != "required":
+			push_error("Smoke test failed: boss action availability ready state invalid %s" % [projection])
+			return false
+	else:
+		if not blockers.has(expected_reason) or String(projection.get("action_status", "")) != "blocked_local" or String(projection.get("server_confirmation_status", "")) != "blocked_local":
+			push_error("Smoke test failed: boss action availability blocked state invalid %s" % [projection])
+			return false
+	if not bool(projection.get("display_ready", false)) or not bool(projection.get("can_display_playfield", false)):
+		push_error("Smoke test failed: boss action availability display should stay ready with valid formation %s" % [projection])
+		return false
+	if int(projection.get("player_count", 0)) != expected_count or String(projection.get("slot_layout_policy", "")).is_empty() or (projection.get("slot_labels", []) as Array).size() != expected_count:
+		push_error("Smoke test failed: boss action availability formation summary invalid %s" % [projection])
+		return false
+	if not bool(projection.get("can_request_transfer", false)):
+		push_error("Smoke test failed: boss action availability should allow transfer intent for valid party %s" % [projection])
+		return false
+	if not _validate_boss_entry_preview(projection.get("entry_preflight", {}), mode_id, expected_entry_ok, expected_reason):
+		return false
+	if not _validate_boss_playfield_projection({"playfield_projection": projection.get("playfield_projection", {})}, mode_id, expected_count, 1.0):
+		return false
+	return _validate_boss_hud_projection({"hud_projection": projection.get("hud_projection", {})}, mode_id, expected_count, 1.0)
 
 func _validate_boss_transfer_preview(preview: Dictionary, mode_id: String, expected_ok: bool, expected_reason: String) -> bool:
 	if preview.is_empty():

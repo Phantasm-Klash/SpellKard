@@ -319,6 +319,96 @@ func boss_entry_preview(mode_id: String) -> Dictionary:
 		"client_result_authoritative": false,
 	}
 
+func boss_action_availability_projection(mode_id: String) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"action_status": "blocked_local",
+			"local_blockers": ["boss_mode_invalid"],
+			"display_ready": false,
+			"entry_valid": false,
+			"can_request_entry": false,
+			"can_request_transfer": false,
+			"server_confirmation_status": "blocked_local",
+			"projection_scope": "local_display_only",
+			"intent_authority": "client_request_only",
+			"damage_authority": "server",
+			"reward_authority": "server",
+			"settlement_authority": "server",
+			"requires_server_confirmation": true,
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var state := _state_for_mode(mode_id)
+	var entry := boss_entry_preview(mode_id)
+	var formation := validate_boss_formation(mode_id)
+	var playfield := boss_playfield_projection(mode_id)
+	var hud := boss_hud_projection(mode_id)
+	var entry_failures := _string_array(entry.get("failures", []))
+	var formation_failures := _string_array(formation.get("failures", []))
+	var display_blockers: Array[String] = []
+	if not bool(playfield.get("ok", false)):
+		display_blockers.append(String(playfield.get("reason", "playfield_projection_failed")))
+	if not bool(hud.get("ok", false)):
+		display_blockers.append(String(hud.get("reason", "hud_projection_failed")))
+	for failure in formation_failures:
+		if not display_blockers.has(failure):
+			display_blockers.append(failure)
+	var display_ready := display_blockers.is_empty() and bool(playfield.get("formation_valid", false))
+	var local_blockers: Array[String] = []
+	for failure in entry_failures:
+		if not local_blockers.has(failure):
+			local_blockers.append(failure)
+	for failure in display_blockers:
+		if not local_blockers.has(failure):
+			local_blockers.append(failure)
+	var party_ids := _string_array(state.get("party_ids", []))
+	var can_request_entry := bool(entry.get("ok", false))
+	var can_request_transfer := bool(formation.get("ok", false)) and party_ids.size() >= 2
+	var action_status := "ready_for_server_entry" if can_request_entry else "blocked_local"
+	if can_request_entry and not display_ready:
+		action_status = "entry_ready_display_blocked"
+	return {
+		"ok": can_request_entry and display_ready,
+		"reason": "none" if local_blockers.is_empty() else local_blockers[0],
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"action_status": action_status,
+		"local_blockers": local_blockers,
+		"display_blockers": display_blockers,
+		"entry_failures": entry_failures,
+		"formation_failures": formation_failures,
+		"display_ready": display_ready,
+		"entry_valid": can_request_entry,
+		"formation_valid": bool(formation.get("ok", false)),
+		"can_request_entry": can_request_entry,
+		"can_request_transfer": can_request_transfer,
+		"can_display_playfield": display_ready,
+		"player_count": int(formation.get("player_count", 0)),
+		"slot_layout_policy": String(formation.get("slot_layout_policy", "")),
+		"slot_labels": formation.get("slot_labels", []),
+		"attempts_left": int(entry.get("attempts_left", 0)),
+		"required_rating": String(entry.get("required_rating", "")),
+		"player_rating": String(entry.get("player_rating", "")),
+		"required_key_id": String(entry.get("required_key_id", "")),
+		"owned_key_count": int(entry.get("owned_key_count", 0)),
+		"entry_preflight": entry,
+		"playfield_projection": playfield,
+		"hud_projection": hud,
+		"server_confirmation_status": String(entry.get("server_confirmation_status", "required" if can_request_entry else "blocked_local")),
+		"projection_scope": "local_display_only",
+		"intent_authority": "client_request_only",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"requires_server_confirmation": true,
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
 func request_boss_entry(mode_id: String) -> Dictionary:
 	var entry := boss_entry_preview(mode_id)
 	if not bool(entry.get("ok", false)):
@@ -725,6 +815,7 @@ func boss_display_contract_row(row_id: String, mode_id: String) -> Dictionary:
 	var playfield_projection := boss_playfield_projection(mode_id)
 	var hud_projection := boss_hud_projection(mode_id)
 	var entry_preview := boss_entry_preview(mode_id)
+	var action_projection := boss_action_availability_projection(mode_id)
 	var formation_failures := _string_array(playfield_projection.get("formation_failures", []))
 	var entry_failures := _string_array(entry_preview.get("failures", []))
 	var display_blockers: Array[String] = []
@@ -760,6 +851,12 @@ func boss_display_contract_row(row_id: String, mode_id: String) -> Dictionary:
 		"hud_projection": hud_projection,
 		"display_slots": playfield_projection.get("display_slots", []),
 		"formation_contract": playfield_projection.get("formation_contract", {}),
+		"action_availability": action_projection,
+		"action_status": String(action_projection.get("action_status", "")),
+		"local_blockers": action_projection.get("local_blockers", []),
+		"can_request_entry": bool(action_projection.get("can_request_entry", false)),
+		"can_request_transfer": bool(action_projection.get("can_request_transfer", false)),
+		"can_display_playfield": bool(action_projection.get("can_display_playfield", false)),
 		"formation_valid": bool(playfield_projection.get("formation_valid", false)),
 		"formation_failures": formation_failures,
 		"entry_valid": bool(entry_preview.get("ok", false)),
@@ -1257,6 +1354,7 @@ func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 
 func _boss_entry_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
 	var validation := boss_entry_preview(mode_id)
+	var action_projection := boss_action_availability_projection(mode_id)
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.boss.entry",
@@ -1276,6 +1374,12 @@ func _boss_entry_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 		"required_key_id": String(validation.get("required_key_id", "")),
 		"owned_key_count": int(validation.get("owned_key_count", 0)),
 		"entry_preflight": validation,
+		"action_availability": action_projection,
+		"action_status": String(action_projection.get("action_status", "")),
+		"local_blockers": action_projection.get("local_blockers", []),
+		"can_request_entry": bool(action_projection.get("can_request_entry", false)),
+		"can_request_transfer": bool(action_projection.get("can_request_transfer", false)),
+		"can_display_playfield": bool(action_projection.get("can_display_playfield", false)),
 		"intent_authority": "client_request_only",
 		"server_confirmation_status": String(validation.get("server_confirmation_status", "")),
 		"local_validation": "boss_entry_preflight",
@@ -1378,6 +1482,7 @@ func _boss_hud_row(row_id: String, mode_id: String) -> Dictionary:
 func _boss_transfer_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
 	var requests: Array = state.get("transfer_requests", [])
 	var transferred_ids := _string_array(state.get("transferred_card_ids", []))
+	var action_projection := boss_action_availability_projection(mode_id)
 	var latest_request := _latest_boss_transfer_request(requests)
 	var latest_preview: Dictionary = latest_request.get("preflight", {}) if not latest_request.is_empty() else {}
 	if latest_preview.is_empty() and not latest_request.is_empty():
@@ -1411,6 +1516,12 @@ func _boss_transfer_row(row_id: String, mode_id: String, state: Dictionary) -> D
 		"latest_transfer_request": latest_request,
 		"latest_transfer_preview": latest_preview,
 		"latest_transfer_summary": latest_summary,
+		"action_availability": action_projection,
+		"action_status": String(action_projection.get("action_status", "")),
+		"local_blockers": action_projection.get("local_blockers", []),
+		"can_request_entry": bool(action_projection.get("can_request_entry", false)),
+		"can_request_transfer": bool(action_projection.get("can_request_transfer", false)),
+		"can_display_playfield": bool(action_projection.get("can_display_playfield", false)),
 		"transfer_policy": "once_per_card_per_match",
 		"local_validation_rules": ["party_members_only", "no_self_transfer", "card_id_required", "once_per_card_per_match"],
 		"preflight_available": true,
