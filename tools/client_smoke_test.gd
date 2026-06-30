@@ -704,6 +704,9 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: world boss formation invalid %s" % [world_formation])
 		quit(1)
 		return true
+	if not _validate_boss_formation_contract(world_formation.get("formation_contract", {}), "world_boss", 4):
+		quit(1)
+		return true
 	var world_angles: Array = world_formation.get("slot_angles_degrees", [])
 	if world_angles.size() != 4 or absf(float(world_angles[0]) + 90.0) > 0.01 or absf(float(world_angles[1])) > 0.01 or absf(float(world_angles[2]) - 90.0) > 0.01 or absf(absf(float(world_angles[3])) - 180.0) > 0.01:
 		push_error("Smoke test failed: world boss formation angles invalid %s" % [world_angles])
@@ -716,6 +719,9 @@ func _process(_delta: float) -> bool:
 	var instance_formation: Dictionary = game_mode_model.validate_boss_formation("instance_boss")
 	if not bool(instance_formation.get("ok", false)) or int(instance_formation.get("player_count", 0)) != 8 or String(instance_formation.get("friendly_fire", "")) != "disabled":
 		push_error("Smoke test failed: instance boss formation invalid %s" % [instance_formation])
+		quit(1)
+		return true
+	if not _validate_boss_formation_contract(instance_formation.get("formation_contract", {}), "instance_boss", 8):
 		quit(1)
 		return true
 	var game_mode_state_rows: Array[Dictionary] = game_mode_model.mode_rows()
@@ -745,8 +751,14 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: world boss formation row invalid %s" % [world_formation_row])
 		quit(1)
 		return true
+	if not _validate_boss_formation_contract(world_formation_row.get("formation_contract", {}), "world_boss", 4):
+		quit(1)
+		return true
 	if not bool(instance_formation_row.get("formation_valid", false)) or int((instance_formation_row.get("items", []) as Array).size()) != 8:
 		push_error("Smoke test failed: instance boss formation row invalid %s" % [instance_formation_row])
+		quit(1)
+		return true
+	if not _validate_boss_formation_contract(instance_formation_row.get("formation_contract", {}), "instance_boss", 8):
 		quit(1)
 		return true
 	if not _validate_boss_playfield_projection(world_playfield_row, "world_boss", 4, 1.0):
@@ -4879,6 +4891,52 @@ func _validate_boss_party_row_contract(row: Dictionary, mode_id: String, expecte
 		if spawn.length() < 0.99 or spawn.length() > 1.01 or aim.length() < 0.99 or aim.length() > 1.01 or spawn.dot(aim) > -0.99:
 			push_error("Smoke test failed: boss position vectors invalid %s" % [entry])
 			return false
+	if not _validate_boss_formation_contract(row.get("formation_contract", {}), mode_id, expected_count):
+		return false
+	return true
+
+func _validate_boss_formation_contract(contract: Dictionary, mode_id: String, expected_count: int) -> bool:
+	if contract.is_empty():
+		push_error("Smoke test failed: boss formation contract missing for %s" % mode_id)
+		return false
+	if not bool(contract.get("ok", false)) or String(contract.get("mode_id", "")) != mode_id or String(contract.get("mode_category", "")) != "boss":
+		push_error("Smoke test failed: boss formation contract identity invalid %s" % [contract])
+		return false
+	if int(contract.get("slot_count", 0)) != expected_count or int(contract.get("min_players", 0)) != 4 or int(contract.get("max_players", 0)) != 8:
+		push_error("Smoke test failed: boss formation contract counts invalid %s" % [contract])
+		return false
+	var fixed_counts: Array = contract.get("fixed_direction_counts", [])
+	if not fixed_counts.has(4) or not fixed_counts.has(8):
+		push_error("Smoke test failed: boss formation contract missing fixed direction counts %s" % [contract])
+		return false
+	var expected_layout_policy := "cardinal_4" if expected_count == 4 else ("eight_direction_8" if expected_count == 8 else "even_ring_%d" % expected_count)
+	if String(contract.get("slot_layout_policy", "")) != expected_layout_policy:
+		push_error("Smoke test failed: boss formation contract layout invalid %s expected=%s" % [contract, expected_layout_policy])
+		return false
+	if String(contract.get("spawn_space", "")) != "unit_ring" or String(contract.get("aim_policy", "")) != "toward_center" or String(contract.get("shooting_target", "")) != "boss_center":
+		push_error("Smoke test failed: boss formation contract aim/spawn invalid %s" % [contract])
+		return false
+	if not bool(contract.get("all_slots_face_center", false)) or (contract.get("boss_center", Vector2.INF) as Vector2).distance_to(Vector2.ZERO) > 0.001:
+		push_error("Smoke test failed: boss formation contract center target invalid %s" % [contract])
+		return false
+	if (contract.get("center_normalized", Vector2.INF) as Vector2).distance_to(Vector2(0.5, 0.5)) > 0.001 or absf(float(contract.get("display_radius_ratio", 0.0)) - 0.42) > 0.001:
+		push_error("Smoke test failed: boss formation contract display geometry invalid %s" % [contract])
+		return false
+	if String(contract.get("projection_scope", "")) != "local_display_only" or String(contract.get("damage_authority", "")) != "server" or String(contract.get("reward_authority", "")) != "server" or String(contract.get("settlement_authority", "")) != "server":
+		push_error("Smoke test failed: boss formation contract authority labels invalid %s" % [contract])
+		return false
+	if not bool(contract.get("requires_server_confirmation", false)) or bool(contract.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: boss formation contract authority flags invalid %s" % [contract])
+		return false
+	var expected_labels := _expected_boss_slot_labels(expected_count)
+	var labels: Array = contract.get("slot_labels", [])
+	if labels.size() != expected_labels.size():
+		push_error("Smoke test failed: boss formation contract labels missing %s" % [contract])
+		return false
+	for i in range(expected_labels.size()):
+		if String(labels[i]) != expected_labels[i]:
+			push_error("Smoke test failed: boss formation contract label invalid %s expected=%s" % [contract, expected_labels])
+			return false
 	return true
 
 func _validate_boss_playfield_projection(row: Dictionary, mode_id: String, expected_count: int, expected_hp_ratio: float) -> bool:
@@ -4908,6 +4966,8 @@ func _validate_boss_playfield_projection(row: Dictionary, mode_id: String, expec
 	if int(projection.get("player_count", 0)) != expected_count or slots.size() != expected_count or not bool(projection.get("formation_valid", false)):
 		push_error("Smoke test failed: boss playfield slots invalid %s" % [projection])
 		return false
+	if not _validate_boss_formation_contract(projection.get("formation_contract", {}), mode_id, expected_count):
+		return false
 	if absf(float(projection.get("hp_ratio", -1.0)) - expected_hp_ratio) > 0.001:
 		push_error("Smoke test failed: boss playfield hp ratio invalid %s expected %.3f" % [projection, expected_hp_ratio])
 		return false
@@ -4930,8 +4990,12 @@ func _validate_boss_playfield_projection(row: Dictionary, mode_id: String, expec
 		if bool(slot.get("client_result_authoritative", true)) or not bool(slot.get("aim_to_center", false)) or aim_vector.length() < 0.99:
 			push_error("Smoke test failed: boss playfield slot authority/aim invalid %s" % [slot])
 			return false
+		if not _validate_boss_formation_contract(slot.get("formation_contract", {}), mode_id, expected_count):
+			return false
 	if row.has("projection_scope") and (String(row.get("projection_scope", "")) != "local_display_only" or String(row.get("damage_authority", "")) != "server" or String(row.get("settlement_authority", "")) != "server" or bool(row.get("client_result_authoritative", true))):
 		push_error("Smoke test failed: boss playfield row authority invalid %s" % [row])
+		return false
+	if row.has("formation_contract") and not _validate_boss_formation_contract(row.get("formation_contract", {}), mode_id, expected_count):
 		return false
 	return true
 
@@ -4958,6 +5022,8 @@ func _validate_boss_hud_projection(row: Dictionary, mode_id: String, expected_co
 	if int(projection.get("player_count", 0)) != expected_count or int(projection.get("min_players", 0)) != 4 or int(projection.get("max_players", 0)) != 8:
 		push_error("Smoke test failed: boss HUD party count invalid %s" % [projection])
 		return false
+	if not _validate_boss_formation_contract(projection.get("formation_contract", {}), mode_id, expected_count):
+		return false
 	if absf(float(projection.get("hp_ratio", -1.0)) - expected_hp_ratio) > 0.001:
 		push_error("Smoke test failed: boss HUD hp ratio invalid %s expected %.3f" % [projection, expected_hp_ratio])
 		return false
@@ -4969,6 +5035,8 @@ func _validate_boss_hud_projection(row: Dictionary, mode_id: String, expected_co
 		return false
 	if row.has("projection_scope") and (String(row.get("projection_scope", "")) != "local_display_only" or String(row.get("damage_authority", "")) != "server" or String(row.get("reward_authority", "")) != "server" or String(row.get("settlement_authority", "")) != "server" or bool(row.get("client_result_authoritative", true))):
 		push_error("Smoke test failed: boss HUD row authority invalid %s" % [row])
+		return false
+	if row.has("formation_contract") and not _validate_boss_formation_contract(row.get("formation_contract", {}), mode_id, expected_count):
 		return false
 	return _validate_boss_playfield_projection({"playfield_projection": projection.get("playfield_projection", {})}, mode_id, expected_count, expected_hp_ratio)
 

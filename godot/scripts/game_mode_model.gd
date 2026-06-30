@@ -393,10 +393,57 @@ func boss_formation_summary(mode_id: String) -> String:
 		String(validation.get("aim_policy", "toward_center")),
 	]
 
+func boss_formation_contract(mode_id: String) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"projection_scope": "local_display_only",
+			"damage_authority": "server",
+			"reward_authority": "server",
+			"settlement_authority": "server",
+			"requires_server_confirmation": true,
+			"client_result_authoritative": false,
+		}
+	var state := _state_for_mode(mode_id)
+	var positions: Array = state.get("positions", [])
+	var count := positions.size()
+	return {
+		"ok": true,
+		"reason": "none",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"slot_count": count,
+		"min_players": BOSS_MIN_PLAYERS,
+		"max_players": BOSS_MAX_PLAYERS,
+		"fixed_direction_counts": [4, 8],
+		"slot_layout_policy": _boss_slot_layout_policy(count),
+		"slot_labels": _boss_slot_labels(count),
+		"spawn_space": "unit_ring",
+		"center_normalized": BOSS_DISPLAY_CENTER,
+		"display_radius_ratio": BOSS_DISPLAY_RADIUS,
+		"boss_center": state.get("boss_center", BOSS_CENTER),
+		"aim_policy": String(state.get("aim_policy", "toward_center")),
+		"shooting_target": "boss_center",
+		"all_slots_face_center": true,
+		"friendly_fire": String(state.get("friendly_fire", "disabled")),
+		"arena_policy": String(state.get("arena_policy", "fixed_directions")),
+		"projection_scope": "local_display_only",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"requires_server_confirmation": true,
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
 func boss_display_slots(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO, Vector2.ONE)) -> Array[Dictionary]:
 	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
 		return []
 	var state := _state_for_mode(mode_id)
+	var contract := boss_formation_contract(mode_id)
 	var positions: Array = state.get("positions", [])
 	var slots: Array[Dictionary] = []
 	for raw_position in positions:
@@ -415,6 +462,7 @@ func boss_display_slots(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO, 
 			"slot_count": int(position.get("slot_count", positions.size())),
 			"slot_label": String(position.get("slot_label", _boss_slot_label(int(position.get("slot_index", -1)), positions.size()))),
 			"slot_layout_policy": _boss_slot_layout_policy(positions.size()),
+			"formation_contract": contract,
 			"normalized_spawn": spawn,
 			"normalized_display_position": normalized_position,
 			"screen_position": screen_position,
@@ -444,6 +492,7 @@ func boss_playfield_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2
 	var state := _state_for_mode(mode_id)
 	var formation := validate_boss_formation(mode_id)
 	var entry := validate_boss_entry(mode_id)
+	var contract := boss_formation_contract(mode_id)
 	var current_hp := float(state.get("current_hp", 0.0))
 	var max_hp := float(state.get("max_hp", 0.0))
 	var screen_center := playfield.position + Vector2(
@@ -470,6 +519,7 @@ func boss_playfield_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2
 		"screen_radius_pixels": radius_pixels,
 		"screen_bounds": screen_bounds,
 		"display_slots": boss_display_slots(mode_id, playfield),
+		"formation_contract": contract,
 		"player_count": int(formation.get("player_count", 0)),
 		"slot_layout_policy": String(formation.get("slot_layout_policy", "")),
 		"slot_labels": formation.get("slot_labels", []),
@@ -504,6 +554,7 @@ func boss_hud_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO,
 	var playfield_projection := boss_playfield_projection(mode_id, playfield)
 	var entry := validate_boss_entry(mode_id)
 	var formation := validate_boss_formation(mode_id)
+	var contract := boss_formation_contract(mode_id)
 	var current_hp := float(playfield_projection.get("current_hp", state.get("current_hp", 0.0)))
 	var max_hp := float(playfield_projection.get("max_hp", state.get("max_hp", 0.0)))
 	var entry_failures := _string_array(entry.get("failures", []))
@@ -537,6 +588,7 @@ func boss_hud_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO,
 		"max_players": BOSS_MAX_PLAYERS,
 		"slot_layout_policy": String(formation.get("slot_layout_policy", "")),
 		"slot_labels": formation.get("slot_labels", []),
+		"formation_contract": contract,
 		"friendly_fire": String(state.get("friendly_fire", "disabled")),
 		"arena_policy": String(state.get("arena_policy", "fixed_directions")),
 		"friendly_fire_warning": String(state.get("friendly_fire_warning", "none")),
@@ -578,6 +630,7 @@ func boss_local_status_row(row_id: String, mode_id: String) -> Dictionary:
 	var player_count := int(formation.get("player_count", 0))
 	var result_status := String(state.get("last_result_status", "pending"))
 	var slot_layout_policy := String(formation.get("slot_layout_policy", _boss_slot_layout_policy(player_count)))
+	var contract := boss_formation_contract(mode_id)
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.world_boss" if mode_id == MODE_WORLD_BOSS else "screen.mode.instance_boss",
@@ -612,6 +665,7 @@ func boss_local_status_row(row_id: String, mode_id: String) -> Dictionary:
 		"player_count": player_count,
 		"slot_layout_policy": slot_layout_policy,
 		"slot_labels": formation.get("slot_labels", _boss_slot_labels(player_count)),
+		"formation_contract": contract,
 		"min_players": BOSS_MIN_PLAYERS,
 		"max_players": BOSS_MAX_PLAYERS,
 		"requires_server_confirmation": true,
@@ -678,6 +732,7 @@ func validate_boss_formation(mode_id: String) -> Dictionary:
 		"slot_angles_degrees": slot_angles,
 		"slot_layout_policy": _boss_slot_layout_policy(count),
 		"slot_labels": _boss_slot_labels(count),
+		"formation_contract": boss_formation_contract(mode_id),
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 	}
@@ -1028,6 +1083,7 @@ func _boss_rules_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
 	var positions: Array = state.get("positions", [])
 	var display_slots := boss_display_slots(mode_id)
+	var contract := boss_formation_contract(mode_id)
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.boss.party",
@@ -1039,6 +1095,7 @@ func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 		"player_count": int(state.get("player_count", positions.size())),
 		"slot_layout_policy": _boss_slot_layout_policy(positions.size()),
 		"slot_labels": _boss_slot_labels(positions.size()),
+		"formation_contract": contract,
 		"min_players": BOSS_MIN_PLAYERS,
 		"max_players": BOSS_MAX_PLAYERS,
 		"boss_center": state.get("boss_center", BOSS_CENTER),
@@ -1085,6 +1142,7 @@ func _boss_entry_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 func _boss_formation_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
 	var validation := validate_boss_formation(mode_id)
 	var display_slots := boss_display_slots(mode_id)
+	var contract := boss_formation_contract(mode_id)
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.boss.party",
@@ -1098,6 +1156,7 @@ func _boss_formation_row(row_id: String, mode_id: String, state: Dictionary) -> 
 		"slot_angles_degrees": validation.get("slot_angles_degrees", []),
 		"slot_layout_policy": String(validation.get("slot_layout_policy", "")),
 		"slot_labels": validation.get("slot_labels", []),
+		"formation_contract": contract,
 		"player_count": int(validation.get("player_count", 0)),
 		"min_players": BOSS_MIN_PLAYERS,
 		"max_players": BOSS_MAX_PLAYERS,
@@ -1127,6 +1186,7 @@ func _boss_playfield_row(row_id: String, mode_id: String) -> Dictionary:
 		"mode_category": "boss",
 		"playfield_projection": projection,
 		"display_slots": projection.get("display_slots", []),
+		"formation_contract": projection.get("formation_contract", {}),
 		"projection_scope": String(projection.get("projection_scope", "local_display_only")),
 		"damage_authority": String(projection.get("damage_authority", "server")),
 		"settlement_authority": String(projection.get("settlement_authority", "server")),
@@ -1150,6 +1210,7 @@ func _boss_hud_row(row_id: String, mode_id: String) -> Dictionary:
 		"hud_projection": projection,
 		"playfield_projection": projection.get("playfield_projection", {}),
 		"display_slots": projection.get("display_slots", []),
+		"formation_contract": projection.get("formation_contract", {}),
 		"projection_scope": String(projection.get("projection_scope", "local_display_only")),
 		"damage_authority": String(projection.get("damage_authority", "server")),
 		"reward_authority": String(projection.get("reward_authority", "server")),
