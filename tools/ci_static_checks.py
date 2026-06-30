@@ -733,7 +733,10 @@ def check_ui_page_contracts() -> list[str]:
         "func _ui_visible_mouse_health_check()",
         "func _ui_visible_label_text_fit_check()",
         "func _ui_focus_section_runtime_check(page_layout: Dictionary)",
+        "func _ui_selected_row_window_check()",
         '"page_focus_sections_missing_visible"',
+        '"selected_row_visible"',
+        '"visible_row_window_ids"',
         '"visible_mouse_blocked_count"',
         '"visible_label_unwrapped_count"',
         '"visible_label_out_of_panel_count"',
@@ -744,6 +747,8 @@ def check_ui_page_contracts() -> list[str]:
     for token in [
         '"visible_mouse_blocked_count"',
         '"page_focus_section_missing_visible_count"',
+        '"selected_row_visible"',
+        "func _assert_deep_row_visible(screen_id: String, row_id: String)",
         '"visible_label_unwrapped_count"',
         '"visible_label_out_of_panel_count"',
     ]:

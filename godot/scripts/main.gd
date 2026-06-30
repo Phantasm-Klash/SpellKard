@@ -2872,6 +2872,7 @@ func _ui_overlay_snapshot() -> Dictionary:
 	var label_fit_check := _ui_visible_label_text_fit_check()
 	var mouse_check := _ui_visible_mouse_health_check()
 	var focus_section_check := _ui_focus_section_runtime_check(page_layout)
+	var selected_window_check := _ui_selected_row_window_check()
 	var viewport_size := get_viewport_rect().size
 	var panel_rect := Rect2(ui_panel.position, ui_panel.size) if ui_panel != null else Rect2()
 	var portrait_rect := Rect2(ui_home_portrait_panel.global_position, ui_home_portrait_panel.size) if ui_home_portrait_panel != null else Rect2()
@@ -2914,6 +2915,11 @@ func _ui_overlay_snapshot() -> Dictionary:
 		"page_focus_sections": ",".join(_ui_string_array(page_layout.get("focus_sections", []))),
 		"page_focus_sections_visible": String(focus_section_check.get("visible_sections", "")),
 		"page_focus_sections_missing_visible": String(focus_section_check.get("missing_sections", "")),
+		"selected_row_visible": bool(selected_window_check.get("visible", true)),
+		"selected_row_id": String(selected_window_check.get("selected_id", "")),
+		"selected_row_index": int(selected_window_check.get("selected_index", -1)),
+		"visible_row_window_ids": String(selected_window_check.get("visible_ids", "")),
+		"visible_row_window_indices": String(selected_window_check.get("visible_indices", "")),
 		"page_text_fit_policy": ",".join(_ui_string_array(page_layout.get("text_fit_policy", []))),
 		"page_visual_asset": String(page_layout.get("visual_asset", "")),
 		"page_visual_treatment": String(page_layout.get("visual_treatment", "")),
@@ -3155,6 +3161,38 @@ func _ui_focus_section_runtime_check(page_layout: Dictionary) -> Dictionary:
 
 func _ui_focus_section_is_contextual(section_id: String) -> bool:
 	return section_id in ["control_buttons", "control_preview"]
+
+func _ui_selected_row_window_check() -> Dictionary:
+	if ui_screen_model == null:
+		return {
+			"visible": true,
+			"selected_id": "",
+			"selected_index": -1,
+			"visible_ids": "",
+			"visible_indices": "",
+		}
+	var selected: Dictionary = ui_screen_model.selected_row()
+	var selected_id := String(selected.get("id", ""))
+	var selected_index := int(ui_screen_model.cursor)
+	var visible_ids: Array[String] = []
+	var visible_indices: Array[String] = []
+	var selected_visible := selected_id.is_empty() or _ui_overlay_focusable_count(ui_row_labels) == 0
+	for button in ui_row_labels:
+		if button == null or not button.is_visible_in_tree() or button.disabled:
+			continue
+		var row_index := int(button.get_meta("row_index", -1))
+		var row_id := String(button.get_meta("row_id", ""))
+		visible_indices.append(str(row_index))
+		visible_ids.append(row_id)
+		if row_index == selected_index and (row_id.is_empty() or row_id == selected_id):
+			selected_visible = true
+	return {
+		"visible": selected_visible,
+		"selected_id": selected_id,
+		"selected_index": selected_index,
+		"visible_ids": ",".join(visible_ids),
+		"visible_indices": ",".join(visible_indices),
+	}
 
 func _ui_focus_section_visible_count(section_id: String) -> int:
 	match section_id:
@@ -4669,7 +4707,7 @@ func _deactivate_secondary_ui_controls() -> void:
 	for button in ui_control_buttons:
 		_ui_deactivate_button(button, ["control_action", "direction"])
 	for button in ui_row_labels:
-		_ui_deactivate_button(button, ["row_index"])
+		_ui_deactivate_button(button, ["row_index", "row_id"])
 
 func _update_ui_overlay() -> void:
 	if ui_panel == null or ui_screen_model == null:
@@ -4720,7 +4758,7 @@ func _update_ui_overlay() -> void:
 	for i in range(ui_row_labels.size()):
 		var label := ui_row_labels[i]
 		if i >= rows.size():
-			_ui_deactivate_button(label, ["row_index"])
+			_ui_deactivate_button(label, ["row_index", "row_id"])
 			continue
 		label.visible = true
 		var absolute_index := row_window_start + i
@@ -4728,6 +4766,7 @@ func _update_ui_overlay() -> void:
 		label.disabled = false
 		_ui_mark_button_owner(label)
 		label.set_meta("row_index", absolute_index)
+		label.set_meta("row_id", String(rows[i].get("id", "")))
 		label.text = _format_ui_overlay_row(rows[i], prefix, all_rows, absolute_index)
 	_update_ui_focus_neighbors()
 

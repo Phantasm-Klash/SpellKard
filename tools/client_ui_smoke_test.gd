@@ -294,6 +294,8 @@ func _validate_settings_pages() -> bool:
 	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 48)
 	if not _rows_have_ids(rows, ["settings_language", "settings_gamepad_curve", "settings_keybinds", "settings_volume", "settings_resolution", "settings_save_now", "settings_restore_defaults"]):
 		return _fail("player settings rows missing expected controls")
+	if not await _assert_deep_row_visible("player_settings", "settings_restore_defaults"):
+		return false
 	var language_index := _row_index_by_id(rows, "settings_language")
 	if language_index < 0:
 		return _fail("language row missing")
@@ -320,6 +322,8 @@ func _validate_settings_pages() -> bool:
 	rows = main_node.call("_ui_screen_rows", 48)
 	if not _rows_have_ids(rows, ["input_profile", "gamepad_curve", "gamepad_sensitivity", "binding_shoot", "binding_bomb"]):
 		return _fail("input settings rows missing gamepad/keybind controls")
+	if not await _assert_deep_row_visible("input_settings", "binding_focus"):
+		return false
 	if not String(snapshot.get("selected_speed_preview", "")).contains("move"):
 		return _fail("input settings should expose gamepad speed preview %s" % String(snapshot.get("selected_speed_preview", "")))
 	var preview_index := _row_index_by_id(rows, "gamepad_curve_preview")
@@ -338,6 +342,8 @@ func _validate_settings_pages() -> bool:
 	rows = main_node.call("_ui_screen_rows", 48)
 	if not _rows_have_ids(rows, ["audio_voice_locale", "audio_group_master", "audio_group_music", "audio_group_sfx", "audio_reset_all"]):
 		return _fail("audio settings rows missing volume controls")
+	if not await _assert_deep_row_visible("audio_settings", "audio_reset_all"):
+		return false
 	var voice_index := _row_index_by_id(rows, "audio_voice_locale")
 	if voice_index < 0:
 		return _fail("voice language row missing")
@@ -359,6 +365,8 @@ func _validate_settings_pages() -> bool:
 	rows = main_node.call("_ui_screen_rows", 48)
 	if not _rows_have_ids(rows, ["display_resolution", "display_window_mode", "display_vsync", "display_fps_limit"]):
 		return _fail("display settings rows missing resolution/video controls")
+	if not await _assert_deep_row_visible("display_settings", "access_low_flash"):
+		return false
 	var resolution_index := _row_index_by_id(rows, "display_resolution")
 	if resolution_index < 0:
 		return _fail("display resolution row missing")
@@ -368,6 +376,23 @@ func _validate_settings_pages() -> bool:
 	var resolution_controls := String(snapshot.get("control_buttons_text", ""))
 	if not resolution_controls.contains("<") or not resolution_controls.contains(">") or not resolution_controls.contains("Reset"):
 		return _fail("display resolution should expose compact left/right/reset controls %s" % resolution_controls)
+	return true
+
+func _assert_deep_row_visible(screen_id: String, row_id: String) -> bool:
+	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 64)
+	var row_index := _row_index_by_id(rows, row_id)
+	if row_index < 0:
+		return _fail("%s missing deep row %s" % [screen_id, row_id])
+	main_node.call("_ui_set_cursor", row_index)
+	await _settle_frames(2)
+	var snapshot: Dictionary = main_node.call("_ui_overlay_snapshot")
+	if String(snapshot.get("selected_row_id", "")) != row_id or not bool(snapshot.get("selected_row_visible", false)):
+		return _fail("%s deep row %s not visible in row window %s / %s" % [
+			screen_id,
+			row_id,
+			String(snapshot.get("visible_row_window_ids", "")),
+			String(snapshot.get("visible_row_window_indices", "")),
+		])
 	return true
 
 func _validate_collection_page_contract() -> bool:
@@ -442,6 +467,14 @@ func _assert_page_health(snapshot: Dictionary, label: String, expected_quick_max
 		return _fail("%s visible controls overlap %s" % [label, String(snapshot.get("visible_control_overlaps", ""))])
 	if bool(snapshot.get("visible", true)) and int(snapshot.get("visible_focusable_count", 0)) <= 0:
 		return _fail("%s has no visible focusable controls %s" % [label, snapshot])
+	if bool(snapshot.get("visible", true)) and not bool(snapshot.get("selected_row_visible", true)):
+		return _fail("%s selected row is outside visible row window: selected %s/%d in %s (%s)" % [
+			label,
+			String(snapshot.get("selected_row_id", "")),
+			int(snapshot.get("selected_row_index", -1)),
+			String(snapshot.get("visible_row_window_ids", "")),
+			String(snapshot.get("visible_row_window_indices", "")),
+		])
 	if int(snapshot.get("visible_focus_without_neighbor_count", 0)) != 0:
 		return _fail("%s visible controls missing focus neighbors %s" % [label, String(snapshot.get("visible_focus_without_neighbor", ""))])
 	if int(snapshot.get("visible_control_small_target_count", 0)) != 0:
