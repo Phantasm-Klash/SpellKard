@@ -194,22 +194,7 @@ func verification_filter_rows() -> Array[Dictionary]:
 
 func replay_authority_summary_row() -> Dictionary:
 	var counts := _verification_counts()
-	var local_loadable_count := 0
-	var blocked_local_integrity_count := 0
-	var server_audit_required_count := 0
-	for entry in entries:
-		var metadata_valid := _entry_metadata_valid(entry)
-		var server_authoritative := bool(entry.get("server_authoritative", false))
-		var server_claim_fields := _entry_server_authority_claim_fields(entry)
-		var verification_status := _entry_verification_status(entry, int(entry.get("final_result_hash", 0)), metadata_valid)
-		var load_rejection_reason := _entry_local_load_rejection_reason(entry, verification_status, metadata_valid, server_authoritative, server_claim_fields)
-		var requires_server_audit := server_authoritative or not server_claim_fields.is_empty() or _entry_verification_section(verification_status) == "replay_server_pending"
-		if requires_server_audit:
-			server_audit_required_count += 1
-		elif load_rejection_reason.is_empty():
-			local_loadable_count += 1
-		else:
-			blocked_local_integrity_count += 1
+	var playability := _playability_counts()
 	var selected := selected_entry()
 	var selected_source_index := _source_index_for_replay_id(str(selected.get("replay_id", "")))
 	var selected_row_model := _row_from_entry(selected, selected_source_index) if not selected.is_empty() and selected_source_index >= 0 else {}
@@ -218,16 +203,16 @@ func replay_authority_summary_row() -> Dictionary:
 		"id": "replay_authority_summary",
 		"label_key": "screen.results.audit",
 		"value": "local %d server-audit %d blocked %d claims %d" % [
-			local_loadable_count,
-			server_audit_required_count,
-			blocked_local_integrity_count,
+			int(playability.get("local_loadable_count", 0)),
+			int(playability.get("server_audit_required_count", 0)),
+			int(playability.get("blocked_local_integrity_count", 0)),
 			int(counts.get("rejected_server_claim", 0)),
 		],
 		"summary": "Replay playback is local-practice verification only; online replay records, Boss damage, rewards, and settlement require server audit authority",
 		"entry_count": entries.size(),
-		"local_loadable_count": local_loadable_count,
-		"server_audit_required_count": server_audit_required_count,
-		"blocked_local_integrity_count": blocked_local_integrity_count,
+		"local_loadable_count": int(playability.get("local_loadable_count", 0)),
+		"server_audit_required_count": int(playability.get("server_audit_required_count", 0)),
+		"blocked_local_integrity_count": int(playability.get("blocked_local_integrity_count", 0)),
 		"rejected_server_claim_count": int(counts.get("rejected_server_claim", 0)),
 		"server_pending_audit_count": int(counts.get("replay_server_pending", 0)),
 		"boss_practice_count": int(counts.get("replay_boss_practice", 0)),
@@ -241,6 +226,62 @@ func replay_authority_summary_row() -> Dictionary:
 		"local_hash_authority": "local_practice_verification_only",
 		"replay_verification_scope": "local_practice_hash",
 		"local_playback_authority": "local_practice_hash",
+		"online_replay_authority": "server_audit_required",
+		"damage_authority": "server",
+		"settlement_authority": "server",
+		"reward_authority": "server",
+		"boss_hp_authority": "server",
+		"client_result_authoritative": false,
+		"section": "overview",
+		"section_label_key": "ui.menu_section_overview",
+		"ui_control": "status",
+		"ui_action": "",
+		"enabled": true,
+	}
+
+func replay_playability_summary_row() -> Dictionary:
+	var playability := _playability_counts()
+	var selected := selected_entry()
+	var selected_source_index := _source_index_for_replay_id(str(selected.get("replay_id", "")))
+	var selected_row_model := _row_from_entry(selected, selected_source_index) if not selected.is_empty() and selected_source_index >= 0 else {}
+	var selected_guard := local_load_guard_for_entry(selected) if not selected.is_empty() else _replay_action_guard({})
+	var recommended_filter := _recommended_filter_for_guard(selected_guard)
+	if String(selected_guard.get("reason", "")) == "no_replay_selected" and int(playability.get("local_loadable_count", 0)) > 0:
+		recommended_filter = "replay_local_ready"
+	var selected_can_play := bool(selected_guard.get("ok", false)) and not bool(selected_guard.get("requires_server_audit", false))
+	return {
+		"id": "replay_playability_summary",
+		"label_key": "screen.replay.load",
+		"value": "selected %s local %d audit %d blocked %d next %s" % [
+			"playable" if selected_can_play else "blocked",
+			int(playability.get("local_loadable_count", 0)),
+			int(playability.get("server_audit_required_count", 0)),
+			int(playability.get("blocked_local_integrity_count", 0)),
+			recommended_filter,
+		],
+		"summary": "selected replay local playback guard; only local-practice hashes can load, online records stay server-audited",
+		"entry_count": entries.size(),
+		"local_loadable_count": int(playability.get("local_loadable_count", 0)),
+		"server_audit_required_count": int(playability.get("server_audit_required_count", 0)),
+		"blocked_local_integrity_count": int(playability.get("blocked_local_integrity_count", 0)),
+		"first_loadable_replay_id": String(playability.get("first_loadable_replay_id", "")),
+		"first_server_audit_replay_id": String(playability.get("first_server_audit_replay_id", "")),
+		"first_blocked_integrity_replay_id": String(playability.get("first_blocked_integrity_replay_id", "")),
+		"selected_replay_id": String(selected_row_model.get("replay_id", "")),
+		"selected_can_play": selected_can_play,
+		"selected_local_load_policy": String(selected_guard.get("local_load_policy", "none")),
+		"selected_load_guard_reason": String(selected_guard.get("reason", "")),
+		"selected_verification_status": String(selected_guard.get("verification_status", "none")),
+		"selected_verification_section": String(selected_guard.get("verification_section", "")),
+		"selected_requires_server_audit": bool(selected_guard.get("requires_server_audit", false)),
+		"selected_server_audit_status": String(selected_guard.get("server_audit_status", "not_required")),
+		"recommended_filter": recommended_filter,
+		"recommended_filter_row_id": "replay_filter_%s" % recommended_filter if not recommended_filter.is_empty() else "",
+		"replay_action_guard": selected_guard,
+		"server_authoritative": false,
+		"local_hash_authority": "local_practice_verification_only",
+		"replay_verification_scope": "local_practice_hash",
+		"local_playback_authority": String(selected_guard.get("local_playback_authority", "none")),
 		"online_replay_authority": "server_audit_required",
 		"damage_authority": "server",
 		"settlement_authority": "server",
@@ -773,6 +814,57 @@ func _verification_counts() -> Dictionary:
 		if _entry_verification_scope(entry, bool(entry.get("server_authoritative", false)), metadata_valid, server_claim_fields) == "rejected_server_claim":
 			counts["rejected_server_claim"] = int(counts.get("rejected_server_claim", 0)) + 1
 	return counts
+
+func _playability_counts() -> Dictionary:
+	var local_loadable_count := 0
+	var server_audit_required_count := 0
+	var blocked_local_integrity_count := 0
+	var first_loadable_replay_id := ""
+	var first_server_audit_replay_id := ""
+	var first_blocked_integrity_replay_id := ""
+	for entry in entries:
+		var metadata_valid := _entry_metadata_valid(entry)
+		var server_authoritative := bool(entry.get("server_authoritative", false))
+		var server_claim_fields := _entry_server_authority_claim_fields(entry)
+		var verification_status := _entry_verification_status(entry, int(entry.get("final_result_hash", 0)), metadata_valid)
+		var load_rejection_reason := _entry_local_load_rejection_reason(entry, verification_status, metadata_valid, server_authoritative, server_claim_fields)
+		var requires_server_audit := server_authoritative or not server_claim_fields.is_empty() or _entry_verification_section(verification_status) == "replay_server_pending"
+		var replay_id := String(entry.get("replay_id", ""))
+		if requires_server_audit:
+			server_audit_required_count += 1
+			if first_server_audit_replay_id.is_empty():
+				first_server_audit_replay_id = replay_id
+		elif load_rejection_reason.is_empty():
+			local_loadable_count += 1
+			if first_loadable_replay_id.is_empty():
+				first_loadable_replay_id = replay_id
+		else:
+			blocked_local_integrity_count += 1
+			if first_blocked_integrity_replay_id.is_empty():
+				first_blocked_integrity_replay_id = replay_id
+	return {
+		"local_loadable_count": local_loadable_count,
+		"server_audit_required_count": server_audit_required_count,
+		"blocked_local_integrity_count": blocked_local_integrity_count,
+		"first_loadable_replay_id": first_loadable_replay_id,
+		"first_server_audit_replay_id": first_server_audit_replay_id,
+		"first_blocked_integrity_replay_id": first_blocked_integrity_replay_id,
+	}
+
+func _recommended_filter_for_guard(guard: Dictionary) -> String:
+	if guard.is_empty():
+		return "all"
+	if bool(guard.get("ok", false)) and not bool(guard.get("requires_server_audit", false)):
+		return "replay_local_ready"
+	var reason := String(guard.get("reason", ""))
+	if reason == "server_authority_claim_rejected":
+		return "rejected_server_claim"
+	if bool(guard.get("requires_server_audit", false)):
+		return "replay_server_pending"
+	var section := String(guard.get("verification_section", ""))
+	if not section.is_empty():
+		return section
+	return "all"
 
 func local_load_guard_for_entry(entry: Dictionary) -> Dictionary:
 	var metadata_valid := _entry_metadata_valid(entry)
