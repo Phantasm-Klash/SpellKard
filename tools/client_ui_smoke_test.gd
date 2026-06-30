@@ -586,6 +586,18 @@ func _validate_collection_page_contract() -> bool:
 		return _fail("replay page missing authority summary contract %s" % [replay_rows])
 	if not _assert_replay_ui_authority_row(replay_authority_summary):
 		return false
+	var replay_playability_summary := _row_by_id(replay_rows, "replay_playability_summary")
+	var expected_playability_filter := "replay_filter_replay_server_pending" if bool(replay_playability_summary.get("selected_requires_server_audit", false)) else "replay_filter_replay_local_ready"
+	if replay_playability_summary.is_empty() \
+			or String(replay_playability_summary.get("ui_control", "")) != "status" \
+			or not String(replay_playability_summary.get("ui_action", "")).is_empty() \
+			or String(replay_playability_summary.get("recommended_filter_row_id", "")) != expected_playability_filter \
+			or bool(replay_playability_summary.get("client_result_authoritative", true)) \
+			or String(replay_playability_summary.get("online_replay_authority", "")) != "server_audit_required" \
+			or String(replay_playability_summary.get("boss_hp_authority", "")) != "server":
+		return _fail("replay page missing playability summary contract %s" % [replay_rows])
+	if not _assert_replay_ui_authority_row(replay_playability_summary):
+		return false
 	if not String(snapshot.get("section_tabs", "")).contains(_text("ui.menu_section_overview")):
 		return _fail("replay filter tabs should expose verification overview %s" % [snapshot])
 	if not String(snapshot.get("page_focus_action_ids", "")).contains("replay_filter_replay_boss_practice") or not String(snapshot.get("page_focus_action_ids", "")).contains("replay_filter_replay_local_ready"):

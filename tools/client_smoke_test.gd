@@ -4445,6 +4445,20 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay authority summary invalid %s" % [replay_authority_summary])
 		quit(1)
 		return true
+	var replay_playability_summary: Dictionary = replay_list_model.replay_playability_summary_row()
+	if String(replay_playability_summary.get("id", "")) != "replay_playability_summary" \
+			or int(replay_playability_summary.get("local_loadable_count", 0)) <= 0 \
+			or String(replay_playability_summary.get("selected_local_load_policy", "")) != "loadable_local_practice" \
+			or String(replay_playability_summary.get("recommended_filter", "")) != "replay_local_ready" \
+			or String(replay_playability_summary.get("recommended_filter_row_id", "")) != "replay_filter_replay_local_ready" \
+			or not bool(replay_playability_summary.get("selected_can_play", false)) \
+			or bool(replay_playability_summary.get("selected_requires_server_audit", true)) \
+			or String(replay_playability_summary.get("online_replay_authority", "")) != "server_audit_required" \
+			or String(replay_playability_summary.get("damage_authority", "")) != "server" \
+			or bool(replay_playability_summary.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: replay playability summary invalid %s" % [replay_playability_summary])
+		quit(1)
+		return true
 	var replay_filter_rows: Array[Dictionary] = replay_list_model.verification_filter_rows()
 	if replay_filter_rows.size() < 5 or String(replay_filter_rows[0].get("verification_filter", "")) != "all" or not bool(replay_filter_rows[0].get("active", false)) or bool(replay_filter_rows[0].get("client_result_authoritative", true)):
 		push_error("Smoke test failed: replay verification filter rows invalid %s" % [replay_filter_rows])
@@ -4786,6 +4800,20 @@ func _process(_delta: float) -> bool:
 			or String(ui_replay_authority_summary.get("damage_authority", "")) != "server" \
 			or bool(ui_replay_authority_summary.get("client_result_authoritative", true)):
 		push_error("Smoke test failed: replay UI authority summary invalid %s" % [ui_replay_authority_summary])
+		quit(1)
+		return true
+	var ui_replay_playability_summary: Dictionary = _find_row_by_id(ui_replay_rows, "replay_playability_summary")
+	if ui_replay_playability_summary.is_empty() \
+			or String(ui_replay_playability_summary.get("ui_control", "")) != "status" \
+			or not String(ui_replay_playability_summary.get("ui_action", "")).is_empty() \
+			or String(ui_replay_playability_summary.get("selected_local_load_policy", "")) != "loadable_local_practice" \
+			or String(ui_replay_playability_summary.get("recommended_filter_row_id", "")) != "replay_filter_replay_local_ready" \
+			or not bool(ui_replay_playability_summary.get("selected_can_play", false)) \
+			or bool(ui_replay_playability_summary.get("selected_requires_server_audit", true)) \
+			or String(ui_replay_playability_summary.get("online_replay_authority", "")) != "server_audit_required" \
+			or String(ui_replay_playability_summary.get("damage_authority", "")) != "server" \
+			or bool(ui_replay_playability_summary.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: replay UI playability summary invalid %s" % [ui_replay_playability_summary])
 		quit(1)
 		return true
 	var local_filter_index := _row_index_by_id(ui_replay_rows, "replay_filter_replay_local_ready")

@@ -891,6 +891,8 @@ func _replay_rows(limit: int) -> Array[Dictionary]:
 		rows.append_array(replay_list_model.verification_filter_rows())
 	if replay_list_model.has_method("replay_authority_summary_row"):
 		rows.append(replay_list_model.replay_authority_summary_row())
+	if replay_list_model.has_method("replay_playability_summary_row"):
+		rows.append(replay_list_model.replay_playability_summary_row())
 	if replay_list_model.has_method("boss_practice_verification_summary_row"):
 		rows.append(replay_list_model.boss_practice_verification_summary_row())
 	if replay_list_model.has_method("selected_action_rows"):
