@@ -154,6 +154,10 @@ func _validate_play_pages() -> bool:
 		return _fail("instance boss UI party setup failed")
 	snapshot = await _open_snapshot("modes")
 	rows = main_node.call("_ui_screen_rows", 64)
+	if not _assert_boss_practice_preview_row(_row_by_id(rows, "world_boss_practice_preview"), "world_boss"):
+		return false
+	if not _assert_boss_practice_preview_row(_row_by_id(rows, "instance_boss_practice_preview"), "instance_boss"):
+		return false
 	var world_entry_index := _row_index_by_id(rows, "world_boss_entry")
 	if world_entry_index < 0:
 		return _fail("modes page missing world boss entry row")
@@ -922,6 +926,29 @@ func _assert_boss_status_row(row: Dictionary, mode_id: String) -> bool:
 		return _fail("boss status row missing slot layout policy %s" % [row])
 	if typeof(row.get("slot_labels", [])) != TYPE_ARRAY:
 		return _fail("boss status row missing slot labels %s" % [row])
+	return true
+
+func _assert_boss_practice_preview_row(row: Dictionary, mode_id: String) -> bool:
+	if row.is_empty():
+		return _fail("boss practice preview row missing for %s" % mode_id)
+	if String(row.get("mode_id", "")) != mode_id:
+		return _fail("boss practice preview mode mismatch %s row=%s" % [mode_id, row])
+	if String(row.get("mode_category", "")) != "boss":
+		return _fail("boss practice preview row missing boss category %s" % [row])
+	if bool(row.get("client_result_authoritative", true)) or bool(row.get("server_authoritative", true)):
+		return _fail("boss practice preview must not claim result/server authority %s" % [row])
+	if String(row.get("projection_scope", "")) != "local_practice_preview_only" or String(row.get("preview_authority_scope", "")) != "local_practice_preview_only":
+		return _fail("boss practice preview scope mismatch %s" % [row])
+	if String(row.get("replay_verification_scope", "")) != "local_practice_hash":
+		return _fail("boss practice preview replay scope mismatch %s" % [row])
+	if String(row.get("damage_authority", "")) != "server" or String(row.get("reward_authority", "")) != "server" or String(row.get("settlement_authority", "")) != "server":
+		return _fail("boss practice preview must keep online authority on server %s" % [row])
+	if bool(row.get("requires_server_confirmation", true)):
+		return _fail("boss practice preview should not require server confirmation %s" % [row])
+	if int(row.get("preview_bundle_signature_digest", 0)) <= 0 or int(row.get("preview_phase_count", 0)) < 3:
+		return _fail("boss practice preview missing deterministic digest %s" % [row])
+	if String(row.get("performance_budget_status", "")) != "within_budget":
+		return _fail("boss practice preview budget status invalid %s" % [row])
 	return true
 
 func _assert_boss_result_receipt_row(row: Dictionary, mode_id: String, expected_receipt_id: String, expected_hash: String) -> bool:

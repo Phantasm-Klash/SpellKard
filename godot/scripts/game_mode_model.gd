@@ -19,9 +19,13 @@ const BOSS_FRIENDLY_FIRE_POLICIES := ["disabled", "player_bullets_only", "all_fr
 const BOSS_ARENA_POLICIES := ["fixed_directions", "shared_ring", "personal_lanes"]
 const BOSS_CARDINAL_LABELS: Array[String] = ["north", "east", "south", "west"]
 const BOSS_EIGHT_DIRECTION_LABELS: Array[String] = ["north", "north_east", "east", "south_east", "south", "south_west", "west", "north_west"]
+const BOSS_LOCAL_PREVIEW_SPELLBOOK_ID := "original_boss_archive"
+const BOSS_LOCAL_PREVIEW_SEED := 20260625
+const BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE := "local_practice_preview_only"
 
 var matchmaking_model: RefCounted = null
 var network_match_model: RefCounted = null
+var boss_spellbook_model: RefCounted = null
 var selected_mode_id := MODE_CERTIFICATION
 var last_action_status := "none"
 var last_error_code := "none"
@@ -35,9 +39,14 @@ var mode_action_requests: Array[Dictionary] = []
 func _init() -> void:
 	reset_local_state()
 
-func configure(matchmaking: RefCounted, network_match: RefCounted) -> void:
+func configure(matchmaking: RefCounted, network_match: RefCounted, spellbook_model: RefCounted = null) -> void:
 	matchmaking_model = matchmaking
 	network_match_model = network_match
+	if spellbook_model != null:
+		boss_spellbook_model = spellbook_model
+
+func configure_boss_spellbook(spellbook_model: RefCounted) -> void:
+	boss_spellbook_model = spellbook_model
 
 func reset_local_state() -> void:
 	certification_state = {
@@ -880,6 +889,78 @@ func boss_display_contract_row(row_id: String, mode_id: String) -> Dictionary:
 		"enabled": display_ready,
 	}
 
+func boss_practice_preview_projection(mode_id: String) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"projection_scope": "local_practice_preview_only",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	if boss_spellbook_model == null or not boss_spellbook_model.has_method("phase_export_data"):
+		return {
+			"ok": false,
+			"reason": "boss_spellbook_unavailable",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"projection_scope": BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+			"preview_authority_scope": BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+			"damage_authority": "server",
+			"reward_authority": "server",
+			"settlement_authority": "server",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var export_data: Dictionary = boss_spellbook_model.phase_export_data(BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, BOSS_LOCAL_PREVIEW_SEED)
+	if export_data.is_empty():
+		return {
+			"ok": false,
+			"reason": "boss_spellbook_preview_missing",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"spellbook_id": BOSS_LOCAL_PREVIEW_SPELLBOOK_ID,
+			"preview_seed": BOSS_LOCAL_PREVIEW_SEED,
+			"projection_scope": BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+			"preview_authority_scope": BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+			"damage_authority": "server",
+			"reward_authority": "server",
+			"settlement_authority": "server",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var phase_ids := _string_array(export_data.get("preview_phase_ids", []))
+	var phase_digests := _int_array(export_data.get("preview_phase_signature_digests", []))
+	return {
+		"ok": String(export_data.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)) == BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+		"reason": "none" if String(export_data.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)) == BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE else "preview_authority_scope_mismatch",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"spellbook_id": String(export_data.get("spellbook_id", BOSS_LOCAL_PREVIEW_SPELLBOOK_ID)),
+		"preview_seed": int(export_data.get("seed", BOSS_LOCAL_PREVIEW_SEED)),
+		"preview_bundle_id": String(export_data.get("preview_bundle_id", "")),
+		"preview_bundle_signature_digest": int(export_data.get("preview_bundle_signature_digest", 0)),
+		"preview_phase_count": int(export_data.get("preview_phase_count", phase_ids.size())),
+		"preview_phase_ids": phase_ids,
+		"preview_phase_signature_digests": phase_digests,
+		"preview_max_emit_per_tick": int(export_data.get("max_preview_emit_per_tick", 0)),
+		"preview_min_budget_headroom": int(export_data.get("min_preview_budget_headroom", 0)),
+		"performance_budget_status": String(export_data.get("performance_budget_status", "")),
+		"preview_authority_scope": String(export_data.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)),
+		"projection_scope": BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+		"replay_verification_scope": "local_practice_hash",
+		"practice_mode": "boss_spellbook_practice",
+		"server_confirmation_status": "not_applicable_local_preview",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"requires_server_confirmation": false,
+		"server_authoritative": false,
+		"client_result_authoritative": false,
+	}
+
 func validate_boss_formation(mode_id: String) -> Dictionary:
 	var failures: Array[String] = []
 	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
@@ -1114,6 +1195,7 @@ func _world_boss_rows() -> Array[Dictionary]:
 		boss_display_contract_row("world_boss_display", MODE_WORLD_BOSS),
 		_boss_playfield_row("world_boss_playfield", MODE_WORLD_BOSS),
 		_boss_hud_row("world_boss_hud", MODE_WORLD_BOSS),
+		_boss_practice_preview_row("world_boss_practice_preview", MODE_WORLD_BOSS),
 		_boss_transfer_row("world_boss_transfer", MODE_WORLD_BOSS, world_boss_state),
 		_world_boss_result_row(),
 		{"id": "world_boss_announcement", "label_key": "screen.mode.boss.announcement", "value": str(world_boss_state.get("world_announcement", "")), "mode_category": "boss", "server_authoritative": bool(world_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": not str(world_boss_state.get("defeated_at", "")).is_empty()},
@@ -1132,6 +1214,7 @@ func _instance_boss_rows() -> Array[Dictionary]:
 		boss_display_contract_row("instance_boss_display", MODE_INSTANCE_BOSS),
 		_boss_playfield_row("instance_boss_playfield", MODE_INSTANCE_BOSS),
 		_boss_hud_row("instance_boss_hud", MODE_INSTANCE_BOSS),
+		_boss_practice_preview_row("instance_boss_practice_preview", MODE_INSTANCE_BOSS),
 		_boss_transfer_row("instance_boss_transfer", MODE_INSTANCE_BOSS, instance_boss_state),
 		_instance_boss_result_row(),
 	]
@@ -1479,6 +1562,51 @@ func _boss_hud_row(row_id: String, mode_id: String) -> Dictionary:
 		"enabled": bool(projection.get("ok", false)),
 	}
 
+func _boss_practice_preview_row(row_id: String, mode_id: String) -> Dictionary:
+	var projection := boss_practice_preview_projection(mode_id)
+	var phase_count := int(projection.get("preview_phase_count", 0))
+	var digest := int(projection.get("preview_bundle_signature_digest", 0))
+	var max_emit := int(projection.get("preview_max_emit_per_tick", 0))
+	var headroom := int(projection.get("preview_min_budget_headroom", 0))
+	var budget_status := String(projection.get("performance_budget_status", ""))
+	return {
+		"id": row_id,
+		"label_key": "screen.settings.boss_spellbook",
+		"value": "practice preview phases %d digest %d max_emit %d headroom %d %s" % [
+			phase_count,
+			digest,
+			max_emit,
+			headroom,
+			budget_status,
+		],
+		"summary": "local Boss spellbook practice preview only; Replay can verify preview digest, but online damage, rewards, hp, and settlement stay server-authoritative",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"preview_projection": projection,
+		"spellbook_id": String(projection.get("spellbook_id", BOSS_LOCAL_PREVIEW_SPELLBOOK_ID)),
+		"preview_seed": int(projection.get("preview_seed", BOSS_LOCAL_PREVIEW_SEED)),
+		"preview_bundle_id": String(projection.get("preview_bundle_id", "")),
+		"preview_bundle_signature_digest": digest,
+		"preview_phase_count": phase_count,
+		"preview_phase_ids": projection.get("preview_phase_ids", []),
+		"preview_phase_signature_digests": projection.get("preview_phase_signature_digests", []),
+		"preview_max_emit_per_tick": max_emit,
+		"preview_min_budget_headroom": headroom,
+		"performance_budget_status": budget_status,
+		"preview_authority_scope": String(projection.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)),
+		"projection_scope": String(projection.get("projection_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)),
+		"replay_verification_scope": String(projection.get("replay_verification_scope", "local_practice_hash")),
+		"practice_mode": String(projection.get("practice_mode", "boss_spellbook_practice")),
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"server_confirmation_status": String(projection.get("server_confirmation_status", "not_applicable_local_preview")),
+		"requires_server_confirmation": false,
+		"server_authoritative": false,
+		"client_result_authoritative": false,
+		"enabled": bool(projection.get("ok", false)),
+	}
+
 func _boss_transfer_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
 	var requests: Array = state.get("transfer_requests", [])
 	var transferred_ids := _string_array(state.get("transferred_card_ids", []))
@@ -1820,4 +1948,12 @@ func _string_array(source: Variant) -> Array[String]:
 		return values
 	for item in source as Array:
 		values.append(str(item))
+	return values
+
+func _int_array(source: Variant) -> Array[int]:
+	var values: Array[int] = []
+	if typeof(source) != TYPE_ARRAY:
+		return values
+	for item in source as Array:
+		values.append(int(item))
 	return values

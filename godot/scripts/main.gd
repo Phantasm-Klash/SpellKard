@@ -272,6 +272,8 @@ func _ready() -> void:
 	pattern_lab_model = PatternLabModelLib.new()
 	pattern_lab_model.configure(stage_select_model)
 	boss_spellbook_model = BossSpellbookModelLib.new()
+	if game_mode_model.has_method("configure_boss_spellbook"):
+		game_mode_model.configure_boss_spellbook(boss_spellbook_model)
 	if pattern_lab_model.has_method("configure_boss_spellbook"):
 		pattern_lab_model.configure_boss_spellbook(boss_spellbook_model)
 	_refresh_pattern_configs_from_stage()
