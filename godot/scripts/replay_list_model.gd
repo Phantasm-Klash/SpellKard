@@ -343,6 +343,14 @@ func boss_practice_verification_summary_row() -> Dictionary:
 		{"id": "server_claim_fields", "label": "server claim fields", "value": rejected_claim_fields.size()},
 		{"id": "digest", "label": "digest", "value": int(boss_context.get("preview_bundle_signature_digest", 0))},
 	]
+	var status_cards := _boss_practice_status_cards(
+		ready_count,
+		invalid_count,
+		server_claim_count,
+		rejected_claim_fields,
+		selected_boss_row,
+		boss_context
+	)
 	return {
 		"id": "replay_boss_practice_verification",
 		"label_key": "screen.settings.boss_spellbook",
@@ -389,6 +397,7 @@ func boss_practice_verification_summary_row() -> Dictionary:
 		"render_slot": "overview_cards",
 		"recommended_filter": recommended_filter,
 		"recommended_filter_row_id": "replay_filter_%s" % recommended_filter if recommended_filter != "all" else "replay_filter_all",
+		"boss_practice_status_cards": status_cards,
 		"verification_card_metrics": verification_card_metrics,
 		"verification_card_primary_metric": "ready %d/%d" % [ready_count, boss_rows.size()],
 		"verification_card_secondary_metric": "invalid %d claims %d digest %d" % [
@@ -409,6 +418,82 @@ func boss_practice_verification_summary_row() -> Dictionary:
 		"ui_action": "",
 		"enabled": true,
 	}
+
+func _boss_practice_status_cards(ready_count: int, invalid_count: int, server_claim_count: int, rejected_claim_fields: Array[String], selected_boss_row: Dictionary, boss_context: Dictionary) -> Array[Dictionary]:
+	var selected_replay_id := String(selected_boss_row.get("replay_id", ""))
+	var selected_guard_reason := String(selected_boss_row.get("local_load_guard_reason", ""))
+	return [
+		{
+			"id": "boss_practice_status_local_ready",
+			"label_key": "ui.menu_section_replay_local_ready",
+			"value": "ready %d" % ready_count,
+			"summary": "Boss practice Replays with local hash verification can load for practice playback only",
+			"status_card_kind": "boss_practice_replay_status",
+			"verification_filter": "replay_boss_practice",
+			"recommended_filter_row_id": "replay_filter_replay_boss_practice",
+			"entry_count": ready_count,
+			"selected_replay_id": selected_replay_id,
+			"selected_can_play": bool(selected_boss_row.get("can_play", false)),
+			"selected_local_playback_authority": String(selected_boss_row.get("local_playback_authority", "none")),
+			"preview_bundle_signature_digest": int(boss_context.get("preview_bundle_signature_digest", 0)),
+			"ui_control": "card",
+			"ui_action": "set_replay_filter",
+			"render_slot": "overview_cards",
+			"server_authoritative": false,
+			"local_hash_authority": "local_practice_verification_only",
+			"damage_authority": "server",
+			"reward_authority": "server",
+			"settlement_authority": "server",
+			"client_result_authoritative": false,
+			"enabled": ready_count > 0,
+		},
+		{
+			"id": "boss_practice_status_metadata_invalid",
+			"label_key": "ui.menu_section_replay_metadata_invalid",
+			"value": "invalid %d" % invalid_count,
+			"summary": "Boss practice Replays with stale or missing preview metadata stay blocked locally",
+			"status_card_kind": "boss_practice_replay_status",
+			"verification_filter": "replay_metadata_invalid",
+			"recommended_filter_row_id": "replay_filter_replay_metadata_invalid",
+			"entry_count": invalid_count,
+			"selected_replay_id": selected_replay_id,
+			"selected_load_guard_reason": selected_guard_reason,
+			"ui_control": "card",
+			"ui_action": "set_replay_filter",
+			"render_slot": "overview_cards",
+			"server_authoritative": false,
+			"local_hash_authority": "local_practice_verification_only",
+			"damage_authority": "server",
+			"reward_authority": "server",
+			"settlement_authority": "server",
+			"client_result_authoritative": false,
+			"enabled": invalid_count > 0,
+		},
+		{
+			"id": "boss_practice_status_server_claim_rejected",
+			"label_key": "ui.menu_section_replay_rejected_server_claim",
+			"value": "claims %d fields %d" % [server_claim_count, rejected_claim_fields.size()],
+			"summary": "Boss practice Replay entries that claim damage, hp, reward, or settlement authority require server audit and cannot load locally",
+			"status_card_kind": "boss_practice_replay_status",
+			"verification_filter": "rejected_server_claim",
+			"recommended_filter_row_id": "replay_filter_rejected_server_claim",
+			"entry_count": server_claim_count,
+			"rejected_server_claim_fields": rejected_claim_fields.duplicate(),
+			"selected_replay_id": selected_replay_id,
+			"selected_requires_server_audit": bool(selected_boss_row.get("requires_server_audit", false)),
+			"selected_server_audit_status": String(selected_boss_row.get("server_audit_status", "not_required")),
+			"ui_control": "card",
+			"ui_action": "set_replay_filter",
+			"render_slot": "overview_cards",
+			"server_authoritative": false,
+			"local_hash_authority": "local_practice_verification_only",
+			"damage_authority": "server",
+			"reward_authority": "server",
+			"settlement_authority": "server",
+			"client_result_authoritative": false,
+			"enabled": server_claim_count > 0,
+		},
+	]
 
 func selected_action_rows() -> Array[Dictionary]:
 	var entry := selected_entry()

@@ -4755,6 +4755,10 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: boss practice verification summary metrics invalid %s" % [boss_practice_summary])
 		quit(1)
 		return true
+	var boss_practice_status_cards: Array = boss_practice_summary.get("boss_practice_status_cards", [])
+	if not _validate_boss_practice_status_cards(boss_practice_status_cards, true, false, false, []):
+		quit(1)
+		return true
 	var boss_practice_actions: Array[Dictionary] = replay_list_model.selected_action_rows()
 	var boss_practice_load_action: Dictionary = _find_row_by_id(boss_practice_actions, "replay_action_load")
 	if String(boss_practice_load_action.get("selected_boss_practice_verification_status", "")) != "local_final_hash_ready" \
@@ -4815,6 +4819,10 @@ func _process(_delta: float) -> bool:
 			or not (fallback_claim_summary.get("boss_practice_rejected_server_claim_fields", []) as Array).has("damage_total") \
 			or not (fallback_claim_summary.get("selected_server_authority_claim_fields", []) as Array).has("damage_total"):
 		push_error("Smoke test failed: fallback server-claim replay summary invalid %s" % [fallback_claim_summary])
+		quit(1)
+		return true
+	var fallback_claim_status_cards: Array = fallback_claim_summary.get("boss_practice_status_cards", [])
+	if not _validate_boss_practice_status_cards(fallback_claim_status_cards, false, false, true, ["damage_total"]):
 		quit(1)
 		return true
 	if not replay_list_model.set_verification_filter("replay_boss_practice") or String(replay_list_model.get("active_verification_filter")) != "replay_boss_practice":
@@ -5258,6 +5266,59 @@ func _validate_replay_row_authority(row: Dictionary, expected_hash_authority: St
 		return false
 	if String(row.get("settlement_authority", "")) != expected_settlement_authority or String(row.get("reward_authority", "")) != expected_settlement_authority:
 		push_error("Smoke test failed: replay settlement/reward authority invalid %s" % [row])
+		return false
+	return true
+
+func _validate_boss_practice_status_cards(cards: Array, expect_ready_enabled: bool, expect_invalid_enabled: bool, expect_claim_enabled: bool, expected_claim_fields: Array[String]) -> bool:
+	if cards.size() != 3:
+		push_error("Smoke test failed: boss practice status card count invalid %s" % [cards])
+		return false
+	var expected_ids := [
+		"boss_practice_status_local_ready",
+		"boss_practice_status_metadata_invalid",
+		"boss_practice_status_server_claim_rejected",
+	]
+	var expected_filters := [
+		"replay_boss_practice",
+		"replay_metadata_invalid",
+		"rejected_server_claim",
+	]
+	var expected_enabled := [
+		expect_ready_enabled,
+		expect_invalid_enabled,
+		expect_claim_enabled,
+	]
+	for i in range(cards.size()):
+		if typeof(cards[i]) != TYPE_DICTIONARY:
+			push_error("Smoke test failed: boss practice status card type invalid %s" % [cards])
+			return false
+		var card: Dictionary = cards[i]
+		if String(card.get("id", "")) != expected_ids[i] or String(card.get("status_card_kind", "")) != "boss_practice_replay_status":
+			push_error("Smoke test failed: boss practice status card identity invalid %s" % [card])
+			return false
+		if String(card.get("verification_filter", "")) != expected_filters[i] or String(card.get("recommended_filter_row_id", "")) != "replay_filter_%s" % expected_filters[i]:
+			push_error("Smoke test failed: boss practice status card filter invalid %s" % [card])
+			return false
+		if String(card.get("ui_control", "")) != "card" or String(card.get("ui_action", "")) != "set_replay_filter" or String(card.get("render_slot", "")) != "overview_cards":
+			push_error("Smoke test failed: boss practice status card UI contract invalid %s" % [card])
+			return false
+		if bool(card.get("enabled", false)) != bool(expected_enabled[i]):
+			push_error("Smoke test failed: boss practice status card enabled state invalid %s expected=%s" % [card, expected_enabled[i]])
+			return false
+		if bool(card.get("server_authoritative", true)) or bool(card.get("client_result_authoritative", true)) or String(card.get("local_hash_authority", "")) != "local_practice_verification_only":
+			push_error("Smoke test failed: boss practice status card local authority invalid %s" % [card])
+			return false
+		if String(card.get("damage_authority", "")) != "server" or String(card.get("reward_authority", "")) != "server" or String(card.get("settlement_authority", "")) != "server":
+			push_error("Smoke test failed: boss practice status card server authority labels invalid %s" % [card])
+			return false
+	var claim_card: Dictionary = cards[2]
+	var claim_fields: Array = claim_card.get("rejected_server_claim_fields", [])
+	for expected_field in expected_claim_fields:
+		if not claim_fields.has(expected_field):
+			push_error("Smoke test failed: boss practice status card missing claim field %s in %s" % [expected_field, claim_card])
+			return false
+	if expect_claim_enabled and (String(claim_card.get("selected_server_audit_status", "")) != "pending" or not bool(claim_card.get("selected_requires_server_audit", false))):
+		push_error("Smoke test failed: boss practice server-claim status card audit state invalid %s" % [claim_card])
 		return false
 	return true
 
