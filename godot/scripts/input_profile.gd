@@ -178,11 +178,13 @@ func binding_option_index(action: StringName, keycodes: Array[int]) -> int:
 
 func binding_rows() -> Array[Dictionary]:
 	var rows: Array[Dictionary] = []
+	var conflicts_by_action := binding_conflicts_by_action()
 	for action in REQUIRED_ACTIONS:
 		var keycodes := action_keycodes(action)
 		var names: Array[String] = []
 		for keycode in keycodes:
 			names.append(OS.get_keycode_string(keycode))
+		var conflict_actions: Array = conflicts_by_action.get(String(action), [])
 		rows.append({
 			"id": "binding_%s" % String(action),
 			"action": String(action),
@@ -190,6 +192,10 @@ func binding_rows() -> Array[Dictionary]:
 			"label": String(ACTION_LABELS.get(action, action)),
 			"keys": names,
 			"keycodes": keycodes,
+			"conflict_actions": conflict_actions,
+			"conflict_count": conflict_actions.size(),
+			"conflict_status": "conflict" if not conflict_actions.is_empty() else "ok",
+			"summary": "conflicts %s" % ",".join(conflict_actions) if not conflict_actions.is_empty() else "no conflicts",
 			"custom": custom_bindings.has(action),
 			"control_options": binding_option_names(action),
 			"control_option_index": binding_option_index(action, keycodes),
@@ -232,6 +238,43 @@ func action_summary(action: StringName) -> String:
 	for keycode in action_keycodes(action):
 		parts.append(OS.get_keycode_string(keycode))
 	return "%s=%s" % [String(ACTION_LABELS.get(action, action)), "+".join(parts)]
+
+func binding_conflicts_by_action() -> Dictionary:
+	var key_to_actions := {}
+	for action in REQUIRED_ACTIONS:
+		for keycode in action_keycodes(action):
+			if keycode <= 0:
+				continue
+			var key := int(keycode)
+			var actions: Array = key_to_actions.get(key, [])
+			if not actions.has(String(action)):
+				actions.append(String(action))
+			key_to_actions[key] = actions
+	var conflicts := {}
+	for action in REQUIRED_ACTIONS:
+		conflicts[String(action)] = []
+	for key in key_to_actions.keys():
+		var actions: Array = key_to_actions[key]
+		if actions.size() <= 1:
+			continue
+		for action_name in actions:
+			var existing: Array = conflicts.get(action_name, [])
+			for other_action in actions:
+				if other_action == action_name or existing.has(other_action):
+					continue
+				existing.append(other_action)
+			conflicts[action_name] = existing
+	return conflicts
+
+func conflict_summary() -> String:
+	var parts: Array[String] = []
+	var conflicts := binding_conflicts_by_action()
+	for action in REQUIRED_ACTIONS:
+		var conflict_actions: Array = conflicts.get(String(action), [])
+		if conflict_actions.is_empty():
+			continue
+		parts.append("%s:%s" % [String(action), ",".join(conflict_actions)])
+	return "ok" if parts.is_empty() else "; ".join(parts)
 
 func validation_summary() -> String:
 	if validate_actions():
@@ -393,7 +436,7 @@ func cycle_binding(action: StringName, delta: int = 1) -> Dictionary:
 func summary() -> String:
 	return "%s map %s %s %s %s pad %s %.0f dz %.0f" % [
 		profile_name(),
-		validation_summary(),
+		"%s conflicts %s" % [validation_summary(), conflict_summary()],
 		action_summary(&"shoot"),
 		action_summary(&"bomb"),
 		action_summary(&"focus"),

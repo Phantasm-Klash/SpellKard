@@ -225,6 +225,22 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: input binding rows invalid")
 		quit(1)
 		return true
+	if String(input_profile.conflict_summary()) != "ok" or int(_find_row_by_id(binding_rows, "binding_shoot").get("conflict_count", -1)) != 0:
+		push_error("Smoke test failed: default input binding conflict summary invalid")
+		quit(1)
+		return true
+	if not input_profile.rebind_action(&"bomb", [KEY_Z]):
+		push_error("Smoke test failed: input conflict setup failed")
+		quit(1)
+		return true
+	var conflict_rows: Array[Dictionary] = input_profile.binding_rows()
+	var conflict_shoot_row: Dictionary = _find_row_by_id(conflict_rows, "binding_shoot")
+	var conflict_bomb_row: Dictionary = _find_row_by_id(conflict_rows, "binding_bomb")
+	if int(conflict_shoot_row.get("conflict_count", 0)) <= 0 or not (conflict_shoot_row.get("conflict_actions", []) as Array).has("bomb") or String(conflict_bomb_row.get("conflict_status", "")) != "conflict":
+		push_error("Smoke test failed: input binding conflict rows invalid shoot=%s bomb=%s" % [conflict_shoot_row, conflict_bomb_row])
+		quit(1)
+		return true
+	input_profile.restore_current_profile()
 	if audio_settings == null or not audio_settings.validate():
 		push_error("Smoke test failed: audio settings invalid")
 		quit(1)

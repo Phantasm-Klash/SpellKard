@@ -6148,7 +6148,10 @@ func _format_ui_row(row: Dictionary) -> String:
 		return "%s %s" % [label_text, String(row.get("value", ""))]
 	if String(row.get("id", "")).begins_with("binding_"):
 		var keys: Array = row.get("keys", [])
-		return "%s %s [%s]" % [String(row.get("label", "")), "+".join(keys), "custom" if bool(row.get("custom", false)) else "preset"]
+		var conflict_text := ""
+		if int(row.get("conflict_count", 0)) > 0:
+			conflict_text = " conflict %s" % ",".join(row.get("conflict_actions", []) as Array)
+		return "%s %s [%s%s]" % [String(row.get("label", "")), "+".join(keys), "custom" if bool(row.get("custom", false)) else "preset", conflict_text]
 	if String(row.get("id", "")).begins_with("play_"):
 		return "%s %s" % [label_text, String(row.get("value", ""))]
 	if String(row.get("id", "")).begins_with("matchmaking_"):
