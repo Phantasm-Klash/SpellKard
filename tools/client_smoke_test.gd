@@ -1957,6 +1957,10 @@ func _process(_delta: float) -> bool:
 	if not _validate_boss_party_row_contract(world_boss_party_row, "world_boss", 4):
 		quit(1)
 		return true
+	var world_display_slots: Array[Dictionary] = game_mode_model.boss_display_slots("world_boss", Rect2(Vector2(160, 48), Vector2(640, 624)))
+	if not _validate_boss_display_slots(world_display_slots, "world_boss", 4):
+		quit(1)
+		return true
 	var world_boss_entry: Dictionary = game_mode_model.validate_boss_entry("world_boss")
 	if not bool(world_boss_entry.get("ok", false)) or bool(world_boss_entry.get("client_result_authoritative", true)) or int(world_boss_entry.get("attempts_left", 0)) != 3:
 		push_error("Smoke test failed: world boss entry gate invalid %s" % [world_boss_entry])
@@ -2071,6 +2075,10 @@ func _process(_delta: float) -> bool:
 		return true
 	var instance_boss_party_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_party")
 	if not _validate_boss_party_row_contract(instance_boss_party_row, "instance_boss", 8):
+		quit(1)
+		return true
+	var instance_display_slots: Array[Dictionary] = game_mode_model.boss_display_slots("instance_boss", Rect2(Vector2(160, 48), Vector2(640, 624)))
+	if not _validate_boss_display_slots(instance_display_slots, "instance_boss", 8):
 		quit(1)
 		return true
 	var rejected_instance_access: Dictionary = main_node.call("_apply_server_instance_boss_access", {
@@ -4113,17 +4121,26 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay list model missing rows")
 		quit(1)
 		return true
+	var replay_verification_summary: Dictionary = replay_list_model.verification_summary_row()
+	if String(replay_verification_summary.get("id", "")) != "replay_verification_summary" or int(replay_verification_summary.get("entry_count", 0)) <= 0 or int(replay_verification_summary.get("local_ready_count", 0)) <= 0 or int(replay_verification_summary.get("server_pending_audit_count", -1)) != 0 or bool(replay_verification_summary.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: replay verification aggregate invalid %s" % [replay_verification_summary])
+		quit(1)
+		return true
 	if not main_node.call("_open_ui_screen", "replay"):
 		push_error("Smoke test failed: replay screen did not open")
 		quit(1)
 		return true
 	var ui_replay_rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 4)
-	if ui_replay_rows.is_empty() or not ui_replay_rows[0].has("score"):
+	if ui_replay_rows.size() < 2 or String(ui_replay_rows[0].get("id", "")) != "replay_verification_summary" or not ui_replay_rows[1].has("score"):
 		push_error("Smoke test failed: replay screen rows invalid")
 		quit(1)
 		return true
-	if String(ui_replay_rows[0].get("ui_control", "")) != "replay" or not String(ui_replay_rows[0].get("value", "")).contains("hash") or not String(ui_replay_rows[0].get("summary", "")).contains("local_practice_record") or not String(ui_replay_rows[0].get("summary", "")).contains("local practice final hash ready"):
-		push_error("Smoke test failed: replay UI verification summary invalid %s" % [ui_replay_rows[0]])
+	if bool(ui_replay_rows[0].get("client_result_authoritative", true)) or int(ui_replay_rows[0].get("local_ready_count", 0)) <= 0 or int(ui_replay_rows[0].get("server_pending_audit_count", -1)) != 0:
+		push_error("Smoke test failed: replay UI verification aggregate invalid %s" % [ui_replay_rows[0]])
+		quit(1)
+		return true
+	if String(ui_replay_rows[1].get("ui_control", "")) != "replay" or not String(ui_replay_rows[1].get("value", "")).contains("hash") or not String(ui_replay_rows[1].get("summary", "")).contains("local_practice_record") or not String(ui_replay_rows[1].get("summary", "")).contains("local practice final hash ready"):
+		push_error("Smoke test failed: replay UI verification summary invalid %s" % [ui_replay_rows[1]])
 		quit(1)
 		return true
 	main_node.call("_select_replay_index", 0)
@@ -4534,6 +4551,7 @@ func _validate_boss_party_row_contract(row: Dictionary, mode_id: String, expecte
 		push_error("Smoke test failed: boss party row missing for %s" % mode_id)
 		return false
 	var positions: Array = row.get("items", [])
+	var display_slots: Array = row.get("display_slots", [])
 	if String(row.get("mode_id", "")) != mode_id or String(row.get("mode_category", "")) != "boss":
 		push_error("Smoke test failed: boss party row mode contract invalid %s" % [row])
 		return false
@@ -4542,6 +4560,9 @@ func _validate_boss_party_row_contract(row: Dictionary, mode_id: String, expecte
 		return false
 	if String(row.get("aim_policy", "")) != "toward_center" or String(row.get("friendly_fire", "")) != "disabled" or bool(row.get("client_result_authoritative", true)):
 		push_error("Smoke test failed: boss party row authority/display contract invalid %s" % [row])
+		return false
+	if display_slots.size() != expected_count:
+		push_error("Smoke test failed: boss party display slots missing %s" % [row])
 		return false
 	for position in positions:
 		var entry: Dictionary = position
@@ -4552,6 +4573,36 @@ func _validate_boss_party_row_contract(row: Dictionary, mode_id: String, expecte
 			return false
 		if spawn.length() < 0.99 or spawn.length() > 1.01 or aim.length() < 0.99 or aim.length() > 1.01 or spawn.dot(aim) > -0.99:
 			push_error("Smoke test failed: boss position vectors invalid %s" % [entry])
+			return false
+	return true
+
+func _validate_boss_display_slots(slots: Array[Dictionary], mode_id: String, expected_count: int) -> bool:
+	if slots.size() != expected_count:
+		push_error("Smoke test failed: boss display slot count invalid %s" % [slots])
+		return false
+	for i in range(slots.size()):
+		var slot: Dictionary = slots[i]
+		var normalized_spawn: Vector2 = slot.get("normalized_spawn", Vector2.ZERO)
+		var normalized_display_position: Vector2 = slot.get("normalized_display_position", Vector2.ZERO)
+		var screen_position: Vector2 = slot.get("screen_position", Vector2.ZERO)
+		var aim_vector: Vector2 = slot.get("aim_vector", Vector2.ZERO)
+		if String(slot.get("mode_id", "")) != mode_id or int(slot.get("slot_index", -1)) != i or int(slot.get("slot_count", -1)) != expected_count:
+			push_error("Smoke test failed: boss display slot identity invalid %s" % [slot])
+			return false
+		if bool(slot.get("client_result_authoritative", true)) or String(slot.get("friendly_fire", "")) != "disabled":
+			push_error("Smoke test failed: boss display slot authority invalid %s" % [slot])
+			return false
+		if normalized_spawn.length() < 0.99 or normalized_spawn.length() > 1.01 or aim_vector.length() < 0.99 or aim_vector.length() > 1.01 or normalized_spawn.dot(aim_vector) > -0.99:
+			push_error("Smoke test failed: boss display vectors invalid %s" % [slot])
+			return false
+		if normalized_display_position.x < 0.05 or normalized_display_position.x > 0.95 or normalized_display_position.y < 0.05 or normalized_display_position.y > 0.95:
+			push_error("Smoke test failed: boss normalized display position out of bounds %s" % [slot])
+			return false
+		if screen_position.x < 160.0 or screen_position.x > 800.0 or screen_position.y < 48.0 or screen_position.y > 672.0:
+			push_error("Smoke test failed: boss screen display position out of playfield %s" % [slot])
+			return false
+		if not bool(slot.get("aim_to_center", false)) or slot.get("aim_target", Vector2.INF) != Vector2.ZERO:
+			push_error("Smoke test failed: boss display slot target invalid %s" % [slot])
 			return false
 	return true
 

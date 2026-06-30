@@ -67,6 +67,45 @@ func row_models(limit: int = 20) -> Array[Dictionary]:
 		rows.append(_row_from_entry(entries[i], i))
 	return rows
 
+func verification_summary_row() -> Dictionary:
+	var local_ready := 0
+	var missing_hash := 0
+	var server_pending := 0
+	var metadata_invalid := 0
+	var rejected_server_claim := 0
+	for entry in entries:
+		var metadata_valid := _entry_metadata_valid(entry)
+		var server_claim_fields := _entry_server_authority_claim_fields(entry)
+		var status_value := _entry_verification_status(entry, int(entry.get("final_result_hash", 0)), metadata_valid)
+		var scope_value := _entry_verification_scope(bool(entry.get("server_authoritative", false)), metadata_valid, server_claim_fields)
+		match status_value:
+			"local_final_hash_ready":
+				local_ready += 1
+			"missing_final_hash":
+				missing_hash += 1
+			"server_record_pending_audit":
+				server_pending += 1
+			_:
+				metadata_invalid += 1
+		if scope_value == "rejected_server_claim":
+			rejected_server_claim += 1
+	return {
+		"id": "replay_verification_summary",
+		"label_key": "screen.main.replay",
+		"value": "local %d missing %d server %d invalid %d" % [local_ready, missing_hash, server_pending, metadata_invalid],
+		"summary": "verification local_ready=%d missing_hash=%d server_pending=%d metadata_invalid=%d rejected_server_claim=%d" % [local_ready, missing_hash, server_pending, metadata_invalid, rejected_server_claim],
+		"entry_count": entries.size(),
+		"local_ready_count": local_ready,
+		"missing_final_hash_count": missing_hash,
+		"server_pending_audit_count": server_pending,
+		"metadata_invalid_count": metadata_invalid,
+		"rejected_server_claim_count": rejected_server_claim,
+		"server_authoritative": false,
+		"client_result_authoritative": false,
+		"ui_control": "status",
+		"enabled": true,
+	}
+
 func selected_summary() -> String:
 	var row := selected_row()
 	if row.is_empty():

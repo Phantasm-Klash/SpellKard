@@ -12,6 +12,8 @@ const BR_POOL_CARDS_PER_PLAYER := 4
 const BOSS_MIN_PLAYERS := 4
 const BOSS_MAX_PLAYERS := 8
 const BOSS_CENTER := Vector2.ZERO
+const BOSS_DISPLAY_CENTER := Vector2(0.5, 0.5)
+const BOSS_DISPLAY_RADIUS := 0.42
 const BOSS_ENTRY_RATING_ORDER := ["D", "C", "B", "A", "S"]
 
 var matchmaking_model: RefCounted = null
@@ -384,6 +386,40 @@ func boss_formation_summary(mode_id: String) -> String:
 		String(validation.get("aim_policy", "toward_center")),
 		String(validation.get("friendly_fire", "disabled")),
 	]
+
+func boss_display_slots(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO, Vector2.ONE)) -> Array[Dictionary]:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return []
+	var state := _state_for_mode(mode_id)
+	var positions: Array = state.get("positions", [])
+	var slots: Array[Dictionary] = []
+	for raw_position in positions:
+		var position: Dictionary = raw_position
+		var spawn: Vector2 = position.get("spawn", Vector2.ZERO)
+		var aim: Vector2 = position.get("aim", Vector2.ZERO)
+		var normalized_position := BOSS_DISPLAY_CENTER + spawn * BOSS_DISPLAY_RADIUS
+		var screen_position := playfield.position + Vector2(
+			normalized_position.x * playfield.size.x,
+			normalized_position.y * playfield.size.y
+		)
+		slots.append({
+			"player_id": String(position.get("player_id", "")),
+			"mode_id": mode_id,
+			"slot_index": int(position.get("slot_index", -1)),
+			"slot_count": int(position.get("slot_count", positions.size())),
+			"normalized_spawn": spawn,
+			"normalized_display_position": normalized_position,
+			"screen_position": screen_position,
+			"aim_vector": aim,
+			"aim_angle_degrees": rad_to_deg(aim.angle()),
+			"aim_target": position.get("aim_target", BOSS_CENTER),
+			"aim_to_center": bool(position.get("aim_to_center", false)),
+			"friendly_fire": String(state.get("friendly_fire", "disabled")),
+			"boss_center": state.get("boss_center", BOSS_CENTER),
+			"server_authoritative": bool(state.get("server_authoritative", false)),
+			"client_result_authoritative": false,
+		})
+	return slots
 
 func boss_local_status_row(row_id: String, mode_id: String) -> Dictionary:
 	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
@@ -786,11 +822,13 @@ func _boss_hp_row(row_id: String, state: Dictionary, persistent_hp: bool) -> Dic
 
 func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
 	var positions: Array = state.get("positions", [])
+	var display_slots := boss_display_slots(mode_id)
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.boss.party",
 		"value": "%d/%d-%d %s" % [positions.size(), BOSS_MIN_PLAYERS, BOSS_MAX_PLAYERS, str(state.get("party_status", "waiting"))],
 		"items": positions,
+		"display_slots": display_slots,
 		"mode_id": mode_id,
 		"mode_category": "boss",
 		"player_count": int(state.get("player_count", positions.size())),
@@ -832,11 +870,13 @@ func _boss_entry_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 
 func _boss_formation_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
 	var validation := validate_boss_formation(mode_id)
+	var display_slots := boss_display_slots(mode_id)
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.boss.party",
 		"value": boss_formation_summary(mode_id),
 		"items": state.get("positions", []),
+		"display_slots": display_slots,
 		"mode_id": mode_id,
 		"mode_category": "boss",
 		"formation_valid": bool(validation.get("ok", false)),

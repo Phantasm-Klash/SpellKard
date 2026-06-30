@@ -885,6 +885,8 @@ func _replay_rows(limit: int) -> Array[Dictionary]:
 		return []
 	replay_list_model.refresh()
 	var rows: Array[Dictionary] = []
+	if replay_list_model.has_method("verification_summary_row"):
+		rows.append(replay_list_model.verification_summary_row())
 	for row in replay_list_model.row_models(limit):
 		var replay_row: Dictionary = row.duplicate(true)
 		replay_row["ui_action"] = "load_replay"
