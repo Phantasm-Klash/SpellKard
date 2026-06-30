@@ -2589,8 +2589,12 @@ func _dispatch_ui_action(row: Dictionary) -> Dictionary:
 						replay_list_model.select_index(int(replay_rows[i].get("source_index", i)))
 						_sync_replay_index_state()
 					var replay_ok: bool = _load_selected_replay_snapshot()
-					return _set_ui_action_result(replay_ok, action, {"replay_id": replay_id})
-			return _set_ui_action_result(false, action, {"replay_id": replay_id})
+					return _set_ui_action_result(replay_ok, action, {
+						"replay_id": replay_id,
+						"status": replay_index_action_status,
+						"reason": "none" if replay_ok else replay_index_action_status,
+					})
+			return _set_ui_action_result(false, action, {"replay_id": replay_id, "reason": "missing_entry"})
 		"set_replay_filter":
 			var filter_id := String(row.get("verification_filter", "all"))
 			var filter_ok: bool = _set_replay_verification_filter(filter_id)

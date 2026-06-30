@@ -4251,6 +4251,44 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay input invalid load was not blocked status=%s action=%s" % [main_node.get("replay_file_status"), main_node.get("replay_index_action_status")])
 		quit(1)
 		return true
+	var server_replay := latest_replay.duplicate(true)
+	server_replay["replay_id"] = "server-audit-smoke"
+	server_replay["mode"] = "pvp_duel"
+	server_replay["result"] = "server_record"
+	server_replay["server_authoritative"] = true
+	var server_replay_validation: Dictionary = replay_store.validate_index_metadata([server_replay])
+	if not bool(server_replay_validation.get("ok", false)):
+		push_error("Smoke test failed: server replay audit metadata should be accepted as pending %s" % [server_replay_validation])
+		quit(1)
+		return true
+	replay_list_model.entries = [server_replay]
+	replay_list_model.cursor = 0
+	replay_list_model.set_verification_filter("replay_server_pending")
+	var server_replay_rows: Array[Dictionary] = replay_list_model.row_models(4)
+	if server_replay_rows.is_empty() \
+			or String(server_replay_rows[0].get("section", "")) != "replay_server_pending" \
+			or String(server_replay_rows[0].get("verification_status", "")) != "server_record_pending_audit" \
+			or String(server_replay_rows[0].get("verification_scope", "")) != "server_audit_record" \
+			or String(server_replay_rows[0].get("replay_authority_scope", "")) != "server_authoritative_record" \
+			or String(server_replay_rows[0].get("local_load_policy", "")) != "blocked_server_audit" \
+			or String(server_replay_rows[0].get("server_audit_status", "")) != "pending" \
+			or not bool(server_replay_rows[0].get("requires_server_audit", false)) \
+			or bool(server_replay_rows[0].get("can_play", true)) \
+			or bool(server_replay_rows[0].get("enabled", true)) \
+			or String(server_replay_rows[0].get("load_rejection_reason", "")) != "server_record_pending_audit" \
+			or String(server_replay_rows[0].get("local_load_guard_reason", "")) != "server_record_pending_audit":
+		push_error("Smoke test failed: server replay pending-audit row invalid %s" % [server_replay_rows])
+		quit(1)
+		return true
+	var server_replay_guard: Dictionary = replay_list_model.local_load_guard_for_entry(server_replay)
+	if bool(server_replay_guard.get("ok", true)) or String(server_replay_guard.get("reason", "")) != "server_record_pending_audit" or String(server_replay_guard.get("verification_section", "")) != "replay_server_pending":
+		push_error("Smoke test failed: server replay local load guard invalid %s" % [server_replay_guard])
+		quit(1)
+		return true
+	if main_node.call("_load_selected_replay_snapshot") or String(main_node.get("replay_file_status")) != "load_failed" or String(main_node.get("replay_index_action_status")) != "server_record_pending_audit":
+		push_error("Smoke test failed: server replay local load was not blocked status=%s action=%s" % [main_node.get("replay_file_status"), main_node.get("replay_index_action_status")])
+		quit(1)
+		return true
 	replay_list_model.refresh()
 	if not replay_list_model.set_verification_filter("replay_local_ready") or String(replay_list_model.get("active_verification_filter")) != "replay_local_ready":
 		push_error("Smoke test failed: replay verification filter did not activate")

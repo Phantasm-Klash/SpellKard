@@ -250,6 +250,8 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 	var verification_status := _entry_verification_status(entry, final_result_hash, metadata_valid)
 	var load_rejection_reason := _entry_local_load_rejection_reason(entry, verification_status, metadata_valid, server_authoritative)
 	var replay_authority_scope := "server_authoritative_record" if server_authoritative else "local_practice_record"
+	var requires_server_audit := server_authoritative or _entry_verification_section(verification_status) == "replay_server_pending"
+	var local_load_policy := "blocked_server_audit" if requires_server_audit else ("blocked_local_integrity" if not load_rejection_reason.is_empty() else "loadable_local_practice")
 	return {
 		"index": index + 1,
 		"source_index": index,
@@ -278,6 +280,11 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"section": _entry_verification_section(verification_status),
 		"section_label_key": _entry_verification_section_label_key(verification_status),
 		"replay_authority_scope": replay_authority_scope,
+		"local_load_policy": local_load_policy,
+		"local_load_guard_reason": load_rejection_reason,
+		"requires_server_audit": requires_server_audit,
+		"server_audit_status": "pending" if requires_server_audit else "not_required",
+		"local_playback_authority": "server_audit_required" if requires_server_audit else "local_practice_hash",
 		"favorite": bool(entry.get("favorite", false)),
 		"pattern_id": str(entry.get("pattern_id", "")),
 		"catalog_id": str(entry.get("catalog_id", "")),
