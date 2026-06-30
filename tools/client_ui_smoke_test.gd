@@ -161,6 +161,21 @@ func _validate_play_pages() -> bool:
 	var modes_overview_text := String(snapshot.get("overview_cards_text", ""))
 	if not modes_overview_text.contains(_text("screen.settings.boss_spellbook")) or not modes_overview_text.contains("phases") or not modes_overview_text.contains("digest"):
 		return _fail("modes overview cards missing boss practice preview card metrics %s" % modes_overview_text)
+	if not String(snapshot.get("page_focus_action_ids", "")).contains("world_boss_authority") or not String(snapshot.get("page_focus_action_ids", "")).contains("instance_boss_authority"):
+		return _fail("modes focus actions should prioritize Boss authority cards %s" % [snapshot])
+	var world_authority_row := _row_by_id(rows, "world_boss_authority")
+	if world_authority_row.is_empty() or not String(world_authority_row.get("summary", "")).contains("server owns damage") or String(world_authority_row.get("damage_authority", "")) != "server" or bool(world_authority_row.get("client_result_authoritative", true)):
+		return _fail("modes rows missing full Boss authority summary boundaries %s" % [world_authority_row])
+	if not modes_overview_text.contains("client display/intents"):
+		return _fail("modes overview cards missing visible Boss authority summary %s" % modes_overview_text)
+	var world_authority_index := _row_index_by_id(rows, "world_boss_authority")
+	if world_authority_index < 0:
+		return _fail("modes page missing world boss authority row")
+	main_node.call("_ui_set_cursor", world_authority_index)
+	await _settle_frames(2)
+	snapshot = main_node.call("_ui_overlay_snapshot")
+	if String(snapshot.get("selected_row_id", "")) != "world_boss_authority" or not String(snapshot.get("detail", "")).contains("client display/intent"):
+		return _fail("world boss authority focus detail invalid %s" % [snapshot])
 	var world_entry_index := _row_index_by_id(rows, "world_boss_entry")
 	if world_entry_index < 0:
 		return _fail("modes page missing world boss entry row")
