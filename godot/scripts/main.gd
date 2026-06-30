@@ -2999,6 +2999,7 @@ func _ui_overlay_snapshot() -> Dictionary:
 		rows = _decorate_client_experience_rows(ui_screen_model.screen_rows(64))
 	var selected: Dictionary = _decorated_ui_selected_row()
 	var page_layout := _ui_page_layout()
+	var page_experience := _page_experience_summary(rows, selected, page_layout)
 	var overlap_check := _ui_visible_control_overlap_check()
 	var focus_check := _ui_visible_focus_health_check()
 	var text_fit_check := _ui_visible_text_fit_check()
@@ -3117,8 +3118,8 @@ func _ui_overlay_snapshot() -> Dictionary:
 		"title": ui_title_label.text if ui_title_label != null else "",
 		"nav": ui_nav_label.text if ui_nav_label != null else "",
 		"shell": ui_shell_label.text if ui_shell_label != null else "",
-		"page_experience_text": ui_page_summary_label.text if ui_page_summary_label != null else "",
-		"page_experience": _page_experience_summary(rows, selected, page_layout),
+		"page_experience_text": _page_experience_text(page_experience),
+		"page_experience": page_experience,
 		"status_cards": _ui_overlay_focusable_count(ui_status_cards),
 		"status_cards_text": _ui_status_cards_text(),
 		"focus_panel": ui_focus_button.text if ui_focus_button != null and ui_focus_button.is_visible_in_tree() else "",
@@ -3502,6 +3503,15 @@ func _page_authority_summary(screen_id: String, rows: Array[Dictionary], selecte
 				"client_result_authoritative": false,
 				"row_id": String(boss_row.get("id", "")),
 			}
+	if screen_id == "practice":
+		var practice_row := _ui_find_row_by_id(rows, "practice_validation_status")
+		return {
+			"text": "Practice hash local practice only; online damage rewards settlement server",
+			"scope": String(practice_row.get("local_hash_authority", "local_practice_verification_only")),
+			"requires_server": bool(practice_row.get("requires_server_confirmation", false)),
+			"client_result_authoritative": false,
+			"row_id": String(practice_row.get("id", "practice_validation_status")),
+		}
 	if screen_id == "replay":
 		var replay_row := selected if not selected.is_empty() else _ui_find_row_by_id(rows, "replay_verification_summary")
 		if replay_row.is_empty():

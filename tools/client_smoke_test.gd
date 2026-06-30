@@ -3884,11 +3884,20 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	var practice_rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 48)
-	if not _rows_have_ids(practice_rows, ["practice_summary", "practice_restart", "practice_seed_prev", "practice_seed_next", "practice_power_down", "practice_power_up", "practice_bombs_cycle", "practice_stage_run", "stage_briefing", "stage_math_route", "stage_recommended_character", "stage_practice_plan", "stage_practice_preset_route", "stage_practice_preset_peak", "stage_practice_preset_survival", "boss_spellbook_original_boss_archive", "boss_spell_phase_nonspell_radial_entry", "character_balanced", "stage_starlit_lanes", "stage_pattern_spiral_ring"]):
+	if not _rows_have_ids(practice_rows, ["practice_summary", "practice_validation_status", "practice_restart", "practice_seed_prev", "practice_seed_next", "practice_power_down", "practice_power_up", "practice_bombs_cycle", "practice_stage_run", "stage_briefing", "stage_math_route", "stage_recommended_character", "stage_practice_plan", "stage_practice_preset_route", "stage_practice_preset_peak", "stage_practice_preset_survival", "boss_spellbook_original_boss_archive", "boss_spell_phase_nonspell_radial_entry", "character_balanced", "stage_starlit_lanes", "stage_pattern_spiral_ring"]):
 		push_error("Smoke test failed: practice screen rows incomplete")
 		quit(1)
 		return true
 	if not _validate_row_label_keys(practice_rows, localization):
+		quit(1)
+		return true
+	var practice_validation_row: Dictionary = _find_row_by_id(practice_rows, "practice_validation_status")
+	if String(practice_validation_row.get("local_hash_authority", "")) != "local_practice_verification_only" \
+			or String(practice_validation_row.get("replay_verification_scope", "")) != "local_practice_hash" \
+			or String(practice_validation_row.get("settlement_authority", "")) != "server" \
+			or String(practice_validation_row.get("reward_authority", "")) != "server" \
+			or bool(practice_validation_row.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: practice validation authority row invalid %s" % [practice_validation_row])
 		quit(1)
 		return true
 	var practice_power_cursor: int = _row_index_by_id(practice_rows, "practice_power_up")

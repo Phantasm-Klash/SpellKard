@@ -301,6 +301,8 @@ func _validate_gameplay_view_unobstructed() -> bool:
 		return _fail("practice should be marked unobstructed %s" % [snapshot])
 	if bool(snapshot.get("layout_show_secondary_shell", true)):
 		return _fail("practice should disable secondary shell %s" % [snapshot])
+	if not _assert_page_authority_contract(snapshot, "practice", "local_practice_verification_only", "Practice hash local practice only"):
+		return false
 	if int(snapshot.get("nav_buttons", 0)) != 0 or int(snapshot.get("row_buttons", 0)) != 0 or int(snapshot.get("quick_buttons", 0)) != 0:
 		return _fail("practice should not expose menu controls %s" % [snapshot])
 	var nav_result: Dictionary = main_node.call("_ui_press_visible_nav", 0)

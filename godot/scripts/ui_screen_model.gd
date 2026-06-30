@@ -579,6 +579,23 @@ func _practice_rows() -> Array[Dictionary]:
 	var stage_summary: String = stage_select_model.summary() if stage_select_model != null else "-"
 	var character_summary: String = character_model.summary() if character_model != null else "-"
 	rows.append({"id": "practice_summary", "label_key": "ui.practice", "value": "%s | %s" % [stage_summary, character_summary], "enabled": true})
+	rows.append({
+		"id": "practice_validation_status",
+		"label_key": "ui.practice",
+		"value": "local replay hash guard",
+		"summary": "local practice hash/replay verification only; online damage rewards settlement server",
+		"replay_authority_scope": "local_practice_record",
+		"replay_verification_scope": "local_practice_hash",
+		"local_playback_authority": "local_practice_hash",
+		"local_hash_authority": "local_practice_verification_only",
+		"damage_authority": "server",
+		"settlement_authority": "server",
+		"reward_authority": "server",
+		"requires_server_confirmation": false,
+		"server_authoritative": false,
+		"client_result_authoritative": false,
+		"enabled": true,
+	})
 	rows.append({"id": "practice_restart", "label_key": "ui.practice", "value": "restart", "enabled": true, "ui_action": "practice_restart"})
 	rows.append({"id": "practice_seed_prev", "label_key": "ui.practice", "value": "seed -", "enabled": true, "ui_action": "practice_seed_prev"})
 	rows.append({"id": "practice_seed_next", "label_key": "ui.practice", "value": "seed +", "enabled": true, "ui_action": "practice_seed_next"})
