@@ -5376,6 +5376,12 @@ func _validate_boss_practice_preview_card_row(row: Dictionary, mode_id: String) 
 	if bool(row.get("client_result_authoritative", true)) or bool(row.get("server_authoritative", true)):
 		push_error("Smoke test failed: boss practice preview card authority flags invalid %s" % [row])
 		return false
+	if not bool(row.get("practice_can_start_local", false)) or String(row.get("replay_verification_status", "")) != "ready":
+		push_error("Smoke test failed: boss practice preview local verification status invalid %s" % [row])
+		return false
+	if not bool(row.get("online_entry_requires_server_confirmation", false)) or String(row.get("online_outcome_status", "")) != "server_required":
+		push_error("Smoke test failed: boss practice preview online authority gate invalid %s" % [row])
+		return false
 	var metrics: Array = row.get("preview_card_metrics", [])
 	var badges: Array = row.get("preview_card_authority_badges", [])
 	if metrics.size() < 5 or not badges.has("local_practice_preview_only") or not badges.has("damage_server") or not badges.has("settlement_server"):
@@ -5386,6 +5392,43 @@ func _validate_boss_practice_preview_card_row(row: Dictionary, mode_id: String) 
 		return false
 	if int(row.get("preview_bundle_signature_digest", 0)) <= 0 or int(row.get("preview_phase_count", 0)) < 3 or String(row.get("performance_budget_status", "")) != "within_budget":
 		push_error("Smoke test failed: boss practice preview deterministic bundle invalid %s" % [row])
+		return false
+	var verification_contract: Dictionary = row.get("practice_verification_contract", {})
+	if verification_contract.is_empty():
+		push_error("Smoke test failed: boss practice verification contract missing %s" % [row])
+		return false
+	if String(verification_contract.get("contract_kind", "")) != "boss_practice_replay_verification" or String(verification_contract.get("mode_id", "")) != mode_id:
+		push_error("Smoke test failed: boss practice verification identity invalid %s" % [verification_contract])
+		return false
+	if String(verification_contract.get("projection_scope", "")) != "local_practice_preview_only" or String(verification_contract.get("preview_authority_scope", "")) != "local_practice_preview_only" or String(verification_contract.get("replay_verification_scope", "")) != "local_practice_hash":
+		push_error("Smoke test failed: boss practice verification scope invalid %s" % [verification_contract])
+		return false
+	if bool(verification_contract.get("practice_requires_server_confirmation", true)) or not bool(verification_contract.get("practice_can_start_local", false)):
+		push_error("Smoke test failed: boss practice local start contract invalid %s" % [verification_contract])
+		return false
+	if not bool(verification_contract.get("online_entry_requires_server_confirmation", false)) or String(verification_contract.get("online_outcome_status", "")) != "server_required":
+		push_error("Smoke test failed: boss practice online authority contract invalid %s" % [verification_contract])
+		return false
+	if String(verification_contract.get("damage_authority", "")) != "server" or String(verification_contract.get("reward_authority", "")) != "server" or String(verification_contract.get("settlement_authority", "")) != "server":
+		push_error("Smoke test failed: boss practice verification authority labels invalid %s" % [verification_contract])
+		return false
+	if bool(verification_contract.get("client_result_authoritative", true)) or bool(verification_contract.get("server_authoritative", true)):
+		push_error("Smoke test failed: boss practice verification authority flags invalid %s" % [verification_contract])
+		return false
+	var fixture_ids: Array = verification_contract.get("preview_fixture_ids", [])
+	var phase_rows: Array = verification_contract.get("phase_verification_rows", [])
+	var phase_ids: Array = row.get("preview_phase_ids", [])
+	if fixture_ids.size() != phase_ids.size() or phase_rows.size() != phase_ids.size():
+		push_error("Smoke test failed: boss practice verification phase rows invalid %s" % [verification_contract])
+		return false
+	for i in range(phase_ids.size()):
+		var expected_fixture := "%s:%s:%d" % [String(row.get("spellbook_id", "")), String(phase_ids[i]), int(row.get("preview_seed", 0))]
+		var phase_row: Dictionary = phase_rows[i]
+		if String(fixture_ids[i]) != expected_fixture or String(phase_row.get("fixture_id", "")) != expected_fixture or String(phase_row.get("verification_scope", "")) != "local_practice_hash":
+			push_error("Smoke test failed: boss practice verification fixture invalid %s expected=%s" % [verification_contract, expected_fixture])
+			return false
+	if bool(verification_contract.get("online_entry_valid", false)) != (mode_id == "world_boss"):
+		push_error("Smoke test failed: boss practice online entry mirror invalid %s" % [verification_contract])
 		return false
 	return true
 

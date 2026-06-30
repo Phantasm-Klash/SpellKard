@@ -962,6 +962,86 @@ func boss_practice_preview_projection(mode_id: String) -> Dictionary:
 		"client_result_authoritative": false,
 	}
 
+func boss_practice_verification_contract(mode_id: String) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"contract_kind": "boss_practice_replay_verification",
+			"projection_scope": BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+			"preview_authority_scope": BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+			"replay_verification_scope": "local_practice_hash",
+			"practice_requires_server_confirmation": false,
+			"online_entry_requires_server_confirmation": true,
+			"online_outcome_status": "server_required",
+			"damage_authority": "server",
+			"reward_authority": "server",
+			"settlement_authority": "server",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var preview := boss_practice_preview_projection(mode_id)
+	var action_projection := boss_action_availability_projection(mode_id)
+	var phase_ids := _string_array(preview.get("preview_phase_ids", []))
+	var phase_digests := _int_array(preview.get("preview_phase_signature_digests", []))
+	var phase_rows: Array[Dictionary] = []
+	var fixture_ids: Array[String] = []
+	var spellbook_id := String(preview.get("spellbook_id", BOSS_LOCAL_PREVIEW_SPELLBOOK_ID))
+	var seed := int(preview.get("preview_seed", BOSS_LOCAL_PREVIEW_SEED))
+	for i in range(phase_ids.size()):
+		var fixture_id := "%s:%s:%d" % [spellbook_id, phase_ids[i], seed]
+		fixture_ids.append(fixture_id)
+		phase_rows.append({
+			"phase_id": phase_ids[i],
+			"fixture_id": fixture_id,
+			"signature_digest": phase_digests[i] if i < phase_digests.size() else 0,
+			"verification_scope": "local_practice_hash",
+		})
+	var preview_ok := bool(preview.get("ok", false)) and String(preview.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)) == BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE
+	return {
+		"ok": preview_ok,
+		"reason": "none" if preview_ok else String(preview.get("reason", "boss_spellbook_preview_missing")),
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"contract_kind": "boss_practice_replay_verification",
+		"projection_scope": BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+		"preview_authority_scope": String(preview.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)),
+		"practice_mode": String(preview.get("practice_mode", "boss_spellbook_practice")),
+		"spellbook_id": spellbook_id,
+		"preview_seed": seed,
+		"preview_bundle_id": String(preview.get("preview_bundle_id", "")),
+		"preview_bundle_signature_digest": int(preview.get("preview_bundle_signature_digest", 0)),
+		"preview_phase_count": int(preview.get("preview_phase_count", phase_ids.size())),
+		"preview_phase_ids": phase_ids,
+		"preview_phase_signature_digests": phase_digests,
+		"preview_fixture_ids": fixture_ids,
+		"phase_verification_rows": phase_rows,
+		"preview_max_emit_per_tick": int(preview.get("preview_max_emit_per_tick", 0)),
+		"preview_min_budget_headroom": int(preview.get("preview_min_budget_headroom", 0)),
+		"performance_budget_status": String(preview.get("performance_budget_status", "")),
+		"replay_verification_scope": "local_practice_hash",
+		"replay_verification_status": "ready" if preview_ok else "blocked",
+		"practice_requires_server_confirmation": false,
+		"practice_can_start_local": preview_ok,
+		"online_entry_requires_server_confirmation": true,
+		"online_entry_valid": bool(action_projection.get("entry_valid", false)),
+		"online_display_ready": bool(action_projection.get("display_ready", false)),
+		"can_request_entry": bool(action_projection.get("can_request_entry", false)),
+		"can_request_transfer": bool(action_projection.get("can_request_transfer", false)),
+		"local_blockers": action_projection.get("local_blockers", []),
+		"display_blockers": action_projection.get("display_blockers", []),
+		"action_status": String(action_projection.get("action_status", "")),
+		"server_confirmation_status": String(action_projection.get("server_confirmation_status", "required")),
+		"online_outcome_status": "server_required",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"server_authoritative": false,
+		"client_result_authoritative": false,
+	}
+
 func validate_boss_formation(mode_id: String) -> Dictionary:
 	var failures: Array[String] = []
 	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
@@ -1568,6 +1648,7 @@ func _boss_hud_row(row_id: String, mode_id: String) -> Dictionary:
 
 func _boss_practice_preview_row(row_id: String, mode_id: String) -> Dictionary:
 	var projection := boss_practice_preview_projection(mode_id)
+	var verification_contract := boss_practice_verification_contract(mode_id)
 	var phase_count := int(projection.get("preview_phase_count", 0))
 	var digest := int(projection.get("preview_bundle_signature_digest", 0))
 	var max_emit := int(projection.get("preview_max_emit_per_tick", 0))
@@ -1616,6 +1697,13 @@ func _boss_practice_preview_row(row_id: String, mode_id: String) -> Dictionary:
 		"overview_card_kind": "boss_practice_preview",
 		"render_slot": "mode_cards",
 		"preview_projection": projection,
+		"practice_verification_contract": verification_contract,
+		"practice_can_start_local": bool(verification_contract.get("practice_can_start_local", false)),
+		"replay_verification_status": String(verification_contract.get("replay_verification_status", "blocked")),
+		"preview_fixture_ids": verification_contract.get("preview_fixture_ids", []),
+		"phase_verification_rows": verification_contract.get("phase_verification_rows", []),
+		"online_entry_requires_server_confirmation": true,
+		"online_outcome_status": "server_required",
 		"spellbook_id": String(projection.get("spellbook_id", BOSS_LOCAL_PREVIEW_SPELLBOOK_ID)),
 		"preview_seed": int(projection.get("preview_seed", BOSS_LOCAL_PREVIEW_SEED)),
 		"preview_bundle_id": String(projection.get("preview_bundle_id", "")),
