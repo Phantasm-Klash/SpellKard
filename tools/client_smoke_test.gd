@@ -4531,7 +4531,13 @@ func _process(_delta: float) -> bool:
 		return true
 	main_node.call("_ui_set_cursor", _row_index_by_id(ui_replay_rows, "replay_action_load"))
 	var replay_load_overlay: Dictionary = main_node.call("_ui_overlay_snapshot")
-	if int(replay_load_overlay.get("control_buttons", 0)) < 1 or not String(replay_load_overlay.get("control_buttons_text", "")).contains("Load Replay") or not String(replay_load_overlay.get("control_preview", "")).contains("loadable_local_practice"):
+	var replay_load_preview := String(replay_load_overlay.get("control_preview", ""))
+	if int(replay_load_overlay.get("control_buttons", 0)) < 1 \
+			or not String(replay_load_overlay.get("control_buttons_text", "")).contains("Load Replay") \
+			or not replay_load_preview.contains("guard_ok") \
+			or not replay_load_preview.contains("loadable_local_practice") \
+			or not replay_load_preview.contains("local_practice_hash") \
+			or not replay_load_preview.contains("settlement_server"):
 		push_error("Smoke test failed: replay load action context button missing %s" % [replay_load_overlay])
 		quit(1)
 		return true

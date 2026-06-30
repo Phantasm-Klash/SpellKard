@@ -6033,6 +6033,33 @@ func _ui_control_preview_text(row: Dictionary) -> String:
 		"state": state,
 	})
 
+func _replay_action_guard_text(row: Dictionary) -> String:
+	if typeof(row.get("replay_action_guard", {})) != TYPE_DICTIONARY:
+		return ""
+	var guard: Dictionary = row.get("replay_action_guard", {})
+	var parts: Array[String] = []
+	parts.append("guard_ok" if bool(guard.get("ok", false)) else "guard_blocked")
+	var reason := String(guard.get("reason", ""))
+	if reason.is_empty():
+		reason = String(row.get("local_load_guard_reason", ""))
+	if not reason.is_empty():
+		parts.append(reason)
+	var policy := String(guard.get("local_load_policy", row.get("local_load_policy", "")))
+	if not policy.is_empty() and not parts.has(policy):
+		parts.append(policy)
+	var audit_status := String(guard.get("server_audit_status", ""))
+	if bool(guard.get("requires_server_audit", false)):
+		parts.append("server_audit_%s" % (audit_status if not audit_status.is_empty() else "required"))
+	var playback_authority := String(guard.get("local_playback_authority", ""))
+	if not playback_authority.is_empty() and playback_authority != "none":
+		parts.append(playback_authority)
+	var settlement_authority := String(guard.get("settlement_authority", ""))
+	if not settlement_authority.is_empty():
+		parts.append("settlement_%s" % settlement_authority)
+	if bool(guard.get("client_result_authoritative", true)):
+		parts.append("client_result_authoritative")
+	return " ".join(parts)
+
 func _ui_detail_text(row: Dictionary) -> String:
 	if row.is_empty():
 		return localization.text_for("ui.menu_detail_empty")
@@ -6287,6 +6314,9 @@ func _row_control_state_text(row: Dictionary) -> String:
 				return String(row.get("value", ""))
 			return "%s (%d/%d)" % [str(options[option_index]), option_index + 1, options.size()]
 		"replay":
+			var guard_text := _replay_action_guard_text(row)
+			if not guard_text.is_empty():
+				return guard_text
 			var policy := String(row.get("local_load_policy", ""))
 			var guard := String(row.get("local_load_guard_reason", ""))
 			if policy.is_empty() and not String(row.get("verification_status", "")).is_empty():
