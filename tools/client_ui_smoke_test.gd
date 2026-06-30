@@ -457,6 +457,16 @@ func _validate_collection_page_contract() -> bool:
 		return false
 	if not String(snapshot.get("section_tabs", "")).contains(_text("ui.menu_section_overview")):
 		return _fail("replay filter tabs should expose verification overview %s" % [snapshot])
+	if not String(snapshot.get("page_focus_action_ids", "")).contains("replay_filter_replay_local_ready") or String(snapshot.get("focus_action", "")) != "replay_filter_replay_local_ready":
+		return _fail("replay focus action should target local-ready filter %s" % [snapshot])
+	var replay_focus_result: Dictionary = main_node.call("_ui_press_visible_focus_action")
+	await _settle_frames(2)
+	if not bool(replay_focus_result.get("ok", false)) or String(replay_focus_result.get("row_id", "")) != "replay_filter_replay_local_ready" or String(main_node.get("ui_screen_model").current_screen) != "replay":
+		return _fail("replay focus action should apply local-ready filter %s" % [replay_focus_result])
+	var focused_filter_row := _row_by_id(main_node.call("_ui_screen_rows", 12), "replay_filter_replay_local_ready")
+	if not bool(focused_filter_row.get("active", false)):
+		return _fail("replay focus action did not activate local-ready filter %s" % [focused_filter_row])
+	snapshot = main_node.call("_ui_overlay_snapshot")
 	var replay_summary_card_result: Dictionary = main_node.call("_ui_press_visible_overview_card", 0)
 	if not bool(replay_summary_card_result.get("ok", false)) or String(replay_summary_card_result.get("row_id", "")) != "replay_verification_summary" or String(replay_summary_card_result.get("screen", "")) != "replay":
 		return _fail("replay verification summary overview card should stay on replay page %s" % [replay_summary_card_result])
