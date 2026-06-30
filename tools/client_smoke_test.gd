@@ -4433,6 +4433,18 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay verification selected load policy invalid %s" % [replay_verification_summary])
 		quit(1)
 		return true
+	var replay_authority_summary: Dictionary = replay_list_model.replay_authority_summary_row()
+	if String(replay_authority_summary.get("id", "")) != "replay_authority_summary" \
+			or int(replay_authority_summary.get("entry_count", 0)) <= 0 \
+			or int(replay_authority_summary.get("local_loadable_count", 0)) <= 0 \
+			or int(replay_authority_summary.get("server_audit_required_count", -1)) != 0 \
+			or String(replay_authority_summary.get("authority_contract_kind", "")) != "replay_local_display_server_audit_summary" \
+			or String(replay_authority_summary.get("online_replay_authority", "")) != "server_audit_required" \
+			or String(replay_authority_summary.get("boss_hp_authority", "")) != "server" \
+			or bool(replay_authority_summary.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: replay authority summary invalid %s" % [replay_authority_summary])
+		quit(1)
+		return true
 	var replay_filter_rows: Array[Dictionary] = replay_list_model.verification_filter_rows()
 	if replay_filter_rows.size() < 5 or String(replay_filter_rows[0].get("verification_filter", "")) != "all" or not bool(replay_filter_rows[0].get("active", false)) or bool(replay_filter_rows[0].get("client_result_authoritative", true)):
 		push_error("Smoke test failed: replay verification filter rows invalid %s" % [replay_filter_rows])
@@ -4518,6 +4530,16 @@ func _process(_delta: float) -> bool:
 			or not bool(server_replay_summary.get("selected_requires_server_audit", false)) \
 			or bool(server_replay_summary.get("selected_can_play", true)):
 		push_error("Smoke test failed: server replay summary selected load policy invalid %s" % [server_replay_summary])
+		quit(1)
+		return true
+	var server_authority_summary: Dictionary = replay_list_model.replay_authority_summary_row()
+	if int(server_authority_summary.get("server_audit_required_count", 0)) != 1 \
+			or int(server_authority_summary.get("local_loadable_count", 1)) != 0 \
+			or String(server_authority_summary.get("selected_local_load_policy", "")) != "blocked_server_audit" \
+			or String(server_authority_summary.get("selected_server_audit_status", "")) != "pending" \
+			or not bool(server_authority_summary.get("selected_requires_server_audit", false)) \
+			or bool((server_authority_summary.get("selected_guard", {}) as Dictionary).get("ok", true)):
+		push_error("Smoke test failed: server replay authority summary invalid %s" % [server_authority_summary])
 		quit(1)
 		return true
 	var server_replay_action_rows: Array[Dictionary] = replay_list_model.selected_action_rows()
@@ -4694,6 +4716,16 @@ func _process(_delta: float) -> bool:
 		return true
 	replay_list_model.entries = [boss_practice_replay, fallback_claim_replay]
 	replay_list_model.cursor = 0
+	replay_list_model.set_verification_filter("all")
+	var mixed_authority_summary: Dictionary = replay_list_model.replay_authority_summary_row()
+	if int(mixed_authority_summary.get("local_loadable_count", 0)) != 1 \
+			or int(mixed_authority_summary.get("server_audit_required_count", 0)) != 1 \
+			or int(mixed_authority_summary.get("rejected_server_claim_count", 0)) != 1 \
+			or String(mixed_authority_summary.get("damage_authority", "")) != "server" \
+			or bool(mixed_authority_summary.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: mixed replay authority summary invalid %s" % [mixed_authority_summary])
+		quit(1)
+		return true
 	if not replay_list_model.set_verification_filter("rejected_server_claim") or String(replay_list_model.get("active_verification_filter")) != "rejected_server_claim":
 		push_error("Smoke test failed: rejected server-claim replay verification filter did not activate")
 		quit(1)
@@ -4744,6 +4776,16 @@ func _process(_delta: float) -> bool:
 		return true
 	if bool(ui_replay_rows[0].get("filter_empty", true)) or int(ui_replay_rows[0].get("selected_filtered_index", 0)) <= 0 or String(ui_replay_rows[0].get("filter_navigation_label", "")).is_empty():
 		push_error("Smoke test failed: replay UI verification navigation invalid %s" % [ui_replay_rows[0]])
+		quit(1)
+		return true
+	var ui_replay_authority_summary: Dictionary = _find_row_by_id(ui_replay_rows, "replay_authority_summary")
+	if ui_replay_authority_summary.is_empty() \
+			or String(ui_replay_authority_summary.get("ui_control", "")) != "status" \
+			or not String(ui_replay_authority_summary.get("ui_action", "")).is_empty() \
+			or String(ui_replay_authority_summary.get("online_replay_authority", "")) != "server_audit_required" \
+			or String(ui_replay_authority_summary.get("damage_authority", "")) != "server" \
+			or bool(ui_replay_authority_summary.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: replay UI authority summary invalid %s" % [ui_replay_authority_summary])
 		quit(1)
 		return true
 	var local_filter_index := _row_index_by_id(ui_replay_rows, "replay_filter_replay_local_ready")
