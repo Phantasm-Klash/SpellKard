@@ -1010,6 +1010,21 @@ func _assert_boss_result_receipt_row(row: Dictionary, mode_id: String, expected_
 		return _fail("boss result row missing ready receipt status %s" % [row])
 	if String(row.get("result_receipt_id", "")) != expected_receipt_id or String(row.get("result_hash", "")) != expected_hash:
 		return _fail("boss result row receipt mismatch %s" % [row])
+	if String(row.get("ui_control", "")) != "card" or String(row.get("receipt_card_kind", "")) != "boss_server_settlement_receipt" or String(row.get("overview_card_kind", "")) != "boss_result_receipt":
+		return _fail("boss result receipt card metadata mismatch %s" % [row])
+	if String(row.get("render_slot", "")) != "mode_cards" or not String(row.get("receipt_card_primary_metric", "")).contains(expected_receipt_id) or not String(row.get("receipt_card_secondary_metric", "")).contains(expected_hash):
+		return _fail("boss result receipt card metrics mismatch %s" % [row])
+	var metrics: Array = row.get("receipt_card_metrics", [])
+	var badges: Array = row.get("receipt_card_authority_badges", [])
+	if metrics.size() < 5 or not badges.has("server_settlement_receipt") or not badges.has("damage_server") or not badges.has("reward_server") or not badges.has("settlement_server"):
+		return _fail("boss result receipt card badges/metrics mismatch %s" % [row])
+	if typeof(row.get("receipt_card", {})) != TYPE_DICTIONARY:
+		return _fail("boss result row missing nested receipt card %s" % [row])
+	var card: Dictionary = row.get("receipt_card", {})
+	if String(card.get("receipt_card_kind", "")) != "boss_server_settlement_receipt" or bool(card.get("client_result_authoritative", true)):
+		return _fail("boss result nested receipt card authority mismatch %s" % [card])
+	if String(card.get("result_receipt_id", "")) != expected_receipt_id or String(card.get("result_hash", "")) != expected_hash:
+		return _fail("boss result nested receipt card receipt mismatch %s" % [card])
 	if typeof(row.get("settlement_receipt_projection", {})) != TYPE_DICTIONARY:
 		return _fail("boss result row missing receipt projection %s" % [row])
 	var projection: Dictionary = row.get("settlement_receipt_projection", {})

@@ -1727,6 +1727,7 @@ func _boss_pending_transfer_count(requests: Array) -> int:
 
 func _world_boss_result_row() -> Dictionary:
 	var receipt_projection := boss_settlement_receipt_projection(MODE_WORLD_BOSS)
+	var receipt_card := _boss_settlement_receipt_card(MODE_WORLD_BOSS, receipt_projection)
 	return {
 		"id": "world_boss_result",
 		"label_key": "screen.mode.boss.result",
@@ -1757,6 +1758,18 @@ func _world_boss_result_row() -> Dictionary:
 		"receipt_status": String(receipt_projection.get("receipt_status", "")),
 		"settlement_receipt": receipt_projection.get("settlement_receipt", {}),
 		"settlement_receipt_projection": receipt_projection,
+		"receipt_card": receipt_card,
+		"receipt_card_kind": String(receipt_card.get("receipt_card_kind", "")),
+		"receipt_card_title_key": String(receipt_card.get("receipt_card_title_key", "")),
+		"receipt_card_primary_metric": String(receipt_card.get("receipt_card_primary_metric", "")),
+		"receipt_card_secondary_metric": String(receipt_card.get("receipt_card_secondary_metric", "")),
+		"receipt_card_metrics": receipt_card.get("receipt_card_metrics", []),
+		"receipt_card_authority_badges": receipt_card.get("receipt_card_authority_badges", []),
+		"receipt_card_action_hint": String(receipt_card.get("receipt_card_action_hint", "")),
+		"overview_card_kind": String(receipt_card.get("overview_card_kind", "")),
+		"render_slot": String(receipt_card.get("render_slot", "")),
+		"ui_control": String(receipt_card.get("ui_control", "card")),
+		"ui_control_label_key": String(receipt_card.get("ui_control_label_key", "ui.control_card")),
 		"result_rejected": bool(world_boss_state.get("last_result_rejected_client_authoritative", false)),
 		"result_rejected_reason": str(world_boss_state.get("last_result_rejected_reason", "")),
 		"result_rejection_authority": "client_rejected_server_required" if bool(world_boss_state.get("last_result_rejected_client_authoritative", false)) else "none",
@@ -1772,6 +1785,7 @@ func _world_boss_result_row() -> Dictionary:
 func _instance_boss_result_row() -> Dictionary:
 	var star_conditions := _instance_boss_star_conditions(instance_boss_state)
 	var receipt_projection := boss_settlement_receipt_projection(MODE_INSTANCE_BOSS)
+	var receipt_card := _boss_settlement_receipt_card(MODE_INSTANCE_BOSS, receipt_projection)
 	var met_conditions := 0
 	for condition in star_conditions:
 		if typeof(condition) == TYPE_DICTIONARY and bool((condition as Dictionary).get("met", false)):
@@ -1815,6 +1829,18 @@ func _instance_boss_result_row() -> Dictionary:
 		"receipt_status": String(receipt_projection.get("receipt_status", "")),
 		"settlement_receipt": receipt_projection.get("settlement_receipt", {}),
 		"settlement_receipt_projection": receipt_projection,
+		"receipt_card": receipt_card,
+		"receipt_card_kind": String(receipt_card.get("receipt_card_kind", "")),
+		"receipt_card_title_key": String(receipt_card.get("receipt_card_title_key", "")),
+		"receipt_card_primary_metric": String(receipt_card.get("receipt_card_primary_metric", "")),
+		"receipt_card_secondary_metric": String(receipt_card.get("receipt_card_secondary_metric", "")),
+		"receipt_card_metrics": receipt_card.get("receipt_card_metrics", []),
+		"receipt_card_authority_badges": receipt_card.get("receipt_card_authority_badges", []),
+		"receipt_card_action_hint": String(receipt_card.get("receipt_card_action_hint", "")),
+		"overview_card_kind": String(receipt_card.get("overview_card_kind", "")),
+		"render_slot": String(receipt_card.get("render_slot", "")),
+		"ui_control": String(receipt_card.get("ui_control", "card")),
+		"ui_control_label_key": String(receipt_card.get("ui_control_label_key", "ui.control_card")),
 		"result_rejected": bool(instance_boss_state.get("last_result_rejected_client_authoritative", false)),
 		"result_rejected_reason": str(instance_boss_state.get("last_result_rejected_reason", "")),
 		"result_rejection_authority": "client_rejected_server_required" if bool(instance_boss_state.get("last_result_rejected_client_authoritative", false)) else "none",
@@ -1935,6 +1961,75 @@ func boss_settlement_receipt_projection(mode_id: String) -> Dictionary:
 		"damage_authority": "server",
 		"requires_server_confirmation": true,
 		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
+func boss_settlement_receipt_card_projection(mode_id: String) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"receipt_card_kind": "boss_server_settlement_receipt",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	return _boss_settlement_receipt_card(mode_id, boss_settlement_receipt_projection(mode_id))
+
+func _boss_settlement_receipt_card(mode_id: String, receipt_projection: Dictionary) -> Dictionary:
+	var receipt: Dictionary = {}
+	if typeof(receipt_projection.get("settlement_receipt", {})) == TYPE_DICTIONARY:
+		receipt = receipt_projection.get("settlement_receipt", {})
+	var receipt_id := String(receipt_projection.get("result_receipt_id", receipt.get("receipt_id", ""))).strip_edges()
+	var result_hash := String(receipt_projection.get("result_hash", receipt.get("result_hash", ""))).strip_edges()
+	var replay_id := String(receipt_projection.get("result_replay_id", receipt.get("replay_id", ""))).strip_edges()
+	var server_time := String(receipt_projection.get("result_server_time", receipt.get("server_time", ""))).strip_edges()
+	var key_id := String(receipt_projection.get("result_key_id", receipt.get("key_id", ""))).strip_edges()
+	var receipt_status := String(receipt_projection.get("receipt_status", "pending_server_receipt"))
+	var result_status := String(receipt_projection.get("result_status", "pending"))
+	var result_rejected := bool(receipt_projection.get("result_rejected", false))
+	var title_key := "screen.mode.boss.result" if mode_id == MODE_WORLD_BOSS else "screen.mode.instance.result"
+	var metrics: Array[Dictionary] = [
+		{"id": "receipt", "label": "receipt", "value": receipt_id if not receipt_id.is_empty() else "pending"},
+		{"id": "hash", "label": "hash", "value": result_hash if not result_hash.is_empty() else "pending"},
+		{"id": "replay", "label": "replay", "value": replay_id if not replay_id.is_empty() else "pending"},
+		{"id": "server_time", "label": "server time", "value": server_time if not server_time.is_empty() else "pending"},
+		{"id": "key", "label": "key", "value": key_id if not key_id.is_empty() else "pending"},
+	]
+	return {
+		"ok": bool(receipt_projection.get("ok", false)),
+		"reason": String(receipt_projection.get("reason", "none")),
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"ui_control": "card",
+		"ui_control_label_key": "ui.control_card",
+		"receipt_card_kind": "boss_server_settlement_receipt",
+		"overview_card_kind": "boss_result_receipt",
+		"render_slot": "mode_cards",
+		"receipt_card_title_key": title_key,
+		"receipt_card_status": receipt_status,
+		"receipt_card_primary_metric": "receipt %s" % (receipt_id if not receipt_id.is_empty() else receipt_status),
+		"receipt_card_secondary_metric": "hash %s replay %s" % [result_hash if not result_hash.is_empty() else "pending", replay_id if not replay_id.is_empty() else "pending"],
+		"receipt_card_metrics": metrics,
+		"receipt_card_authority_badges": ["server_settlement_receipt", "damage_server", "reward_server", "settlement_server"],
+		"receipt_card_action_hint": "view server receipt and replay audit only",
+		"receipt_status": receipt_status,
+		"result_status": result_status,
+		"result_rejected": result_rejected,
+		"settlement_receipt": receipt,
+		"settlement_receipt_projection": receipt_projection,
+		"result_receipt_id": receipt_id,
+		"result_hash": result_hash,
+		"result_replay_id": replay_id,
+		"result_server_time": server_time,
+		"result_key_id": key_id,
+		"projection_scope": "server_settlement_receipt_projection",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"requires_server_confirmation": true,
+		"server_authoritative": bool(receipt_projection.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 	}
 

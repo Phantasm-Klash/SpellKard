@@ -5625,6 +5625,27 @@ func _validate_boss_result_authority_row(row: Dictionary, mode_id: String, expec
 		if String(row.get("result_hash", "")).is_empty():
 			push_error("Smoke test failed: boss result missing server result hash %s" % [row])
 			return false
+		if String(row.get("ui_control", "")) != "card" or String(row.get("receipt_card_kind", "")) != "boss_server_settlement_receipt" or String(row.get("overview_card_kind", "")) != "boss_result_receipt":
+			push_error("Smoke test failed: boss result receipt card metadata invalid %s" % [row])
+			return false
+		if String(row.get("render_slot", "")) != "mode_cards":
+			push_error("Smoke test failed: boss result receipt card render slot invalid %s" % [row])
+			return false
+		if not String(row.get("receipt_card_primary_metric", "")).contains(String(row.get("result_receipt_id", ""))) or not String(row.get("receipt_card_secondary_metric", "")).contains(String(row.get("result_hash", ""))):
+			push_error("Smoke test failed: boss result receipt card metrics invalid %s" % [row])
+			return false
+		var metrics: Array = row.get("receipt_card_metrics", [])
+		var badges: Array = row.get("receipt_card_authority_badges", [])
+		if metrics.size() < 5 or not badges.has("server_settlement_receipt") or not badges.has("damage_server") or not badges.has("reward_server") or not badges.has("settlement_server"):
+			push_error("Smoke test failed: boss result receipt card badges invalid %s" % [row])
+			return false
+		if typeof(row.get("receipt_card", {})) != TYPE_DICTIONARY:
+			push_error("Smoke test failed: boss result nested receipt card missing %s" % [row])
+			return false
+		var card: Dictionary = row.get("receipt_card", {})
+		if String(card.get("receipt_card_kind", "")) != "boss_server_settlement_receipt" or bool(card.get("client_result_authoritative", true)) or String(card.get("result_receipt_id", "")) != String(row.get("result_receipt_id", "")) or String(card.get("result_hash", "")) != String(row.get("result_hash", "")):
+			push_error("Smoke test failed: boss result nested receipt card invalid %s row=%s" % [card, row])
+			return false
 	else:
 		if String(row.get("receipt_source", "")) == "server_settlement_receipt" or not String(row.get("result_receipt_id", "")).is_empty():
 			push_error("Smoke test failed: boss rejected result carried settlement receipt %s" % [row])
