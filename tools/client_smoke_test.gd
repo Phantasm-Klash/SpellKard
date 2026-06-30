@@ -157,9 +157,14 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	var play_page_spec: Dictionary = client_menu_page_model.page_spec("play")
+	var modes_page_spec: Dictionary = client_menu_page_model.page_spec("modes")
 	var settings_page_spec: Dictionary = client_menu_page_model.page_spec("player_settings")
 	if String(play_page_spec.get("kind", "")) != "hub" or not (play_page_spec.get("mode_groups", []) as Array).has("pvp") or not (play_page_spec.get("mode_groups", []) as Array).has("boss"):
 		push_error("Smoke test failed: play page spec invalid %s" % [play_page_spec])
+		quit(1)
+		return true
+	if String(modes_page_spec.get("kind", "")) != "mode_select" or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_result") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_result"):
+		push_error("Smoke test failed: modes page spec Boss result rows invalid %s" % [modes_page_spec])
 		quit(1)
 		return true
 	if String(settings_page_spec.get("kind", "")) != "settings" or not (settings_page_spec.get("setting_groups", []) as Array).has("gamepad") or not (settings_page_spec.get("setting_groups", []) as Array).has("resolution"):
