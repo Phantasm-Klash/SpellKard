@@ -120,6 +120,7 @@
   "ui.menu_section_replay_input_invalid": "Input Issue",
   "ui.menu_section_replay_server_pending": "Server Audit",
   "ui.menu_section_replay_metadata_invalid": "Metadata Issue",
+  "ui.menu_section_replay_rejected_server_claim": "Rejected Server Claim",
   "ui.menu_section_input": "Input",
   "ui.menu_section_audio": "Audio",
   "ui.menu_section_display": "Display",

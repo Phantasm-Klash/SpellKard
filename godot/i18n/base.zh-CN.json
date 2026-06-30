@@ -120,6 +120,7 @@
   "ui.menu_section_replay_input_invalid": "输入异常",
   "ui.menu_section_replay_server_pending": "服务端审计",
   "ui.menu_section_replay_metadata_invalid": "元数据异常",
+  "ui.menu_section_replay_rejected_server_claim": "拒绝服务端声明",
   "ui.menu_section_input": "输入",
   "ui.menu_section_audio": "音频",
   "ui.menu_section_display": "画面",

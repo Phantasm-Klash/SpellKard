@@ -712,6 +712,29 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		for expected_claim in ["boss_instance_id", "boss_hp_after_global", "settlement_receipt", "reward_grants", "server_result_hash"]:
 			if not _string_array_contains(snapshot_server_claim_row.get("server_authority_claim_fields", []), expected_claim):
 				failures.append("snapshot_server_claim_row_missing_field:%s:%s" % [expected_claim, snapshot_server_claim_row])
+		var filter_rows: Array[Dictionary] = replay_list.verification_filter_rows()
+		var rejected_filter_row: Dictionary = _find_row_by_id(filter_rows, "replay_filter_rejected_server_claim")
+		if String(rejected_filter_row.get("verification_filter", "")) != "rejected_server_claim" \
+				or String(rejected_filter_row.get("label_key", "")) != "ui.menu_section_replay_rejected_server_claim" \
+				or int(rejected_filter_row.get("entry_count", 0)) != 0 \
+				or bool(rejected_filter_row.get("client_result_authoritative", true)):
+			failures.append("rejected_claim_filter_row_invalid:%s" % [rejected_filter_row])
+		var rejected_filter_entries: Array[Dictionary] = [valid_entries[0], server_claim_entry, nested_server_claim_entry, snapshot_server_claim_entry]
+		replay_list.entries = rejected_filter_entries
+		replay_list.cursor = 0
+		if not replay_list.set_verification_filter("rejected_server_claim"):
+			failures.append("rejected_claim_filter_not_set")
+		var rejected_rows: Array[Dictionary] = replay_list.row_models(8)
+		if rejected_rows.size() != 3:
+			failures.append("rejected_claim_filter_count:%d:%s" % [rejected_rows.size(), rejected_rows])
+		for rejected_row in rejected_rows:
+			if String(rejected_row.get("verification_scope", "")) != "rejected_server_claim" \
+					or String(rejected_row.get("local_load_policy", "")) != "blocked_server_audit" \
+					or not bool(rejected_row.get("requires_server_audit", false)) \
+					or bool(rejected_row.get("can_play", true)) \
+					or String(rejected_row.get("active_verification_filter", "")) != "rejected_server_claim" \
+					or bool(rejected_row.get("client_result_authoritative", true)):
+				failures.append("rejected_claim_filter_row_scope:%s" % [rejected_row])
 		var wrong_authority_scope_row: Dictionary = replay_list._row_from_entry(wrong_authority_scope_entry, rows.size() + 3)
 		if bool(wrong_authority_scope_row.get("metadata_valid", true)) or String(wrong_authority_scope_row.get("metadata_status", "")) != "preview_authority_scope_mismatch":
 			failures.append("wrong_authority_scope_row_metadata:%s" % [wrong_authority_scope_row])
@@ -1011,6 +1034,12 @@ func _string_array_contains(values: Variant, expected: String) -> bool:
 		if String(value) == expected:
 			return true
 	return false
+
+func _find_row_by_id(rows: Array[Dictionary], row_id: String) -> Dictionary:
+	for row in rows:
+		if String(row.get("id", "")) == row_id:
+			return row
+	return {}
 
 func _arrays_equal_ints(left: Variant, right: Variant) -> bool:
 	if typeof(left) != TYPE_ARRAY or typeof(right) != TYPE_ARRAY:

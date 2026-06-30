@@ -17,6 +17,7 @@ const VERIFICATION_FILTERS: Array[String] = [
 	"replay_input_invalid",
 	"replay_server_pending",
 	"replay_metadata_invalid",
+	"rejected_server_claim",
 ]
 
 func configure(store: RefCounted) -> void:
@@ -730,6 +731,9 @@ func _entry_matches_active_filter(entry: Dictionary) -> bool:
 	if active_verification_filter == "replay_boss_practice":
 		return _is_boss_spellbook_practice_entry(entry)
 	var metadata_valid := _entry_metadata_valid(entry)
+	var server_claim_fields := _entry_server_authority_claim_fields(entry)
+	if active_verification_filter == "rejected_server_claim":
+		return _entry_verification_scope(entry, bool(entry.get("server_authoritative", false)), metadata_valid, server_claim_fields) == "rejected_server_claim"
 	var status_value := _entry_verification_status(entry, int(entry.get("final_result_hash", 0)), metadata_valid)
 	return _entry_verification_section(status_value) == active_verification_filter
 
@@ -770,6 +774,8 @@ func _clamp_cursor_to_filter() -> void:
 func _verification_filter_label_key(filter_id: String) -> String:
 	if filter_id == VERIFICATION_FILTER_ALL:
 		return "ui.menu_section_replay_all"
+	if filter_id == "rejected_server_claim":
+		return "ui.menu_section_replay_rejected_server_claim"
 	return "ui.menu_section_%s" % filter_id
 
 func _filter_navigation_label(filtered_index: int, filtered_count: int) -> String:

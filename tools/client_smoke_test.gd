@@ -4426,6 +4426,14 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay verification filters missing input-invalid filter %s" % [replay_filter_rows])
 		quit(1)
 		return true
+	var rejected_claim_filter_model_row: Dictionary = _find_row_by_id(replay_filter_rows, "replay_filter_rejected_server_claim")
+	if rejected_claim_filter_model_row.is_empty() \
+			or String(rejected_claim_filter_model_row.get("verification_filter", "")) != "rejected_server_claim" \
+			or String(rejected_claim_filter_model_row.get("label_key", "")) != "ui.menu_section_replay_rejected_server_claim" \
+			or bool(rejected_claim_filter_model_row.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: replay verification filters missing rejected-server-claim filter %s" % [replay_filter_rows])
+		quit(1)
+		return true
 	var bad_input_replay := latest_replay.duplicate(true)
 	bad_input_replay["replay_id"] = "input-gap-smoke"
 	bad_input_replay["input_tick_contiguous"] = false
@@ -4668,6 +4676,28 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: boss practice replay filtered rows invalid %s" % [boss_filtered_rows])
 		quit(1)
 		return true
+	replay_list_model.entries = [boss_practice_replay, fallback_claim_replay]
+	replay_list_model.cursor = 0
+	if not replay_list_model.set_verification_filter("rejected_server_claim") or String(replay_list_model.get("active_verification_filter")) != "rejected_server_claim":
+		push_error("Smoke test failed: rejected server-claim replay verification filter did not activate")
+		quit(1)
+		return true
+	var rejected_claim_rows: Array[Dictionary] = replay_list_model.row_models(4)
+	if rejected_claim_rows.size() != 1 \
+			or String(rejected_claim_rows[0].get("replay_id", "")) != "boss-practice-claim-fallback" \
+			or String(rejected_claim_rows[0].get("verification_scope", "")) != "rejected_server_claim" \
+			or String(rejected_claim_rows[0].get("local_load_policy", "")) != "blocked_server_audit" \
+			or String(rejected_claim_rows[0].get("server_audit_status", "")) != "pending" \
+			or not bool(rejected_claim_rows[0].get("requires_server_audit", false)) \
+			or bool(rejected_claim_rows[0].get("can_play", true)) \
+			or String(rejected_claim_rows[0].get("active_verification_filter", "")) != "rejected_server_claim" \
+			or String(rejected_claim_rows[0].get("section_label_key", "")) != "ui.menu_section_replay_metadata_invalid" \
+			or bool(rejected_claim_rows[0].get("client_result_authoritative", true)):
+		push_error("Smoke test failed: rejected server-claim replay filtered rows invalid %s" % [rejected_claim_rows])
+		quit(1)
+		return true
+	replay_list_model.entries = [boss_practice_replay]
+	replay_list_model.cursor = 0
 	replay_list_model.refresh()
 	if not replay_list_model.set_verification_filter("replay_local_ready") or String(replay_list_model.get("active_verification_filter")) != "replay_local_ready":
 		push_error("Smoke test failed: replay verification filter did not activate")
@@ -4687,7 +4717,7 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay screen did not open")
 		quit(1)
 		return true
-	var ui_replay_rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 12)
+	var ui_replay_rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 14)
 	if ui_replay_rows.size() < 9 or String(ui_replay_rows[0].get("id", "")) != "replay_verification_summary" or String(ui_replay_rows[1].get("ui_action", "")) != "set_replay_filter":
 		push_error("Smoke test failed: replay screen rows invalid")
 		quit(1)
@@ -4716,6 +4746,15 @@ func _process(_delta: float) -> bool:
 			or bool(boss_filter_row.get("client_result_authoritative", true)) \
 			or String(boss_filter_row.get("settlement_authority", "")) != "server":
 		push_error("Smoke test failed: replay boss-practice filter row invalid %s" % [boss_filter_row])
+		quit(1)
+		return true
+	var rejected_claim_filter_row: Dictionary = _find_row_by_id(ui_replay_rows, "replay_filter_rejected_server_claim")
+	if String(rejected_claim_filter_row.get("verification_filter", "")) != "rejected_server_claim" \
+			or String(rejected_claim_filter_row.get("ui_action", "")) != "set_replay_filter" \
+			or String(rejected_claim_filter_row.get("label_key", "")) != "ui.menu_section_replay_rejected_server_claim" \
+			or bool(rejected_claim_filter_row.get("client_result_authoritative", true)) \
+			or String(rejected_claim_filter_row.get("damage_authority", "")) != "server":
+		push_error("Smoke test failed: replay rejected-server-claim filter row invalid %s" % [rejected_claim_filter_row])
 		quit(1)
 		return true
 	var load_action_row: Dictionary = _find_row_by_id(ui_replay_rows, "replay_action_load")
@@ -4790,7 +4829,7 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay UI filter action invalid %s" % [replay_filter_result])
 		quit(1)
 		return true
-	ui_replay_rows = main_node.call("_ui_screen_rows", 12)
+	ui_replay_rows = main_node.call("_ui_screen_rows", 14)
 	var replay_entry_row := _first_replay_entry_row(ui_replay_rows)
 	if replay_entry_row.is_empty() or String(replay_entry_row.get("ui_control", "")) != "replay" or not String(replay_entry_row.get("value", "")).contains("hash") or not String(replay_entry_row.get("summary", "")).contains("local_practice_record") or not String(replay_entry_row.get("summary", "")).contains("local practice final hash ready"):
 		push_error("Smoke test failed: replay UI verification summary invalid %s" % [replay_entry_row])
