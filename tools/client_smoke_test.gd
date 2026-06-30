@@ -163,7 +163,7 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: play page spec invalid %s" % [play_page_spec])
 		quit(1)
 		return true
-	if String(modes_page_spec.get("kind", "")) != "mode_select" or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_rules") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_result") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_rules") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_result"):
+	if String(modes_page_spec.get("kind", "")) != "mode_select" or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_rules") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_entry") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_formation") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_result") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_rules") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_entry") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_formation") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_result"):
 		push_error("Smoke test failed: modes page spec Boss rules/result rows invalid %s" % [modes_page_spec])
 		quit(1)
 		return true
