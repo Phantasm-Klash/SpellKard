@@ -4122,7 +4122,7 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay screen rows invalid")
 		quit(1)
 		return true
-	if String(ui_replay_rows[0].get("ui_control", "")) != "replay" or not String(ui_replay_rows[0].get("value", "")).contains("hash") or not String(ui_replay_rows[0].get("summary", "")).contains("local_practice_record"):
+	if String(ui_replay_rows[0].get("ui_control", "")) != "replay" or not String(ui_replay_rows[0].get("value", "")).contains("hash") or not String(ui_replay_rows[0].get("summary", "")).contains("local_practice_record") or not String(ui_replay_rows[0].get("summary", "")).contains("local practice final hash ready"):
 		push_error("Smoke test failed: replay UI verification summary invalid %s" % [ui_replay_rows[0]])
 		quit(1)
 		return true
@@ -4139,7 +4139,7 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay list row invalid")
 		quit(1)
 		return true
-	if int(selected_row.get("final_result_hash", 0)) == 0 or not bool(selected_row.get("can_verify_final_hash", false)) or String(selected_row.get("verification_status", "")) != "local_final_hash_ready" or String(selected_row.get("replay_authority_scope", "")) != "local_practice_record":
+	if int(selected_row.get("final_result_hash", 0)) == 0 or not bool(selected_row.get("can_verify_final_hash", false)) or String(selected_row.get("verification_status", "")) != "local_final_hash_ready" or String(selected_row.get("verification_scope", "")) != "local_practice_hash" or not String(selected_row.get("verification_summary", "")).contains("local practice final hash ready") or String(selected_row.get("replay_authority_scope", "")) != "local_practice_record":
 		push_error("Smoke test failed: replay verification row contract invalid %s" % [selected_row])
 		quit(1)
 		return true

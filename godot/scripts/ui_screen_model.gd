@@ -893,7 +893,8 @@ func _replay_rows(limit: int) -> Array[Dictionary]:
 			String(replay_row.get("verification_status", "unchecked")),
 			String(replay_row.get("final_result_hash", "0")),
 		]
-		replay_row["summary"] = "%s tick %d %s" % [
+		replay_row["summary"] = "%s | %s tick %d %s" % [
+			String(replay_row.get("verification_summary", "")),
 			String(replay_row.get("replay_authority_scope", "local_practice_record")),
 			int(replay_row.get("final_tick", 0)),
 			String(replay_row.get("metadata_status", "unchecked")),

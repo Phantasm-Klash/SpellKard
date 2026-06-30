@@ -648,6 +648,8 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 				failures.append("valid_row_bullet_cap:%s" % [valid_row])
 			if String(valid_row.get("preview_authority_scope", "")) != "local_practice_preview_only":
 				failures.append("valid_row_authority_scope:%s" % [valid_row])
+			if String(valid_row.get("verification_scope", "")) != "local_practice_hash" or not String(valid_row.get("verification_summary", "")).contains("local practice final hash ready"):
+				failures.append("valid_row_verification_summary:%s" % [valid_row])
 			if String(valid_row.get("preview_bundle_id", "")) != String((valid_entries[index] as Dictionary).get("preview_bundle_id", "")):
 				failures.append("valid_row_bundle_id:%s" % [valid_row])
 			if int(valid_row.get("preview_bundle_signature_digest", 0)) != int((valid_entries[index] as Dictionary).get("preview_bundle_signature_digest", -1)):
@@ -683,18 +685,24 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		var server_claim_row: Dictionary = replay_list._row_from_entry(server_claim_entry, rows.size() + 2)
 		if bool(server_claim_row.get("metadata_valid", true)) or String(server_claim_row.get("metadata_status", "")) != "local_preview_server_claim":
 			failures.append("server_claim_row_metadata:%s" % [server_claim_row])
+		if String(server_claim_row.get("verification_scope", "")) != "rejected_server_claim" or not String(server_claim_row.get("verification_summary", "")).contains("rejected server-authority claims"):
+			failures.append("server_claim_row_verification_summary:%s" % [server_claim_row])
 		for expected_claim in ["boss_instance_id", "boss_current_hp", "boss_hp_after_global", "daily_attempts_left", "defeated_at", "reward_grants", "world_announcement"]:
 			if not _string_array_contains(server_claim_row.get("server_authority_claim_fields", []), expected_claim):
 				failures.append("server_claim_row_missing_field:%s:%s" % [expected_claim, server_claim_row])
 		var nested_server_claim_row: Dictionary = replay_list._row_from_entry(nested_server_claim_entry, rows.size() + 31)
 		if bool(nested_server_claim_row.get("metadata_valid", true)) or String(nested_server_claim_row.get("metadata_status", "")) != "local_preview_server_claim":
 			failures.append("nested_server_claim_row_metadata:%s" % [nested_server_claim_row])
+		if String(nested_server_claim_row.get("verification_scope", "")) != "rejected_server_claim" or not String(nested_server_claim_row.get("verification_summary", "")).contains("rejected server-authority claims"):
+			failures.append("nested_server_claim_row_verification_summary:%s" % [nested_server_claim_row])
 		for expected_claim in ["boss_instance_id", "boss_current_hp", "boss_hp_after_global", "settlement_receipt", "reward_grants", "server_result_hash"]:
 			if not _string_array_contains(nested_server_claim_row.get("server_authority_claim_fields", []), expected_claim):
 				failures.append("nested_server_claim_row_missing_field:%s:%s" % [expected_claim, nested_server_claim_row])
 		var snapshot_server_claim_row: Dictionary = replay_list._row_from_entry(snapshot_server_claim_entry, rows.size() + 24)
 		if bool(snapshot_server_claim_row.get("metadata_valid", true)) or String(snapshot_server_claim_row.get("metadata_status", "")) != "local_preview_server_claim":
 			failures.append("snapshot_server_claim_row_metadata:%s" % [snapshot_server_claim_row])
+		if String(snapshot_server_claim_row.get("verification_scope", "")) != "rejected_server_claim" or not String(snapshot_server_claim_row.get("verification_summary", "")).contains("rejected server-authority claims"):
+			failures.append("snapshot_server_claim_row_verification_summary:%s" % [snapshot_server_claim_row])
 		for expected_claim in ["boss_instance_id", "boss_hp_after_global", "settlement_receipt", "reward_grants", "server_result_hash"]:
 			if not _string_array_contains(snapshot_server_claim_row.get("server_authority_claim_fields", []), expected_claim):
 				failures.append("snapshot_server_claim_row_missing_field:%s:%s" % [expected_claim, snapshot_server_claim_row])

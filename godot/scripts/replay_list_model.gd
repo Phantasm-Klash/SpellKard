@@ -116,6 +116,8 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 	var server_claim_fields := _entry_server_authority_claim_fields(entry)
 	var final_result_hash := int(entry.get("final_result_hash", 0))
 	var server_authoritative := bool(entry.get("server_authoritative", false))
+	var verification_status := _entry_verification_status(entry, final_result_hash, metadata_valid)
+	var replay_authority_scope := "server_authoritative_record" if server_authoritative else "local_practice_record"
 	return {
 		"index": index + 1,
 		"replay_id": str(entry.get("replay_id", "")),
@@ -130,8 +132,10 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"final_tick": int(entry.get("final_tick", 0)),
 		"final_result_hash": final_result_hash,
 		"can_verify_final_hash": final_result_hash != 0 and int(entry.get("final_tick", 0)) >= 0,
-		"verification_status": _entry_verification_status(entry, final_result_hash, metadata_valid),
-		"replay_authority_scope": "server_authoritative_record" if server_authoritative else "local_practice_record",
+		"verification_status": verification_status,
+		"verification_scope": _entry_verification_scope(server_authoritative, metadata_valid, server_claim_fields),
+		"verification_summary": _entry_verification_summary(entry, verification_status, metadata_valid, server_authoritative, server_claim_fields),
+		"replay_authority_scope": replay_authority_scope,
 		"favorite": bool(entry.get("favorite", false)),
 		"pattern_id": str(entry.get("pattern_id", "")),
 		"catalog_id": str(entry.get("catalog_id", "")),
@@ -188,6 +192,24 @@ func _entry_verification_status(entry: Dictionary, final_result_hash: int, metad
 	if bool(entry.get("server_authoritative", false)):
 		return "server_record_pending_audit"
 	return "local_final_hash_ready"
+
+func _entry_verification_scope(server_authoritative: bool, metadata_valid: bool, server_claim_fields: Array[String]) -> String:
+	if not metadata_valid and not server_claim_fields.is_empty():
+		return "rejected_server_claim"
+	if server_authoritative:
+		return "server_audit_record"
+	return "local_practice_hash"
+
+func _entry_verification_summary(entry: Dictionary, verification_status: String, metadata_valid: bool, server_authoritative: bool, server_claim_fields: Array[String]) -> String:
+	var final_tick := int(entry.get("final_tick", 0))
+	var final_hash := int(entry.get("final_result_hash", 0))
+	if not metadata_valid and not server_claim_fields.is_empty():
+		return "rejected server-authority claims %d fields; status %s" % [server_claim_fields.size(), verification_status]
+	if server_authoritative:
+		return "server replay audit pending; tick %d hash %d" % [final_tick, final_hash]
+	if final_hash != 0:
+		return "local practice final hash ready; tick %d hash %d" % [final_tick, final_hash]
+	return "local practice replay missing final hash; tick %d" % final_tick
 
 func _entry_metadata_status(entry: Dictionary, metadata_valid: bool) -> String:
 	if metadata_valid:
