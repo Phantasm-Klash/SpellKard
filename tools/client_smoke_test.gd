@@ -2274,6 +2274,17 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: instance boss result row summary invalid %s" % [instance_result_row])
 		quit(1)
 		return true
+	var star_conditions: Array = instance_result_row.get("star_conditions", [])
+	if star_conditions.size() != 4 or String(instance_result_row.get("star_condition_summary", "")) != "4/4" or int(instance_result_row.get("three_star_time_seconds", 0)) != 180:
+		push_error("Smoke test failed: instance boss star condition summary invalid %s" % [instance_result_row])
+		quit(1)
+		return true
+	for condition in star_conditions:
+		var condition_row: Dictionary = condition
+		if not bool(condition_row.get("met", false)) or String(condition_row.get("id", "")).is_empty():
+			push_error("Smoke test failed: instance boss star condition row invalid %s" % [instance_result_row])
+			quit(1)
+			return true
 	var game_mode_rows: Array[Dictionary] = main_node.call("_game_mode_rows")
 	if not _rows_have_ids(game_mode_rows, ["cert_rating", "cert_rank", "cert_top30", "cert_stage", "br_players", "br_pool", "br_round", "br_candidates", "br_zero_order", "world_boss_hp", "world_boss_attempts", "world_boss_entry", "world_boss_party", "world_boss_playfield", "world_boss_hud", "world_boss_transfer", "world_boss_result", "world_boss_announcement", "instance_boss_entry", "instance_boss_phase", "instance_boss_conditions", "instance_boss_stars", "instance_boss_party", "instance_boss_playfield", "instance_boss_hud", "instance_boss_transfer", "instance_boss_result", "mode_action_log"]):
 		push_error("Smoke test failed: game mode rows incomplete")

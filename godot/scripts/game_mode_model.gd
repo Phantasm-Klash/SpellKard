@@ -770,6 +770,7 @@ func apply_instance_boss_result(result: Dictionary) -> bool:
 	instance_boss_state["party_status"] = str(result.get("party_status", "cleared" if cleared else "failed"))
 	instance_boss_state["current_hp"] = max(0.0, float(result.get("boss_hp_after", instance_boss_state.get("current_hp", 0.0))))
 	instance_boss_state["clear_time_seconds"] = int(result.get("clear_time_seconds", 0))
+	instance_boss_state["three_star_time_seconds"] = int(result.get("three_star_time_seconds", instance_boss_state.get("three_star_time_seconds", 180)))
 	instance_boss_state["deaths"] = int(result.get("deaths", 0))
 	instance_boss_state["survivor_required"] = bool(result.get("survivor_required", true))
 	instance_boss_state["bombs_used"] = int(result.get("bombs_used", instance_boss_state.get("bombs_used", 0)))
@@ -887,7 +888,8 @@ func _default_boss_state(is_world: bool) -> Dictionary:
 		"clear_time_seconds": 0,
 		"deaths": 0,
 		"bombs_used": 0,
-		"bomb_limit": 0,
+		"bomb_limit": 3,
+		"three_star_time_seconds": 180,
 		"last_result_match_id": "",
 		"last_result_status": "pending",
 		"last_result_source": "",
@@ -1234,12 +1236,19 @@ func _world_boss_result_row() -> Dictionary:
 	}
 
 func _instance_boss_result_row() -> Dictionary:
+	var star_conditions := _instance_boss_star_conditions(instance_boss_state)
+	var met_conditions := 0
+	for condition in star_conditions:
+		if typeof(condition) == TYPE_DICTIONARY and bool((condition as Dictionary).get("met", false)):
+			met_conditions += 1
 	return {
 		"id": "instance_boss_result",
 		"label_key": "screen.mode.instance.result",
-		"value": "%s stars %d time %ds deaths %d" % [
+		"value": "%s stars %d conditions %d/%d time %ds deaths %d" % [
 			str(instance_boss_state.get("last_result_status", "pending")),
 			int(instance_boss_state.get("stars", 0)),
+			met_conditions,
+			star_conditions.size(),
 			int(instance_boss_state.get("clear_time_seconds", 0)),
 			int(instance_boss_state.get("deaths", 0)),
 		],
@@ -1251,8 +1260,13 @@ func _instance_boss_result_row() -> Dictionary:
 		"survivors": int(instance_boss_state.get("survivors", 0)),
 		"failed_mechanic": bool(instance_boss_state.get("failed_mechanic", false)),
 		"clear_time_seconds": int(instance_boss_state.get("clear_time_seconds", 0)),
+		"three_star_time_seconds": int(instance_boss_state.get("three_star_time_seconds", 180)),
 		"deaths": int(instance_boss_state.get("deaths", 0)),
+		"bombs_used": int(instance_boss_state.get("bombs_used", 0)),
+		"bomb_limit": int(instance_boss_state.get("bomb_limit", 0)),
 		"stars": int(instance_boss_state.get("stars", 0)),
+		"star_conditions": star_conditions,
+		"star_condition_summary": "%d/%d" % [met_conditions, star_conditions.size()],
 		"result_status": str(instance_boss_state.get("last_result_status", "pending")),
 		"result_source": str(instance_boss_state.get("last_result_source", "")),
 		"server_authoritative": bool(instance_boss_state.get("server_authoritative", false)),
@@ -1269,6 +1283,48 @@ func _calculate_instance_stars(result: Dictionary, cleared: bool) -> int:
 	if int(result.get("deaths", 99)) == 0 and int(result.get("bombs_used", 99)) <= int(result.get("bomb_limit", 3)):
 		stars += 1
 	return clampi(stars, 1, 3)
+
+func _instance_boss_star_conditions(state: Dictionary) -> Array[Dictionary]:
+	var cleared := bool(state.get("cleared", false))
+	var boss_defeated := bool(state.get("boss_defeated", false))
+	var survivors := int(state.get("survivors", 0))
+	var survivor_required := bool(state.get("survivor_required", true))
+	var failed_mechanic := bool(state.get("failed_mechanic", false))
+	var clear_time_seconds := int(state.get("clear_time_seconds", 0))
+	var three_star_time_seconds := int(state.get("three_star_time_seconds", 180))
+	var deaths := int(state.get("deaths", 0))
+	var bombs_used := int(state.get("bombs_used", 0))
+	var bomb_limit := int(state.get("bomb_limit", 3))
+	return [
+		{
+			"id": "clear_required",
+			"label_key": "screen.mode.instance.conditions",
+			"met": cleared and boss_defeated and not failed_mechanic and (survivors > 0 or not survivor_required),
+			"actual": "cleared" if cleared else "failed",
+			"target": "boss_hp_zero_survivor_no_failed_mechanic",
+		},
+		{
+			"id": "time_star",
+			"label_key": "screen.mode.instance.result",
+			"met": cleared and clear_time_seconds > 0 and clear_time_seconds <= three_star_time_seconds,
+			"actual_seconds": clear_time_seconds,
+			"target_seconds": three_star_time_seconds,
+		},
+		{
+			"id": "survival_star",
+			"label_key": "screen.mode.instance.result",
+			"met": cleared and deaths == 0,
+			"actual_deaths": deaths,
+			"target_deaths": 0,
+		},
+		{
+			"id": "bomb_star",
+			"label_key": "screen.mode.instance.result",
+			"met": cleared and bombs_used <= bomb_limit,
+			"actual_bombs": bombs_used,
+			"target_bombs": bomb_limit,
+		},
+	]
 
 func _apply_boss_rule_config(state: Dictionary, source: Dictionary) -> void:
 	var friendly_fire := _sanitized_boss_friendly_fire(String(source.get("friendly_fire", state.get("friendly_fire", "disabled"))))
