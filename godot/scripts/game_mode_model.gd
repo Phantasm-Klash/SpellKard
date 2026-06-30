@@ -419,6 +419,84 @@ func boss_action_availability_projection(mode_id: String) -> Dictionary:
 		"client_result_authoritative": false,
 	}
 
+func boss_authority_summary(mode_id: String) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"summary_kind": "boss_authority_summary",
+			"projection_scope": "local_display_only",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var state := _state_for_mode(mode_id)
+	var entry := boss_entry_preview(mode_id)
+	var display := boss_display_contract_row("%s_display" % mode_id, mode_id)
+	var practice_preview := boss_practice_preview_projection(mode_id)
+	var receipt := boss_settlement_receipt_projection(mode_id)
+	var server_fields: Array[String] = [
+		"entry_confirmation",
+		"damage",
+		"reward_grants",
+		"settlement",
+		"result_receipt",
+	]
+	if mode_id == MODE_WORLD_BOSS:
+		server_fields.append_array(["persistent_hp", "daily_attempts", "defeated_at", "world_announcement"])
+	else:
+		server_fields.append_array(["access_gate", "clear_status", "stars"])
+	var client_scopes: Array[String] = [
+		"local_display_projection",
+		"formation_preview",
+		"hud_projection",
+		"practice_spellbook_preview",
+		"entry_intent_request",
+		"card_transfer_intent_request",
+	]
+	var receipt_status := String(receipt.get("receipt_status", "pending_server_receipt"))
+	var result_status := String(state.get("last_result_status", "pending"))
+	var source_status := "server_settlement" if String(state.get("last_result_source", "")) == "server_settlement_projection" else ("server_snapshot" if bool(state.get("server_authoritative", false)) else "local_default")
+	var summary_text := "%s %s entry %s display %s receipt %s" % [
+		source_status,
+		"persistent_hp" if mode_id == MODE_WORLD_BOSS else "instance_clear",
+		String(entry.get("server_confirmation_status", "")),
+		String(display.get("display_status", "")),
+		receipt_status,
+	]
+	return {
+		"ok": true,
+		"reason": "none",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"summary_kind": "boss_authority_summary",
+		"authority_summary_text": summary_text,
+		"projection_scope": "local_display_only",
+		"client_allowed_scopes": client_scopes,
+		"server_authoritative_fields": server_fields,
+		"entry_confirmation_status": String(entry.get("server_confirmation_status", "")),
+		"display_scope": String(display.get("display_scope", "local_display_only")),
+		"display_ready": bool(display.get("display_ready", false)),
+		"practice_preview_scope": String(practice_preview.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)),
+		"receipt_status": receipt_status,
+		"result_status": result_status,
+		"result_source": String(state.get("last_result_source", "")),
+		"rules_source": String(state.get("rules_source", "local_default")),
+		"persistent_hp": mode_id == MODE_WORLD_BOSS,
+		"requires_server_confirmation": true,
+		"intent_authority": "client_request_only",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+		"entry_preflight": entry,
+		"display_contract": display,
+		"practice_preview": practice_preview,
+		"settlement_receipt_projection": receipt,
+	}
+
 func request_boss_entry(mode_id: String) -> Dictionary:
 	var entry := boss_entry_preview(mode_id)
 	if not bool(entry.get("ok", false)):
@@ -1290,6 +1368,7 @@ func _world_boss_rows() -> Array[Dictionary]:
 	return [
 		_boss_hp_row("world_boss_hp", world_boss_state, true),
 		_boss_rules_row("world_boss_rules", MODE_WORLD_BOSS, world_boss_state),
+		_boss_authority_summary_row("world_boss_authority", MODE_WORLD_BOSS),
 		{"id": "world_boss_attempts", "label_key": "screen.mode.boss.attempts", "value": int(world_boss_state.get("daily_attempts_left", 0)), "mode_category": "boss", "server_authoritative": bool(world_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": int(world_boss_state.get("daily_attempts_left", 0)) > 0},
 		_boss_entry_row("world_boss_entry", MODE_WORLD_BOSS, world_boss_state),
 		_boss_party_row("world_boss_party", MODE_WORLD_BOSS, world_boss_state),
@@ -1307,6 +1386,7 @@ func _instance_boss_rows() -> Array[Dictionary]:
 	return [
 		_boss_hp_row("instance_boss_hp", instance_boss_state, false),
 		_boss_rules_row("instance_boss_rules", MODE_INSTANCE_BOSS, instance_boss_state),
+		_boss_authority_summary_row("instance_boss_authority", MODE_INSTANCE_BOSS),
 		_boss_entry_row("instance_boss_entry", MODE_INSTANCE_BOSS, instance_boss_state),
 		{"id": "instance_boss_phase", "label_key": "screen.mode.instance.phase", "value": str(instance_boss_state.get("boss_phase", "phase_1")), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": true},
 		{"id": "instance_boss_conditions", "label_key": "screen.mode.instance.conditions", "value": "clear %s" % bool(instance_boss_state.get("cleared", false)), "items": instance_boss_state.get("clear_conditions", []), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": true},
@@ -1487,6 +1567,45 @@ func _boss_hp_row(row_id: String, state: Dictionary, persistent_hp: bool) -> Dic
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 		"enabled": true,
+	}
+
+func _boss_authority_summary_row(row_id: String, mode_id: String) -> Dictionary:
+	var summary := boss_authority_summary(mode_id)
+	var client_scopes := _string_array(summary.get("client_allowed_scopes", []))
+	var server_fields := _string_array(summary.get("server_authoritative_fields", []))
+	return {
+		"id": row_id,
+		"label_key": "screen.mode.boss.result" if mode_id == MODE_WORLD_BOSS else "screen.mode.instance.result",
+		"value": String(summary.get("authority_summary_text", "")),
+		"summary": "client display/intents only; server owns damage, rewards, settlement, and Boss outcome",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"ui_control": "card",
+		"ui_control_label_key": "ui.control_card",
+		"overview_card_kind": "boss_authority_summary",
+		"render_slot": "mode_cards",
+		"authority_summary_kind": String(summary.get("summary_kind", "boss_authority_summary")),
+		"authority_summary": summary,
+		"authority_summary_text": String(summary.get("authority_summary_text", "")),
+		"client_allowed_scopes": client_scopes,
+		"server_authoritative_fields": server_fields,
+		"authority_badges": ["client_display_only", "intent_request_only", "damage_server", "reward_server", "settlement_server"],
+		"entry_confirmation_status": String(summary.get("entry_confirmation_status", "")),
+		"display_scope": String(summary.get("display_scope", "local_display_only")),
+		"practice_preview_scope": String(summary.get("practice_preview_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)),
+		"receipt_status": String(summary.get("receipt_status", "")),
+		"result_status": String(summary.get("result_status", "")),
+		"result_source": String(summary.get("result_source", "")),
+		"rules_source": String(summary.get("rules_source", "local_default")),
+		"persistent_hp": mode_id == MODE_WORLD_BOSS,
+		"requires_server_confirmation": true,
+		"intent_authority": "client_request_only",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"server_authoritative": bool(summary.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+		"enabled": bool(summary.get("ok", false)),
 	}
 
 func _boss_rules_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
