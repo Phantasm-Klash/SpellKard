@@ -323,6 +323,10 @@ func request_boss_card_transfer(mode_id: String, from_player_id: String, to_play
 	return _action_result(true, request)
 
 func apply_world_boss_result(result: Dictionary) -> bool:
+	if bool(result.get("client_result_authoritative", false)):
+		last_action_status = "failed"
+		last_error_code = "client_authoritative_world_boss_result"
+		return false
 	var hp_after: Variant = result.get("boss_hp_after_global", result.get("current_hp", world_boss_state.get("current_hp", 0.0)))
 	world_boss_state["current_hp"] = max(0.0, float(hp_after))
 	world_boss_state["max_hp"] = float(result.get("boss_hp_global_max", result.get("boss_max_hp", world_boss_state.get("max_hp", 0.0))))
@@ -343,6 +347,10 @@ func apply_world_boss_result(result: Dictionary) -> bool:
 	return true
 
 func apply_instance_boss_result(result: Dictionary) -> bool:
+	if bool(result.get("client_result_authoritative", false)):
+		last_action_status = "failed"
+		last_error_code = "client_authoritative_instance_boss_result"
+		return false
 	var boss_defeated := bool(result.get("boss_defeated", result.get("instance_cleared", false)))
 	var survivors := int(result.get("survivors", 0))
 	var failed_mechanic := bool(result.get("failed_mechanic", false))
@@ -356,6 +364,7 @@ func apply_instance_boss_result(result: Dictionary) -> bool:
 	instance_boss_state["clear_time_seconds"] = int(result.get("clear_time_seconds", 0))
 	instance_boss_state["deaths"] = int(result.get("deaths", 0))
 	instance_boss_state["stars"] = _calculate_instance_stars(result, cleared)
+	instance_boss_state["server_authoritative"] = bool(result.get("server_authority", result.get("server_authoritative", true)))
 	last_action_status = "instance_boss_result"
 	last_error_code = "none"
 	return true

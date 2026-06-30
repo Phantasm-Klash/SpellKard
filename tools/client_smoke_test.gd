@@ -1904,6 +1904,18 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: server world boss snapshot invalid %s" % [game_mode_model.world_boss_state])
 		quit(1)
 		return true
+	if main_node.call("_apply_world_boss_result", {
+		"client_result_authoritative": true,
+		"boss_hp_after_global": 0,
+		"team_damage": 999999,
+	}):
+		push_error("Smoke test failed: client-authored world boss result accepted")
+		quit(1)
+		return true
+	if String(game_mode_model.last_error_code) != "client_authoritative_world_boss_result" or int(game_mode_model.world_boss_state.get("current_hp", 0)) != 40000:
+		push_error("Smoke test failed: rejected world boss result mutated state %s" % [game_mode_model.world_boss_state])
+		quit(1)
+		return true
 	if not main_node.call("_apply_world_boss_result", {
 		"boss_instance_id": "world_boss_local_s0_001",
 		"boss_hp_after_global": 0,
@@ -1927,6 +1939,19 @@ func _process(_delta: float) -> bool:
 		return true
 	if int(game_mode_model.instance_boss_state.get("positions", []).size()) != 8:
 		push_error("Smoke test failed: instance boss positions invalid")
+		quit(1)
+		return true
+	if main_node.call("_apply_instance_boss_result", {
+		"client_result_authoritative": true,
+		"boss_defeated": true,
+		"survivors": 8,
+		"clear_time_seconds": 1,
+	}):
+		push_error("Smoke test failed: client-authored instance boss result accepted")
+		quit(1)
+		return true
+	if String(game_mode_model.last_error_code) != "client_authoritative_instance_boss_result" or bool(game_mode_model.instance_boss_state.get("cleared", false)):
+		push_error("Smoke test failed: rejected instance boss result mutated state %s" % [game_mode_model.instance_boss_state])
 		quit(1)
 		return true
 	if not main_node.call("_apply_instance_boss_result", {
