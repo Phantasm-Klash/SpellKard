@@ -1156,15 +1156,34 @@ func _boss_hud_row(row_id: String, mode_id: String) -> Dictionary:
 	}
 
 func _boss_transfer_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
+	var requests: Array = state.get("transfer_requests", [])
+	var transferred_ids := _string_array(state.get("transferred_card_ids", []))
+	var latest_request := _latest_boss_transfer_request(requests)
+	var latest_summary := "none"
+	if not latest_request.is_empty():
+		latest_summary = "%s->%s %s %s" % [
+			String(latest_request.get("from_player_id", "")),
+			String(latest_request.get("to_player_id", "")),
+			String(latest_request.get("card_id", "")),
+			String(latest_request.get("status", "requested")),
+		]
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.boss.transfer",
-		"value": "%d" % (state.get("transfer_requests", []) as Array).size(),
-		"items": state.get("transfer_requests", []),
+		"value": "requested %d transferred %d latest %s" % [requests.size(), transferred_ids.size(), latest_summary],
+		"summary": "local transfer intent display only; party_members_only and once_per_card_per_match guards run before server confirmation",
+		"items": requests,
 		"mode_id": mode_id,
 		"mode_category": "boss",
 		"party_ids": state.get("party_ids", []),
-		"transferred_card_ids": state.get("transferred_card_ids", []),
+		"transferred_card_ids": transferred_ids,
+		"transfer_request_count": requests.size(),
+		"transferred_card_count": transferred_ids.size(),
+		"pending_server_confirmation_count": _boss_pending_transfer_count(requests),
+		"latest_transfer_request": latest_request,
+		"latest_transfer_summary": latest_summary,
+		"transfer_policy": "once_per_card_per_match",
+		"local_validation_rules": ["party_members_only", "no_self_transfer", "card_id_required", "once_per_card_per_match"],
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 		"requires_server_confirmation": true,
@@ -1172,6 +1191,22 @@ func _boss_transfer_row(row_id: String, mode_id: String, state: Dictionary) -> D
 		"last_error_code": last_error_code if last_action_status == "failed" else "none",
 		"enabled": true,
 	}
+
+func _latest_boss_transfer_request(requests: Array) -> Dictionary:
+	for i in range(requests.size() - 1, -1, -1):
+		if typeof(requests[i]) == TYPE_DICTIONARY:
+			return (requests[i] as Dictionary).duplicate(true)
+	return {}
+
+func _boss_pending_transfer_count(requests: Array) -> int:
+	var count := 0
+	for request in requests:
+		if typeof(request) != TYPE_DICTIONARY:
+			continue
+		var row: Dictionary = request
+		if String(row.get("status", "requested")) == "requested":
+			count += 1
+	return count
 
 func _world_boss_result_row() -> Dictionary:
 	return {

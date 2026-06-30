@@ -2007,6 +2007,15 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: world boss transfer authority contract invalid %s" % [world_boss_transfer_row])
 		quit(1)
 		return true
+	var latest_transfer_request: Dictionary = world_boss_transfer_row.get("latest_transfer_request", {})
+	if int(world_boss_transfer_row.get("transfer_request_count", 0)) != 1 or int(world_boss_transfer_row.get("pending_server_confirmation_count", 0)) != 1 or String(world_boss_transfer_row.get("transfer_policy", "")) != "once_per_card_per_match":
+		push_error("Smoke test failed: world boss transfer summary counts invalid %s" % [world_boss_transfer_row])
+		quit(1)
+		return true
+	if String(latest_transfer_request.get("from_player_id", "")) != "p1" or String(latest_transfer_request.get("to_player_id", "")) != "p2" or String(latest_transfer_request.get("card_id", "")) != "focus_lens" or not String(world_boss_transfer_row.get("latest_transfer_summary", "")).contains("p1->p2 focus_lens"):
+		push_error("Smoke test failed: world boss latest transfer summary invalid %s" % [world_boss_transfer_row])
+		quit(1)
+		return true
 	var duplicate_transfer: Dictionary = main_node.call("_request_boss_card_transfer", "world_boss", "p1", "p3", "focus_lens")
 	if bool(duplicate_transfer.get("ok", true)) or String(duplicate_transfer.get("last_error_code", "")) != "transfer_duplicate":
 		push_error("Smoke test failed: boss transfer idempotency invalid")
@@ -2028,7 +2037,8 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	var transfer_guard_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "world_boss_transfer")
-	if String(transfer_guard_row.get("local_validation", "")) != "party_members_only":
+	var local_validation_rules: Array = transfer_guard_row.get("local_validation_rules", [])
+	if String(transfer_guard_row.get("local_validation", "")) != "party_members_only" or not local_validation_rules.has("once_per_card_per_match") or String(transfer_guard_row.get("last_error_code", "")) != "transfer_card_missing":
 		push_error("Smoke test failed: boss transfer local validation row missing %s" % [transfer_guard_row])
 		quit(1)
 		return true
