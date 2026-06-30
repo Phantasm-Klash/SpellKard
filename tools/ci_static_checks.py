@@ -1148,6 +1148,11 @@ def check_protocol_client_scripts() -> list[str]:
             "\"replay_verification_scope\"",
             "\"preview_bundle_signature_digest\"",
             "\"server_confirmation_status\": \"not_applicable_local_preview\"",
+            "\"preview_card_kind\": \"boss_spellbook_practice_preview\"",
+            "\"overview_card_kind\": \"boss_practice_preview\"",
+            "\"preview_card_metrics\"",
+            "\"preview_card_authority_badges\"",
+            "\"render_slot\": \"mode_cards\"",
         ]:
             if token not in text:
                 errors.append(f"godot/scripts/game_mode_model.gd: missing Boss result authority token {token}")
@@ -1160,6 +1165,9 @@ def check_protocol_client_scripts() -> list[str]:
             "\"reward_authority\"",
             "\"settlement_authority\"",
             "\"requires_server_confirmation\"",
+            "func _validate_boss_practice_preview_card_row(",
+            "\"preview_card_kind\"",
+            "\"preview_card_authority_badges\"",
         ]:
             if token not in text:
                 errors.append(f"tools/client_smoke_test.gd: missing Boss result authority smoke token {token}")

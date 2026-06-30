@@ -1569,6 +1569,20 @@ func _boss_practice_preview_row(row_id: String, mode_id: String) -> Dictionary:
 	var max_emit := int(projection.get("preview_max_emit_per_tick", 0))
 	var headroom := int(projection.get("preview_min_budget_headroom", 0))
 	var budget_status := String(projection.get("performance_budget_status", ""))
+	var preview_metrics: Array[Dictionary] = [
+		{"id": "phases", "label": "phases", "value": phase_count},
+		{"id": "digest", "label": "digest", "value": digest},
+		{"id": "max_emit", "label": "max emit", "value": max_emit},
+		{"id": "headroom", "label": "headroom", "value": headroom},
+		{"id": "budget", "label": "budget", "value": budget_status},
+	]
+	var authority_badges: Array[String] = [
+		"local_practice_preview_only",
+		"replay_local_practice_hash",
+		"damage_server",
+		"reward_server",
+		"settlement_server",
+	]
 	return {
 		"id": row_id,
 		"label_key": "screen.settings.boss_spellbook",
@@ -1582,6 +1596,21 @@ func _boss_practice_preview_row(row_id: String, mode_id: String) -> Dictionary:
 		"summary": "local Boss spellbook practice preview only; Replay can verify preview digest, but online damage, rewards, hp, and settlement stay server-authoritative",
 		"mode_id": mode_id,
 		"mode_category": "boss",
+		"mode_group": "boss",
+		"section": "boss_preview",
+		"section_label_key": "ui.menu_section_boss",
+		"ui_control": "card",
+		"ui_control_label_key": "ui.control_card",
+		"preview_card_kind": "boss_spellbook_practice_preview",
+		"preview_card_title_key": "screen.settings.boss_spellbook",
+		"preview_card_summary": "local practice preview; Replay hash can verify the bundle, online outcomes remain server authoritative",
+		"preview_card_metrics": preview_metrics,
+		"preview_card_primary_metric": "phases %d digest %d" % [phase_count, digest],
+		"preview_card_secondary_metric": "max_emit %d headroom %d %s" % [max_emit, headroom, budget_status],
+		"preview_card_authority_badges": authority_badges,
+		"preview_card_action_hint": "open practice/replay verification only",
+		"overview_card_kind": "boss_practice_preview",
+		"render_slot": "mode_cards",
 		"preview_projection": projection,
 		"spellbook_id": String(projection.get("spellbook_id", BOSS_LOCAL_PREVIEW_SPELLBOOK_ID)),
 		"preview_seed": int(projection.get("preview_seed", BOSS_LOCAL_PREVIEW_SEED)),

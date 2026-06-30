@@ -945,6 +945,16 @@ func _assert_boss_practice_preview_row(row: Dictionary, mode_id: String) -> bool
 		return _fail("boss practice preview must keep online authority on server %s" % [row])
 	if bool(row.get("requires_server_confirmation", true)):
 		return _fail("boss practice preview should not require server confirmation %s" % [row])
+	if String(row.get("ui_control", "")) != "card" or String(row.get("preview_card_kind", "")) != "boss_spellbook_practice_preview" or String(row.get("overview_card_kind", "")) != "boss_practice_preview":
+		return _fail("boss practice preview card contract mismatch %s" % [row])
+	if String(row.get("render_slot", "")) != "mode_cards" or String(row.get("section", "")) != "boss_preview":
+		return _fail("boss practice preview card placement mismatch %s" % [row])
+	var metrics: Array = row.get("preview_card_metrics", [])
+	var badges: Array = row.get("preview_card_authority_badges", [])
+	if metrics.size() < 5 or not badges.has("local_practice_preview_only") or not badges.has("replay_local_practice_hash") or not badges.has("damage_server"):
+		return _fail("boss practice preview card metrics/badges mismatch %s" % [row])
+	if not String(row.get("preview_card_primary_metric", "")).contains("digest") or not String(row.get("preview_card_secondary_metric", "")).contains("headroom"):
+		return _fail("boss practice preview card metric text mismatch %s" % [row])
 	if int(row.get("preview_bundle_signature_digest", 0)) <= 0 or int(row.get("preview_phase_count", 0)) < 3:
 		return _fail("boss practice preview missing deterministic digest %s" % [row])
 	if String(row.get("performance_budget_status", "")) != "within_budget":

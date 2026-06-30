@@ -725,7 +725,7 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	var game_mode_state_rows: Array[Dictionary] = game_mode_model.mode_rows()
-	if not _rows_have_ids(game_mode_state_rows, ["world_boss_hp", "world_boss_rules", "world_boss_party", "world_boss_formation", "world_boss_display", "world_boss_playfield", "world_boss_hud", "world_boss_transfer", "world_boss_result", "instance_boss_hp", "instance_boss_rules", "instance_boss_party", "instance_boss_formation", "instance_boss_display", "instance_boss_playfield", "instance_boss_hud", "instance_boss_transfer", "instance_boss_result"]):
+	if not _rows_have_ids(game_mode_state_rows, ["world_boss_hp", "world_boss_rules", "world_boss_party", "world_boss_formation", "world_boss_display", "world_boss_playfield", "world_boss_hud", "world_boss_practice_preview", "world_boss_transfer", "world_boss_result", "instance_boss_hp", "instance_boss_rules", "instance_boss_party", "instance_boss_formation", "instance_boss_display", "instance_boss_playfield", "instance_boss_hud", "instance_boss_practice_preview", "instance_boss_transfer", "instance_boss_result"]):
 		push_error("Smoke test failed: boss mode state rows incomplete")
 		quit(1)
 		return true
@@ -741,6 +741,8 @@ func _process(_delta: float) -> bool:
 	var instance_playfield_row: Dictionary = _find_row_by_id(game_mode_state_rows, "instance_boss_playfield")
 	var world_hud_row: Dictionary = _find_row_by_id(game_mode_state_rows, "world_boss_hud")
 	var instance_hud_row: Dictionary = _find_row_by_id(game_mode_state_rows, "instance_boss_hud")
+	var world_practice_preview_row: Dictionary = _find_row_by_id(game_mode_state_rows, "world_boss_practice_preview")
+	var instance_practice_preview_row: Dictionary = _find_row_by_id(game_mode_state_rows, "instance_boss_practice_preview")
 	if not bool(world_hp_row.get("persistent_hp", false)) or bool(instance_hp_row.get("persistent_hp", true)):
 		push_error("Smoke test failed: boss hp persistence flags invalid world=%s instance=%s" % [world_hp_row, instance_hp_row])
 		quit(1)
@@ -779,6 +781,12 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	if not _validate_boss_hud_projection(instance_hud_row, "instance_boss", 8, 1.0):
+		quit(1)
+		return true
+	if not _validate_boss_practice_preview_card_row(world_practice_preview_row, "world_boss"):
+		quit(1)
+		return true
+	if not _validate_boss_practice_preview_card_row(instance_practice_preview_row, "instance_boss"):
 		quit(1)
 		return true
 	if not _validate_row_label_keys(mode_rows, localization):
@@ -5256,6 +5264,44 @@ func _validate_boss_display_contract_row(row: Dictionary, mode_id: String, expec
 	if not _validate_boss_playfield_projection({"playfield_projection": row.get("playfield_projection", {})}, mode_id, expected_count, expected_hp_ratio):
 		return false
 	if not _validate_boss_hud_projection({"hud_projection": row.get("hud_projection", {})}, mode_id, expected_count, expected_hp_ratio):
+		return false
+	return true
+
+func _validate_boss_practice_preview_card_row(row: Dictionary, mode_id: String) -> bool:
+	if row.is_empty():
+		push_error("Smoke test failed: boss practice preview card missing for %s" % mode_id)
+		return false
+	if String(row.get("mode_id", "")) != mode_id or String(row.get("mode_category", "")) != "boss":
+		push_error("Smoke test failed: boss practice preview card identity invalid %s" % [row])
+		return false
+	if String(row.get("preview_card_kind", "")) != "boss_spellbook_practice_preview" or String(row.get("overview_card_kind", "")) != "boss_practice_preview":
+		push_error("Smoke test failed: boss practice preview card kind invalid %s" % [row])
+		return false
+	if String(row.get("ui_control", "")) != "card" or String(row.get("render_slot", "")) != "mode_cards" or String(row.get("section", "")) != "boss_preview":
+		push_error("Smoke test failed: boss practice preview card UI contract invalid %s" % [row])
+		return false
+	if String(row.get("projection_scope", "")) != "local_practice_preview_only" or String(row.get("preview_authority_scope", "")) != "local_practice_preview_only":
+		push_error("Smoke test failed: boss practice preview card scope invalid %s" % [row])
+		return false
+	if String(row.get("replay_verification_scope", "")) != "local_practice_hash" or bool(row.get("requires_server_confirmation", true)):
+		push_error("Smoke test failed: boss practice preview replay/confirmation invalid %s" % [row])
+		return false
+	if String(row.get("damage_authority", "")) != "server" or String(row.get("reward_authority", "")) != "server" or String(row.get("settlement_authority", "")) != "server":
+		push_error("Smoke test failed: boss practice preview online authority invalid %s" % [row])
+		return false
+	if bool(row.get("client_result_authoritative", true)) or bool(row.get("server_authoritative", true)):
+		push_error("Smoke test failed: boss practice preview card authority flags invalid %s" % [row])
+		return false
+	var metrics: Array = row.get("preview_card_metrics", [])
+	var badges: Array = row.get("preview_card_authority_badges", [])
+	if metrics.size() < 5 or not badges.has("local_practice_preview_only") or not badges.has("damage_server") or not badges.has("settlement_server"):
+		push_error("Smoke test failed: boss practice preview card metrics/badges invalid %s" % [row])
+		return false
+	if not String(row.get("preview_card_primary_metric", "")).contains("digest") or not String(row.get("preview_card_secondary_metric", "")).contains("headroom"):
+		push_error("Smoke test failed: boss practice preview card metric text invalid %s" % [row])
+		return false
+	if int(row.get("preview_bundle_signature_digest", 0)) <= 0 or int(row.get("preview_phase_count", 0)) < 3 or String(row.get("performance_budget_status", "")) != "within_budget":
+		push_error("Smoke test failed: boss practice preview deterministic bundle invalid %s" % [row])
 		return false
 	return true
 

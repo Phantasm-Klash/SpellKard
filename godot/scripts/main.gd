@@ -5408,6 +5408,8 @@ func _visible_overview_card_limit() -> int:
 	match screen_id:
 		"play", "certification", "community", "player_settings":
 			return mini(4, ui_overview_buttons.size())
+		"modes":
+			return mini(5, ui_overview_buttons.size())
 		"match":
 			return mini(5, ui_overview_buttons.size())
 		"network_match":
@@ -5483,12 +5485,14 @@ func _is_overview_candidate(row: Dictionary) -> bool:
 	var row_id := String(row.get("id", ""))
 	if row_id.is_empty():
 		return false
+	if not String(row.get("overview_card_kind", "")).is_empty():
+		return true
 	if row_id.ends_with("_summary"):
 		return _row_control_id(row) == "status"
 	if row.has("screen") or not String(row.get("ui_action", "")).is_empty():
 		return true
 	var control_id := _row_control_id(row)
-	return control_id in ["nav", "queue", "button", "select", "toggle", "slider", "link", "friend", "claim", "chest", "card", "replay"]
+	return control_id in ["nav", "queue", "button", "select", "toggle", "slider", "link", "friend", "claim", "chest", "card", "replay", "mode"]
 
 func _format_ui_overview_card(card: Dictionary) -> String:
 	var row: Dictionary = card.get("row", {})
@@ -5501,6 +5505,12 @@ func _format_ui_overview_card(card: Dictionary) -> String:
 	return "%s%s\n%s" % [marker, label, detail]
 
 func _overview_card_detail(row: Dictionary) -> String:
+	if not String(row.get("preview_card_primary_metric", "")).is_empty():
+		var primary_metric := String(row.get("preview_card_primary_metric", ""))
+		var secondary_metric := String(row.get("preview_card_secondary_metric", ""))
+		if not secondary_metric.is_empty():
+			return "%s | %s" % [primary_metric, secondary_metric]
+		return primary_metric
 	var control_state := _row_control_state_text(row)
 	if not control_state.is_empty():
 		return control_state
@@ -6324,6 +6334,13 @@ func _row_control_state_text(row: Dictionary) -> String:
 	var control_id := _row_control_id(row)
 	if _row_is_binding_row(row) and input_capture_active and String(input_capture_action) == String(row.get("action", "")):
 		return "capturing..."
+	if String(row.get("preview_card_kind", "")) == "boss_spellbook_practice_preview":
+		var primary_metric := String(row.get("preview_card_primary_metric", ""))
+		var secondary_metric := String(row.get("preview_card_secondary_metric", ""))
+		if not primary_metric.is_empty() and not secondary_metric.is_empty():
+			return "%s | %s" % [primary_metric, secondary_metric]
+		if not primary_metric.is_empty():
+			return primary_metric
 	match control_id:
 		"toggle":
 			return localization.text_for("ui.on") if _row_toggle_control_value(row) else localization.text_for("ui.off")
