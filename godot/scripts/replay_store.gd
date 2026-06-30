@@ -135,6 +135,8 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 			var signature_sample_signature_digests: Array[int] = _sample_signature_digests_from_signature(str(entry.get("preview_signature", "")))
 			var signature_sample_emit_counts: Array[int] = _sample_emit_counts_from_signature(str(entry.get("preview_signature", "")))
 			var signature_digest := _stable_signature_digest(str(entry.get("preview_signature", ""))) if not str(entry.get("preview_signature", "")).is_empty() else 0
+			var preview_phase_ids: Array[String] = _preview_phase_ids_from_fields(entry)
+			var preview_phase_signature_digests: Array[int] = _preview_phase_signature_digests_from_fields(entry)
 			if str(entry.get("spellbook_id", "")).is_empty():
 				failures.append("missing_spellbook_id:%s" % replay_id)
 			if str(entry.get("phase_id", "")).is_empty():
@@ -162,6 +164,14 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 					failures.append("preview_bundle_digest_mismatch:%s" % replay_id)
 				if int(entry.get("preview_phase_count", 0)) != _expected_preview_phase_count(entry):
 					failures.append("preview_bundle_phase_count_mismatch:%s" % replay_id)
+				if preview_phase_ids.is_empty():
+					failures.append("preview_bundle_phase_ids_missing:%s" % replay_id)
+				elif not _arrays_equal_strings(preview_phase_ids, _expected_preview_phase_ids(entry)):
+					failures.append("preview_bundle_phase_ids_mismatch:%s" % replay_id)
+				if preview_phase_signature_digests.is_empty():
+					failures.append("preview_bundle_phase_digest_missing:%s" % replay_id)
+				elif not _arrays_equal_ints(preview_phase_signature_digests, _expected_preview_phase_signature_digests(entry)):
+					failures.append("preview_bundle_phase_digest_mismatch:%s" % replay_id)
 			if int(entry.get("preview_export_schema_version", 0)) != SPELLBOOK_PREVIEW_EXPORT_SCHEMA_VERSION:
 				failures.append("bad_preview_schema:%s" % replay_id)
 			if int(entry.get("preview_signature_digest", 0)) <= 0:
@@ -251,6 +261,10 @@ func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary)
 			failures.append("preview_bundle_digest_mismatch:%s" % str(entry.get("replay_id", "")))
 		if int(entry.get("preview_phase_count", 0)) != int(preview.get("preview_phase_count", 0)):
 			failures.append("preview_bundle_phase_count_mismatch:%s" % str(entry.get("replay_id", "")))
+		if not _arrays_equal_strings(_preview_phase_ids_from_fields(entry), _preview_phase_ids_from_fields(preview)):
+			failures.append("preview_bundle_phase_ids_mismatch:%s" % str(entry.get("replay_id", "")))
+		if not _arrays_equal_ints(_preview_phase_signature_digests_from_fields(entry), _preview_phase_signature_digests_from_fields(preview)):
+			failures.append("preview_bundle_phase_digest_mismatch:%s" % str(entry.get("replay_id", "")))
 	if String(entry.get("preview_authority_scope", SPELLBOOK_PREVIEW_AUTHORITY_SCOPE)) != SPELLBOOK_PREVIEW_AUTHORITY_SCOPE \
 			or String(preview.get("preview_authority_scope", "")) != SPELLBOOK_PREVIEW_AUTHORITY_SCOPE:
 		failures.append("preview_authority_scope_mismatch:%s" % str(entry.get("replay_id", "")))
@@ -414,6 +428,8 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"preview_bundle_id": str(metadata.get("preview_bundle_id", "")),
 		"preview_bundle_signature_digest": int(metadata.get("preview_bundle_signature_digest", 0)),
 		"preview_phase_count": int(metadata.get("preview_phase_count", 0)),
+		"preview_phase_ids": _preview_phase_ids_from_fields(metadata),
+		"preview_phase_signature_digests": _preview_phase_signature_digests_from_fields(metadata),
 		"preview_export_id": str(metadata.get("preview_export_id", "")),
 		"preview_authority_scope": str(metadata.get("preview_authority_scope", SPELLBOOK_PREVIEW_AUTHORITY_SCOPE if is_spellbook_preview else "")),
 		"preview_fixture_id": str(metadata.get("preview_fixture_id", _expected_preview_fixture_id_from_parts(str(metadata.get("spellbook_id", "")), str(metadata.get("phase_id", "")), preview_seed))),
@@ -486,6 +502,14 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 			return "preview_bundle_digest_mismatch"
 		if int(fields.get("preview_phase_count", 0)) != _expected_preview_phase_count(fields):
 			return "preview_bundle_phase_count_mismatch"
+		if _preview_phase_ids_from_fields(fields).is_empty():
+			return "preview_bundle_phase_ids_missing"
+		if not _arrays_equal_strings(_preview_phase_ids_from_fields(fields), _expected_preview_phase_ids(fields)):
+			return "preview_bundle_phase_ids_mismatch"
+		if _preview_phase_signature_digests_from_fields(fields).is_empty():
+			return "preview_bundle_phase_digest_missing"
+		if not _arrays_equal_ints(_preview_phase_signature_digests_from_fields(fields), _expected_preview_phase_signature_digests(fields)):
+			return "preview_bundle_phase_digest_mismatch"
 	if str(fields.get("preview_authority_scope", SPELLBOOK_PREVIEW_AUTHORITY_SCOPE)) != SPELLBOOK_PREVIEW_AUTHORITY_SCOPE:
 		return "preview_authority_scope_mismatch"
 	if int(fields.get("preview_export_schema_version", 0)) != SPELLBOOK_PREVIEW_EXPORT_SCHEMA_VERSION:
@@ -587,6 +611,28 @@ func _expected_preview_phase_count(fields: Dictionary) -> int:
 			count += 1
 	return count
 
+func _expected_preview_phase_ids(fields: Dictionary) -> Array[String]:
+	var spellbook_id := str(fields.get("spellbook_id", ""))
+	if spellbook_id.is_empty() or not SPELLBOOK_PREVIEW_PHASE_ORDER.has(spellbook_id):
+		return []
+	var result: Array[String] = []
+	for phase_id in SPELLBOOK_PREVIEW_PHASE_ORDER.get(spellbook_id, []):
+		result.append(String(phase_id))
+	return result
+
+func _expected_preview_phase_signature_digests(fields: Dictionary) -> Array[int]:
+	var spellbook_id := str(fields.get("spellbook_id", ""))
+	var seed := _preview_seed_from_fields(fields)
+	if spellbook_id.is_empty() or seed <= 0:
+		return []
+	var result: Array[int] = []
+	for phase_id in _expected_preview_phase_ids(fields):
+		var fixture_id := "%s:%s:%d" % [spellbook_id, phase_id, seed]
+		if not SPELLBOOK_PREVIEW_GOLDEN_FIXTURES.has(fixture_id):
+			return []
+		result.append(int((SPELLBOOK_PREVIEW_GOLDEN_FIXTURES[fixture_id] as Dictionary).get("signature_digest", 0)))
+	return result
+
 func _expected_preview_bundle_signature_digest(fields: Dictionary) -> int:
 	var spellbook_id := str(fields.get("spellbook_id", ""))
 	var seed := _preview_seed_from_fields(fields)
@@ -613,7 +659,9 @@ func _expected_preview_bundle_signature_digest(fields: Dictionary) -> int:
 func _has_preview_bundle_metadata(fields: Dictionary) -> bool:
 	return not str(fields.get("preview_bundle_id", "")).is_empty() \
 			or int(fields.get("preview_bundle_signature_digest", 0)) > 0 \
-			or int(fields.get("preview_phase_count", 0)) > 0
+			or int(fields.get("preview_phase_count", 0)) > 0 \
+			or not _normalized_string_array(fields.get("preview_phase_ids", [])).is_empty() \
+			or not _normalized_int_array(fields.get("preview_phase_signature_digests", [])).is_empty()
 
 func _preview_seed_from_fields(fields: Dictionary) -> int:
 	return int(fields.get("preview_seed", fields.get("seed", fields.get("match_seed", 0))))
@@ -709,6 +757,30 @@ func _normalized_int_array(value: Variant) -> Array[int]:
 		result.append(int(item))
 	return result
 
+func _normalized_string_array(value: Variant) -> Array[String]:
+	var result: Array[String] = []
+	if typeof(value) != TYPE_ARRAY:
+		return result
+	for item in value:
+		result.append(String(item))
+	return result
+
+func _preview_phase_ids_from_fields(fields: Dictionary) -> Array[String]:
+	var direct := _normalized_string_array(fields.get("preview_phase_ids", []))
+	if not direct.is_empty():
+		return direct
+	if _has_preview_bundle_metadata(fields):
+		return _expected_preview_phase_ids(fields)
+	return []
+
+func _preview_phase_signature_digests_from_fields(fields: Dictionary) -> Array[int]:
+	var direct := _normalized_int_array(fields.get("preview_phase_signature_digests", []))
+	if not direct.is_empty():
+		return direct
+	if _has_preview_bundle_metadata(fields):
+		return _expected_preview_phase_signature_digests(fields)
+	return []
+
 func _preview_sample_ticks_from_fields(fields: Dictionary) -> Array[int]:
 	var direct := _normalized_int_array(fields.get("preview_sample_ticks", []))
 	if not direct.is_empty():
@@ -794,6 +866,18 @@ func _arrays_equal_ints(left: Variant, right: Variant) -> bool:
 		return false
 	for index in range(left_array.size()):
 		if int(left_array[index]) != int(right_array[index]):
+			return false
+	return true
+
+func _arrays_equal_strings(left: Variant, right: Variant) -> bool:
+	if typeof(left) != TYPE_ARRAY or typeof(right) != TYPE_ARRAY:
+		return false
+	var left_array: Array = left
+	var right_array: Array = right
+	if left_array.size() != right_array.size():
+		return false
+	for index in range(left_array.size()):
+		if String(left_array[index]) != String(right_array[index]):
 			return false
 	return true
 

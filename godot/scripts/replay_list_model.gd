@@ -136,6 +136,8 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"preview_bundle_id": str(entry.get("preview_bundle_id", "")),
 		"preview_bundle_signature_digest": int(entry.get("preview_bundle_signature_digest", 0)),
 		"preview_phase_count": int(entry.get("preview_phase_count", 0)),
+		"preview_phase_ids": (entry.get("preview_phase_ids", []) as Array).duplicate(),
+		"preview_phase_signature_digests": (entry.get("preview_phase_signature_digests", []) as Array).duplicate(),
 		"preview_export_id": str(entry.get("preview_export_id", "")),
 		"preview_authority_scope": str(entry.get("preview_authority_scope", "")),
 		"preview_fixture_id": str(entry.get("preview_fixture_id", "")),
