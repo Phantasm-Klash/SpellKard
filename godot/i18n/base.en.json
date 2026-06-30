@@ -113,6 +113,7 @@
   "ui.menu_section_promotions": "Promotions",
   "ui.menu_section_workshop": "Workshop",
   "ui.menu_section_replay": "Replay",
+  "ui.menu_section_replay_all": "All Replays",
   "ui.menu_section_replay_local_ready": "Local Verified",
   "ui.menu_section_replay_missing_hash": "Missing Hash",
   "ui.menu_section_replay_server_pending": "Server Audit",

@@ -452,9 +452,20 @@ func _validate_collection_page_contract() -> bool:
 	var replay_summary_card_result: Dictionary = main_node.call("_ui_press_visible_overview_card", 0)
 	if not bool(replay_summary_card_result.get("ok", false)) or String(replay_summary_card_result.get("row_id", "")) != "replay_verification_summary" or String(replay_summary_card_result.get("screen", "")) != "replay":
 		return _fail("replay verification summary overview card should stay on replay page %s" % [replay_summary_card_result])
-	if replay_rows.size() > 1:
-		if String(replay_rows[1].get("replay_id", "")).is_empty() or String(replay_rows[1].get("ui_action", "")) != "load_replay" or String(replay_rows[1].get("ui_control", "")) != "replay":
-			return _fail("replay entry row should stay loadable %s" % [replay_rows[1]])
+	replay_rows = main_node.call("_ui_screen_rows", 12)
+	var replay_filter_index := _row_index_by_id(replay_rows, "replay_filter_replay_local_ready")
+	if replay_filter_index < 0 or String(replay_rows[replay_filter_index].get("ui_action", "")) != "set_replay_filter":
+		return _fail("replay page missing local-ready filter action %s" % [replay_rows])
+	main_node.call("_ui_set_cursor", replay_filter_index)
+	var replay_filter_result: Dictionary = main_node.call("_ui_accept_selected")
+	await _settle_frames(2)
+	if not bool(replay_filter_result.get("ok", false)) or String(replay_filter_result.get("verification_filter", "")) != "replay_local_ready" or String(main_node.get("ui_screen_model").current_screen) != "replay":
+		return _fail("replay filter action did not stay on replay page %s" % [replay_filter_result])
+	replay_rows = main_node.call("_ui_screen_rows", 12)
+	if int(replay_filter_result.get("visible_entry_count", 0)) > 0:
+		var replay_entry := _first_replay_entry_row(replay_rows)
+		if replay_entry.is_empty() or String(replay_entry.get("ui_action", "")) != "load_replay" or String(replay_entry.get("ui_control", "")) != "replay" or String(replay_entry.get("section", "")) != "replay_local_ready":
+			return _fail("replay entry row should stay loadable after filter %s" % [replay_rows])
 	return true
 
 func _press_home_button(index: int, expected_screen: String) -> bool:
@@ -630,6 +641,12 @@ func _row_index_by_id(rows: Array[Dictionary], row_id: String) -> int:
 func _row_by_id(rows: Array[Dictionary], row_id: String) -> Dictionary:
 	for row in rows:
 		if String(row.get("id", "")) == row_id:
+			return row
+	return {}
+
+func _first_replay_entry_row(rows: Array[Dictionary]) -> Dictionary:
+	for row in rows:
+		if not String(row.get("replay_id", "")).is_empty():
 			return row
 	return {}
 

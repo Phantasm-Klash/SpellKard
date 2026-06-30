@@ -6,6 +6,16 @@ var entries: Array[Dictionary] = []
 var cursor := 0
 var status := "empty"
 var action_status := "none"
+var active_verification_filter := "all"
+
+const VERIFICATION_FILTER_ALL := "all"
+const VERIFICATION_FILTERS: Array[String] = [
+	VERIFICATION_FILTER_ALL,
+	"replay_local_ready",
+	"replay_missing_hash",
+	"replay_server_pending",
+	"replay_metadata_invalid",
+]
 
 func configure(store: RefCounted) -> void:
 	replay_store = store
@@ -23,13 +33,18 @@ func refresh() -> void:
 		status = "empty"
 		return
 	cursor = clampi(cursor, 0, entries.size() - 1)
-	status = "ready"
+	_clamp_cursor_to_filter()
+	status = "filtered_empty" if _filtered_indices().is_empty() else "ready"
 
 func select(delta: int) -> bool:
 	refresh()
-	if entries.is_empty():
+	var indices := _filtered_indices()
+	if indices.is_empty():
 		return false
-	cursor = wrapi(cursor + delta, 0, entries.size())
+	var filtered_cursor := indices.find(cursor)
+	if filtered_cursor < 0:
+		filtered_cursor = 0
+	cursor = indices[wrapi(filtered_cursor + delta, 0, indices.size())]
 	status = "selected"
 	return true
 
@@ -44,7 +59,12 @@ func select_index(index: int) -> bool:
 func selected_entry() -> Dictionary:
 	if entries.is_empty():
 		return {}
-	return entries[clampi(cursor, 0, entries.size() - 1)]
+	var safe_cursor := clampi(cursor, 0, entries.size() - 1)
+	if _entry_matches_active_filter(entries[safe_cursor]):
+		return entries[safe_cursor]
+	for index in _filtered_indices():
+		return entries[index]
+	return {}
 
 func selected_path(default_path: String = "") -> String:
 	var entry := selected_entry()
@@ -62,39 +82,32 @@ func selected_row() -> Dictionary:
 
 func row_models(limit: int = 20) -> Array[Dictionary]:
 	var rows: Array[Dictionary] = []
-	var count: int = min(max(0, limit), entries.size())
-	for i in range(count):
+	var count: int = max(0, limit)
+	if count == 0:
+		return rows
+	for i in range(entries.size()):
+		if not _entry_matches_active_filter(entries[i]):
+			continue
 		rows.append(_row_from_entry(entries[i], i))
+		if rows.size() >= count:
+			break
 	return rows
 
 func verification_summary_row() -> Dictionary:
-	var local_ready := 0
-	var missing_hash := 0
-	var server_pending := 0
-	var metadata_invalid := 0
-	var rejected_server_claim := 0
-	for entry in entries:
-		var metadata_valid := _entry_metadata_valid(entry)
-		var server_claim_fields := _entry_server_authority_claim_fields(entry)
-		var status_value := _entry_verification_status(entry, int(entry.get("final_result_hash", 0)), metadata_valid)
-		var scope_value := _entry_verification_scope(bool(entry.get("server_authoritative", false)), metadata_valid, server_claim_fields)
-		match status_value:
-			"local_final_hash_ready":
-				local_ready += 1
-			"missing_final_hash":
-				missing_hash += 1
-			"server_record_pending_audit":
-				server_pending += 1
-			_:
-				metadata_invalid += 1
-		if scope_value == "rejected_server_claim":
-			rejected_server_claim += 1
+	var counts := _verification_counts()
+	var local_ready := int(counts.get("replay_local_ready", 0))
+	var missing_hash := int(counts.get("replay_missing_hash", 0))
+	var server_pending := int(counts.get("replay_server_pending", 0))
+	var metadata_invalid := int(counts.get("replay_metadata_invalid", 0))
+	var rejected_server_claim := int(counts.get("rejected_server_claim", 0))
 	return {
 		"id": "replay_verification_summary",
 		"label_key": "screen.main.replay",
-		"value": "local %d missing %d server %d invalid %d" % [local_ready, missing_hash, server_pending, metadata_invalid],
-		"summary": "verification local_ready=%d missing_hash=%d server_pending=%d metadata_invalid=%d rejected_server_claim=%d" % [local_ready, missing_hash, server_pending, metadata_invalid, rejected_server_claim],
+		"value": "filter %s local %d missing %d server %d invalid %d" % [active_verification_filter, local_ready, missing_hash, server_pending, metadata_invalid],
+		"summary": "verification filter=%s local_ready=%d missing_hash=%d server_pending=%d metadata_invalid=%d rejected_server_claim=%d visible=%d" % [active_verification_filter, local_ready, missing_hash, server_pending, metadata_invalid, rejected_server_claim, _filtered_indices().size()],
 		"entry_count": entries.size(),
+		"visible_entry_count": _filtered_indices().size(),
+		"active_verification_filter": active_verification_filter,
 		"local_ready_count": local_ready,
 		"missing_final_hash_count": missing_hash,
 		"server_pending_audit_count": server_pending,
@@ -108,6 +121,40 @@ func verification_summary_row() -> Dictionary:
 		"ui_action": "",
 		"enabled": true,
 	}
+
+func verification_filter_rows() -> Array[Dictionary]:
+	var rows: Array[Dictionary] = []
+	var counts := _verification_counts()
+	for filter_id in VERIFICATION_FILTERS:
+		var is_all := filter_id == VERIFICATION_FILTER_ALL
+		var count := entries.size() if is_all else int(counts.get(filter_id, 0))
+		rows.append({
+			"id": "replay_filter_%s" % filter_id,
+			"label_key": _verification_filter_label_key(filter_id),
+			"value": "%s %d" % ["active" if filter_id == active_verification_filter else "show", count],
+			"summary": "local replay display filter only; server audit authority unchanged",
+			"verification_filter": filter_id,
+			"active": filter_id == active_verification_filter,
+			"entry_count": count,
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+			"section": "overview",
+			"section_label_key": "ui.menu_section_overview",
+			"ui_control": "button",
+			"ui_action": "set_replay_filter",
+			"enabled": true,
+		})
+	return rows
+
+func set_verification_filter(filter_id: String) -> bool:
+	if not VERIFICATION_FILTERS.has(filter_id):
+		action_status = "filter_failed"
+		return false
+	active_verification_filter = filter_id
+	_clamp_cursor_to_filter()
+	action_status = "filter"
+	status = "filtered_empty" if _filtered_indices().is_empty() else "selected"
+	return true
 
 func selected_summary() -> String:
 	var row := selected_row()
@@ -162,6 +209,7 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 	var replay_authority_scope := "server_authoritative_record" if server_authoritative else "local_practice_record"
 	return {
 		"index": index + 1,
+		"source_index": index,
 		"replay_id": str(entry.get("replay_id", "")),
 		"path": path,
 		"saved_at": str(entry.get("saved_at", "")),
@@ -298,3 +346,51 @@ func _entry_server_authority_claim_fields(entry: Dictionary) -> Array[String]:
 	if typeof(entry.get("server_authority_claim_fields", [])) == TYPE_ARRAY:
 		return (entry.get("server_authority_claim_fields", []) as Array).duplicate()
 	return []
+
+func _verification_counts() -> Dictionary:
+	var counts := {
+		"replay_local_ready": 0,
+		"replay_missing_hash": 0,
+		"replay_server_pending": 0,
+		"replay_metadata_invalid": 0,
+		"rejected_server_claim": 0,
+	}
+	for entry in entries:
+		var metadata_valid := _entry_metadata_valid(entry)
+		var server_claim_fields := _entry_server_authority_claim_fields(entry)
+		var status_value := _entry_verification_status(entry, int(entry.get("final_result_hash", 0)), metadata_valid)
+		var section_value := _entry_verification_section(status_value)
+		counts[section_value] = int(counts.get(section_value, 0)) + 1
+		if _entry_verification_scope(bool(entry.get("server_authoritative", false)), metadata_valid, server_claim_fields) == "rejected_server_claim":
+			counts["rejected_server_claim"] = int(counts.get("rejected_server_claim", 0)) + 1
+	return counts
+
+func _entry_matches_active_filter(entry: Dictionary) -> bool:
+	if active_verification_filter == VERIFICATION_FILTER_ALL:
+		return true
+	var metadata_valid := _entry_metadata_valid(entry)
+	var status_value := _entry_verification_status(entry, int(entry.get("final_result_hash", 0)), metadata_valid)
+	return _entry_verification_section(status_value) == active_verification_filter
+
+func _filtered_indices() -> Array[int]:
+	var indices: Array[int] = []
+	for i in range(entries.size()):
+		if _entry_matches_active_filter(entries[i]):
+			indices.append(i)
+	return indices
+
+func _clamp_cursor_to_filter() -> void:
+	if entries.is_empty():
+		cursor = 0
+		return
+	cursor = clampi(cursor, 0, entries.size() - 1)
+	if _entry_matches_active_filter(entries[cursor]):
+		return
+	var indices := _filtered_indices()
+	if not indices.is_empty():
+		cursor = indices[0]
+
+func _verification_filter_label_key(filter_id: String) -> String:
+	if filter_id == VERIFICATION_FILTER_ALL:
+		return "ui.menu_section_replay_all"
+	return "ui.menu_section_%s" % filter_id

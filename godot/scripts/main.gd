@@ -1189,6 +1189,13 @@ func _replay_list_rows(limit: int = 8) -> Array[Dictionary]:
 		return []
 	return replay_list_model.row_models(limit)
 
+func _set_replay_verification_filter(filter_id: String) -> bool:
+	if replay_list_model == null or not replay_list_model.has_method("set_verification_filter"):
+		return false
+	var ok: bool = replay_list_model.set_verification_filter(filter_id)
+	_sync_replay_index_state()
+	return ok
+
 func _sync_replay_index_state() -> void:
 	if replay_list_model == null:
 		return
@@ -2539,11 +2546,18 @@ func _dispatch_ui_action(row: Dictionary) -> Dictionary:
 			for i in range(replay_rows.size()):
 				if String(replay_rows[i].get("replay_id", "")) == replay_id:
 					if replay_list_model != null:
-						replay_list_model.select_index(i)
+						replay_list_model.select_index(int(replay_rows[i].get("source_index", i)))
 						_sync_replay_index_state()
 					var replay_ok: bool = _load_selected_replay_snapshot()
 					return _set_ui_action_result(replay_ok, action, {"replay_id": replay_id})
 			return _set_ui_action_result(false, action, {"replay_id": replay_id})
+		"set_replay_filter":
+			var filter_id := String(row.get("verification_filter", "all"))
+			var filter_ok: bool = _set_replay_verification_filter(filter_id)
+			return _set_ui_action_result(filter_ok, action, {
+				"verification_filter": filter_id,
+				"visible_entry_count": replay_list_model.row_models(64).size() if replay_list_model != null else 0,
+			})
 		"save_replay":
 			var save_ok: bool = _save_replay_snapshot()
 			return _set_ui_action_result(save_ok, action)

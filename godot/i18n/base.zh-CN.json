@@ -113,6 +113,7 @@
   "ui.menu_section_promotions": "推广",
   "ui.menu_section_workshop": "创意工坊",
   "ui.menu_section_replay": "Replay",
+  "ui.menu_section_replay_all": "全部 Replay",
   "ui.menu_section_replay_local_ready": "本地已验证",
   "ui.menu_section_replay_missing_hash": "缺少 Hash",
   "ui.menu_section_replay_server_pending": "服务端审计",
