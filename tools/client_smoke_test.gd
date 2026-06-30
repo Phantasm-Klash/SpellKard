@@ -2161,6 +2161,11 @@ func _process(_delta: float) -> bool:
 	if not main_node.call("_apply_world_boss_result", {
 		"boss_instance_id": "world_boss_local_s0_001",
 		"match_id": "wb-smoke-001",
+		"settlement_key": "world-boss-result:wb-smoke-001",
+		"result_hash": "sha256:worldboss",
+		"replay_id": "world-boss-replay-smoke",
+		"server_time": "2026-06-25T00:00:02Z",
+		"key_id": "battle-local-dev",
 		"boss_hp_after_global": 0,
 		"boss_max_hp": 100000,
 		"team_damage": 5000,
@@ -2191,6 +2196,10 @@ func _process(_delta: float) -> bool:
 		return true
 	if bool(world_result_row.get("defeat_timestamp_pending_server", true)) or String(world_result_row.get("defeat_timestamp_source", "")) != "server" or String(world_result_row.get("defeated_at", "")) != "2026-06-25T00:00:00Z":
 		push_error("Smoke test failed: world boss server defeat timestamp projection invalid %s" % [world_result_row])
+		quit(1)
+		return true
+	if String(world_result_row.get("result_receipt_id", "")) != "world-boss-result:wb-smoke-001" or String(world_result_row.get("result_hash", "")) != "sha256:worldboss" or String(world_result_row.get("result_replay_id", "")) != "world-boss-replay-smoke" or String(world_result_row.get("receipt_source", "")) != "server_settlement_receipt":
+		push_error("Smoke test failed: world boss settlement receipt projection invalid %s" % [world_result_row])
 		quit(1)
 		return true
 	if not main_node.call("_select_game_mode", "instance_boss") or not main_node.call("_configure_boss_party", "instance_boss", ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]):
@@ -2330,6 +2339,11 @@ func _process(_delta: float) -> bool:
 		return true
 	if not main_node.call("_apply_instance_boss_result", {
 		"match_id": "ib-smoke-001",
+		"settlement_key": "instance-boss-result:ib-smoke-001",
+		"result_hash": "sha256:instanceboss",
+		"replay_id": "instance-boss-replay-smoke",
+		"server_time": "2026-06-25T00:05:00Z",
+		"key_id": "battle-local-dev",
 		"boss_defeated": true,
 		"survivors": 3,
 		"failed_mechanic": false,
@@ -2367,6 +2381,10 @@ func _process(_delta: float) -> bool:
 	var star_conditions: Array = instance_result_row.get("star_conditions", [])
 	if star_conditions.size() != 4 or String(instance_result_row.get("star_condition_summary", "")) != "4/4" or int(instance_result_row.get("three_star_time_seconds", 0)) != 180:
 		push_error("Smoke test failed: instance boss star condition summary invalid %s" % [instance_result_row])
+		quit(1)
+		return true
+	if String(instance_result_row.get("result_receipt_id", "")) != "instance-boss-result:ib-smoke-001" or String(instance_result_row.get("result_hash", "")) != "sha256:instanceboss" or String(instance_result_row.get("result_replay_id", "")) != "instance-boss-replay-smoke" or String(instance_result_row.get("receipt_source", "")) != "server_settlement_receipt":
+		push_error("Smoke test failed: instance boss settlement receipt projection invalid %s" % [instance_result_row])
 		quit(1)
 		return true
 	for condition in star_conditions:
@@ -5227,6 +5245,17 @@ func _validate_boss_result_authority_row(row: Dictionary, mode_id: String, expec
 	if not expect_server_projection and String(row.get("result_source", "")) == "server_settlement_projection":
 		push_error("Smoke test failed: boss rejected result carried server projection %s" % [row])
 		return false
+	if expect_server_projection:
+		if String(row.get("receipt_source", "")) != "server_settlement_receipt" or String(row.get("result_receipt_id", "")).is_empty():
+			push_error("Smoke test failed: boss result missing settlement receipt %s" % [row])
+			return false
+		if String(row.get("result_hash", "")).is_empty():
+			push_error("Smoke test failed: boss result missing server result hash %s" % [row])
+			return false
+	else:
+		if String(row.get("receipt_source", "")) == "server_settlement_receipt" or not String(row.get("result_receipt_id", "")).is_empty():
+			push_error("Smoke test failed: boss rejected result carried settlement receipt %s" % [row])
+			return false
 	return true
 
 func _validate_boss_entry_preview(preview: Dictionary, mode_id: String, expected_ok: bool, expected_reason: String) -> bool:

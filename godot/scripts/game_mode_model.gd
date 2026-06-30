@@ -937,6 +937,7 @@ func apply_world_boss_result(result: Dictionary) -> bool:
 	world_boss_state["last_result_status"] = str(result.get("settlement_status", "defeated" if float(world_boss_state.get("current_hp", 0.0)) <= 0.0 else "applied"))
 	world_boss_state["last_result_source"] = "server_settlement_projection"
 	world_boss_state["server_authoritative"] = bool(result.get("server_authority", result.get("server_authoritative", true)))
+	_apply_boss_settlement_receipt(world_boss_state, result)
 	var defeated_at_from_server := str(result.get("defeated_at", "")).strip_edges()
 	if not defeated_at_from_server.is_empty():
 		world_boss_state["defeated_at"] = defeated_at_from_server
@@ -973,6 +974,7 @@ func apply_instance_boss_result(result: Dictionary) -> bool:
 	instance_boss_state["last_result_source"] = "server_settlement_projection"
 	instance_boss_state["stars"] = _calculate_instance_stars(result, cleared)
 	instance_boss_state["server_authoritative"] = bool(result.get("server_authority", result.get("server_authoritative", true)))
+	_apply_boss_settlement_receipt(instance_boss_state, result)
 	last_action_status = "instance_boss_result"
 	last_error_code = "none"
 	return true
@@ -1089,6 +1091,12 @@ func _default_boss_state(is_world: bool) -> Dictionary:
 		"last_result_match_id": "",
 		"last_result_status": "pending",
 		"last_result_source": "",
+		"last_result_receipt_id": "",
+		"last_result_hash": "",
+		"last_result_replay_id": "",
+		"last_result_server_time": "",
+		"last_result_key_id": "",
+		"last_result_receipt_source": "",
 		"server_authoritative": false,
 		"client_result_authoritative": false,
 	}
@@ -1457,6 +1465,12 @@ func _world_boss_result_row() -> Dictionary:
 		"defeat_timestamp_source": "pending_server" if bool(world_boss_state.get("defeat_timestamp_pending_server", false)) else ("server" if not str(world_boss_state.get("defeated_at", "")).is_empty() else "none"),
 		"result_status": str(world_boss_state.get("last_result_status", "pending")),
 		"result_source": str(world_boss_state.get("last_result_source", "")),
+		"result_receipt_id": str(world_boss_state.get("last_result_receipt_id", "")),
+		"result_hash": str(world_boss_state.get("last_result_hash", "")),
+		"result_replay_id": str(world_boss_state.get("last_result_replay_id", "")),
+		"result_server_time": str(world_boss_state.get("last_result_server_time", "")),
+		"result_key_id": str(world_boss_state.get("last_result_key_id", "")),
+		"receipt_source": str(world_boss_state.get("last_result_receipt_source", "")),
 		"damage_authority": "server",
 		"reward_authority": "server",
 		"settlement_authority": "server",
@@ -1500,6 +1514,12 @@ func _instance_boss_result_row() -> Dictionary:
 		"star_condition_summary": "%d/%d" % [met_conditions, star_conditions.size()],
 		"result_status": str(instance_boss_state.get("last_result_status", "pending")),
 		"result_source": str(instance_boss_state.get("last_result_source", "")),
+		"result_receipt_id": str(instance_boss_state.get("last_result_receipt_id", "")),
+		"result_hash": str(instance_boss_state.get("last_result_hash", "")),
+		"result_replay_id": str(instance_boss_state.get("last_result_replay_id", "")),
+		"result_server_time": str(instance_boss_state.get("last_result_server_time", "")),
+		"result_key_id": str(instance_boss_state.get("last_result_key_id", "")),
+		"receipt_source": str(instance_boss_state.get("last_result_receipt_source", "")),
 		"damage_authority": "server",
 		"reward_authority": "server",
 		"settlement_authority": "server",
@@ -1560,6 +1580,21 @@ func _instance_boss_star_conditions(state: Dictionary) -> Array[Dictionary]:
 			"target_bombs": bomb_limit,
 		},
 	]
+
+func _apply_boss_settlement_receipt(state: Dictionary, result: Dictionary) -> void:
+	var receipt_id := str(result.get("settlement_key", result.get("receipt_id", result.get("settlement_receipt_id", "")))).strip_edges()
+	if receipt_id.is_empty():
+		receipt_id = str(result.get("match_id", state.get("last_result_match_id", ""))).strip_edges()
+	var result_hash := str(result.get("result_hash", result.get("state_hash", ""))).strip_edges()
+	var replay_id := str(result.get("replay_id", "")).strip_edges()
+	var server_time := str(result.get("server_time", result.get("settled_at", ""))).strip_edges()
+	var key_id := str(result.get("key_id", result.get("battle_key_id", ""))).strip_edges()
+	state["last_result_receipt_id"] = receipt_id
+	state["last_result_hash"] = result_hash
+	state["last_result_replay_id"] = replay_id
+	state["last_result_server_time"] = server_time
+	state["last_result_key_id"] = key_id
+	state["last_result_receipt_source"] = "server_settlement_receipt"
 
 func _apply_boss_rule_config(state: Dictionary, source: Dictionary) -> void:
 	var friendly_fire := _sanitized_boss_friendly_fire(String(source.get("friendly_fire", state.get("friendly_fire", "disabled"))))
