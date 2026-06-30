@@ -468,7 +468,7 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 	var failures: Array[String] = []
 	if spellbook_model == null:
 		return {"ok": false, "failures": ["missing_spellbook_model"], "preview_count": 0}
-	for method_name in ["spellbook_ids", "timeline_rows", "deterministic_phase_preview", "phase_export_data", "validate_phase_preview_exports", "golden_preview_fixtures"]:
+	for method_name in ["spellbook_ids", "timeline_rows", "deterministic_phase_preview", "phase_export_data", "validate_phase_preview_exports", "golden_preview_fixtures", "golden_preview_bundle_fixtures"]:
 		if not spellbook_model.has_method(method_name):
 			return {"ok": false, "failures": ["missing_method:%s" % method_name], "preview_count": 0}
 	var model_export_validation: Dictionary = spellbook_model.validate_phase_preview_exports(seed)
@@ -477,18 +477,75 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 			failures.append("spellbook_model_%s" % String(failure))
 	var preview_count := 0
 	var golden_preview_count := 0
+	var golden_bundle_count := 0
 	var golden_fixtures: Dictionary = spellbook_model.golden_preview_fixtures()
+	var golden_bundle_fixtures: Dictionary = spellbook_model.golden_preview_bundle_fixtures()
 	var seen_fixture_ids: Array[String] = []
+	var seen_bundle_fixture_ids: Array[String] = []
 	for spellbook_id in spellbook_model.spellbook_ids():
 		var export: Dictionary = spellbook_model.phase_export_data(String(spellbook_id), seed)
 		if String(export.get("license", "")).is_empty() or String(export.get("provenance", "")).is_empty():
 			failures.append("export_missing_provenance:%s" % String(spellbook_id))
+		var expected_bundle_id := "boss_spellbook_preview_bundle_%s_%d" % [String(spellbook_id), seed]
+		if String(export.get("preview_bundle_id", "")) != expected_bundle_id:
+			failures.append("preview_bundle_id_mismatch:%s" % String(spellbook_id))
+		var bundle_fixture_id := "%s:%d" % [String(spellbook_id), seed]
+		if not golden_bundle_fixtures.has(bundle_fixture_id):
+			failures.append("missing_golden_preview_bundle:%s" % bundle_fixture_id)
+		else:
+			var bundle_fixture: Dictionary = golden_bundle_fixtures[bundle_fixture_id]
+			golden_bundle_count += 1
+			seen_bundle_fixture_ids.append(bundle_fixture_id)
+			if String(bundle_fixture.get("preview_bundle_id", "")) != String(export.get("preview_bundle_id", "")):
+				failures.append("golden_preview_bundle_id:%s" % String(spellbook_id))
+			if String(bundle_fixture.get("preview_bundle_fixture_id", "")) != bundle_fixture_id:
+				failures.append("golden_preview_bundle_fixture_id:%s" % String(spellbook_id))
+			if String(bundle_fixture.get("preview_authority_scope", "")) != "local_practice_preview_only":
+				failures.append("golden_preview_bundle_authority_scope:%s" % String(spellbook_id))
+			if int(bundle_fixture.get("preview_bundle_signature_digest", 0)) != int(export.get("preview_bundle_signature_digest", 0)):
+				failures.append("golden_preview_bundle_digest:%s" % String(spellbook_id))
+			if int(bundle_fixture.get("preview_phase_count", 0)) != int(export.get("preview_phase_count", 0)):
+				failures.append("golden_preview_bundle_phase_count:%s" % String(spellbook_id))
+			if not _arrays_equal_strings(bundle_fixture.get("preview_phase_ids", []), export.get("preview_phase_ids", [])):
+				failures.append("golden_preview_bundle_phase_ids:%s" % String(spellbook_id))
+			if not _arrays_equal_ints(bundle_fixture.get("preview_phase_signature_digests", []), export.get("preview_phase_signature_digests", [])):
+				failures.append("golden_preview_bundle_phase_digests:%s" % String(spellbook_id))
+			if int(bundle_fixture.get("max_preview_emit_per_tick", 0)) != int(export.get("max_preview_emit_per_tick", 0)):
+				failures.append("golden_preview_bundle_max_emit:%s" % String(spellbook_id))
+			if int(bundle_fixture.get("min_preview_budget_headroom", 0)) != int(export.get("min_preview_budget_headroom", 0)):
+				failures.append("golden_preview_bundle_headroom:%s" % String(spellbook_id))
+			if String(bundle_fixture.get("performance_budget_status", "")) != String(export.get("performance_budget_status", "")):
+				failures.append("golden_preview_bundle_budget_status:%s" % String(spellbook_id))
+		var export_phases: Array = export.get("phases", [])
+		if int(export.get("preview_phase_count", 0)) != export_phases.size():
+			failures.append("preview_bundle_phase_count_mismatch:%s" % String(spellbook_id))
+		if int(export.get("preview_bundle_signature_digest", 0)) <= 0:
+			failures.append("preview_bundle_digest_missing:%s" % String(spellbook_id))
+		var expected_phase_ids: Array[String] = []
+		var expected_phase_digests: Array[int] = []
+		for exported_phase in export_phases:
+			var exported_phase_dict: Dictionary = exported_phase as Dictionary
+			var exported_preview: Dictionary = exported_phase_dict.get("deterministic_preview", {})
+			expected_phase_ids.append(String(exported_phase_dict.get("phase_id", "")))
+			expected_phase_digests.append(int(exported_preview.get("signature_digest", 0)))
+		if not _arrays_equal_strings(export.get("preview_phase_ids", []), expected_phase_ids):
+			failures.append("preview_bundle_phase_ids_mismatch:%s" % String(spellbook_id))
+		if not _arrays_equal_ints(export.get("preview_phase_signature_digests", []), expected_phase_digests):
+			failures.append("preview_bundle_phase_digests_mismatch:%s" % String(spellbook_id))
 		for row in spellbook_model.timeline_rows(String(spellbook_id)):
 			var phase_id := String((row as Dictionary).get("phase_id", ""))
 			var phase_script: Dictionary = (row as Dictionary).get("phase_script", {})
 			var preview_a: Dictionary = spellbook_model.deterministic_phase_preview(String(spellbook_id), phase_id, seed)
 			var preview_b: Dictionary = spellbook_model.deterministic_phase_preview(String(spellbook_id), phase_id, seed)
+			preview_a["preview_bundle_id"] = String(export.get("preview_bundle_id", ""))
+			preview_a["preview_bundle_signature_digest"] = int(export.get("preview_bundle_signature_digest", 0))
+			preview_a["preview_phase_count"] = int(export.get("preview_phase_count", 0))
+			preview_b["preview_bundle_id"] = String(export.get("preview_bundle_id", ""))
+			preview_b["preview_bundle_signature_digest"] = int(export.get("preview_bundle_signature_digest", 0))
+			preview_b["preview_phase_count"] = int(export.get("preview_phase_count", 0))
 			preview_count += 1
+			if String(preview_a.get("preview_authority_scope", "")) != "local_practice_preview_only":
+				failures.append("preview_authority_scope:%s" % phase_id)
 			if String(phase_script.get("license", "")).is_empty() or String(phase_script.get("provenance", "")).is_empty():
 				failures.append("script_missing_provenance:%s" % phase_id)
 			if int(phase_script.get("timeout_ticks", 0)) <= 0 or int(phase_script.get("enrage_after_ticks", 0)) <= 0:
@@ -510,6 +567,13 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 				seen_fixture_ids.append(fixture_id)
 				if int(preview_a.get("signature_digest", 0)) != int(fixture.get("signature_digest", 0)):
 					failures.append("golden_preview_digest:%s:%d" % [phase_id, int(preview_a.get("signature_digest", 0))])
+				if String(fixture.get("preview_authority_scope", "")) != "local_practice_preview_only":
+					failures.append("golden_preview_authority_scope:%s" % phase_id)
+				if String(fixture.get("preview_fixture_id", "")) != String(preview_a.get("preview_fixture_id", "")) \
+						or String(fixture.get("preview_fixture_id", "")) != fixture_id:
+					failures.append("golden_preview_fixture_id:%s:%s" % [phase_id, fixture_id])
+				if String(fixture.get("export_id", "")) != String(preview_a.get("export_id", "")):
+					failures.append("golden_preview_export_id:%s:%s" % [phase_id, fixture_id])
 				if (preview_a.get("samples", []) as Array).size() != int(fixture.get("sample_count", 0)):
 					failures.append("golden_preview_samples:%s" % phase_id)
 				if int(preview_a.get("max_emit_per_tick", 0)) != int(fixture.get("max_emit_per_tick", 0)):
@@ -532,22 +596,46 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 						failures.append("pattern_lab_missing_preview:%s" % phase_id)
 					if int(coverage.get("deterministic_preview_digest", 0)) != int(preview_a.get("signature_digest", 0)):
 						failures.append("pattern_lab_digest_mismatch:%s" % phase_id)
+					if String(coverage.get("preview_fixture_id", "")) != String(preview_a.get("preview_fixture_id", "")):
+						failures.append("pattern_lab_fixture_mismatch:%s" % phase_id)
+					if String(coverage.get("preview_authority_scope", "")) != String(preview_a.get("preview_authority_scope", "")):
+						failures.append("pattern_lab_authority_scope_mismatch:%s" % phase_id)
+					if String(coverage.get("preview_bundle_id", "")) != String(export.get("preview_bundle_id", "")):
+						failures.append("pattern_lab_bundle_id_mismatch:%s" % phase_id)
+					if int(coverage.get("preview_bundle_signature_digest", 0)) != int(export.get("preview_bundle_signature_digest", 0)):
+						failures.append("pattern_lab_bundle_digest_mismatch:%s" % phase_id)
+					if int(coverage.get("preview_phase_count", 0)) != int(export.get("preview_phase_count", 0)):
+						failures.append("pattern_lab_bundle_phase_count_mismatch:%s" % phase_id)
 					if int(coverage.get("max_preview_emit", 0)) != int(preview_a.get("max_emit_per_tick", 0)):
 						failures.append("pattern_lab_max_emit_mismatch:%s" % phase_id)
 					if int(coverage.get("preview_budget_headroom", 0)) != int(preview_a.get("budget_headroom", 0)):
 						failures.append("pattern_lab_headroom_mismatch:%s" % phase_id)
 					if String(coverage.get("performance_budget_status", "")) != String(preview_a.get("performance_budget_status", "")):
 						failures.append("pattern_lab_budget_status_mismatch:%s" % phase_id)
+					if not _arrays_equal_ints(coverage.get("preview_sample_ticks", []), preview_a.get("sample_ticks", [])):
+						failures.append("pattern_lab_sample_ticks_mismatch:%s" % phase_id)
+					if int(coverage.get("preview_sample_window_start_tick", -1)) != int(preview_a.get("sample_window_start_tick", -2)):
+						failures.append("pattern_lab_sample_window_start_mismatch:%s" % phase_id)
+					if int(coverage.get("preview_sample_window_end_tick", -1)) != int(preview_a.get("sample_window_end_tick", -2)):
+						failures.append("pattern_lab_sample_window_end_mismatch:%s" % phase_id)
+					if int(coverage.get("preview_sample_window_stride_ticks", -1)) != int(preview_a.get("sample_window_stride_ticks", -2)):
+						failures.append("pattern_lab_sample_window_stride_mismatch:%s" % phase_id)
+					if not _arrays_equal_ints(coverage.get("preview_sample_signature_digests", []), preview_a.get("sample_signature_digests", [])):
+						failures.append("pattern_lab_sample_digest_mismatch:%s" % phase_id)
 					if not _arrays_equal_ints(coverage.get("preview_sample_emit_counts", []), preview_a.get("sample_emit_counts", [])):
 						failures.append("pattern_lab_sample_emit_counts_mismatch:%s" % phase_id)
 	for fixture_id in golden_fixtures.keys():
 		if String(fixture_id).ends_with(":%d" % seed) and not seen_fixture_ids.has(String(fixture_id)):
 			failures.append("orphan_golden_preview:%s" % String(fixture_id))
+	for fixture_id in golden_bundle_fixtures.keys():
+		if String(fixture_id).ends_with(":%d" % seed) and not seen_bundle_fixture_ids.has(String(fixture_id)):
+			failures.append("orphan_golden_preview_bundle:%s" % String(fixture_id))
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,
 		"preview_count": preview_count,
 		"golden_preview_count": golden_preview_count,
+		"golden_bundle_count": golden_bundle_count,
 	}
 
 static func validate_open_source_recipes() -> Dictionary:
@@ -722,6 +810,18 @@ static func _arrays_equal_ints(left: Variant, right: Variant) -> bool:
 		return false
 	for index in range(left_array.size()):
 		if int(left_array[index]) != int(right_array[index]):
+			return false
+	return true
+
+static func _arrays_equal_strings(left: Variant, right: Variant) -> bool:
+	if typeof(left) != TYPE_ARRAY or typeof(right) != TYPE_ARRAY:
+		return false
+	var left_array: Array = left
+	var right_array: Array = right
+	if left_array.size() != right_array.size():
+		return false
+	for index in range(left_array.size()):
+		if String(left_array[index]) != String(right_array[index]):
 			return false
 	return true
 

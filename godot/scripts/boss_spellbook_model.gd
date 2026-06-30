@@ -8,13 +8,20 @@ const BulletPatterns := preload("res://scripts/bullet_pattern_library.gd")
 const EXPORT_SCHEMA_VERSION := 1
 const DEFAULT_PREVIEW_SEED := 20260625
 const PREVIEW_SAMPLE_TICKS: Array[int] = [0, 28, 56, 84, 112, 140]
+const PREVIEW_SAMPLE_WINDOW_START_TICK := 0
+const PREVIEW_SAMPLE_WINDOW_END_TICK := 140
+const PREVIEW_SAMPLE_WINDOW_STRIDE_TICKS := 28
 const PREVIEW_DIGEST_MODULUS := 1000000007
+const PREVIEW_AUTHORITY_SCOPE := "local_practice_preview_only"
 
 const GOLDEN_PREVIEW_FIXTURES: Dictionary = {
-	"original_boss_archive:nonspell_radial_entry:20260625": {"export_schema_version": 1, "signature_digest": 905452029, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_signature_digests": [429408177, 651507191, 705589077, 266214312, 882357878, 75020320], "sample_emit_counts": [24, 42, 24, 24, 42, 24], "sample_count": 6, "max_emit_per_tick": 42, "bullet_cap_per_tick": 192, "budget_headroom": 150, "performance_budget_status": "within_budget"},
-	"original_boss_archive:spell_laser_field:20260625": {"export_schema_version": 1, "signature_digest": 187927263, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_signature_digests": [450260093, 75256905, 0, 862484991, 934817433, 0], "sample_emit_counts": [3, 2, 0, 12, 20, 0], "sample_count": 6, "max_emit_per_tick": 20, "bullet_cap_per_tick": 192, "budget_headroom": 172, "performance_budget_status": "within_budget"},
-	"original_boss_archive:spell_summoner_split:20260625": {"export_schema_version": 1, "signature_digest": 471609142, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_signature_digests": [368982465, 0, 0, 0, 0, 742323659], "sample_emit_counts": [4, 0, 0, 0, 0, 12], "sample_count": 6, "max_emit_per_tick": 12, "bullet_cap_per_tick": 192, "budget_headroom": 180, "performance_budget_status": "within_budget"},
-	"original_boss_archive:last_spell_morph_bounce:20260625": {"export_schema_version": 1, "signature_digest": 979716623, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_signature_digests": [769410047, 0, 0, 0, 0, 0], "sample_emit_counts": [30, 0, 0, 0, 0, 0], "sample_count": 6, "max_emit_per_tick": 30, "bullet_cap_per_tick": 192, "budget_headroom": 162, "performance_budget_status": "within_budget"},
+	"original_boss_archive:nonspell_radial_entry:20260625": {"export_schema_version": 1, "export_id": "boss_spellbook_preview_original_boss_archive_nonspell_radial_entry_20260625", "preview_fixture_id": "original_boss_archive:nonspell_radial_entry:20260625", "preview_authority_scope": "local_practice_preview_only", "signature_digest": 905452029, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [429408177, 651507191, 705589077, 266214312, 882357878, 75020320], "sample_emit_counts": [24, 42, 24, 24, 42, 24], "sample_count": 6, "max_emit_per_tick": 42, "bullet_cap_per_tick": 192, "budget_headroom": 150, "performance_budget_status": "within_budget"},
+	"original_boss_archive:spell_laser_field:20260625": {"export_schema_version": 1, "export_id": "boss_spellbook_preview_original_boss_archive_spell_laser_field_20260625", "preview_fixture_id": "original_boss_archive:spell_laser_field:20260625", "preview_authority_scope": "local_practice_preview_only", "signature_digest": 187927263, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [450260093, 75256905, 0, 862484991, 934817433, 0], "sample_emit_counts": [3, 2, 0, 12, 20, 0], "sample_count": 6, "max_emit_per_tick": 20, "bullet_cap_per_tick": 192, "budget_headroom": 172, "performance_budget_status": "within_budget"},
+	"original_boss_archive:spell_summoner_split:20260625": {"export_schema_version": 1, "export_id": "boss_spellbook_preview_original_boss_archive_spell_summoner_split_20260625", "preview_fixture_id": "original_boss_archive:spell_summoner_split:20260625", "preview_authority_scope": "local_practice_preview_only", "signature_digest": 471609142, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [368982465, 0, 0, 0, 0, 742323659], "sample_emit_counts": [4, 0, 0, 0, 0, 12], "sample_count": 6, "max_emit_per_tick": 12, "bullet_cap_per_tick": 192, "budget_headroom": 180, "performance_budget_status": "within_budget"},
+	"original_boss_archive:last_spell_morph_bounce:20260625": {"export_schema_version": 1, "export_id": "boss_spellbook_preview_original_boss_archive_last_spell_morph_bounce_20260625", "preview_fixture_id": "original_boss_archive:last_spell_morph_bounce:20260625", "preview_authority_scope": "local_practice_preview_only", "signature_digest": 979716623, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [769410047, 0, 0, 0, 0, 0], "sample_emit_counts": [30, 0, 0, 0, 0, 0], "sample_count": 6, "max_emit_per_tick": 30, "bullet_cap_per_tick": 192, "budget_headroom": 162, "performance_budget_status": "within_budget"},
+}
+const GOLDEN_PREVIEW_BUNDLE_FIXTURES: Dictionary = {
+	"original_boss_archive:20260625": {"export_schema_version": 1, "preview_bundle_id": "boss_spellbook_preview_bundle_original_boss_archive_20260625", "preview_bundle_fixture_id": "original_boss_archive:20260625", "preview_authority_scope": "local_practice_preview_only", "preview_bundle_signature_digest": 988994968, "preview_phase_count": 4, "preview_phase_ids": ["nonspell_radial_entry", "spell_laser_field", "spell_summoner_split", "last_spell_morph_bounce"], "preview_phase_signature_digests": [905452029, 187927263, 471609142, 979716623], "max_preview_emit_per_tick": 42, "min_preview_budget_headroom": 150, "performance_budget_status": "within_budget"},
 }
 
 var spellbooks: Array[Dictionary] = []
@@ -209,11 +216,16 @@ func deterministic_phase_preview(spellbook_id: String, phase_id: String, seed: i
 	return {
 		"export_schema_version": EXPORT_SCHEMA_VERSION,
 		"export_id": "boss_spellbook_preview_%s_%s_%d" % [spellbook_id, phase_id, seed],
+		"preview_fixture_id": _golden_fixture_id(spellbook_id, phase_id, seed),
 		"catalog_id": "boss_spellbook",
 		"spellbook_id": spellbook_id,
 		"phase_id": phase_id,
 		"seed": seed,
+		"preview_authority_scope": PREVIEW_AUTHORITY_SCOPE,
 		"sample_ticks": PREVIEW_SAMPLE_TICKS.duplicate(),
+		"sample_window_start_tick": PREVIEW_SAMPLE_WINDOW_START_TICK,
+		"sample_window_end_tick": PREVIEW_SAMPLE_WINDOW_END_TICK,
+		"sample_window_stride_ticks": PREVIEW_SAMPLE_WINDOW_STRIDE_TICKS,
 		"sample_signature_digests": sample_signature_digests,
 		"sample_emit_counts": sample_emit_counts,
 		"samples": samples,
@@ -233,18 +245,40 @@ func phase_export_data(spellbook_id: String, seed: int = DEFAULT_PREVIEW_SEED) -
 	if spellbook.is_empty():
 		return {}
 	var phases: Array[Dictionary] = []
+	var phase_ids: Array[String] = []
+	var phase_signature_digests: Array[int] = []
+	var max_emit_per_tick := 0
+	var min_budget_headroom := BossPatternCatalogLib.MAX_SPELLBOOK_EMIT_BULLETS_PER_TICK
+	var performance_budget_status := "within_budget"
 	for phase in spellbook.get("phases", []):
 		var phase_id := String((phase as Dictionary).get("id", ""))
+		var preview := deterministic_phase_preview(spellbook_id, phase_id, seed)
+		phase_ids.append(phase_id)
+		phase_signature_digests.append(int(preview.get("signature_digest", 0)))
+		max_emit_per_tick = maxi(max_emit_per_tick, int(preview.get("max_emit_per_tick", 0)))
+		min_budget_headroom = mini(min_budget_headroom, int(preview.get("budget_headroom", min_budget_headroom)))
+		if String(preview.get("performance_budget_status", "")) != "within_budget":
+			performance_budget_status = String(preview.get("performance_budget_status", "over_budget"))
 		phases.append({
 			"phase_id": phase_id,
 			"phase_script": _phase_script_for(phase as Dictionary),
-			"deterministic_preview": deterministic_phase_preview(spellbook_id, phase_id, seed),
+			"deterministic_preview": preview,
 		})
+	var bundle_signature := _phase_export_bundle_signature(spellbook_id, seed, phases)
 	return {
 		"export_schema_version": EXPORT_SCHEMA_VERSION,
 		"catalog_id": "boss_spellbook",
 		"spellbook_id": spellbook_id,
 		"seed": seed,
+		"preview_authority_scope": PREVIEW_AUTHORITY_SCOPE,
+		"preview_bundle_id": _phase_export_bundle_id(spellbook_id, seed),
+		"preview_bundle_signature_digest": _stable_signature_digest(bundle_signature),
+		"preview_phase_count": phases.size(),
+		"preview_phase_ids": phase_ids,
+		"preview_phase_signature_digests": phase_signature_digests,
+		"max_preview_emit_per_tick": max_emit_per_tick,
+		"min_preview_budget_headroom": min_budget_headroom,
+		"performance_budget_status": performance_budget_status,
 		"source_policy": String(spellbook.get("source_policy", "")),
 		"license": "SpellKard original metadata; recipe references remain mechanism-only",
 		"provenance": "Generated from BossSpellbookModel phase scripts and deterministic preview samples",
@@ -253,6 +287,9 @@ func phase_export_data(spellbook_id: String, seed: int = DEFAULT_PREVIEW_SEED) -
 
 func golden_preview_fixtures() -> Dictionary:
 	return GOLDEN_PREVIEW_FIXTURES.duplicate(true)
+
+func golden_preview_bundle_fixtures() -> Dictionary:
+	return GOLDEN_PREVIEW_BUNDLE_FIXTURES.duplicate(true)
 
 func validate_spellbooks() -> Dictionary:
 	var failures: Array[String] = []
@@ -309,6 +346,11 @@ func validate_phase_preview_exports(seed: int = DEFAULT_PREVIEW_SEED) -> Diction
 		var export := phase_export_data(spellbook_id, seed)
 		if String(export.get("license", "")).is_empty() or String(export.get("provenance", "")).is_empty():
 			failures.append("export_missing_provenance:%s" % spellbook_id)
+		var bundle_fixture_id := _golden_bundle_fixture_id(spellbook_id, seed)
+		if not GOLDEN_PREVIEW_BUNDLE_FIXTURES.has(bundle_fixture_id):
+			failures.append("missing_golden_preview_bundle:%s" % bundle_fixture_id)
+		else:
+			failures.append_array(_validate_golden_bundle_fixture(bundle_fixture_id, spellbook_id, export, GOLDEN_PREVIEW_BUNDLE_FIXTURES[bundle_fixture_id]))
 		for phase in spellbook.get("phases", []):
 			var phase_dict: Dictionary = phase as Dictionary
 			var phase_id := String(phase_dict.get("id", ""))
@@ -321,6 +363,8 @@ func validate_phase_preview_exports(seed: int = DEFAULT_PREVIEW_SEED) -> Diction
 				continue
 			if String(preview_a.get("license", "")).is_empty() or String(preview_a.get("provenance", "")).is_empty():
 				failures.append("preview_missing_provenance:%s" % phase_id)
+			if String(preview_a.get("preview_authority_scope", "")) != PREVIEW_AUTHORITY_SCOPE:
+				failures.append("preview_authority_scope:%s" % phase_id)
 			if int(phase_script.get("timeout_ticks", 0)) <= 0 or int(phase_script.get("enrage_after_ticks", 0)) <= 0:
 				failures.append("preview_missing_timeout_enrage:%s" % phase_id)
 			if String(preview_a.get("signature", "")) != String(preview_b.get("signature", "")):
@@ -444,16 +488,51 @@ func _stable_signature_digest(signature: String) -> int:
 func _golden_fixture_id(spellbook_id: String, phase_id: String, seed: int) -> String:
 	return "%s:%s:%d" % [spellbook_id, phase_id, seed]
 
+func _golden_bundle_fixture_id(spellbook_id: String, seed: int) -> String:
+	return "%s:%d" % [spellbook_id, seed]
+
+func _phase_export_bundle_id(spellbook_id: String, seed: int) -> String:
+	return "boss_spellbook_preview_bundle_%s_%d" % [spellbook_id, seed]
+
+func _phase_export_bundle_signature(spellbook_id: String, seed: int, phases: Array[Dictionary]) -> String:
+	var parts: Array[String] = ["%s:%d" % [spellbook_id, seed]]
+	for phase in phases:
+		var preview: Dictionary = phase.get("deterministic_preview", {})
+		parts.append("%s:%s:%s:%d:%d:%d:%d:%d" % [
+			String(phase.get("phase_id", "")),
+			String(preview.get("export_id", "")),
+			String(preview.get("preview_fixture_id", "")),
+			int(preview.get("signature_digest", 0)),
+			int(preview.get("sample_count", (preview.get("samples", []) as Array).size())),
+			int(preview.get("max_emit_per_tick", 0)),
+			int(preview.get("bullet_cap_per_tick", 0)),
+			int(preview.get("budget_headroom", 0)),
+		])
+	return "|".join(parts)
+
 func _validate_golden_fixture(fixture_id: String, phase_id: String, preview: Dictionary, fixture: Dictionary) -> Array[String]:
 	var failures: Array[String] = []
 	if int(fixture.get("export_schema_version", 0)) != EXPORT_SCHEMA_VERSION:
 		failures.append("golden_preview_schema:%s:%d" % [phase_id, int(fixture.get("export_schema_version", 0))])
+	if String(fixture.get("preview_authority_scope", "")) != PREVIEW_AUTHORITY_SCOPE:
+		failures.append("golden_preview_authority_scope:%s:%s" % [phase_id, fixture_id])
+	if String(fixture.get("preview_fixture_id", "")) != String(preview.get("preview_fixture_id", "")) \
+			or String(fixture.get("preview_fixture_id", "")) != fixture_id:
+		failures.append("golden_preview_fixture_id:%s:%s" % [phase_id, fixture_id])
+	if String(fixture.get("export_id", "")) != String(preview.get("export_id", "")):
+		failures.append("golden_preview_export_id:%s:%s" % [phase_id, fixture_id])
 	if int(preview.get("signature_digest", 0)) != int(fixture.get("signature_digest", 0)):
 		failures.append("golden_preview_digest:%s:%d" % [phase_id, int(preview.get("signature_digest", 0))])
 	if (preview.get("samples", []) as Array).size() != int(fixture.get("sample_count", 0)):
 		failures.append("golden_preview_samples:%s" % phase_id)
 	if not _arrays_equal_ints(preview.get("sample_ticks", []), fixture.get("sample_ticks", [])):
 		failures.append("golden_preview_sample_ticks:%s:%s" % [phase_id, fixture_id])
+	if int(preview.get("sample_window_start_tick", -1)) != int(fixture.get("sample_window_start_tick", -2)):
+		failures.append("golden_preview_sample_window_start:%s:%s" % [phase_id, fixture_id])
+	if int(preview.get("sample_window_end_tick", -1)) != int(fixture.get("sample_window_end_tick", -2)):
+		failures.append("golden_preview_sample_window_end:%s:%s" % [phase_id, fixture_id])
+	if int(preview.get("sample_window_stride_ticks", -1)) != int(fixture.get("sample_window_stride_ticks", -2)):
+		failures.append("golden_preview_sample_window_stride:%s:%s" % [phase_id, fixture_id])
 	if not _arrays_equal_ints(preview.get("sample_emit_counts", []), fixture.get("sample_emit_counts", [])):
 		failures.append("golden_preview_sample_emit_counts:%s:%s" % [phase_id, fixture_id])
 	if int(preview.get("max_emit_per_tick", 0)) != int(fixture.get("max_emit_per_tick", 0)):
@@ -466,6 +545,12 @@ func _validate_golden_fixture(fixture_id: String, phase_id: String, preview: Dic
 		failures.append("golden_preview_sample_count_contract:%s:%s" % [phase_id, fixture_id])
 	if not _arrays_equal_ints(fixture.get("sample_ticks", []), PREVIEW_SAMPLE_TICKS):
 		failures.append("golden_preview_sample_ticks_contract:%s:%s" % [phase_id, fixture_id])
+	if int(fixture.get("sample_window_start_tick", -1)) != PREVIEW_SAMPLE_WINDOW_START_TICK:
+		failures.append("golden_preview_sample_window_start_contract:%s:%s" % [phase_id, fixture_id])
+	if int(fixture.get("sample_window_end_tick", -1)) != PREVIEW_SAMPLE_WINDOW_END_TICK:
+		failures.append("golden_preview_sample_window_end_contract:%s:%s" % [phase_id, fixture_id])
+	if int(fixture.get("sample_window_stride_ticks", -1)) != PREVIEW_SAMPLE_WINDOW_STRIDE_TICKS:
+		failures.append("golden_preview_sample_window_stride_contract:%s:%s" % [phase_id, fixture_id])
 	if not _arrays_equal_ints(preview.get("sample_signature_digests", []), fixture.get("sample_signature_digests", [])):
 		failures.append("golden_preview_sample_digests:%s:%s expected=%s" % [
 			phase_id,
@@ -484,6 +569,32 @@ func _validate_golden_fixture(fixture_id: String, phase_id: String, preview: Dic
 		failures.append("golden_preview_budget_status:%s:%s" % [phase_id, String(preview.get("performance_budget_status", ""))])
 	return failures
 
+func _validate_golden_bundle_fixture(fixture_id: String, spellbook_id: String, export: Dictionary, fixture: Dictionary) -> Array[String]:
+	var failures: Array[String] = []
+	if int(fixture.get("export_schema_version", 0)) != EXPORT_SCHEMA_VERSION:
+		failures.append("golden_preview_bundle_schema:%s:%d" % [spellbook_id, int(fixture.get("export_schema_version", 0))])
+	if String(fixture.get("preview_bundle_fixture_id", "")) != fixture_id:
+		failures.append("golden_preview_bundle_fixture_id:%s:%s" % [spellbook_id, fixture_id])
+	if String(fixture.get("preview_bundle_id", "")) != String(export.get("preview_bundle_id", "")):
+		failures.append("golden_preview_bundle_id:%s:%s" % [spellbook_id, fixture_id])
+	if String(fixture.get("preview_authority_scope", "")) != PREVIEW_AUTHORITY_SCOPE:
+		failures.append("golden_preview_bundle_authority_scope:%s:%s" % [spellbook_id, fixture_id])
+	if int(fixture.get("preview_bundle_signature_digest", 0)) != int(export.get("preview_bundle_signature_digest", 0)):
+		failures.append("golden_preview_bundle_digest:%s:%d" % [spellbook_id, int(export.get("preview_bundle_signature_digest", 0))])
+	if int(fixture.get("preview_phase_count", 0)) != int(export.get("preview_phase_count", 0)):
+		failures.append("golden_preview_bundle_phase_count:%s:%d" % [spellbook_id, int(export.get("preview_phase_count", 0))])
+	if not _arrays_equal_strings(fixture.get("preview_phase_ids", []), export.get("preview_phase_ids", [])):
+		failures.append("golden_preview_bundle_phase_ids:%s:%s" % [spellbook_id, fixture_id])
+	if not _arrays_equal_ints(fixture.get("preview_phase_signature_digests", []), export.get("preview_phase_signature_digests", [])):
+		failures.append("golden_preview_bundle_phase_digests:%s:%s" % [spellbook_id, fixture_id])
+	if int(fixture.get("max_preview_emit_per_tick", 0)) != int(export.get("max_preview_emit_per_tick", 0)):
+		failures.append("golden_preview_bundle_max_emit:%s:%d" % [spellbook_id, int(export.get("max_preview_emit_per_tick", 0))])
+	if int(fixture.get("min_preview_budget_headroom", 0)) != int(export.get("min_preview_budget_headroom", 0)):
+		failures.append("golden_preview_bundle_headroom:%s:%d" % [spellbook_id, int(export.get("min_preview_budget_headroom", 0))])
+	if String(fixture.get("performance_budget_status", "")) != String(export.get("performance_budget_status", "")):
+		failures.append("golden_preview_bundle_budget_status:%s:%s" % [spellbook_id, String(export.get("performance_budget_status", ""))])
+	return failures
+
 func _arrays_equal_ints(left: Variant, right: Variant) -> bool:
 	if typeof(left) != TYPE_ARRAY or typeof(right) != TYPE_ARRAY:
 		return false
@@ -493,6 +604,18 @@ func _arrays_equal_ints(left: Variant, right: Variant) -> bool:
 		return false
 	for index in range(left_array.size()):
 		if int(left_array[index]) != int(right_array[index]):
+			return false
+	return true
+
+func _arrays_equal_strings(left: Variant, right: Variant) -> bool:
+	if typeof(left) != TYPE_ARRAY or typeof(right) != TYPE_ARRAY:
+		return false
+	var left_array: Array = left
+	var right_array: Array = right
+	if left_array.size() != right_array.size():
+		return false
+	for index in range(left_array.size()):
+		if String(left_array[index]) != String(right_array[index]):
 			return false
 	return true
 

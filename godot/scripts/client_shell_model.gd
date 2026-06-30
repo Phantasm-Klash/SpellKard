@@ -43,8 +43,10 @@ func play_rows() -> Array[Dictionary]:
 		{"id": "play_certification", "label_key": "screen.mode.certification", "value": _mode_value("certification"), "enabled": true, "ui_action": "select_mode", "mode_id": "certification"},
 		{"id": "play_pvp_duel", "label_key": "screen.mode.pvp_duel", "value": _mode_value("pvp_duel"), "enabled": true, "ui_action": "select_mode", "mode_id": "pvp_duel"},
 		{"id": "play_battle_royale", "label_key": "screen.mode.battle_royale", "value": _mode_value("battle_royale"), "enabled": true, "ui_action": "select_mode", "mode_id": "battle_royale"},
-		{"id": "play_world_boss", "label_key": "screen.mode.world_boss", "value": _mode_value("world_boss"), "enabled": true, "ui_action": "select_mode", "mode_id": "world_boss"},
-		{"id": "play_instance_boss", "label_key": "screen.mode.instance_boss", "value": _mode_value("instance_boss"), "enabled": true, "ui_action": "select_mode", "mode_id": "instance_boss"},
+		{"id": "play_world_boss", "label_key": "screen.mode.world_boss", "value": _boss_mode_value("world_boss"), "enabled": true, "ui_action": "select_mode", "mode_id": "world_boss"},
+		{"id": "play_instance_boss", "label_key": "screen.mode.instance_boss", "value": _boss_mode_value("instance_boss"), "enabled": true, "ui_action": "select_mode", "mode_id": "instance_boss"},
+		_boss_status_row("play_world_boss_status", "world_boss"),
+		_boss_status_row("play_instance_boss_status", "instance_boss"),
 		{"id": "play_queue_selected", "label_key": "screen.play.matchmaking", "value": "queue selected mode", "enabled": true, "ui_action": "advance_queue"},
 		{"id": "play_deck", "screen": "deck", "label_key": "screen.main.deck", "value": _deck_summary(), "enabled": true},
 	]
@@ -408,6 +410,30 @@ func _mode_value(mode_id: String) -> String:
 		"ready" if bool(gate.get("valid", false)) else String(gate.get("reason", "blocked")),
 		int(config.get("estimated_wait_seconds", 0)),
 	]
+
+func _boss_mode_value(mode_id: String) -> String:
+	var value := _mode_value(mode_id)
+	if game_mode_model != null and game_mode_model.has_method("boss_local_status_row"):
+		var row: Dictionary = game_mode_model.boss_local_status_row("boss_status_preview", mode_id)
+		var status := String(row.get("value", ""))
+		if not status.is_empty():
+			return "%s | %s" % [value, status]
+	return value
+
+func _boss_status_row(row_id: String, mode_id: String) -> Dictionary:
+	if game_mode_model != null and game_mode_model.has_method("boss_local_status_row"):
+		return game_mode_model.boss_local_status_row(row_id, mode_id)
+	return {
+		"id": row_id,
+		"label_key": "screen.mode.world_boss" if mode_id == "world_boss" else "screen.mode.instance_boss",
+		"value": "offline",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"requires_server_confirmation": true,
+		"server_authoritative": false,
+		"client_result_authoritative": false,
+		"enabled": true,
+	}
 
 func _certification_stage() -> String:
 	if game_mode_model == null:

@@ -49,6 +49,7 @@ const NAVIGATION_SCREENS: Array[String] = [
 var current_screen := "main_menu"
 var cursor := 0
 var last_action := "none"
+var screen_cursors := {}
 
 var deck_builder: RefCounted = null
 var replay_list_model: RefCounted = null
@@ -115,8 +116,9 @@ func open(screen_id: String) -> bool:
 	if not SCREENS.has(screen_id):
 		last_action = "invalid"
 		return false
+	_remember_current_cursor()
 	current_screen = screen_id
-	cursor = 0
+	cursor = _remembered_cursor_for(screen_id)
 	last_action = "open"
 	return true
 
@@ -135,13 +137,45 @@ func select(delta: int) -> void:
 		last_action = "empty"
 		return
 	cursor = wrapi(cursor + delta, 0, rows.size())
+	_remember_current_cursor()
 	last_action = "select"
+
+func set_cursor(index: int, action: String = "select") -> void:
+	var rows := screen_rows(64)
+	if rows.is_empty():
+		cursor = 0
+	else:
+		cursor = clampi(index, 0, rows.size() - 1)
+	_remember_current_cursor()
+	last_action = action
+
+func select_row_by_id(row_id: String, action: String = "select") -> bool:
+	if row_id.is_empty():
+		return false
+	var rows := screen_rows(64)
+	for i in range(rows.size()):
+		var row: Dictionary = rows[i]
+		if String(row.get("id", "")) == row_id:
+			set_cursor(i, action)
+			return true
+	return false
 
 func selected_row() -> Dictionary:
 	var rows := screen_rows()
 	if rows.is_empty():
 		return {}
 	return rows[clampi(cursor, 0, rows.size() - 1)]
+
+func _remember_current_cursor() -> void:
+	if current_screen.is_empty():
+		return
+	screen_cursors[current_screen] = int(cursor)
+
+func _remembered_cursor_for(screen_id: String) -> int:
+	var rows := screen_rows(64)
+	if rows.is_empty():
+		return 0
+	return clampi(int(screen_cursors.get(screen_id, 0)), 0, rows.size() - 1)
 
 func page_layout(screen_id: String = "") -> Dictionary:
 	var source_screen := screen_id
@@ -317,7 +351,7 @@ func _layout_primary_rows(screen_id: String) -> Array[String]:
 		"main_menu":
 			return ["play", "collection", "community", "player_settings"]
 		"play":
-			return ["play_practice", "play_matchmaking", "play_pvp_duel", "play_world_boss", "play_room", "play_deck"]
+			return ["play_practice", "play_matchmaking", "play_pvp_duel", "play_world_boss", "play_world_boss_status", "play_room", "play_deck"]
 		"certification":
 			return ["cert_queue", "cert_practice", "cert_deck", "cert_rules"]
 		"community":
@@ -851,9 +885,28 @@ func _replay_rows(limit: int) -> Array[Dictionary]:
 		return []
 	replay_list_model.refresh()
 	var rows: Array[Dictionary] = []
+	if replay_list_model.has_method("verification_summary_row"):
+		rows.append(replay_list_model.verification_summary_row())
+	if replay_list_model.has_method("verification_filter_rows"):
+		rows.append_array(replay_list_model.verification_filter_rows())
+	if replay_list_model.has_method("selected_action_rows"):
+		rows.append_array(replay_list_model.selected_action_rows())
 	for row in replay_list_model.row_models(limit):
 		var replay_row: Dictionary = row.duplicate(true)
-		replay_row["ui_action"] = "load_replay"
+		if not String(replay_row.get("replay_id", "")).is_empty():
+			replay_row["ui_action"] = "load_replay"
+		replay_row["ui_control"] = "replay"
+		replay_row["value"] = "%s hash %s input %s" % [
+			String(replay_row.get("verification_status", "unchecked")),
+			String(replay_row.get("final_result_hash", "0")),
+			String(replay_row.get("input_integrity_status", "unchecked")),
+		]
+		replay_row["summary"] = "%s | %s tick %d %s" % [
+			String(replay_row.get("verification_summary", "")),
+			String(replay_row.get("replay_authority_scope", "local_practice_record")),
+			int(replay_row.get("final_tick", 0)),
+			String(replay_row.get("metadata_status", "unchecked")),
+		]
 		rows.append(replay_row)
 	return rows
 
@@ -999,9 +1052,33 @@ func _decorate_match_rows(source_rows: Array[Dictionary]) -> Array[Dictionary]:
 				row["ui_action"] = "cancel_queue"
 			"reconnect_status":
 				row["ui_action"] = "finish_reconnect"
+			"matchmaking_boss":
+				row = _decorate_boss_matchmaking_card(row)
 		rows.append(row)
+	rows.append_array(_match_boss_status_rows())
 	rows.append(_local_settlement_preview_row())
 	return rows
+
+func _match_boss_status_rows() -> Array[Dictionary]:
+	var rows: Array[Dictionary] = []
+	if game_mode_model == null or not game_mode_model.has_method("boss_local_status_row"):
+		return rows
+	rows.append(game_mode_model.boss_local_status_row("match_world_boss_status", "world_boss"))
+	rows.append(game_mode_model.boss_local_status_row("match_instance_boss_status", "instance_boss"))
+	return rows
+
+func _decorate_boss_matchmaking_card(row: Dictionary) -> Dictionary:
+	if game_mode_model == null or not game_mode_model.has_method("boss_local_status_row"):
+		return row
+	var boss_status: Dictionary = game_mode_model.boss_local_status_row("match_world_boss_status_preview", "world_boss")
+	var status_text := String(boss_status.get("summary", boss_status.get("value", "")))
+	if not status_text.is_empty():
+		row["summary"] = "%s | %s" % [String(row.get("summary", "")), status_text]
+		row["value"] = "%s | %s" % [String(row.get("value", "")), String(boss_status.get("value", ""))]
+	row["requires_server_confirmation"] = true
+	row["settlement_authority"] = "server"
+	row["client_result_authoritative"] = false
+	return row
 
 func _local_settlement_preview_row() -> Dictionary:
 	var selected_mode := "certification"
@@ -1043,6 +1120,9 @@ func _decorate_game_mode_state_rows(source_rows: Array[Dictionary]) -> Array[Dic
 				row["ui_action"] = "request_boss_transfer"
 				row["transfer_request"] = transfer_request
 				row["enabled"] = bool(transfer_request.get("valid", false))
+			"world_boss_entry", "instance_boss_entry":
+				row["ui_action"] = "request_boss_entry"
+				row["enabled"] = bool(row.get("entry_valid", false))
 		rows.append(row)
 	return rows
 
@@ -1234,7 +1314,7 @@ func _section_for_row(screen_id: String, row: Dictionary) -> String:
 				return "online_play"
 			if row_id == "play_pvp_duel" or row_id == "play_battle_royale":
 				return "pvp"
-			if row_id == "play_world_boss" or row_id == "play_instance_boss":
+			if row_id == "play_world_boss" or row_id == "play_instance_boss" or row_id == "play_world_boss_status" or row_id == "play_instance_boss_status":
 				return "boss"
 			if row_id.begins_with("play_"):
 				return "modes"
@@ -1267,6 +1347,8 @@ func _section_for_row(screen_id: String, row: Dictionary) -> String:
 				return "loadout"
 			if row_id == "local_settlement_preview":
 				return "results"
+			if row_id == "match_world_boss_status" or row_id == "match_instance_boss_status":
+				return "boss"
 			if row_id.begins_with("matchmaking_"):
 				return "matchmaking"
 			if row_id == "selected_mode" or target_screen == "modes" or action == "select_mode" or row_id.begins_with("mode_"):
@@ -1324,6 +1406,8 @@ func _section_for_row(screen_id: String, row: Dictionary) -> String:
 		"workshop":
 			return "workshop"
 		"replay":
+			if row_id == "replay_verification_summary" or row_id.begins_with("replay_filter_") or row_id.begins_with("replay_action_"):
+				return "overview"
 			return "replay"
 		"player_settings":
 			if row_id == "settings_summary":
@@ -1416,6 +1500,10 @@ func _control_for_row(screen_id: String, row: Dictionary) -> String:
 			"open_chest":
 				return "chest"
 			"load_replay":
+				return "replay"
+			"set_replay_filter":
+				return "button"
+			"toggle_replay_favorite", "remove_replay_from_index":
 				return "replay"
 			"toggle_deck_card", "save_deck":
 				return "card"

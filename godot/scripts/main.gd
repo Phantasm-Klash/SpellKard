@@ -1089,8 +1089,29 @@ func _load_selected_replay_snapshot() -> bool:
 	var entry: Dictionary = replay_index_entries[replay_index_cursor]
 	if replay_list_model != null:
 		entry = replay_list_model.selected_entry()
+	if not _selected_replay_entry_can_load(entry):
+		return false
 	var loaded_snapshot: Dictionary = replay_store.load_snapshot_from_entry(entry)
 	return _load_replay_snapshot(loaded_snapshot, str(entry.get("path", replay_store.latest_path())))
+
+func _selected_replay_entry_can_load(entry: Dictionary) -> bool:
+	if entry.is_empty():
+		replay_file_status = "load_failed"
+		replay_index_action_status = "missing_entry"
+		return false
+	if replay_list_model != null and replay_list_model.has_method("local_load_guard_for_entry"):
+		var guard: Dictionary = replay_list_model.local_load_guard_for_entry(entry)
+		if not bool(guard.get("ok", false)):
+			replay_file_status = "load_failed"
+			replay_index_action_status = String(guard.get("reason", "load_rejected"))
+			return false
+	var path := str(entry.get("path", ""))
+	if path.is_empty() or not FileAccess.file_exists(path):
+		replay_file_status = "load_failed"
+		replay_index_action_status = "file_missing" if not path.is_empty() else "missing_path"
+		return false
+	replay_index_action_status = "load_ready"
+	return true
 
 func _load_replay_snapshot(loaded_snapshot: Dictionary, loaded_path: String) -> bool:
 	if loaded_snapshot.is_empty():
@@ -1188,6 +1209,32 @@ func _replay_list_rows(limit: int = 8) -> Array[Dictionary]:
 	if replay_list_model == null:
 		return []
 	return replay_list_model.row_models(limit)
+
+func _set_replay_verification_filter(filter_id: String) -> bool:
+	if replay_list_model == null or not replay_list_model.has_method("set_verification_filter"):
+		return false
+	var ok: bool = replay_list_model.set_verification_filter(filter_id)
+	_sync_replay_index_state()
+	return ok
+
+func _select_replay_source_index_from_row(row: Dictionary) -> bool:
+	if replay_list_model == null:
+		return false
+	var source_index := int(row.get("source_index", -1))
+	if source_index >= 0:
+		var ok: bool = replay_list_model.select_index(source_index)
+		_sync_replay_index_state()
+		return ok
+	var replay_id := String(row.get("replay_id", ""))
+	if replay_id.is_empty():
+		return false
+	var replay_rows: Array[Dictionary] = replay_list_model.row_models(64)
+	for replay_row in replay_rows:
+		if String(replay_row.get("replay_id", "")) == replay_id:
+			var ok_by_id: bool = replay_list_model.select_index(int(replay_row.get("source_index", -1)))
+			_sync_replay_index_state()
+			return ok_by_id
+	return false
 
 func _sync_replay_index_state() -> void:
 	if replay_list_model == null:
@@ -1564,6 +1611,20 @@ func _request_boss_card_transfer(mode_id: String, from_player_id: String, to_pla
 	if game_mode_model == null:
 		return {"ok": false, "last_error_code": "missing"}
 	var result: Dictionary = game_mode_model.request_boss_card_transfer(mode_id, from_player_id, to_player_id, card_id)
+	_update_ui_overlay()
+	return result
+
+func _apply_server_instance_boss_access(snapshot: Dictionary) -> Dictionary:
+	if game_mode_model == null:
+		return {"ok": false, "reason": "missing"}
+	var result: Dictionary = game_mode_model.apply_server_instance_boss_access(snapshot)
+	_update_ui_overlay()
+	return result
+
+func _request_boss_entry(mode_id: String) -> Dictionary:
+	if game_mode_model == null:
+		return {"ok": false, "last_error_code": "missing"}
+	var result: Dictionary = game_mode_model.request_boss_entry(mode_id)
 	_update_ui_overlay()
 	return result
 
@@ -2173,8 +2234,11 @@ func _ui_select_row_by_id(row_id: String, refresh: bool = true) -> bool:
 	var row_index := _ui_row_index_by_id(rows, row_id)
 	if row_index < 0:
 		return false
-	ui_screen_model.cursor = row_index
-	ui_screen_model.last_action = "select:%s" % row_id
+	if ui_screen_model.has_method("set_cursor"):
+		ui_screen_model.set_cursor(row_index, "select:%s" % row_id)
+	else:
+		ui_screen_model.cursor = row_index
+		ui_screen_model.last_action = "select:%s" % row_id
 	if refresh:
 		_update_ui_overlay()
 	return true
@@ -2211,12 +2275,15 @@ func _ui_select(delta: int) -> void:
 func _ui_set_cursor(index: int) -> void:
 	if ui_screen_model == null:
 		return
-	var rows: Array[Dictionary] = ui_screen_model.screen_rows(64)
-	if rows.is_empty():
-		ui_screen_model.cursor = 0
+	if ui_screen_model.has_method("set_cursor"):
+		ui_screen_model.set_cursor(index, "select")
 	else:
-		ui_screen_model.cursor = clampi(index, 0, rows.size() - 1)
-	ui_screen_model.last_action = "select"
+		var rows: Array[Dictionary] = ui_screen_model.screen_rows(64)
+		if rows.is_empty():
+			ui_screen_model.cursor = 0
+		else:
+			ui_screen_model.cursor = clampi(index, 0, rows.size() - 1)
+		ui_screen_model.last_action = "select"
 	_update_ui_overlay()
 
 func _ui_accept_selected() -> Dictionary:
@@ -2519,11 +2586,36 @@ func _dispatch_ui_action(row: Dictionary) -> Dictionary:
 			for i in range(replay_rows.size()):
 				if String(replay_rows[i].get("replay_id", "")) == replay_id:
 					if replay_list_model != null:
-						replay_list_model.select_index(i)
+						replay_list_model.select_index(int(replay_rows[i].get("source_index", i)))
 						_sync_replay_index_state()
 					var replay_ok: bool = _load_selected_replay_snapshot()
-					return _set_ui_action_result(replay_ok, action, {"replay_id": replay_id})
-			return _set_ui_action_result(false, action, {"replay_id": replay_id})
+					return _set_ui_action_result(replay_ok, action, {
+						"replay_id": replay_id,
+						"status": replay_index_action_status,
+						"reason": "none" if replay_ok else replay_index_action_status,
+					})
+			return _set_ui_action_result(false, action, {"replay_id": replay_id, "reason": "missing_entry"})
+		"set_replay_filter":
+			var filter_id := String(row.get("verification_filter", "all"))
+			var filter_ok: bool = _set_replay_verification_filter(filter_id)
+			return _set_ui_action_result(filter_ok, action, {
+				"verification_filter": filter_id,
+				"visible_entry_count": replay_list_model.row_models(64).size() if replay_list_model != null else 0,
+			})
+		"toggle_replay_favorite":
+			var selected_for_favorite := _select_replay_source_index_from_row(row)
+			var favorite_ok := selected_for_favorite and _toggle_selected_replay_favorite()
+			return _set_ui_action_result(favorite_ok, action, {
+				"replay_id": String(row.get("replay_id", "")),
+				"status": replay_index_action_status,
+			})
+		"remove_replay_from_index":
+			var selected_for_remove := _select_replay_source_index_from_row(row)
+			var remove_ok := selected_for_remove and _remove_selected_replay_from_index()
+			return _set_ui_action_result(remove_ok, action, {
+				"replay_id": String(row.get("replay_id", "")),
+				"status": replay_index_action_status,
+			})
 		"save_replay":
 			var save_ok: bool = _save_replay_snapshot()
 			return _set_ui_action_result(save_ok, action)
@@ -2586,6 +2678,16 @@ func _dispatch_ui_action(row: Dictionary) -> Dictionary:
 				"request_type": String(transfer_result.get("action_type", request_record.get("action_type", ""))),
 				"authoritative": bool(transfer_result.get("server_authoritative", false)),
 				"last_error_code": String(transfer_result.get("last_error_code", "")),
+			})
+		"request_boss_entry":
+			var entry_mode_id := String(row.get("mode_id", ""))
+			var entry_result: Dictionary = _request_boss_entry(entry_mode_id)
+			var entry_request: Dictionary = entry_result.get("request", {})
+			return _set_ui_action_result(bool(entry_result.get("ok", false)), action, {
+				"mode_id": entry_mode_id,
+				"request_type": String(entry_request.get("action_type", "")),
+				"authoritative": bool(entry_request.get("server_authoritative", false)),
+				"last_error_code": String(entry_result.get("last_error_code", "")),
 			})
 		"request_activity_claim":
 			var claim_kind := String(row.get("activity_kind", ""))
@@ -2869,8 +2971,10 @@ func _ui_overlay_snapshot() -> Dictionary:
 	var overlap_check := _ui_visible_control_overlap_check()
 	var focus_check := _ui_visible_focus_health_check()
 	var text_fit_check := _ui_visible_text_fit_check()
+	var label_fit_check := _ui_visible_label_text_fit_check()
 	var mouse_check := _ui_visible_mouse_health_check()
 	var focus_section_check := _ui_focus_section_runtime_check(page_layout)
+	var selected_window_check := _ui_selected_row_window_check()
 	var viewport_size := get_viewport_rect().size
 	var panel_rect := Rect2(ui_panel.position, ui_panel.size) if ui_panel != null else Rect2()
 	var portrait_rect := Rect2(ui_home_portrait_panel.global_position, ui_home_portrait_panel.size) if ui_home_portrait_panel != null else Rect2()
@@ -2913,6 +3017,11 @@ func _ui_overlay_snapshot() -> Dictionary:
 		"page_focus_sections": ",".join(_ui_string_array(page_layout.get("focus_sections", []))),
 		"page_focus_sections_visible": String(focus_section_check.get("visible_sections", "")),
 		"page_focus_sections_missing_visible": String(focus_section_check.get("missing_sections", "")),
+		"selected_row_visible": bool(selected_window_check.get("visible", true)),
+		"selected_row_id": String(selected_window_check.get("selected_id", "")),
+		"selected_row_index": int(selected_window_check.get("selected_index", -1)),
+		"visible_row_window_ids": String(selected_window_check.get("visible_ids", "")),
+		"visible_row_window_indices": String(selected_window_check.get("visible_indices", "")),
 		"page_text_fit_policy": ",".join(_ui_string_array(page_layout.get("text_fit_policy", []))),
 		"page_visual_asset": String(page_layout.get("visual_asset", "")),
 		"page_visual_treatment": String(page_layout.get("visual_treatment", "")),
@@ -3007,6 +3116,11 @@ func _ui_overlay_snapshot() -> Dictionary:
 		"visible_control_small_targets": String(text_fit_check.get("small_targets", "")),
 		"visible_text_unclipped_count": int(text_fit_check.get("unclipped_count", 0)),
 		"visible_text_unclipped": String(text_fit_check.get("unclipped", "")),
+		"visible_label_text_count": int(label_fit_check.get("label_count", 0)),
+		"visible_label_unwrapped_count": int(label_fit_check.get("unwrapped_count", 0)),
+		"visible_label_unwrapped": String(label_fit_check.get("unwrapped", "")),
+		"visible_label_out_of_panel_count": int(label_fit_check.get("out_of_panel_count", 0)),
+		"visible_label_out_of_panel": String(label_fit_check.get("out_of_panel", "")),
 		"visible_mouse_operable_count": int(mouse_check.get("operable_count", 0)),
 		"visible_mouse_blocked_count": int(mouse_check.get("blocked_count", 0)),
 		"visible_mouse_blocked": String(mouse_check.get("blocked", "")),
@@ -3089,6 +3203,31 @@ func _ui_visible_text_fit_check() -> Dictionary:
 		"unclipped": ",".join(unclipped),
 	}
 
+func _ui_visible_label_text_fit_check() -> Dictionary:
+	var labels := _visible_player_facing_labels()
+	var unwrapped: Array[String] = []
+	var out_of_panel: Array[String] = []
+	var panel_rect := Rect2(ui_panel.global_position, ui_panel.size) if ui_panel != null else Rect2()
+	for item in labels:
+		var label := item.get("label", null) as Label
+		if label == null:
+			continue
+		var label_id := String(item.get("id", ""))
+		var requires_wrap := bool(item.get("requires_wrap", true))
+		if requires_wrap and label.text.length() > 24 and label.autowrap_mode == TextServer.AUTOWRAP_OFF:
+			unwrapped.append(label_id)
+		if panel_rect.size.x > 1.0 and panel_rect.size.y > 1.0:
+			var label_rect := Rect2(label.global_position, label.size)
+			if label_rect.size.x > 1.0 and label_rect.size.y > 1.0 and not panel_rect.encloses(label_rect):
+				out_of_panel.append(label_id)
+	return {
+		"label_count": labels.size(),
+		"unwrapped_count": unwrapped.size(),
+		"unwrapped": ",".join(unwrapped),
+		"out_of_panel_count": out_of_panel.size(),
+		"out_of_panel": ",".join(out_of_panel),
+	}
+
 func _ui_visible_mouse_health_check() -> Dictionary:
 	var controls := _visible_focus_controls()
 	var blocked: Array[String] = []
@@ -3124,6 +3263,38 @@ func _ui_focus_section_runtime_check(page_layout: Dictionary) -> Dictionary:
 
 func _ui_focus_section_is_contextual(section_id: String) -> bool:
 	return section_id in ["control_buttons", "control_preview"]
+
+func _ui_selected_row_window_check() -> Dictionary:
+	if ui_screen_model == null:
+		return {
+			"visible": true,
+			"selected_id": "",
+			"selected_index": -1,
+			"visible_ids": "",
+			"visible_indices": "",
+		}
+	var selected: Dictionary = ui_screen_model.selected_row()
+	var selected_id := String(selected.get("id", ""))
+	var selected_index := int(ui_screen_model.cursor)
+	var visible_ids: Array[String] = []
+	var visible_indices: Array[String] = []
+	var selected_visible := selected_id.is_empty() or _ui_overlay_focusable_count(ui_row_labels) == 0
+	for button in ui_row_labels:
+		if button == null or not button.is_visible_in_tree() or button.disabled:
+			continue
+		var row_index := int(button.get_meta("row_index", -1))
+		var row_id := String(button.get_meta("row_id", ""))
+		visible_indices.append(str(row_index))
+		visible_ids.append(row_id)
+		if row_index == selected_index and (row_id.is_empty() or row_id == selected_id):
+			selected_visible = true
+	return {
+		"visible": selected_visible,
+		"selected_id": selected_id,
+		"selected_index": selected_index,
+		"visible_ids": ",".join(visible_ids),
+		"visible_indices": ",".join(visible_indices),
+	}
 
 func _ui_focus_section_visible_count(section_id: String) -> int:
 	match section_id:
@@ -3179,6 +3350,26 @@ func _append_focus_button_for_health(result: Array[Dictionary], control_id: Stri
 		"id": control_id,
 		"button": button,
 	})
+
+func _visible_player_facing_labels() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	_append_visible_label_for_health(result, "title", ui_title_label, false)
+	_append_visible_label_for_health(result, "nav_path", ui_nav_label)
+	_append_visible_label_for_health(result, "shell", ui_shell_label)
+	_append_visible_label_for_health(result, "page_summary", ui_page_summary_label)
+	_append_visible_label_for_health(result, "section_summary", ui_section_label)
+	_append_visible_label_for_health(result, "control_preview", ui_control_label)
+	_append_visible_label_for_health(result, "status", ui_status_label)
+	_append_visible_label_for_health(result, "detail", ui_detail_label)
+	_append_visible_label_for_health(result, "hint", ui_hint_label)
+	_append_visible_label_for_health(result, "home_portrait", ui_home_portrait_label)
+	_append_visible_label_for_health(result, "home_status", ui_home_status_label)
+	return result
+
+func _append_visible_label_for_health(result: Array[Dictionary], label_id: String, label: Label, require_wrap: bool = true) -> void:
+	if label == null or not label.is_visible_in_tree() or label.text.is_empty():
+		return
+	result.append({"id": label_id, "label": label, "requires_wrap": require_wrap})
 
 func _ui_string_array(source: Variant) -> Array[String]:
 	var values: Array[String] = []
@@ -4162,11 +4353,22 @@ func _ui_bound_or_new_grid(scene_id: String, binding_name: String, fallback_name
 func _ui_bound_or_new_label(scene_id: String, binding_name: String, fallback_name: String) -> Label:
 	var node := _ui_bound_node(scene_id, binding_name)
 	if node is Label:
-		return node as Label
+		var bound_label := node as Label
+		_configure_ui_label(bound_label, binding_name)
+		return bound_label
 	var label := Label.new()
 	label.name = fallback_name
+	_configure_ui_label(label, binding_name)
 	_attach_ui_fallback_node(binding_name, label)
 	return label
+
+func _configure_ui_label(label: Label, binding_name: String = "") -> void:
+	if label == null:
+		return
+	label.clip_text = true
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if binding_name != "TitleLabel":
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 func _ui_bound_container_or_parent(scene_id: String, binding_name: String, fallback_parent: Container) -> Container:
 	var node := _ui_bound_node(scene_id, binding_name)
@@ -4607,7 +4809,7 @@ func _deactivate_secondary_ui_controls() -> void:
 	for button in ui_control_buttons:
 		_ui_deactivate_button(button, ["control_action", "direction"])
 	for button in ui_row_labels:
-		_ui_deactivate_button(button, ["row_index"])
+		_ui_deactivate_button(button, ["row_index", "row_id"])
 
 func _update_ui_overlay() -> void:
 	if ui_panel == null or ui_screen_model == null:
@@ -4658,7 +4860,7 @@ func _update_ui_overlay() -> void:
 	for i in range(ui_row_labels.size()):
 		var label := ui_row_labels[i]
 		if i >= rows.size():
-			_ui_deactivate_button(label, ["row_index"])
+			_ui_deactivate_button(label, ["row_index", "row_id"])
 			continue
 		label.visible = true
 		var absolute_index := row_window_start + i
@@ -4666,6 +4868,7 @@ func _update_ui_overlay() -> void:
 		label.disabled = false
 		_ui_mark_button_owner(label)
 		label.set_meta("row_index", absolute_index)
+		label.set_meta("row_id", String(rows[i].get("id", "")))
 		label.text = _format_ui_overlay_row(rows[i], prefix, all_rows, absolute_index)
 	_update_ui_focus_neighbors()
 
@@ -5190,8 +5393,8 @@ func _is_overview_candidate(row: Dictionary) -> bool:
 	if row_id.is_empty():
 		return false
 	if row_id.ends_with("_summary"):
-		return false
-	if row.has("screen") or row.has("ui_action"):
+		return _row_control_id(row) == "status"
+	if row.has("screen") or not String(row.get("ui_action", "")).is_empty():
 		return true
 	var control_id := _row_control_id(row)
 	return control_id in ["nav", "queue", "button", "select", "toggle", "slider", "link", "friend", "claim", "chest", "card", "replay"]
@@ -5252,7 +5455,7 @@ func _on_ui_overview_button_pressed(button: Button) -> void:
 func _overview_card_should_accept(row: Dictionary) -> bool:
 	if row.is_empty() or not bool(row.get("enabled", true)):
 		return false
-	return row.has("screen") or row.has("ui_action") or row.has("character_id") or row.has("stage_id") or row.has("pattern_id") or row.has("card_id") or row.has("replay_id")
+	return row.has("screen") or not String(row.get("ui_action", "")).is_empty() or row.has("character_id") or row.has("stage_id") or row.has("pattern_id") or row.has("card_id") or not String(row.get("replay_id", "")).is_empty()
 
 func _ui_press_visible_overview_card(index: int) -> Dictionary:
 	if index < 0 or index >= ui_overview_buttons.size():
@@ -5289,6 +5492,7 @@ func _update_ui_quick_actions(rows: Array[Dictionary], selected: Dictionary) -> 
 		button.set_meta("row_index", row_index)
 		button.set_meta("row_id", String(action_row.get("row_id", "")))
 		button.set_meta("screen_id", screen_id)
+		button.set_meta("target_row_id", String(action_row.get("target_row_id", "")))
 		button.text = String(action_row.get("label", ""))
 		button.tooltip_text = String(action_row.get("tooltip", button.text))
 
@@ -5323,6 +5527,7 @@ func _append_quick_action(result: Array[Dictionary], seen: Dictionary, row: Dict
 	result.append({
 		"row_index": row_index,
 		"row_id": row_id,
+		"target_row_id": String(row.get("target_row_id", "")),
 		"label": label,
 		"tooltip": _format_ui_row(row),
 	})
@@ -5351,6 +5556,7 @@ func _append_shell_navigation_quick_actions(result: Array[Dictionary], seen: Dic
 			"row_index": -1,
 			"row_id": row_id,
 			"screen": screen_id,
+			"target_row_id": String(row.get("target_row_id", "")),
 			"label": _row_label_text(row),
 			"tooltip": "%s: %s" % [_row_label_text(row), String(row.get("summary", ""))],
 		})
@@ -5366,7 +5572,7 @@ func _is_quick_action_row(row: Dictionary) -> bool:
 	match row_id:
 		"cert_queue", "cert_practice", "settings_gamepad_curve", "settings_keybinds", "settings_volume", "settings_resolution", "play_queue_selected", "queue_status", "ready", "cancel", "gensoulkyo_login", "gensoulkyo_create_room", "battle_client_prepare", "battle_client_connect", "battle_client_input_header", "matchmaking_quick", "matchmaking_ranked", "matchmaking_pvp", "matchmaking_boss", "local_settlement_preview", "matchmaking_room":
 			return true
-	if action in ["advance_queue", "start_certification_queue", "ready_match", "cancel_queue", "battle_client_prepare", "battle_client_connect", "battle_client_input_header", "open_social_link", "invite_friend", "dismiss_announcement", "request_activity_claim", "select_mode", "queue_mode", "local_settle_match", "open_chest", "save_deck", "save_replay", "run_balance_simulation", "run_latency_tests"]:
+	if action in ["advance_queue", "start_certification_queue", "ready_match", "cancel_queue", "battle_client_prepare", "battle_client_connect", "battle_client_input_header", "open_social_link", "invite_friend", "dismiss_announcement", "request_activity_claim", "select_mode", "queue_mode", "local_settle_match", "open_chest", "save_deck", "save_replay", "toggle_replay_favorite", "remove_replay_from_index", "run_balance_simulation", "run_latency_tests"]:
 		return true
 	return false
 
@@ -5385,8 +5591,9 @@ func _on_ui_quick_button_pressed(button: Button) -> void:
 		return
 	var row_index := int(button.get_meta("row_index", -1))
 	var screen_id := String(button.get_meta("screen_id", ""))
+	var target_row_id := String(button.get_meta("target_row_id", ""))
 	if row_index < 0 and not screen_id.is_empty():
-		_open_ui_screen(screen_id)
+		_open_ui_screen(screen_id, target_row_id)
 		return
 	if row_index < 0:
 		return
@@ -5404,8 +5611,9 @@ func _ui_press_visible_quick_action(index: int) -> Dictionary:
 	var row_index := int(button.get_meta("row_index", -1))
 	var row_id := String(button.get_meta("row_id", ""))
 	var screen_id := String(button.get_meta("screen_id", ""))
+	var target_row_id := String(button.get_meta("target_row_id", ""))
 	_on_ui_quick_button_pressed(button)
-	return {"ok": row_index >= 0 or not screen_id.is_empty(), "action": "quick_action", "row_index": row_index, "row_id": row_id, "screen": screen_id}
+	return {"ok": row_index >= 0 or not screen_id.is_empty(), "action": "quick_action", "row_index": row_index, "row_id": row_id, "screen": screen_id, "target_row_id": target_row_id}
 
 func _update_ui_control_buttons(row: Dictionary) -> void:
 	var actions := _control_button_actions(row)
@@ -6036,7 +6244,10 @@ func _format_ui_row(row: Dictionary) -> String:
 		return "%s %s" % [label_text, String(row.get("value", ""))]
 	if String(row.get("id", "")).begins_with("binding_"):
 		var keys: Array = row.get("keys", [])
-		return "%s %s [%s]" % [String(row.get("label", "")), "+".join(keys), "custom" if bool(row.get("custom", false)) else "preset"]
+		var conflict_text := ""
+		if int(row.get("conflict_count", 0)) > 0:
+			conflict_text = " conflict %s" % ",".join(row.get("conflict_actions", []) as Array)
+		return "%s %s [%s%s]" % [String(row.get("label", "")), "+".join(keys), "custom" if bool(row.get("custom", false)) else "preset", conflict_text]
 	if String(row.get("id", "")).begins_with("play_"):
 		return "%s %s" % [label_text, String(row.get("value", ""))]
 	if String(row.get("id", "")).begins_with("matchmaking_"):
@@ -6268,6 +6479,7 @@ func _draw() -> void:
 	draw_rect(PLAYFIELD, accessibility_settings.background_fill(), true)
 	draw_rect(PLAYFIELD, accessibility_settings.border_color(), false, 2.0)
 	_draw_playfield_guides()
+	_draw_boss_playfield_projection()
 	_draw_target()
 
 	for bullet in bullets:
@@ -6305,6 +6517,43 @@ func _should_draw_gameplay_scene() -> bool:
 
 func _should_advance_gameplay_tick() -> bool:
 	return bool(_ui_page_layout().get("advance_gameplay", ui_screen_model == null))
+
+func _boss_playfield_draw_snapshot() -> Dictionary:
+	var mode_id := _boss_projection_mode_id()
+	if mode_id.is_empty() or game_mode_model == null or not game_mode_model.has_method("boss_playfield_projection"):
+		return {
+			"enabled": false,
+			"reason": "boss_mode_inactive",
+			"client_result_authoritative": false,
+		}
+	var projection: Dictionary = game_mode_model.boss_playfield_projection(mode_id, PLAYFIELD)
+	var hud_projection: Dictionary = game_mode_model.boss_hud_projection(mode_id, PLAYFIELD) if game_mode_model.has_method("boss_hud_projection") else {}
+	var slots: Array = projection.get("display_slots", [])
+	return {
+		"enabled": bool(projection.get("ok", false)) and slots.size() > 0,
+		"reason": String(projection.get("reason", "none")),
+		"mode_id": mode_id,
+		"slot_count": slots.size(),
+		"hp_ratio": float(projection.get("hp_ratio", 0.0)),
+		"projection_scope": String(projection.get("projection_scope", "")),
+		"damage_authority": String(projection.get("damage_authority", "")),
+		"reward_authority": String(hud_projection.get("reward_authority", "server")),
+		"settlement_authority": String(projection.get("settlement_authority", "")),
+		"friendly_fire_warning": String(projection.get("friendly_fire_warning", "none")),
+		"gameplay_visible": _should_draw_gameplay_scene(),
+		"projection": projection,
+		"hud_projection": hud_projection,
+		"server_authoritative": bool(projection.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
+func _boss_projection_mode_id() -> String:
+	if game_mode_model == null:
+		return ""
+	var mode_id := String(game_mode_model.get("selected_mode_id"))
+	if mode_id == "world_boss" or mode_id == "instance_boss":
+		return mode_id
+	return ""
 
 func _draw_menu_backdrop() -> void:
 	var viewport_size := get_viewport_rect().size
@@ -6522,6 +6771,47 @@ func _draw_playfield_guides() -> void:
 	if invuln_ticks > 0:
 		var character_bomb_radius_multiplier: float = character_model.bomb_radius_multiplier() if character_model != null else 1.0
 		draw_arc(player_pos, BOMB_RADIUS * character_bomb_radius_multiplier * float(self_modifiers.get("bomb_radius_multiplier", 1.0)), 0.0, TAU, 96, Color(0.4, 0.8, 1.0, 0.08), 2.0)
+
+func _draw_boss_playfield_projection() -> void:
+	var snapshot := _boss_playfield_draw_snapshot()
+	if not bool(snapshot.get("enabled", false)):
+		return
+	var projection: Dictionary = snapshot.get("projection", {})
+	var center: Vector2 = projection.get("screen_center", PLAYFIELD.position + PLAYFIELD.size * 0.5)
+	var arena_radius := float(projection.get("screen_radius_pixels", 0.0))
+	var boss_radius := clampf(arena_radius * 0.16, 26.0, 58.0)
+	var hp_ratio := clampf(float(projection.get("hp_ratio", 0.0)), 0.0, 1.0)
+	var slots: Array = projection.get("display_slots", [])
+	var warning := String(projection.get("friendly_fire_warning", "none"))
+	var arena_color := Color(0.30, 0.56, 0.62, 0.22)
+	var boss_color := Color(0.84, 0.30, 0.42, 0.30)
+	var hp_color := Color(0.88, 0.78, 0.34, 0.82)
+	if warning != "none":
+		arena_color = Color(0.64, 0.46, 0.24, 0.24)
+	draw_arc(center, arena_radius, 0.0, TAU, 96, arena_color, 2.0)
+	draw_circle(center, boss_radius, boss_color)
+	draw_arc(center, boss_radius + 7.0, -PI * 0.5, -PI * 0.5 + TAU * hp_ratio, 48, hp_color, 3.0)
+	draw_arc(center, boss_radius, 0.0, TAU, 48, Color(0.96, 0.70, 0.78, 0.72), 2.0)
+	draw_line(center + Vector2(-boss_radius, 0.0), center + Vector2(boss_radius, 0.0), Color(1.0, 1.0, 1.0, 0.40), 1.0)
+	draw_line(center + Vector2(0.0, -boss_radius), center + Vector2(0.0, boss_radius), Color(1.0, 1.0, 1.0, 0.40), 1.0)
+	for raw_slot in slots:
+		var slot: Dictionary = raw_slot
+		var slot_position: Vector2 = slot.get("screen_position", center)
+		var aim_vector: Vector2 = slot.get("aim_vector", Vector2.ZERO)
+		var slot_color := Color(0.38, 0.86, 0.95, 0.82)
+		if warning != "none":
+			slot_color = Color(0.94, 0.76, 0.34, 0.86)
+		draw_line(slot_position, center, Color(slot_color.r, slot_color.g, slot_color.b, 0.18), 1.0)
+		draw_circle(slot_position, 8.0, slot_color)
+		draw_arc(slot_position, 12.0, 0.0, TAU, 24, Color(1.0, 1.0, 1.0, 0.46), 1.2)
+		if aim_vector.length() > 0.01:
+			draw_line(slot_position, slot_position + aim_vector.normalized() * 24.0, Color(1.0, 1.0, 1.0, 0.66), 2.0)
+	var label := "%s hp %.0f%% %s" % [
+		String(projection.get("mode_id", "")),
+		hp_ratio * 100.0,
+		String(projection.get("damage_authority", "server")),
+	]
+	draw_string(ThemeDB.fallback_font, center + Vector2(-58.0, boss_radius + 24.0), label, HORIZONTAL_ALIGNMENT_CENTER, 116.0, 12, Color(0.92, 0.94, 0.90, 0.72))
 
 func _draw_target() -> void:
 	draw_circle(target_pos, TARGET_RADIUS, Color(0.80, 0.25, 0.35, 0.18))

@@ -100,11 +100,17 @@ func _validate_play_pages() -> bool:
 		return _fail("status cards should not duplicate subpage cards %s" % status_text)
 	if not _contains_all(String(snapshot.get("overview_cards_text", "")), _text_keys(["screen.play.practice", "screen.play.matchmaking", "screen.mode.pvp_duel", "screen.mode.world_boss"])):
 		return _fail("play overview cards missing expected mode entries %s" % String(snapshot.get("overview_cards_text", "")))
+	if not String(snapshot.get("overview_cards_text", "")).contains("hp"):
+		return _fail("play overview cards missing boss local status %s" % String(snapshot.get("overview_cards_text", "")))
 	if _contains_any(String(snapshot.get("quick_actions_text", "")), _text_keys(["screen.main.start_match", "screen.main.network_match", "screen.play.practice"])):
 		return _fail("play quick actions should only carry shell navigation %s" % String(snapshot.get("quick_actions_text", "")))
 	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 32)
-	if not _rows_have_ids(rows, ["play_practice", "play_matchmaking", "play_pvp_duel", "play_world_boss", "play_certification_hub"]):
+	if not _rows_have_ids(rows, ["play_practice", "play_matchmaking", "play_pvp_duel", "play_world_boss", "play_world_boss_status", "play_instance_boss_status", "play_certification_hub"]):
 		return _fail("play rows missing expected modes")
+	if not _assert_boss_status_row(_row_by_id(rows, "play_world_boss_status"), "world_boss"):
+		return false
+	if not _assert_boss_status_row(_row_by_id(rows, "play_instance_boss_status"), "instance_boss"):
+		return false
 	var focus_result: Dictionary = main_node.call("_ui_press_visible_focus_action")
 	await _settle_frames(2)
 	if not bool(focus_result.get("ok", false)) or String(focus_result.get("row_id", "")) != "play_matchmaking" or String(main_node.get("ui_screen_model").current_screen) != "match":
@@ -131,6 +137,13 @@ func _validate_play_pages() -> bool:
 		return _fail("match overview cards invalid %s" % String(snapshot.get("overview_cards_text", "")))
 	if not _contains_all(String(snapshot.get("overview_cards_text", "")), _text_keys(["screen.match.local_settlement"])):
 		return _fail("match overview cards missing settlement loop %s" % String(snapshot.get("overview_cards_text", "")))
+	rows = main_node.call("_ui_screen_rows", 64)
+	if not _rows_have_ids(rows, ["matchmaking_boss", "match_world_boss_status", "match_instance_boss_status"]):
+		return _fail("match rows missing boss status rows")
+	if not _assert_boss_status_row(_row_by_id(rows, "match_world_boss_status"), "world_boss"):
+		return false
+	if not _assert_boss_status_row(_row_by_id(rows, "match_instance_boss_status"), "instance_boss"):
+		return false
 	snapshot = await _open_snapshot("network_match")
 	if not _assert_page_health(snapshot, "network_match", 2, 4):
 		return false
@@ -294,6 +307,8 @@ func _validate_settings_pages() -> bool:
 	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 48)
 	if not _rows_have_ids(rows, ["settings_language", "settings_gamepad_curve", "settings_keybinds", "settings_volume", "settings_resolution", "settings_save_now", "settings_restore_defaults"]):
 		return _fail("player settings rows missing expected controls")
+	if not await _assert_deep_row_visible("player_settings", "settings_restore_defaults"):
+		return false
 	var language_index := _row_index_by_id(rows, "settings_language")
 	if language_index < 0:
 		return _fail("language row missing")
@@ -317,11 +332,30 @@ func _validate_settings_pages() -> bool:
 	snapshot = main_node.call("_ui_overlay_snapshot")
 	if not _assert_page_health(snapshot, "input_settings", 2, 3):
 		return false
+	if String(snapshot.get("selected_row_id", "")) != "gamepad_curve":
+		return _fail("gamepad curve deep link should focus target row %s" % [snapshot])
 	rows = main_node.call("_ui_screen_rows", 48)
 	if not _rows_have_ids(rows, ["input_profile", "gamepad_curve", "gamepad_sensitivity", "binding_shoot", "binding_bomb"]):
 		return _fail("input settings rows missing gamepad/keybind controls")
+	if not await _assert_deep_row_visible("input_settings", "binding_focus"):
+		return false
 	if not String(snapshot.get("selected_speed_preview", "")).contains("move"):
 		return _fail("input settings should expose gamepad speed preview %s" % String(snapshot.get("selected_speed_preview", "")))
+	var parent_result: Dictionary = main_node.call("_ui_press_visible_quick_action", 0)
+	await _settle_frames(2)
+	if not bool(parent_result.get("ok", false)) or String(main_node.get("ui_screen_model").current_screen) != "player_settings":
+		return _fail("input settings parent quick action invalid %s" % [parent_result])
+	snapshot = main_node.call("_ui_overlay_snapshot")
+	if String(snapshot.get("selected_row_id", "")) != "settings_gamepad_curve":
+		return _fail("player settings should restore last hub row after parent return %s" % [snapshot])
+	var keybind_result: Dictionary = main_node.call("_ui_press_visible_overview_card", 2)
+	await _settle_frames(2)
+	if not bool(keybind_result.get("ok", false)) or String(keybind_result.get("row_id", "")) != "settings_keybinds" or String(main_node.get("ui_screen_model").current_screen) != "input_settings":
+		return _fail("key binding overview card route invalid %s" % [keybind_result])
+	snapshot = main_node.call("_ui_overlay_snapshot")
+	if String(snapshot.get("selected_row_id", "")) != "binding_shoot":
+		return _fail("key binding deep link should focus target row %s" % [snapshot])
+	rows = main_node.call("_ui_screen_rows", 48)
 	var preview_index := _row_index_by_id(rows, "gamepad_curve_preview")
 	if preview_index < 0:
 		return _fail("gamepad curve preview row missing")
@@ -338,6 +372,8 @@ func _validate_settings_pages() -> bool:
 	rows = main_node.call("_ui_screen_rows", 48)
 	if not _rows_have_ids(rows, ["audio_voice_locale", "audio_group_master", "audio_group_music", "audio_group_sfx", "audio_reset_all"]):
 		return _fail("audio settings rows missing volume controls")
+	if not await _assert_deep_row_visible("audio_settings", "audio_reset_all"):
+		return false
 	var voice_index := _row_index_by_id(rows, "audio_voice_locale")
 	if voice_index < 0:
 		return _fail("voice language row missing")
@@ -359,6 +395,8 @@ func _validate_settings_pages() -> bool:
 	rows = main_node.call("_ui_screen_rows", 48)
 	if not _rows_have_ids(rows, ["display_resolution", "display_window_mode", "display_vsync", "display_fps_limit"]):
 		return _fail("display settings rows missing resolution/video controls")
+	if not await _assert_deep_row_visible("display_settings", "access_low_flash"):
+		return false
 	var resolution_index := _row_index_by_id(rows, "display_resolution")
 	if resolution_index < 0:
 		return _fail("display resolution row missing")
@@ -368,6 +406,23 @@ func _validate_settings_pages() -> bool:
 	var resolution_controls := String(snapshot.get("control_buttons_text", ""))
 	if not resolution_controls.contains("<") or not resolution_controls.contains(">") or not resolution_controls.contains("Reset"):
 		return _fail("display resolution should expose compact left/right/reset controls %s" % resolution_controls)
+	return true
+
+func _assert_deep_row_visible(screen_id: String, row_id: String) -> bool:
+	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 64)
+	var row_index := _row_index_by_id(rows, row_id)
+	if row_index < 0:
+		return _fail("%s missing deep row %s" % [screen_id, row_id])
+	main_node.call("_ui_set_cursor", row_index)
+	await _settle_frames(2)
+	var snapshot: Dictionary = main_node.call("_ui_overlay_snapshot")
+	if String(snapshot.get("selected_row_id", "")) != row_id or not bool(snapshot.get("selected_row_visible", false)):
+		return _fail("%s deep row %s not visible in row window %s / %s" % [
+			screen_id,
+			row_id,
+			String(snapshot.get("visible_row_window_ids", "")),
+			String(snapshot.get("visible_row_window_indices", "")),
+		])
 	return true
 
 func _validate_collection_page_contract() -> bool:
@@ -384,6 +439,37 @@ func _validate_collection_page_contract() -> bool:
 	await _settle_frames(2)
 	if not bool(focus_result.get("ok", false)) or String(focus_result.get("row_id", "")) != "collection_deck" or String(main_node.get("ui_screen_model").current_screen) != "deck":
 		return _fail("collection focus action should open deck %s" % [focus_result])
+	snapshot = await _open_snapshot("replay")
+	if not _assert_page_health(snapshot, "replay", 2, 4):
+		return false
+	var replay_rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 8)
+	if replay_rows.is_empty() or String(replay_rows[0].get("id", "")) != "replay_verification_summary":
+		return _fail("replay page missing verification summary row %s" % [replay_rows])
+	if not String(replay_rows[0].get("ui_action", "")).is_empty() or String(replay_rows[0].get("ui_control", "")) != "status" or bool(replay_rows[0].get("client_result_authoritative", true)):
+		return _fail("replay verification summary should be status-only %s" % [replay_rows[0]])
+	if not String(snapshot.get("section_tabs", "")).contains(_text("ui.menu_section_overview")):
+		return _fail("replay filter tabs should expose verification overview %s" % [snapshot])
+	var replay_summary_card_result: Dictionary = main_node.call("_ui_press_visible_overview_card", 0)
+	if not bool(replay_summary_card_result.get("ok", false)) or String(replay_summary_card_result.get("row_id", "")) != "replay_verification_summary" or String(replay_summary_card_result.get("screen", "")) != "replay":
+		return _fail("replay verification summary overview card should stay on replay page %s" % [replay_summary_card_result])
+	replay_rows = main_node.call("_ui_screen_rows", 12)
+	var replay_filter_index := _row_index_by_id(replay_rows, "replay_filter_replay_local_ready")
+	if replay_filter_index < 0 or String(replay_rows[replay_filter_index].get("ui_action", "")) != "set_replay_filter":
+		return _fail("replay page missing local-ready filter action %s" % [replay_rows])
+	var favorite_action := _row_by_id(replay_rows, "replay_action_favorite")
+	var remove_action := _row_by_id(replay_rows, "replay_action_remove")
+	if favorite_action.is_empty() or remove_action.is_empty() or String(favorite_action.get("ui_action", "")) != "toggle_replay_favorite" or String(remove_action.get("ui_action", "")) != "remove_replay_from_index" or bool(favorite_action.get("client_result_authoritative", true)):
+		return _fail("replay page missing favorite/remove action rows favorite=%s remove=%s" % [favorite_action, remove_action])
+	main_node.call("_ui_set_cursor", replay_filter_index)
+	var replay_filter_result: Dictionary = main_node.call("_ui_accept_selected")
+	await _settle_frames(2)
+	if not bool(replay_filter_result.get("ok", false)) or String(replay_filter_result.get("verification_filter", "")) != "replay_local_ready" or String(main_node.get("ui_screen_model").current_screen) != "replay":
+		return _fail("replay filter action did not stay on replay page %s" % [replay_filter_result])
+	replay_rows = main_node.call("_ui_screen_rows", 12)
+	if int(replay_filter_result.get("visible_entry_count", 0)) > 0:
+		var replay_entry := _first_replay_entry_row(replay_rows)
+		if replay_entry.is_empty() or String(replay_entry.get("ui_action", "")) != "load_replay" or String(replay_entry.get("ui_control", "")) != "replay" or String(replay_entry.get("section", "")) != "replay_local_ready":
+			return _fail("replay entry row should stay loadable after filter %s" % [replay_rows])
 	return true
 
 func _press_home_button(index: int, expected_screen: String) -> bool:
@@ -442,12 +528,24 @@ func _assert_page_health(snapshot: Dictionary, label: String, expected_quick_max
 		return _fail("%s visible controls overlap %s" % [label, String(snapshot.get("visible_control_overlaps", ""))])
 	if bool(snapshot.get("visible", true)) and int(snapshot.get("visible_focusable_count", 0)) <= 0:
 		return _fail("%s has no visible focusable controls %s" % [label, snapshot])
+	if bool(snapshot.get("visible", true)) and not bool(snapshot.get("selected_row_visible", true)):
+		return _fail("%s selected row is outside visible row window: selected %s/%d in %s (%s)" % [
+			label,
+			String(snapshot.get("selected_row_id", "")),
+			int(snapshot.get("selected_row_index", -1)),
+			String(snapshot.get("visible_row_window_ids", "")),
+			String(snapshot.get("visible_row_window_indices", "")),
+		])
 	if int(snapshot.get("visible_focus_without_neighbor_count", 0)) != 0:
 		return _fail("%s visible controls missing focus neighbors %s" % [label, String(snapshot.get("visible_focus_without_neighbor", ""))])
 	if int(snapshot.get("visible_control_small_target_count", 0)) != 0:
 		return _fail("%s visible controls below minimum target size %s" % [label, String(snapshot.get("visible_control_small_targets", ""))])
 	if int(snapshot.get("visible_text_unclipped_count", 0)) != 0:
 		return _fail("%s visible button text is not clipped/ellipsized %s" % [label, String(snapshot.get("visible_text_unclipped", ""))])
+	if int(snapshot.get("visible_label_unwrapped_count", 0)) != 0:
+		return _fail("%s visible labels are not wrapped %s" % [label, String(snapshot.get("visible_label_unwrapped", ""))])
+	if int(snapshot.get("visible_label_out_of_panel_count", 0)) != 0:
+		return _fail("%s visible labels extend outside panel %s" % [label, String(snapshot.get("visible_label_out_of_panel", ""))])
 	if int(snapshot.get("visible_mouse_blocked_count", 0)) != 0:
 		return _fail("%s visible buttons are not mouse-operable %s" % [label, String(snapshot.get("visible_mouse_blocked", ""))])
 	if int(snapshot.get("page_state_region_count", 0)) <= 0 or String(snapshot.get("page_state_regions", "")).is_empty():
@@ -549,6 +647,34 @@ func _row_by_id(rows: Array[Dictionary], row_id: String) -> Dictionary:
 		if String(row.get("id", "")) == row_id:
 			return row
 	return {}
+
+func _first_replay_entry_row(rows: Array[Dictionary]) -> Dictionary:
+	for row in rows:
+		if not String(row.get("replay_id", "")).is_empty():
+			return row
+	return {}
+
+func _assert_boss_status_row(row: Dictionary, mode_id: String) -> bool:
+	if row.is_empty():
+		return _fail("boss status row missing for %s" % mode_id)
+	if String(row.get("mode_id", "")) != mode_id:
+		return _fail("boss status mode mismatch %s row=%s" % [mode_id, row])
+	if String(row.get("mode_category", "")) != "boss":
+		return _fail("boss status row missing boss category %s" % [row])
+	if bool(row.get("client_result_authoritative", true)):
+		return _fail("boss status row must not be client authoritative %s" % [row])
+	if String(row.get("settlement_authority", "")) != "server":
+		return _fail("boss status row must show server settlement authority %s" % [row])
+	if not bool(row.get("requires_server_confirmation", false)):
+		return _fail("boss status row must require server confirmation %s" % [row])
+	var value := String(row.get("value", ""))
+	if not value.contains("hp") or not value.contains("attempts") or not value.contains("layout"):
+		return _fail("boss status row value should include hp and attempts %s" % [row])
+	if String(row.get("slot_layout_policy", "")).is_empty():
+		return _fail("boss status row missing slot layout policy %s" % [row])
+	if typeof(row.get("slot_labels", [])) != TYPE_ARRAY:
+		return _fail("boss status row missing slot labels %s" % [row])
+	return true
 
 func _text(key: String) -> String:
 	var localization: Variant = main_node.get("localization")
