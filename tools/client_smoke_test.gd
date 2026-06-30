@@ -698,7 +698,7 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	var game_mode_state_rows: Array[Dictionary] = game_mode_model.mode_rows()
-	if not _rows_have_ids(game_mode_state_rows, ["world_boss_hp", "world_boss_party", "world_boss_formation", "world_boss_transfer", "instance_boss_hp", "instance_boss_party", "instance_boss_formation", "instance_boss_transfer"]):
+	if not _rows_have_ids(game_mode_state_rows, ["world_boss_hp", "world_boss_party", "world_boss_formation", "world_boss_transfer", "world_boss_result", "instance_boss_hp", "instance_boss_party", "instance_boss_formation", "instance_boss_transfer", "instance_boss_result"]):
 		push_error("Smoke test failed: boss mode state rows incomplete")
 		quit(1)
 		return true
@@ -2002,8 +2002,14 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: rejected world boss result mutated state %s" % [game_mode_model.world_boss_state])
 		quit(1)
 		return true
+	var rejected_world_result_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "world_boss_result")
+	if bool(rejected_world_result_row.get("client_result_authoritative", true)) or String(rejected_world_result_row.get("result_source", "")) == "server_settlement_projection":
+		push_error("Smoke test failed: rejected world boss result row became authoritative %s" % [rejected_world_result_row])
+		quit(1)
+		return true
 	if not main_node.call("_apply_world_boss_result", {
 		"boss_instance_id": "world_boss_local_s0_001",
+		"match_id": "wb-smoke-001",
 		"boss_hp_after_global": 0,
 		"boss_max_hp": 100000,
 		"team_damage": 5000,
@@ -2011,12 +2017,22 @@ func _process(_delta: float) -> bool:
 		"daily_attempts_left": 2,
 		"defeated_at": "2026-06-25T00:00:00Z",
 		"world_announcement_emitted": true,
+		"server_authoritative": true,
 	}):
 		push_error("Smoke test failed: world boss result invalid")
 		quit(1)
 		return true
 	if String(game_mode_model.world_boss_state.get("defeated_at", "")).is_empty() or String(game_mode_model.world_boss_state.get("world_announcement", "")) != "world_boss_defeated":
 		push_error("Smoke test failed: world boss announcement invalid")
+		quit(1)
+		return true
+	var world_result_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "world_boss_result")
+	if not bool(world_result_row.get("enabled", false)) or not bool(world_result_row.get("server_authoritative", false)) or bool(world_result_row.get("client_result_authoritative", true)) or String(world_result_row.get("result_source", "")) != "server_settlement_projection":
+		push_error("Smoke test failed: world boss result row authority invalid %s" % [world_result_row])
+		quit(1)
+		return true
+	if int(world_result_row.get("damage_this_match", 0)) != 5000 or int(world_result_row.get("global_damage_applied", 0)) != 5000 or String(world_result_row.get("result_status", "")) != "defeated":
+		push_error("Smoke test failed: world boss result row summary invalid %s" % [world_result_row])
 		quit(1)
 		return true
 	if not main_node.call("_select_game_mode", "instance_boss") or not main_node.call("_configure_boss_party", "instance_boss", ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]):
@@ -2044,7 +2060,13 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: rejected instance boss result mutated state %s" % [game_mode_model.instance_boss_state])
 		quit(1)
 		return true
+	var rejected_instance_result_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_result")
+	if bool(rejected_instance_result_row.get("client_result_authoritative", true)) or String(rejected_instance_result_row.get("result_source", "")) == "server_settlement_projection":
+		push_error("Smoke test failed: rejected instance boss result row became authoritative %s" % [rejected_instance_result_row])
+		quit(1)
+		return true
 	if not main_node.call("_apply_instance_boss_result", {
+		"match_id": "ib-smoke-001",
 		"boss_defeated": true,
 		"survivors": 3,
 		"failed_mechanic": false,
@@ -2053,6 +2075,7 @@ func _process(_delta: float) -> bool:
 		"deaths": 0,
 		"bombs_used": 2,
 		"bomb_limit": 3,
+		"server_authoritative": true,
 	}):
 		push_error("Smoke test failed: instance boss result invalid")
 		quit(1)
@@ -2066,8 +2089,17 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: instance boss star authority contract invalid %s" % [instance_boss_stars_row])
 		quit(1)
 		return true
+	var instance_result_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_result")
+	if not bool(instance_result_row.get("enabled", false)) or not bool(instance_result_row.get("server_authoritative", false)) or bool(instance_result_row.get("client_result_authoritative", true)) or String(instance_result_row.get("result_source", "")) != "server_settlement_projection":
+		push_error("Smoke test failed: instance boss result row authority invalid %s" % [instance_result_row])
+		quit(1)
+		return true
+	if not bool(instance_result_row.get("cleared", false)) or int(instance_result_row.get("stars", 0)) != 3 or String(instance_result_row.get("result_status", "")) != "cleared":
+		push_error("Smoke test failed: instance boss result row summary invalid %s" % [instance_result_row])
+		quit(1)
+		return true
 	var game_mode_rows: Array[Dictionary] = main_node.call("_game_mode_rows")
-	if not _rows_have_ids(game_mode_rows, ["cert_rating", "cert_rank", "cert_top30", "cert_stage", "br_players", "br_pool", "br_round", "br_candidates", "br_zero_order", "world_boss_hp", "world_boss_attempts", "world_boss_party", "world_boss_transfer", "world_boss_announcement", "instance_boss_phase", "instance_boss_conditions", "instance_boss_stars", "instance_boss_party", "instance_boss_transfer", "mode_action_log"]):
+	if not _rows_have_ids(game_mode_rows, ["cert_rating", "cert_rank", "cert_top30", "cert_stage", "br_players", "br_pool", "br_round", "br_candidates", "br_zero_order", "world_boss_hp", "world_boss_attempts", "world_boss_party", "world_boss_transfer", "world_boss_result", "world_boss_announcement", "instance_boss_phase", "instance_boss_conditions", "instance_boss_stars", "instance_boss_party", "instance_boss_transfer", "instance_boss_result", "mode_action_log"]):
 		push_error("Smoke test failed: game mode rows incomplete")
 		quit(1)
 		return true

@@ -424,6 +424,9 @@ func apply_world_boss_result(result: Dictionary) -> bool:
 	world_boss_state["daily_attempts_left"] = max(0, int(result.get("daily_attempts_left", world_boss_state.get("daily_attempts_left", 0))))
 	world_boss_state["defeated_by_match_id"] = str(result.get("defeated_by_match_id", world_boss_state.get("defeated_by_match_id", "")))
 	world_boss_state["defeated_by_user_id"] = str(result.get("defeated_by_user_id", world_boss_state.get("defeated_by_user_id", "")))
+	world_boss_state["last_result_match_id"] = str(result.get("match_id", world_boss_state.get("last_result_match_id", "")))
+	world_boss_state["last_result_status"] = str(result.get("settlement_status", "defeated" if float(world_boss_state.get("current_hp", 0.0)) <= 0.0 else "applied"))
+	world_boss_state["last_result_source"] = "server_settlement_projection"
 	world_boss_state["server_authoritative"] = bool(result.get("server_authority", result.get("server_authoritative", true)))
 	if bool(result.get("world_announcement_emitted", false)):
 		world_boss_state["world_announcement"] = str(result.get("world_announcement", "world_boss_defeated"))
@@ -452,6 +455,12 @@ func apply_instance_boss_result(result: Dictionary) -> bool:
 	instance_boss_state["current_hp"] = max(0.0, float(result.get("boss_hp_after", instance_boss_state.get("current_hp", 0.0))))
 	instance_boss_state["clear_time_seconds"] = int(result.get("clear_time_seconds", 0))
 	instance_boss_state["deaths"] = int(result.get("deaths", 0))
+	instance_boss_state["survivor_required"] = bool(result.get("survivor_required", true))
+	instance_boss_state["bombs_used"] = int(result.get("bombs_used", instance_boss_state.get("bombs_used", 0)))
+	instance_boss_state["bomb_limit"] = int(result.get("bomb_limit", instance_boss_state.get("bomb_limit", 0)))
+	instance_boss_state["last_result_match_id"] = str(result.get("match_id", instance_boss_state.get("last_result_match_id", "")))
+	instance_boss_state["last_result_status"] = str(result.get("settlement_status", "cleared" if cleared else "failed"))
+	instance_boss_state["last_result_source"] = "server_settlement_projection"
 	instance_boss_state["stars"] = _calculate_instance_stars(result, cleared)
 	instance_boss_state["server_authoritative"] = bool(result.get("server_authority", result.get("server_authoritative", true)))
 	last_action_status = "instance_boss_result"
@@ -492,6 +501,7 @@ func _world_boss_rows() -> Array[Dictionary]:
 		_boss_party_row("world_boss_party", MODE_WORLD_BOSS, world_boss_state),
 		_boss_formation_row("world_boss_formation", MODE_WORLD_BOSS, world_boss_state),
 		_boss_transfer_row("world_boss_transfer", MODE_WORLD_BOSS, world_boss_state),
+		_world_boss_result_row(),
 		{"id": "world_boss_announcement", "label_key": "screen.mode.boss.announcement", "value": str(world_boss_state.get("world_announcement", "")), "mode_category": "boss", "server_authoritative": bool(world_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": not str(world_boss_state.get("defeated_at", "")).is_empty()},
 	]
 
@@ -504,6 +514,7 @@ func _instance_boss_rows() -> Array[Dictionary]:
 		_boss_party_row("instance_boss_party", MODE_INSTANCE_BOSS, instance_boss_state),
 		_boss_formation_row("instance_boss_formation", MODE_INSTANCE_BOSS, instance_boss_state),
 		_boss_transfer_row("instance_boss_transfer", MODE_INSTANCE_BOSS, instance_boss_state),
+		_instance_boss_result_row(),
 	]
 
 func _default_boss_state(is_world: bool) -> Dictionary:
@@ -524,12 +535,23 @@ func _default_boss_state(is_world: bool) -> Dictionary:
 		"aim_policy": "toward_center",
 		"transfer_requests": [],
 		"transferred_card_ids": [],
+		"damage_this_match": 0,
+		"global_damage_applied": 0,
 		"defeated_at": "",
 		"world_announcement": "",
 		"boss_phase": "phase_1",
 		"clear_conditions": ["boss_hp_zero", "survivor_required", "no_failed_mechanic"],
 		"cleared": false,
 		"stars": 0,
+		"survivors": 0,
+		"failed_mechanic": false,
+		"clear_time_seconds": 0,
+		"deaths": 0,
+		"bombs_used": 0,
+		"bomb_limit": 0,
+		"last_result_match_id": "",
+		"last_result_status": "pending",
+		"last_result_source": "",
 		"server_authoritative": false,
 		"client_result_authoritative": false,
 	}
@@ -672,6 +694,58 @@ func _boss_transfer_row(row_id: String, mode_id: String, state: Dictionary) -> D
 		"local_validation": "party_members_only",
 		"last_error_code": last_error_code if last_action_status == "failed" else "none",
 		"enabled": true,
+	}
+
+func _world_boss_result_row() -> Dictionary:
+	return {
+		"id": "world_boss_result",
+		"label_key": "screen.mode.boss.result",
+		"value": "damage %d applied %d hp %.0f attempts %d" % [
+			int(world_boss_state.get("damage_this_match", 0)),
+			int(world_boss_state.get("global_damage_applied", 0)),
+			float(world_boss_state.get("current_hp", 0.0)),
+			int(world_boss_state.get("daily_attempts_left", 0)),
+		],
+		"mode_id": MODE_WORLD_BOSS,
+		"mode_category": "boss",
+		"persistent_hp": true,
+		"damage_this_match": int(world_boss_state.get("damage_this_match", 0)),
+		"global_damage_applied": int(world_boss_state.get("global_damage_applied", 0)),
+		"daily_attempts_left": int(world_boss_state.get("daily_attempts_left", 0)),
+		"defeated_at": str(world_boss_state.get("defeated_at", "")),
+		"world_announcement": str(world_boss_state.get("world_announcement", "")),
+		"result_status": str(world_boss_state.get("last_result_status", "pending")),
+		"result_source": str(world_boss_state.get("last_result_source", "")),
+		"server_authoritative": bool(world_boss_state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+		"enabled": bool(world_boss_state.get("server_authoritative", false)),
+	}
+
+func _instance_boss_result_row() -> Dictionary:
+	return {
+		"id": "instance_boss_result",
+		"label_key": "screen.mode.instance.result",
+		"value": "%s stars %d time %ds deaths %d" % [
+			str(instance_boss_state.get("last_result_status", "pending")),
+			int(instance_boss_state.get("stars", 0)),
+			int(instance_boss_state.get("clear_time_seconds", 0)),
+			int(instance_boss_state.get("deaths", 0)),
+		],
+		"mode_id": MODE_INSTANCE_BOSS,
+		"mode_category": "boss",
+		"persistent_hp": false,
+		"cleared": bool(instance_boss_state.get("cleared", false)),
+		"boss_defeated": bool(instance_boss_state.get("boss_defeated", false)),
+		"survivors": int(instance_boss_state.get("survivors", 0)),
+		"failed_mechanic": bool(instance_boss_state.get("failed_mechanic", false)),
+		"clear_time_seconds": int(instance_boss_state.get("clear_time_seconds", 0)),
+		"deaths": int(instance_boss_state.get("deaths", 0)),
+		"stars": int(instance_boss_state.get("stars", 0)),
+		"result_status": str(instance_boss_state.get("last_result_status", "pending")),
+		"result_source": str(instance_boss_state.get("last_result_source", "")),
+		"server_authoritative": bool(instance_boss_state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+		"enabled": bool(instance_boss_state.get("server_authoritative", false)),
 	}
 
 func _calculate_instance_stars(result: Dictionary, cleared: bool) -> int:
