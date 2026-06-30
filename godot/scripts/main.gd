@@ -1036,8 +1036,11 @@ func _build_replay_snapshot() -> Dictionary:
 	var spellbook_status: Dictionary = _boss_spellbook_run_status() if boss_spellbook_run_enabled else {}
 	var phase_id := String(spellbook_status.get("phase_id", ""))
 	var phase_preview: Dictionary = {}
+	var phase_export: Dictionary = {}
 	if boss_spellbook_run_enabled and boss_spellbook_model != null and boss_spellbook_model.has_method("deterministic_phase_preview") and not phase_id.is_empty():
 		phase_preview = boss_spellbook_model.deterministic_phase_preview(boss_spellbook_id, phase_id, practice_seed)
+	if boss_spellbook_run_enabled and boss_spellbook_model != null and boss_spellbook_model.has_method("phase_export_data"):
+		phase_export = boss_spellbook_model.phase_export_data(boss_spellbook_id, practice_seed)
 	snapshot["deck_snapshot"] = deck_builder.active_deck_snapshot() if deck_builder != null else {}
 	snapshot["practice_config"] = {
 		"start_tick": practice_start_tick,
@@ -1049,6 +1052,8 @@ func _build_replay_snapshot() -> Dictionary:
 		"spellbook_id": boss_spellbook_id if boss_spellbook_run_enabled else "",
 		"phase_id": phase_id,
 		"preview_export_id": String(phase_preview.get("export_id", "")),
+		"preview_bundle_id": String(phase_export.get("preview_bundle_id", "")),
+		"preview_bundle_signature_digest": int(phase_export.get("preview_bundle_signature_digest", 0)),
 	}
 	snapshot["metadata"] = {
 		"saved_at": Time.get_datetime_string_from_system(true, true),
@@ -1062,8 +1067,32 @@ func _build_replay_snapshot() -> Dictionary:
 		"catalog_id": "boss_spellbook" if boss_spellbook_run_enabled else "stage_pattern",
 		"spellbook_id": boss_spellbook_id if boss_spellbook_run_enabled else "",
 		"phase_id": phase_id,
+		"preview_export_schema_version": int(phase_preview.get("export_schema_version", 0)),
 		"preview_export_id": String(phase_preview.get("export_id", "")),
+		"preview_fixture_id": String(phase_preview.get("preview_fixture_id", "")),
+		"preview_authority_scope": String(phase_preview.get("preview_authority_scope", "")),
+		"preview_seed": int(phase_preview.get("seed", 0)),
 		"preview_signature": String(phase_preview.get("signature", "")),
+		"preview_signature_digest": int(phase_preview.get("signature_digest", 0)),
+		"preview_sample_ticks": phase_preview.get("sample_ticks", []),
+		"preview_sample_window_start_tick": int(phase_preview.get("sample_window_start_tick", 0)),
+		"preview_sample_window_end_tick": int(phase_preview.get("sample_window_end_tick", 0)),
+		"preview_sample_window_stride_ticks": int(phase_preview.get("sample_window_stride_ticks", 0)),
+		"preview_sample_signature_digests": phase_preview.get("sample_signature_digests", []),
+		"preview_sample_emit_counts": phase_preview.get("sample_emit_counts", []),
+		"preview_sample_count": (phase_preview.get("samples", []) as Array).size() if typeof(phase_preview.get("samples", [])) == TYPE_ARRAY else 0,
+		"preview_max_emit_per_tick": int(phase_preview.get("max_emit_per_tick", 0)),
+		"preview_bullet_cap_per_tick": int(phase_preview.get("bullet_cap_per_tick", 0)),
+		"preview_budget_headroom": int(phase_preview.get("budget_headroom", 0)),
+		"performance_budget_status": String(phase_preview.get("performance_budget_status", "")),
+		"preview_bundle_id": String(phase_export.get("preview_bundle_id", "")),
+		"preview_bundle_signature_digest": int(phase_export.get("preview_bundle_signature_digest", 0)),
+		"preview_phase_count": int(phase_export.get("preview_phase_count", 0)),
+		"preview_phase_ids": phase_export.get("preview_phase_ids", []),
+		"preview_phase_signature_digests": phase_export.get("preview_phase_signature_digests", []),
+		"preview_bundle_max_emit_per_tick": int(phase_export.get("max_preview_emit_per_tick", 0)),
+		"preview_bundle_min_budget_headroom": int(phase_export.get("min_preview_budget_headroom", 0)),
+		"preview_bundle_budget_status": String(phase_export.get("performance_budget_status", "")),
 		"mode": "boss_spellbook_practice" if boss_spellbook_run_enabled else "local_practice",
 		"result": "practice",
 	}
