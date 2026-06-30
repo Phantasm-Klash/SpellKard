@@ -1555,6 +1555,7 @@ func _boss_pending_transfer_count(requests: Array) -> int:
 	return count
 
 func _world_boss_result_row() -> Dictionary:
+	var receipt_projection := boss_settlement_receipt_projection(MODE_WORLD_BOSS)
 	return {
 		"id": "world_boss_result",
 		"label_key": "screen.mode.boss.result",
@@ -1582,6 +1583,9 @@ func _world_boss_result_row() -> Dictionary:
 		"result_server_time": str(world_boss_state.get("last_result_server_time", "")),
 		"result_key_id": str(world_boss_state.get("last_result_key_id", "")),
 		"receipt_source": str(world_boss_state.get("last_result_receipt_source", "")),
+		"receipt_status": String(receipt_projection.get("receipt_status", "")),
+		"settlement_receipt": receipt_projection.get("settlement_receipt", {}),
+		"settlement_receipt_projection": receipt_projection,
 		"damage_authority": "server",
 		"reward_authority": "server",
 		"settlement_authority": "server",
@@ -1593,6 +1597,7 @@ func _world_boss_result_row() -> Dictionary:
 
 func _instance_boss_result_row() -> Dictionary:
 	var star_conditions := _instance_boss_star_conditions(instance_boss_state)
+	var receipt_projection := boss_settlement_receipt_projection(MODE_INSTANCE_BOSS)
 	var met_conditions := 0
 	for condition in star_conditions:
 		if typeof(condition) == TYPE_DICTIONARY and bool((condition as Dictionary).get("met", false)):
@@ -1631,6 +1636,9 @@ func _instance_boss_result_row() -> Dictionary:
 		"result_server_time": str(instance_boss_state.get("last_result_server_time", "")),
 		"result_key_id": str(instance_boss_state.get("last_result_key_id", "")),
 		"receipt_source": str(instance_boss_state.get("last_result_receipt_source", "")),
+		"receipt_status": String(receipt_projection.get("receipt_status", "")),
+		"settlement_receipt": receipt_projection.get("settlement_receipt", {}),
+		"settlement_receipt_projection": receipt_projection,
 		"damage_authority": "server",
 		"reward_authority": "server",
 		"settlement_authority": "server",
@@ -1692,14 +1700,72 @@ func _instance_boss_star_conditions(state: Dictionary) -> Array[Dictionary]:
 		},
 	]
 
+func boss_settlement_receipt_projection(mode_id: String) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"receipt_status": "invalid",
+			"settlement_authority": "server",
+			"reward_authority": "server",
+			"damage_authority": "server",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var state := _state_for_mode(mode_id)
+	var receipt_id := str(state.get("last_result_receipt_id", "")).strip_edges()
+	var result_hash := str(state.get("last_result_hash", "")).strip_edges()
+	var replay_id := str(state.get("last_result_replay_id", "")).strip_edges()
+	var server_time := str(state.get("last_result_server_time", "")).strip_edges()
+	var key_id := str(state.get("last_result_key_id", "")).strip_edges()
+	var receipt_source := str(state.get("last_result_receipt_source", "")).strip_edges()
+	var has_receipt := not receipt_id.is_empty() or not result_hash.is_empty() or not server_time.is_empty()
+	var receipt := {
+		"receipt_id": receipt_id,
+		"result_hash": result_hash,
+		"replay_id": replay_id,
+		"server_time": server_time,
+		"key_id": key_id,
+		"source": receipt_source,
+	}
+	return {
+		"ok": has_receipt,
+		"reason": "none" if has_receipt else "pending_server_receipt",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"receipt_status": "server_receipt_ready" if has_receipt else "pending_server_receipt",
+		"result_status": str(state.get("last_result_status", "pending")),
+		"result_source": str(state.get("last_result_source", "")),
+		"settlement_receipt": receipt,
+		"result_receipt_id": receipt_id,
+		"result_hash": result_hash,
+		"result_replay_id": replay_id,
+		"result_server_time": server_time,
+		"result_key_id": key_id,
+		"receipt_source": receipt_source,
+		"persistent_hp": mode_id == MODE_WORLD_BOSS,
+		"projection_scope": "server_settlement_receipt_projection",
+		"settlement_authority": "server",
+		"reward_authority": "server",
+		"damage_authority": "server",
+		"requires_server_confirmation": true,
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
 func _apply_boss_settlement_receipt(state: Dictionary, result: Dictionary) -> void:
-	var receipt_id := str(result.get("settlement_key", result.get("receipt_id", result.get("settlement_receipt_id", "")))).strip_edges()
+	var receipt: Dictionary = {}
+	if typeof(result.get("settlement_receipt", {})) == TYPE_DICTIONARY:
+		receipt = result.get("settlement_receipt", {})
+	var receipt_id := str(result.get("settlement_key", result.get("receipt_id", result.get("settlement_receipt_id", receipt.get("receipt_id", ""))))).strip_edges()
 	if receipt_id.is_empty():
 		receipt_id = str(result.get("match_id", state.get("last_result_match_id", ""))).strip_edges()
-	var result_hash := str(result.get("result_hash", result.get("state_hash", ""))).strip_edges()
-	var replay_id := str(result.get("replay_id", "")).strip_edges()
-	var server_time := str(result.get("server_time", result.get("settled_at", ""))).strip_edges()
-	var key_id := str(result.get("key_id", result.get("battle_key_id", ""))).strip_edges()
+	var result_hash := str(result.get("result_hash", result.get("state_hash", receipt.get("result_hash", receipt.get("state_hash", ""))))).strip_edges()
+	var replay_id := str(result.get("replay_id", receipt.get("replay_id", ""))).strip_edges()
+	var server_time := str(result.get("server_time", result.get("settled_at", receipt.get("server_time", receipt.get("settled_at", ""))))).strip_edges()
+	var key_id := str(result.get("key_id", result.get("battle_key_id", receipt.get("key_id", receipt.get("battle_key_id", ""))))).strip_edges()
 	state["last_result_receipt_id"] = receipt_id
 	state["last_result_hash"] = result_hash
 	state["last_result_replay_id"] = replay_id

@@ -6080,6 +6080,9 @@ func _ui_detail_text(row: Dictionary) -> String:
 func _boss_action_context_text(row: Dictionary) -> String:
 	if row.is_empty() or String(row.get("mode_category", "")) != "boss":
 		return ""
+	var receipt_context := _boss_settlement_receipt_context_text(row)
+	if not receipt_context.is_empty():
+		return receipt_context
 	var status := String(row.get("action_status", ""))
 	if status.is_empty() and typeof(row.get("action_availability", {})) == TYPE_DICTIONARY:
 		var action_availability: Dictionary = row.get("action_availability", {})
@@ -6100,6 +6103,30 @@ func _boss_action_context_text(row: Dictionary) -> String:
 	if not blockers.is_empty():
 		parts.append("blocked %s" % ",".join(blockers))
 	return "boss action %s" % " ".join(parts)
+
+func _boss_settlement_receipt_context_text(row: Dictionary) -> String:
+	var receipt_projection: Dictionary = {}
+	if typeof(row.get("settlement_receipt_projection", {})) == TYPE_DICTIONARY:
+		receipt_projection = row.get("settlement_receipt_projection", {})
+	var receipt: Dictionary = {}
+	if typeof(row.get("settlement_receipt", {})) == TYPE_DICTIONARY:
+		receipt = row.get("settlement_receipt", {})
+	elif typeof(receipt_projection.get("settlement_receipt", {})) == TYPE_DICTIONARY:
+		receipt = receipt_projection.get("settlement_receipt", {})
+	var receipt_status := String(row.get("receipt_status", receipt_projection.get("receipt_status", "")))
+	var receipt_id := String(row.get("result_receipt_id", receipt_projection.get("result_receipt_id", receipt.get("receipt_id", "")))).strip_edges()
+	var result_hash := String(row.get("result_hash", receipt_projection.get("result_hash", receipt.get("result_hash", "")))).strip_edges()
+	if receipt_status.is_empty() and receipt_id.is_empty() and result_hash.is_empty():
+		return ""
+	var result_status := String(row.get("result_status", receipt_projection.get("result_status", "pending")))
+	var parts: Array[String] = [receipt_status if not receipt_status.is_empty() else "pending_server_receipt"]
+	if not receipt_id.is_empty():
+		parts.append("id %s" % receipt_id)
+	if not result_hash.is_empty():
+		parts.append("hash %s" % result_hash)
+	if not result_status.is_empty():
+		parts.append("result %s" % result_status)
+	return "boss server receipt %s" % " ".join(parts)
 
 func _ui_hint_text(screen_id: String, row: Dictionary, rows: Array[Dictionary]) -> String:
 	var action_hint: String = localization.text_for("ui.menu_hint_apply")

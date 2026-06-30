@@ -170,11 +170,81 @@ func _validate_play_pages() -> bool:
 	snapshot = main_node.call("_ui_overlay_snapshot")
 	if not String(snapshot.get("control_preview", "")).contains("blocked_local") or not String(snapshot.get("detail", "")).contains("entry_locked"):
 		return _fail("locked instance boss entry should expose local blocker context %s" % [snapshot])
+	if not await _validate_boss_settlement_receipts():
+		return false
 	snapshot = await _open_snapshot("network_match")
 	if not _assert_page_health(snapshot, "network_match", 2, 4):
 		return false
 	if not _contains_all(String(snapshot.get("overview_cards_text", "")), ["Gensoulkyo", "create room"]):
 		return _fail("network match overview cards invalid %s" % String(snapshot.get("overview_cards_text", "")))
+	return true
+
+func _validate_boss_settlement_receipts() -> bool:
+	stage = "boss_settlement_receipts"
+	if not main_node.call("_apply_world_boss_result", {
+		"match_id": "world_match_ui",
+		"boss_instance_id": "world_boss_0",
+		"boss_hp_after_global": 87500,
+		"boss_hp_global_max": 100000,
+		"damage_this_match": 12500,
+		"global_damage_applied": 12500,
+		"daily_attempts_left": 2,
+		"settlement_status": "applied",
+		"settlement_receipt": {
+			"receipt_id": "world_receipt_ui",
+			"result_hash": "world_hash_ui",
+			"replay_id": "world_replay_ui",
+			"server_time": "2026-06-30T00:00:00Z",
+			"key_id": "boss_result_key",
+		},
+		"server_authoritative": true,
+	}):
+		return _fail("world boss server result application failed")
+	if not main_node.call("_apply_instance_boss_result", {
+		"match_id": "instance_match_ui",
+		"boss_defeated": true,
+		"instance_cleared": true,
+		"survivors": 4,
+		"failed_mechanic": false,
+		"boss_hp_after": 0,
+		"clear_time_seconds": 142,
+		"three_star_time_seconds": 180,
+		"deaths": 0,
+		"bombs_used": 1,
+		"bomb_limit": 3,
+		"settlement_status": "cleared",
+		"settlement_receipt": {
+			"receipt_id": "instance_receipt_ui",
+			"result_hash": "instance_hash_ui",
+			"replay_id": "instance_replay_ui",
+			"server_time": "2026-06-30T00:01:00Z",
+			"key_id": "boss_result_key",
+		},
+		"server_authoritative": true,
+	}):
+		return _fail("instance boss server result application failed")
+	var snapshot: Dictionary = await _open_snapshot("modes")
+	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 64)
+	if not _assert_boss_result_receipt_row(_row_by_id(rows, "world_boss_result"), "world_boss", "world_receipt_ui", "world_hash_ui"):
+		return false
+	if not _assert_boss_result_receipt_row(_row_by_id(rows, "instance_boss_result"), "instance_boss", "instance_receipt_ui", "instance_hash_ui"):
+		return false
+	var world_result_index := _row_index_by_id(rows, "world_boss_result")
+	if world_result_index < 0:
+		return _fail("modes page missing world boss result row")
+	main_node.call("_ui_set_cursor", world_result_index)
+	await _settle_frames(2)
+	snapshot = main_node.call("_ui_overlay_snapshot")
+	if not String(snapshot.get("detail", "")).contains("boss server receipt") or not String(snapshot.get("detail", "")).contains("world_receipt_ui"):
+		return _fail("world boss result detail missing server receipt context %s" % [snapshot])
+	var instance_result_index := _row_index_by_id(rows, "instance_boss_result")
+	if instance_result_index < 0:
+		return _fail("modes page missing instance boss result row")
+	main_node.call("_ui_set_cursor", instance_result_index)
+	await _settle_frames(2)
+	snapshot = main_node.call("_ui_overlay_snapshot")
+	if not String(snapshot.get("control_preview", "")).contains("server_receipt_ready") or not String(snapshot.get("detail", "")).contains("instance_receipt_ui"):
+		return _fail("instance boss result detail missing server receipt context %s" % [snapshot])
 	return true
 
 func _validate_result_reward_loop() -> bool:
@@ -743,6 +813,33 @@ func _assert_boss_status_row(row: Dictionary, mode_id: String) -> bool:
 		return _fail("boss status row missing slot layout policy %s" % [row])
 	if typeof(row.get("slot_labels", [])) != TYPE_ARRAY:
 		return _fail("boss status row missing slot labels %s" % [row])
+	return true
+
+func _assert_boss_result_receipt_row(row: Dictionary, mode_id: String, expected_receipt_id: String, expected_hash: String) -> bool:
+	if row.is_empty():
+		return _fail("boss result row missing for %s" % mode_id)
+	if String(row.get("mode_id", "")) != mode_id:
+		return _fail("boss result mode mismatch %s row=%s" % [mode_id, row])
+	if String(row.get("mode_category", "")) != "boss":
+		return _fail("boss result row missing boss category %s" % [row])
+	if bool(row.get("client_result_authoritative", true)):
+		return _fail("boss result row must not be client authoritative %s" % [row])
+	if String(row.get("damage_authority", "")) != "server" or String(row.get("reward_authority", "")) != "server" or String(row.get("settlement_authority", "")) != "server":
+		return _fail("boss result row must keep server damage/reward/settlement authority %s" % [row])
+	if String(row.get("receipt_status", "")) != "server_receipt_ready":
+		return _fail("boss result row missing ready receipt status %s" % [row])
+	if String(row.get("result_receipt_id", "")) != expected_receipt_id or String(row.get("result_hash", "")) != expected_hash:
+		return _fail("boss result row receipt mismatch %s" % [row])
+	if typeof(row.get("settlement_receipt_projection", {})) != TYPE_DICTIONARY:
+		return _fail("boss result row missing receipt projection %s" % [row])
+	var projection: Dictionary = row.get("settlement_receipt_projection", {})
+	if String(projection.get("projection_scope", "")) != "server_settlement_receipt_projection":
+		return _fail("boss result projection scope mismatch %s" % [projection])
+	if bool(projection.get("client_result_authoritative", true)):
+		return _fail("boss result projection must not be client authoritative %s" % [projection])
+	var receipt: Dictionary = projection.get("settlement_receipt", {})
+	if String(receipt.get("receipt_id", "")) != expected_receipt_id or String(receipt.get("result_hash", "")) != expected_hash:
+		return _fail("boss result projection receipt mismatch %s" % [projection])
 	return true
 
 func _assert_page_authority_contract(snapshot: Dictionary, label: String, expected_scope: String, expected_text: String) -> bool:
