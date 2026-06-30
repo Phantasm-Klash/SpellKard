@@ -158,6 +158,9 @@ func _validate_play_pages() -> bool:
 		return false
 	if not _assert_boss_practice_preview_row(_row_by_id(rows, "instance_boss_practice_preview"), "instance_boss"):
 		return false
+	var modes_overview_text := String(snapshot.get("overview_cards_text", ""))
+	if not modes_overview_text.contains(_text("screen.settings.boss_spellbook")) or not modes_overview_text.contains("phases") or not modes_overview_text.contains("digest"):
+		return _fail("modes overview cards missing boss practice preview card metrics %s" % modes_overview_text)
 	var world_entry_index := _row_index_by_id(rows, "world_boss_entry")
 	if world_entry_index < 0:
 		return _fail("modes page missing world boss entry row")

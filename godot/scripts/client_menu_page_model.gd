@@ -631,7 +631,10 @@ func page_spec(screen_id: String, overrides: Dictionary = {}) -> Dictionary:
 	spec["scene_family"] = String(scene_contract.get("family", ""))
 	spec["required_bindings"] = _string_array(scene_contract.get("required_bindings", []))
 	spec["render_slots"] = _string_array(scene_contract.get("render_slots", []))
-	spec["overview_priority_ids"] = _string_array(spec.get("primary_row_ids", []))
+	if _string_array(spec.get("overview_priority_ids", [])).is_empty():
+		spec["overview_priority_ids"] = _string_array(spec.get("primary_row_ids", []))
+	else:
+		spec["overview_priority_ids"] = _string_array(spec.get("overview_priority_ids", []))
 	spec["state_regions"] = _string_array(spec.get("state_regions", []))
 	spec["status_region_ids"] = _string_array(spec.get("status_region_ids", []))
 	spec["layout_slots"] = _string_array(spec.get("layout_slots", []))
