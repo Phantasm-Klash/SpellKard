@@ -1102,6 +1102,8 @@ func apply_world_boss_result(result: Dictionary) -> bool:
 	if bool(result.get("client_result_authoritative", false)):
 		last_action_status = "failed"
 		last_error_code = "client_authoritative_world_boss_result"
+		world_boss_state["last_result_rejected_reason"] = last_error_code
+		world_boss_state["last_result_rejected_client_authoritative"] = true
 		return false
 	world_boss_state["boss_instance_id"] = str(result.get("boss_instance_id", world_boss_state.get("boss_instance_id", "")))
 	var hp_after: Variant = result.get("boss_hp_after_global", result.get("current_hp", world_boss_state.get("current_hp", 0.0)))
@@ -1115,6 +1117,8 @@ func apply_world_boss_result(result: Dictionary) -> bool:
 	world_boss_state["last_result_match_id"] = str(result.get("match_id", world_boss_state.get("last_result_match_id", "")))
 	world_boss_state["last_result_status"] = str(result.get("settlement_status", "defeated" if float(world_boss_state.get("current_hp", 0.0)) <= 0.0 else "applied"))
 	world_boss_state["last_result_source"] = "server_settlement_projection"
+	world_boss_state["last_result_rejected_reason"] = ""
+	world_boss_state["last_result_rejected_client_authoritative"] = false
 	world_boss_state["server_authoritative"] = bool(result.get("server_authority", result.get("server_authoritative", true)))
 	_apply_boss_settlement_receipt(world_boss_state, result)
 	var defeated_at_from_server := str(result.get("defeated_at", "")).strip_edges()
@@ -1131,6 +1135,8 @@ func apply_instance_boss_result(result: Dictionary) -> bool:
 	if bool(result.get("client_result_authoritative", false)):
 		last_action_status = "failed"
 		last_error_code = "client_authoritative_instance_boss_result"
+		instance_boss_state["last_result_rejected_reason"] = last_error_code
+		instance_boss_state["last_result_rejected_client_authoritative"] = true
 		return false
 	var boss_defeated := bool(result.get("boss_defeated", result.get("instance_cleared", false)))
 	var survivors := int(result.get("survivors", 0))
@@ -1153,6 +1159,8 @@ func apply_instance_boss_result(result: Dictionary) -> bool:
 	instance_boss_state["last_result_match_id"] = str(result.get("match_id", instance_boss_state.get("last_result_match_id", "")))
 	instance_boss_state["last_result_status"] = str(result.get("settlement_status", "cleared" if cleared else "failed"))
 	instance_boss_state["last_result_source"] = "server_settlement_projection"
+	instance_boss_state["last_result_rejected_reason"] = ""
+	instance_boss_state["last_result_rejected_client_authoritative"] = false
 	instance_boss_state["stars"] = _calculate_instance_stars(result, cleared)
 	instance_boss_state["server_authoritative"] = bool(result.get("server_authority", result.get("server_authoritative", true)))
 	_apply_boss_settlement_receipt(instance_boss_state, result)
@@ -1280,6 +1288,8 @@ func _default_boss_state(is_world: bool) -> Dictionary:
 		"last_result_server_time": "",
 		"last_result_key_id": "",
 		"last_result_receipt_source": "",
+		"last_result_rejected_reason": "",
+		"last_result_rejected_client_authoritative": false,
 		"server_authoritative": false,
 		"client_result_authoritative": false,
 	}
@@ -1747,6 +1757,9 @@ func _world_boss_result_row() -> Dictionary:
 		"receipt_status": String(receipt_projection.get("receipt_status", "")),
 		"settlement_receipt": receipt_projection.get("settlement_receipt", {}),
 		"settlement_receipt_projection": receipt_projection,
+		"result_rejected": bool(world_boss_state.get("last_result_rejected_client_authoritative", false)),
+		"result_rejected_reason": str(world_boss_state.get("last_result_rejected_reason", "")),
+		"result_rejection_authority": "client_rejected_server_required" if bool(world_boss_state.get("last_result_rejected_client_authoritative", false)) else "none",
 		"damage_authority": "server",
 		"reward_authority": "server",
 		"settlement_authority": "server",
@@ -1802,6 +1815,9 @@ func _instance_boss_result_row() -> Dictionary:
 		"receipt_status": String(receipt_projection.get("receipt_status", "")),
 		"settlement_receipt": receipt_projection.get("settlement_receipt", {}),
 		"settlement_receipt_projection": receipt_projection,
+		"result_rejected": bool(instance_boss_state.get("last_result_rejected_client_authoritative", false)),
+		"result_rejected_reason": str(instance_boss_state.get("last_result_rejected_reason", "")),
+		"result_rejection_authority": "client_rejected_server_required" if bool(instance_boss_state.get("last_result_rejected_client_authoritative", false)) else "none",
 		"damage_authority": "server",
 		"reward_authority": "server",
 		"settlement_authority": "server",
@@ -1909,6 +1925,9 @@ func boss_settlement_receipt_projection(mode_id: String) -> Dictionary:
 		"result_server_time": server_time,
 		"result_key_id": key_id,
 		"receipt_source": receipt_source,
+		"result_rejected": bool(state.get("last_result_rejected_client_authoritative", false)),
+		"result_rejected_reason": str(state.get("last_result_rejected_reason", "")),
+		"result_rejection_authority": "client_rejected_server_required" if bool(state.get("last_result_rejected_client_authoritative", false)) else "none",
 		"persistent_hp": mode_id == MODE_WORLD_BOSS,
 		"projection_scope": "server_settlement_receipt_projection",
 		"settlement_authority": "server",

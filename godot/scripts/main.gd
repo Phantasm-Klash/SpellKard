@@ -6122,12 +6122,12 @@ func _ui_detail_text(row: Dictionary) -> String:
 	var control_text := _row_control_text(row)
 	if not control_text.is_empty():
 		detail_parts.append(localization.text_for("ui.menu_detail_control", {"control": control_text}))
-	var control_state := _row_control_state_text(row)
-	if not control_state.is_empty():
-		detail_parts.append(localization.text_for("ui.menu_detail_control_state", {"state": control_state}))
 	var boss_action_context := _boss_action_context_text(row)
 	if not boss_action_context.is_empty():
 		detail_parts.append(boss_action_context)
+	var control_state := _row_control_state_text(row)
+	if not control_state.is_empty():
+		detail_parts.append(localization.text_for("ui.menu_detail_control_state", {"state": control_state}))
 	if row.has("summary"):
 		detail_parts.append(str(row.get("summary", "")))
 	if row.has("value"):
@@ -6184,7 +6184,9 @@ func _boss_settlement_receipt_context_text(row: Dictionary) -> String:
 	var receipt_status := String(row.get("receipt_status", receipt_projection.get("receipt_status", "")))
 	var receipt_id := String(row.get("result_receipt_id", receipt_projection.get("result_receipt_id", receipt.get("receipt_id", "")))).strip_edges()
 	var result_hash := String(row.get("result_hash", receipt_projection.get("result_hash", receipt.get("result_hash", "")))).strip_edges()
-	if receipt_status.is_empty() and receipt_id.is_empty() and result_hash.is_empty():
+	var rejected_reason := String(row.get("result_rejected_reason", receipt_projection.get("result_rejected_reason", ""))).strip_edges()
+	var result_rejected := bool(row.get("result_rejected", receipt_projection.get("result_rejected", false))) or not rejected_reason.is_empty()
+	if receipt_status.is_empty() and receipt_id.is_empty() and result_hash.is_empty() and not result_rejected:
 		return ""
 	var result_status := String(row.get("result_status", receipt_projection.get("result_status", "pending")))
 	var parts: Array[String] = [receipt_status if not receipt_status.is_empty() else "pending_server_receipt"]
@@ -6194,7 +6196,10 @@ func _boss_settlement_receipt_context_text(row: Dictionary) -> String:
 		parts.append("hash %s" % result_hash)
 	if not result_status.is_empty():
 		parts.append("result %s" % result_status)
-	return "boss server receipt %s" % " ".join(parts)
+	var receipt_context := "boss server receipt %s" % " ".join(parts)
+	if result_rejected:
+		return "rejected %s | %s" % [rejected_reason if not rejected_reason.is_empty() else "server_required", receipt_context]
+	return receipt_context
 
 func _ui_hint_text(screen_id: String, row: Dictionary, rows: Array[Dictionary]) -> String:
 	var action_hint: String = localization.text_for("ui.menu_hint_apply")

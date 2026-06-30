@@ -2150,6 +2150,10 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: rejected world boss result row became authoritative %s" % [rejected_world_result_row])
 		quit(1)
 		return true
+	if not bool(rejected_world_result_row.get("result_rejected", false)) or String(rejected_world_result_row.get("result_rejected_reason", "")) != "client_authoritative_world_boss_result" or String(rejected_world_result_row.get("result_rejection_authority", "")) != "client_rejected_server_required":
+		push_error("Smoke test failed: rejected world boss result reason missing %s" % [rejected_world_result_row])
+		quit(1)
+		return true
 	if not _validate_boss_result_authority_row(rejected_world_result_row, "world_boss", false):
 		quit(1)
 		return true
@@ -2198,6 +2202,10 @@ func _process(_delta: float) -> bool:
 	var world_result_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "world_boss_result")
 	if not bool(world_result_row.get("enabled", false)) or not bool(world_result_row.get("server_authoritative", false)) or bool(world_result_row.get("client_result_authoritative", true)) or String(world_result_row.get("result_source", "")) != "server_settlement_projection":
 		push_error("Smoke test failed: world boss result row authority invalid %s" % [world_result_row])
+		quit(1)
+		return true
+	if bool(world_result_row.get("result_rejected", true)) or not String(world_result_row.get("result_rejected_reason", "")).is_empty():
+		push_error("Smoke test failed: server world boss result did not clear rejection state %s" % [world_result_row])
 		quit(1)
 		return true
 	if not _validate_boss_result_authority_row(world_result_row, "world_boss", true):
@@ -2354,6 +2362,10 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: rejected instance boss result row became authoritative %s" % [rejected_instance_result_row])
 		quit(1)
 		return true
+	if not bool(rejected_instance_result_row.get("result_rejected", false)) or String(rejected_instance_result_row.get("result_rejected_reason", "")) != "client_authoritative_instance_boss_result" or String(rejected_instance_result_row.get("result_rejection_authority", "")) != "client_rejected_server_required":
+		push_error("Smoke test failed: rejected instance boss result reason missing %s" % [rejected_instance_result_row])
+		quit(1)
+		return true
 	if not _validate_boss_result_authority_row(rejected_instance_result_row, "instance_boss", false):
 		quit(1)
 		return true
@@ -2441,6 +2453,10 @@ func _process(_delta: float) -> bool:
 	var instance_result_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_result")
 	if not bool(instance_result_row.get("enabled", false)) or not bool(instance_result_row.get("server_authoritative", false)) or bool(instance_result_row.get("client_result_authoritative", true)) or String(instance_result_row.get("result_source", "")) != "server_settlement_projection":
 		push_error("Smoke test failed: instance boss result row authority invalid %s" % [instance_result_row])
+		quit(1)
+		return true
+	if bool(instance_result_row.get("result_rejected", true)) or not String(instance_result_row.get("result_rejected_reason", "")).is_empty():
+		push_error("Smoke test failed: server instance boss result did not clear rejection state %s" % [instance_result_row])
 		quit(1)
 		return true
 	if not _validate_boss_result_authority_row(instance_result_row, "instance_boss", true):
