@@ -1979,6 +1979,11 @@ func _process(_delta: float) -> bool:
 	if not _validate_boss_playfield_projection({"playfield_projection": world_projection}, "world_boss", 4, 1.0):
 		quit(1)
 		return true
+	main_node.call("_open_ui_screen", "practice")
+	var world_draw_snapshot: Dictionary = main_node.call("_boss_playfield_draw_snapshot")
+	if not _validate_boss_draw_snapshot(world_draw_snapshot, "world_boss", 4, 1.0):
+		quit(1)
+		return true
 	var world_boss_entry: Dictionary = game_mode_model.validate_boss_entry("world_boss")
 	if not bool(world_boss_entry.get("ok", false)) or bool(world_boss_entry.get("client_result_authoritative", true)) or int(world_boss_entry.get("attempts_left", 0)) != 3:
 		push_error("Smoke test failed: world boss entry gate invalid %s" % [world_boss_entry])
@@ -2112,6 +2117,11 @@ func _process(_delta: float) -> bool:
 		return true
 	var instance_projection: Dictionary = game_mode_model.boss_playfield_projection("instance_boss", Rect2(Vector2(160, 48), Vector2(640, 624)))
 	if not _validate_boss_playfield_projection({"playfield_projection": instance_projection}, "instance_boss", 8, 1.0):
+		quit(1)
+		return true
+	main_node.call("_open_ui_screen", "practice")
+	var instance_draw_snapshot: Dictionary = main_node.call("_boss_playfield_draw_snapshot")
+	if not _validate_boss_draw_snapshot(instance_draw_snapshot, "instance_boss", 8, 1.0):
 		quit(1)
 		return true
 	var rejected_instance_access: Dictionary = main_node.call("_apply_server_instance_boss_access", {
@@ -4749,6 +4759,21 @@ func _validate_boss_playfield_projection(row: Dictionary, mode_id: String, expec
 		push_error("Smoke test failed: boss playfield row authority invalid %s" % [row])
 		return false
 	return true
+
+func _validate_boss_draw_snapshot(snapshot: Dictionary, mode_id: String, expected_count: int, expected_hp_ratio: float) -> bool:
+	if not bool(snapshot.get("enabled", false)) or not bool(snapshot.get("gameplay_visible", false)):
+		push_error("Smoke test failed: boss draw snapshot disabled %s" % [snapshot])
+		return false
+	if String(snapshot.get("mode_id", "")) != mode_id or int(snapshot.get("slot_count", 0)) != expected_count:
+		push_error("Smoke test failed: boss draw snapshot identity invalid %s" % [snapshot])
+		return false
+	if String(snapshot.get("projection_scope", "")) != "local_display_only" or String(snapshot.get("damage_authority", "")) != "server" or String(snapshot.get("settlement_authority", "")) != "server" or bool(snapshot.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: boss draw snapshot authority invalid %s" % [snapshot])
+		return false
+	if absf(float(snapshot.get("hp_ratio", -1.0)) - expected_hp_ratio) > 0.001:
+		push_error("Smoke test failed: boss draw snapshot hp invalid %s" % [snapshot])
+		return false
+	return _validate_boss_playfield_projection({"playfield_projection": snapshot.get("projection", {})}, mode_id, expected_count, expected_hp_ratio)
 
 func _validate_boss_display_slots(slots: Array[Dictionary], mode_id: String, expected_count: int) -> bool:
 	if slots.size() != expected_count:

@@ -6454,6 +6454,7 @@ func _draw() -> void:
 	draw_rect(PLAYFIELD, accessibility_settings.background_fill(), true)
 	draw_rect(PLAYFIELD, accessibility_settings.border_color(), false, 2.0)
 	_draw_playfield_guides()
+	_draw_boss_playfield_projection()
 	_draw_target()
 
 	for bullet in bullets:
@@ -6491,6 +6492,40 @@ func _should_draw_gameplay_scene() -> bool:
 
 func _should_advance_gameplay_tick() -> bool:
 	return bool(_ui_page_layout().get("advance_gameplay", ui_screen_model == null))
+
+func _boss_playfield_draw_snapshot() -> Dictionary:
+	var mode_id := _boss_projection_mode_id()
+	if mode_id.is_empty() or game_mode_model == null or not game_mode_model.has_method("boss_playfield_projection"):
+		return {
+			"enabled": false,
+			"reason": "boss_mode_inactive",
+			"client_result_authoritative": false,
+		}
+	var projection: Dictionary = game_mode_model.boss_playfield_projection(mode_id, PLAYFIELD)
+	var slots: Array = projection.get("display_slots", [])
+	return {
+		"enabled": bool(projection.get("ok", false)) and slots.size() > 0,
+		"reason": String(projection.get("reason", "none")),
+		"mode_id": mode_id,
+		"slot_count": slots.size(),
+		"hp_ratio": float(projection.get("hp_ratio", 0.0)),
+		"projection_scope": String(projection.get("projection_scope", "")),
+		"damage_authority": String(projection.get("damage_authority", "")),
+		"settlement_authority": String(projection.get("settlement_authority", "")),
+		"friendly_fire_warning": String(projection.get("friendly_fire_warning", "none")),
+		"gameplay_visible": _should_draw_gameplay_scene(),
+		"projection": projection,
+		"server_authoritative": bool(projection.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
+func _boss_projection_mode_id() -> String:
+	if game_mode_model == null:
+		return ""
+	var mode_id := String(game_mode_model.get("selected_mode_id"))
+	if mode_id == "world_boss" or mode_id == "instance_boss":
+		return mode_id
+	return ""
 
 func _draw_menu_backdrop() -> void:
 	var viewport_size := get_viewport_rect().size
@@ -6708,6 +6743,47 @@ func _draw_playfield_guides() -> void:
 	if invuln_ticks > 0:
 		var character_bomb_radius_multiplier: float = character_model.bomb_radius_multiplier() if character_model != null else 1.0
 		draw_arc(player_pos, BOMB_RADIUS * character_bomb_radius_multiplier * float(self_modifiers.get("bomb_radius_multiplier", 1.0)), 0.0, TAU, 96, Color(0.4, 0.8, 1.0, 0.08), 2.0)
+
+func _draw_boss_playfield_projection() -> void:
+	var snapshot := _boss_playfield_draw_snapshot()
+	if not bool(snapshot.get("enabled", false)):
+		return
+	var projection: Dictionary = snapshot.get("projection", {})
+	var center: Vector2 = projection.get("screen_center", PLAYFIELD.position + PLAYFIELD.size * 0.5)
+	var arena_radius := float(projection.get("screen_radius_pixels", 0.0))
+	var boss_radius := clampf(arena_radius * 0.16, 26.0, 58.0)
+	var hp_ratio := clampf(float(projection.get("hp_ratio", 0.0)), 0.0, 1.0)
+	var slots: Array = projection.get("display_slots", [])
+	var warning := String(projection.get("friendly_fire_warning", "none"))
+	var arena_color := Color(0.30, 0.56, 0.62, 0.22)
+	var boss_color := Color(0.84, 0.30, 0.42, 0.30)
+	var hp_color := Color(0.88, 0.78, 0.34, 0.82)
+	if warning != "none":
+		arena_color = Color(0.64, 0.46, 0.24, 0.24)
+	draw_arc(center, arena_radius, 0.0, TAU, 96, arena_color, 2.0)
+	draw_circle(center, boss_radius, boss_color)
+	draw_arc(center, boss_radius + 7.0, -PI * 0.5, -PI * 0.5 + TAU * hp_ratio, 48, hp_color, 3.0)
+	draw_arc(center, boss_radius, 0.0, TAU, 48, Color(0.96, 0.70, 0.78, 0.72), 2.0)
+	draw_line(center + Vector2(-boss_radius, 0.0), center + Vector2(boss_radius, 0.0), Color(1.0, 1.0, 1.0, 0.40), 1.0)
+	draw_line(center + Vector2(0.0, -boss_radius), center + Vector2(0.0, boss_radius), Color(1.0, 1.0, 1.0, 0.40), 1.0)
+	for raw_slot in slots:
+		var slot: Dictionary = raw_slot
+		var slot_position: Vector2 = slot.get("screen_position", center)
+		var aim_vector: Vector2 = slot.get("aim_vector", Vector2.ZERO)
+		var slot_color := Color(0.38, 0.86, 0.95, 0.82)
+		if warning != "none":
+			slot_color = Color(0.94, 0.76, 0.34, 0.86)
+		draw_line(slot_position, center, Color(slot_color.r, slot_color.g, slot_color.b, 0.18), 1.0)
+		draw_circle(slot_position, 8.0, slot_color)
+		draw_arc(slot_position, 12.0, 0.0, TAU, 24, Color(1.0, 1.0, 1.0, 0.46), 1.2)
+		if aim_vector.length() > 0.01:
+			draw_line(slot_position, slot_position + aim_vector.normalized() * 24.0, Color(1.0, 1.0, 1.0, 0.66), 2.0)
+	var label := "%s hp %.0f%% %s" % [
+		String(projection.get("mode_id", "")),
+		hp_ratio * 100.0,
+		String(projection.get("damage_authority", "server")),
+	]
+	draw_string(ThemeDB.fallback_font, center + Vector2(-58.0, boss_radius + 24.0), label, HORIZONTAL_ALIGNMENT_CENTER, 116.0, 12, Color(0.92, 0.94, 0.90, 0.72))
 
 func _draw_target() -> void:
 	draw_circle(target_pos, TARGET_RADIUS, Color(0.80, 0.25, 0.35, 0.18))
