@@ -1119,6 +1119,7 @@ func _decorate_game_mode_state_rows(source_rows: Array[Dictionary]) -> Array[Dic
 				var transfer_request: Dictionary = _default_boss_transfer_request(row)
 				row["ui_action"] = "request_boss_transfer"
 				row["transfer_request"] = transfer_request
+				row["transfer_preflight"] = transfer_request.get("preflight", {})
 				row["enabled"] = bool(transfer_request.get("valid", false))
 			"world_boss_entry", "instance_boss_entry":
 				row["ui_action"] = "request_boss_entry"
@@ -1193,12 +1194,20 @@ func _default_boss_transfer_request(row: Dictionary) -> Dictionary:
 	var card_id := _default_transfer_card_id(_string_array(row.get("transferred_card_ids", [])))
 	if card_id.is_empty():
 		return {"valid": false, "reason": "card_missing"}
+	var mode_id := String(row.get("mode_id", ""))
+	var from_player_id := party_ids[0]
+	var to_player_id := party_ids[1]
+	var preflight := {}
+	if game_mode_model != null and game_mode_model.has_method("boss_transfer_preview"):
+		preflight = game_mode_model.boss_transfer_preview(mode_id, from_player_id, to_player_id, card_id)
 	return {
-		"valid": true,
-		"mode_id": String(row.get("mode_id", "")),
-		"from_player_id": party_ids[0],
-		"to_player_id": party_ids[1],
+		"valid": bool(preflight.get("ok", true)),
+		"reason": String(preflight.get("reason", "none")),
+		"mode_id": mode_id,
+		"from_player_id": from_player_id,
+		"to_player_id": to_player_id,
 		"card_id": card_id,
+		"preflight": preflight,
 	}
 
 func _default_transfer_card_id(transferred_card_ids: Array[String]) -> String:

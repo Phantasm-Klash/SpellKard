@@ -2009,6 +2009,10 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: world boss entry gate invalid %s" % [world_boss_entry])
 		quit(1)
 		return true
+	var transfer_preview: Dictionary = game_mode_model.boss_transfer_preview("world_boss", "p1", "p2", "focus_lens")
+	if not _validate_boss_transfer_preview(transfer_preview, "world_boss", true, "none"):
+		quit(1)
+		return true
 	var transfer_result: Dictionary = main_node.call("_request_boss_card_transfer", "world_boss", "p1", "p2", "focus_lens")
 	if not bool(transfer_result.get("ok", false)) or String(transfer_result.get("request", {}).get("action_type", "")) != "transfer_card" or bool(transfer_result.get("request", {}).get("client_result_authoritative", true)):
 		push_error("Smoke test failed: world boss transfer request invalid")
@@ -2024,6 +2028,7 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	var latest_transfer_request: Dictionary = world_boss_transfer_row.get("latest_transfer_request", {})
+	var latest_transfer_preview: Dictionary = world_boss_transfer_row.get("latest_transfer_preview", {})
 	if int(world_boss_transfer_row.get("transfer_request_count", 0)) != 1 or int(world_boss_transfer_row.get("pending_server_confirmation_count", 0)) != 1 or String(world_boss_transfer_row.get("transfer_policy", "")) != "once_per_card_per_match":
 		push_error("Smoke test failed: world boss transfer summary counts invalid %s" % [world_boss_transfer_row])
 		quit(1)
@@ -2032,9 +2037,16 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: world boss latest transfer summary invalid %s" % [world_boss_transfer_row])
 		quit(1)
 		return true
+	if not _validate_boss_transfer_preview(latest_transfer_preview, "world_boss", true, "none"):
+		quit(1)
+		return true
 	var duplicate_transfer: Dictionary = main_node.call("_request_boss_card_transfer", "world_boss", "p1", "p3", "focus_lens")
 	if bool(duplicate_transfer.get("ok", true)) or String(duplicate_transfer.get("last_error_code", "")) != "transfer_duplicate":
 		push_error("Smoke test failed: boss transfer idempotency invalid")
+		quit(1)
+		return true
+	var duplicate_preview: Dictionary = game_mode_model.boss_transfer_preview("world_boss", "p1", "p3", "focus_lens")
+	if not _validate_boss_transfer_preview(duplicate_preview, "world_boss", false, "transfer_duplicate"):
 		quit(1)
 		return true
 	var self_transfer: Dictionary = main_node.call("_request_boss_card_transfer", "world_boss", "p1", "p1", "team_focus")
@@ -2054,7 +2066,7 @@ func _process(_delta: float) -> bool:
 		return true
 	var transfer_guard_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "world_boss_transfer")
 	var local_validation_rules: Array = transfer_guard_row.get("local_validation_rules", [])
-	if String(transfer_guard_row.get("local_validation", "")) != "party_members_only" or not local_validation_rules.has("once_per_card_per_match") or String(transfer_guard_row.get("last_error_code", "")) != "transfer_card_missing":
+	if String(transfer_guard_row.get("local_validation", "")) != "boss_transfer_preflight" or not bool(transfer_guard_row.get("preflight_available", false)) or not local_validation_rules.has("once_per_card_per_match") or String(transfer_guard_row.get("last_error_code", "")) != "transfer_card_missing":
 		push_error("Smoke test failed: boss transfer local validation row missing %s" % [transfer_guard_row])
 		quit(1)
 		return true
@@ -5100,6 +5112,38 @@ func _validate_boss_result_authority_row(row: Dictionary, mode_id: String, expec
 		return false
 	if not expect_server_projection and String(row.get("result_source", "")) == "server_settlement_projection":
 		push_error("Smoke test failed: boss rejected result carried server projection %s" % [row])
+		return false
+	return true
+
+func _validate_boss_transfer_preview(preview: Dictionary, mode_id: String, expected_ok: bool, expected_reason: String) -> bool:
+	if preview.is_empty():
+		push_error("Smoke test failed: boss transfer preview missing for %s" % mode_id)
+		return false
+	if String(preview.get("mode_id", "")) != mode_id or String(preview.get("mode_category", "")) != "boss":
+		push_error("Smoke test failed: boss transfer preview identity invalid %s" % [preview])
+		return false
+	if bool(preview.get("ok", false)) != expected_ok or String(preview.get("reason", "")) != expected_reason:
+		push_error("Smoke test failed: boss transfer preview result invalid %s expected ok=%s reason=%s" % [preview, expected_ok, expected_reason])
+		return false
+	if String(preview.get("local_validation", "")) != "boss_transfer_preflight":
+		push_error("Smoke test failed: boss transfer preview validation label invalid %s" % [preview])
+		return false
+	var rules: Array = preview.get("local_validation_rules", [])
+	if not rules.has("party_members_only") or not rules.has("no_self_transfer") or not rules.has("card_id_required") or not rules.has("once_per_card_per_match"):
+		push_error("Smoke test failed: boss transfer preview rules invalid %s" % [preview])
+		return false
+	if String(preview.get("intent_authority", "")) != "client_request_only" or not bool(preview.get("requires_server_confirmation", false)):
+		push_error("Smoke test failed: boss transfer preview intent authority invalid %s" % [preview])
+		return false
+	if String(preview.get("damage_authority", "")) != "server" or String(preview.get("reward_authority", "")) != "server" or String(preview.get("settlement_authority", "")) != "server":
+		push_error("Smoke test failed: boss transfer preview server authority invalid %s" % [preview])
+		return false
+	if bool(preview.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: boss transfer preview became client authoritative %s" % [preview])
+		return false
+	var expected_confirmation := "required" if expected_ok else "blocked_local"
+	if String(preview.get("server_confirmation_status", "")) != expected_confirmation:
+		push_error("Smoke test failed: boss transfer preview confirmation status invalid %s expected=%s" % [preview, expected_confirmation])
 		return false
 	return true
 

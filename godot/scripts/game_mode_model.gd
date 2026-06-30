@@ -737,42 +737,71 @@ func validate_boss_formation(mode_id: String) -> Dictionary:
 		"client_result_authoritative": false,
 	}
 
-func request_boss_card_transfer(mode_id: String, from_player_id: String, to_player_id: String, card_id: String) -> Dictionary:
+func boss_transfer_preview(mode_id: String, from_player_id: String, to_player_id: String, card_id: String) -> Dictionary:
+	var failures: Array[String] = []
 	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
-		last_action_status = "failed"
-		last_error_code = "boss_mode_invalid"
-		return _action_result(false, {})
+		failures.append("boss_mode_invalid")
 	var state := _state_for_mode(mode_id)
 	var party_ids := _string_array(state.get("party_ids", []))
-	if card_id.strip_edges().is_empty():
+	var transferred := _string_array(state.get("transferred_card_ids", []))
+	var clean_card_id := card_id.strip_edges()
+	var clean_from_player_id := from_player_id.strip_edges()
+	var clean_to_player_id := to_player_id.strip_edges()
+	if clean_card_id.is_empty():
+		failures.append("transfer_card_missing")
+	if clean_from_player_id.is_empty() or clean_to_player_id.is_empty():
+		failures.append("transfer_player_missing")
+	if not clean_from_player_id.is_empty() and clean_from_player_id == clean_to_player_id:
+		failures.append("transfer_self")
+	if not clean_from_player_id.is_empty() and not clean_to_player_id.is_empty() and (not party_ids.has(clean_from_player_id) or not party_ids.has(clean_to_player_id)):
+		failures.append("transfer_player_not_in_party")
+	if not clean_card_id.is_empty() and transferred.has(clean_card_id):
+		failures.append("transfer_duplicate")
+	var reason := "none" if failures.is_empty() else failures[0]
+	return {
+		"ok": failures.is_empty(),
+		"reason": reason,
+		"failures": failures,
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"from_player_id": clean_from_player_id,
+		"to_player_id": clean_to_player_id,
+		"card_id": clean_card_id,
+		"party_ids": party_ids,
+		"transferred_card_ids": transferred,
+		"transfer_policy": "once_per_card_per_match",
+		"local_validation": "boss_transfer_preflight",
+		"local_validation_rules": ["party_members_only", "no_self_transfer", "card_id_required", "once_per_card_per_match"],
+		"intent_authority": "client_request_only",
+		"server_confirmation_status": "required" if failures.is_empty() else "blocked_local",
+		"requires_server_confirmation": true,
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
+func request_boss_card_transfer(mode_id: String, from_player_id: String, to_player_id: String, card_id: String) -> Dictionary:
+	var state := _state_for_mode(mode_id)
+	var preview := boss_transfer_preview(mode_id, from_player_id, to_player_id, card_id)
+	if not bool(preview.get("ok", false)):
 		last_action_status = "failed"
-		last_error_code = "transfer_card_missing"
-		return _action_result(false, {})
-	if from_player_id.strip_edges().is_empty() or to_player_id.strip_edges().is_empty():
-		last_action_status = "failed"
-		last_error_code = "transfer_player_missing"
-		return _action_result(false, {})
-	if from_player_id == to_player_id:
-		last_action_status = "failed"
-		last_error_code = "transfer_self"
-		return _action_result(false, {})
-	if not party_ids.has(from_player_id) or not party_ids.has(to_player_id):
-		last_action_status = "failed"
-		last_error_code = "transfer_player_not_in_party"
+		last_error_code = String(preview.get("reason", "transfer_invalid"))
 		return _action_result(false, {})
 	var transferred := _string_array(state.get("transferred_card_ids", []))
-	if transferred.has(card_id):
-		last_action_status = "failed"
-		last_error_code = "transfer_duplicate"
-		return _action_result(false, {})
-	transferred.append(card_id)
+	var clean_card_id := String(preview.get("card_id", ""))
+	var clean_from_player_id := String(preview.get("from_player_id", ""))
+	var clean_to_player_id := String(preview.get("to_player_id", ""))
+	transferred.append(clean_card_id)
 	state["transferred_card_ids"] = transferred
 	var requests: Array = state.get("transfer_requests", [])
 	var transfer := {
-		"from_player_id": from_player_id,
-		"to_player_id": to_player_id,
-		"card_id": card_id,
+		"from_player_id": clean_from_player_id,
+		"to_player_id": clean_to_player_id,
+		"card_id": clean_card_id,
 		"status": "requested",
+		"preflight": preview,
 	}
 	requests.append(transfer)
 	state["transfer_requests"] = requests
@@ -1229,6 +1258,14 @@ func _boss_transfer_row(row_id: String, mode_id: String, state: Dictionary) -> D
 	var requests: Array = state.get("transfer_requests", [])
 	var transferred_ids := _string_array(state.get("transferred_card_ids", []))
 	var latest_request := _latest_boss_transfer_request(requests)
+	var latest_preview: Dictionary = latest_request.get("preflight", {}) if not latest_request.is_empty() else {}
+	if latest_preview.is_empty() and not latest_request.is_empty():
+		latest_preview = boss_transfer_preview(
+			mode_id,
+			String(latest_request.get("from_player_id", "")),
+			String(latest_request.get("to_player_id", "")),
+			String(latest_request.get("card_id", ""))
+		)
 	var latest_summary := "none"
 	if not latest_request.is_empty():
 		latest_summary = "%s->%s %s %s" % [
@@ -1251,16 +1288,20 @@ func _boss_transfer_row(row_id: String, mode_id: String, state: Dictionary) -> D
 		"transferred_card_count": transferred_ids.size(),
 		"pending_server_confirmation_count": _boss_pending_transfer_count(requests),
 		"latest_transfer_request": latest_request,
+		"latest_transfer_preview": latest_preview,
 		"latest_transfer_summary": latest_summary,
 		"transfer_policy": "once_per_card_per_match",
 		"local_validation_rules": ["party_members_only", "no_self_transfer", "card_id_required", "once_per_card_per_match"],
+		"preflight_available": true,
 		"intent_authority": "client_request_only",
 		"server_confirmation_status": "pending" if _boss_pending_transfer_count(requests) > 0 else "none",
+		"damage_authority": "server",
+		"reward_authority": "server",
 		"settlement_authority": "server",
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 		"requires_server_confirmation": true,
-		"local_validation": "party_members_only",
+		"local_validation": "boss_transfer_preflight",
 		"last_error_code": last_error_code if last_action_status == "failed" else "none",
 		"enabled": true,
 	}
