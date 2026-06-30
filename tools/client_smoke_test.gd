@@ -4311,6 +4311,10 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay verification aggregate navigation invalid %s" % [replay_verification_summary])
 		quit(1)
 		return true
+	if String(replay_verification_summary.get("selected_local_load_policy", "")) != "loadable_local_practice" or not bool(replay_verification_summary.get("selected_can_play", false)) or bool(replay_verification_summary.get("selected_requires_server_audit", true)):
+		push_error("Smoke test failed: replay verification selected load policy invalid %s" % [replay_verification_summary])
+		quit(1)
+		return true
 	var replay_filter_rows: Array[Dictionary] = replay_list_model.verification_filter_rows()
 	if replay_filter_rows.size() < 5 or String(replay_filter_rows[0].get("verification_filter", "")) != "all" or not bool(replay_filter_rows[0].get("active", false)) or bool(replay_filter_rows[0].get("client_result_authoritative", true)):
 		push_error("Smoke test failed: replay verification filter rows invalid %s" % [replay_filter_rows])
@@ -4379,6 +4383,15 @@ func _process(_delta: float) -> bool:
 	var server_replay_guard: Dictionary = replay_list_model.local_load_guard_for_entry(server_replay)
 	if bool(server_replay_guard.get("ok", true)) or String(server_replay_guard.get("reason", "")) != "server_record_pending_audit" or String(server_replay_guard.get("verification_section", "")) != "replay_server_pending":
 		push_error("Smoke test failed: server replay local load guard invalid %s" % [server_replay_guard])
+		quit(1)
+		return true
+	var server_replay_summary: Dictionary = replay_list_model.verification_summary_row()
+	if String(server_replay_summary.get("selected_local_load_policy", "")) != "blocked_server_audit" \
+			or String(server_replay_summary.get("selected_load_guard_reason", "")) != "server_record_pending_audit" \
+			or String(server_replay_summary.get("selected_verification_section", "")) != "replay_server_pending" \
+			or not bool(server_replay_summary.get("selected_requires_server_audit", false)) \
+			or bool(server_replay_summary.get("selected_can_play", true)):
+		push_error("Smoke test failed: server replay summary selected load policy invalid %s" % [server_replay_summary])
 		quit(1)
 		return true
 	if main_node.call("_load_selected_replay_snapshot") or String(main_node.get("replay_file_status")) != "load_failed" or String(main_node.get("replay_index_action_status")) != "server_record_pending_audit":

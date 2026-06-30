@@ -106,6 +106,7 @@ func verification_summary_row() -> Dictionary:
 	var selected := selected_entry()
 	var selected_source_index := _source_index_for_replay_id(str(selected.get("replay_id", "")))
 	var selected_filtered_index := filtered_indices.find(selected_source_index)
+	var selected_row_model := _row_from_entry(selected, selected_source_index) if not selected.is_empty() and selected_source_index >= 0 else {}
 	return {
 		"id": "replay_verification_summary",
 		"label_key": "screen.main.replay",
@@ -119,6 +120,12 @@ func verification_summary_row() -> Dictionary:
 		"selected_source_index": selected_source_index,
 		"selected_filtered_index": selected_filtered_index + 1 if selected_filtered_index >= 0 else 0,
 		"filter_navigation_label": _filter_navigation_label(selected_filtered_index, filtered_indices.size()),
+		"selected_verification_status": String(selected_row_model.get("verification_status", "none")),
+		"selected_verification_section": String(selected_row_model.get("section", "")),
+		"selected_local_load_policy": String(selected_row_model.get("local_load_policy", "none")),
+		"selected_load_guard_reason": String(selected_row_model.get("local_load_guard_reason", "")),
+		"selected_requires_server_audit": bool(selected_row_model.get("requires_server_audit", false)),
+		"selected_can_play": bool(selected_row_model.get("can_play", false)),
 		"local_ready_count": local_ready,
 		"missing_final_hash_count": missing_hash,
 		"input_invalid_count": input_invalid,
