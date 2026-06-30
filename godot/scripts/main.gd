@@ -5704,6 +5704,13 @@ func _control_button_actions(row: Dictionary) -> Array[Dictionary]:
 			actions.append({"label": "+", "tooltip": "Increase value", "action": "adjust_selected", "direction": 1})
 		"toggle":
 			actions.append({"label": "Toggle", "tooltip": "Toggle value", "action": "adjust_selected", "direction": 1})
+	if _row_has_direct_control_action(row):
+		actions.append({
+			"label": _row_label_text(row),
+			"tooltip": _format_ui_row(row),
+			"action": "accept_selected",
+			"direction": 0,
+		})
 	if _row_is_binding_row(row):
 		actions.append({"label": "Capture", "tooltip": "Capture next key press", "action": "capture_selected", "direction": 0})
 	if _row_has_reset_action(row):
@@ -5719,10 +5726,23 @@ func _on_ui_control_button_pressed(button: Button) -> void:
 	var direction := int(button.get_meta("direction", 0))
 	if action == "adjust_selected":
 		_ui_adjust_selected_control(direction)
+	elif action == "accept_selected":
+		_ui_accept_selected()
 	elif action == "reset_selected":
 		_ui_reset_selected_control()
 	elif action == "capture_selected":
 		_ui_capture_selected_binding()
+
+func _row_has_direct_control_action(row: Dictionary) -> bool:
+	if row.is_empty() or not bool(row.get("enabled", true)):
+		return false
+	var row_id := String(row.get("id", ""))
+	var action := String(row.get("ui_action", ""))
+	return row_id.begins_with("replay_action_") and action in [
+		"load_replay",
+		"toggle_replay_favorite",
+		"remove_replay_from_index",
+	]
 
 func _ui_adjust_selected_control(direction: int) -> Dictionary:
 	if ui_screen_model == null:
@@ -5845,8 +5865,9 @@ func _ui_press_visible_control(index: int) -> Dictionary:
 		return {"ok": false, "action": "control_button_stale", "owner": String(button.get_meta("owner_screen", ""))}
 	var direction := int(button.get_meta("direction", 0))
 	var action := String(button.get_meta("control_action", ""))
+	var selected_id := String(ui_screen_model.selected_row().get("id", "")) if ui_screen_model != null else ""
 	_on_ui_control_button_pressed(button)
-	return {"ok": not action.is_empty(), "action": action, "direction": direction}
+	return {"ok": not action.is_empty(), "action": action, "direction": direction, "row_id": selected_id}
 
 func _on_ui_nav_button_pressed(button: Button) -> void:
 	if button == null or ui_screen_model == null:
@@ -6208,6 +6229,18 @@ func _row_control_state_text(row: Dictionary) -> String:
 			if option_index < 0 or option_index >= options.size():
 				return String(row.get("value", ""))
 			return "%s (%d/%d)" % [str(options[option_index]), option_index + 1, options.size()]
+		"replay":
+			var policy := String(row.get("local_load_policy", ""))
+			var guard := String(row.get("local_load_guard_reason", ""))
+			if policy.is_empty() and not String(row.get("verification_status", "")).is_empty():
+				policy = String(row.get("verification_status", ""))
+			if guard.is_empty() and bool(row.get("requires_server_audit", false)):
+				guard = "server_audit_required"
+			if guard.is_empty():
+				return policy
+			if policy.is_empty():
+				return guard
+			return "%s %s" % [policy, guard]
 	return ""
 
 func _inline_control_state_text(row: Dictionary, control_state: String) -> String:

@@ -4459,6 +4459,17 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	main_node.call("_ui_set_cursor", _row_index_by_id(ui_replay_rows, "replay_action_load"))
+	var replay_load_overlay: Dictionary = main_node.call("_ui_overlay_snapshot")
+	if int(replay_load_overlay.get("control_buttons", 0)) < 1 or not String(replay_load_overlay.get("control_buttons_text", "")).contains("Load Replay") or not String(replay_load_overlay.get("control_preview", "")).contains("loadable_local_practice"):
+		push_error("Smoke test failed: replay load action context button missing %s" % [replay_load_overlay])
+		quit(1)
+		return true
+	var replay_load_button_result: Dictionary = main_node.call("_ui_press_visible_control", 0)
+	if not bool(replay_load_button_result.get("ok", false)) or String(replay_load_button_result.get("action", "")) != "accept_selected" or String(replay_load_button_result.get("row_id", "")) != "replay_action_load":
+		push_error("Smoke test failed: replay load context button invalid %s" % [replay_load_button_result])
+		quit(1)
+		return true
+	main_node.call("_ui_set_cursor", _row_index_by_id(ui_replay_rows, "replay_action_load"))
 	var replay_load_action_result: Dictionary = main_node.call("_ui_accept_selected")
 	if not bool(replay_load_action_result.get("ok", false)) or String(replay_load_action_result.get("action", "")) != "load_replay" or String(replay_load_action_result.get("reason", "")) != "none":
 		push_error("Smoke test failed: replay UI load action invalid %s" % [replay_load_action_result])

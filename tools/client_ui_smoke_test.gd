@@ -492,6 +492,19 @@ func _validate_collection_page_contract() -> bool:
 			return _fail("empty replay load action should stay disabled %s" % [load_action])
 	elif String(load_action.get("local_load_policy", "")) != "loadable_local_practice" or not bool(load_action.get("can_play", false)) or bool(load_action.get("requires_server_audit", true)):
 		return _fail("replay load action should expose local-only load policy %s" % [load_action])
+	var replay_load_index := _row_index_by_id(replay_rows, "replay_action_load")
+	if replay_load_index >= 0:
+		main_node.call("_ui_set_cursor", replay_load_index)
+		await _settle_frames(2)
+		snapshot = main_node.call("_ui_overlay_snapshot")
+		var load_control_text := String(snapshot.get("control_buttons_text", ""))
+		if bool(load_action.get("enabled", false)):
+			if not load_control_text.contains(_text("screen.replay.load")) or not String(snapshot.get("control_preview", "")).contains(String(load_action.get("local_load_policy", ""))):
+				return _fail("replay load action should expose context control %s" % [snapshot])
+			var load_control_result: Dictionary = main_node.call("_ui_press_visible_control", 0)
+			await _settle_frames(2)
+			if not bool(load_control_result.get("ok", false)) or String(load_control_result.get("action", "")) != "accept_selected" or String(load_control_result.get("row_id", "")) != "replay_action_load":
+				return _fail("replay load context control invalid %s" % [load_control_result])
 	main_node.call("_ui_set_cursor", replay_filter_index)
 	var replay_filter_result: Dictionary = main_node.call("_ui_accept_selected")
 	await _settle_frames(2)
