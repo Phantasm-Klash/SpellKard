@@ -453,16 +453,18 @@ func boss_local_status_row(row_id: String, mode_id: String) -> Dictionary:
 	var entry_status := "ready" if bool(entry.get("ok", false)) else ",".join(entry_failures)
 	var player_count := int(formation.get("player_count", 0))
 	var result_status := String(state.get("last_result_status", "pending"))
+	var slot_layout_policy := String(formation.get("slot_layout_policy", _boss_slot_layout_policy(player_count)))
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.world_boss" if mode_id == MODE_WORLD_BOSS else "screen.mode.instance_boss",
-		"value": "hp %.0f/%.0f attempts %d party %d/%d-%d entry %s" % [
+		"value": "hp %.0f/%.0f attempts %d party %d/%d-%d layout %s entry %s" % [
 			current_hp,
 			max_hp,
 			attempts_left,
 			player_count,
 			BOSS_MIN_PLAYERS,
 			BOSS_MAX_PLAYERS,
+			slot_layout_policy,
 			entry_status,
 		],
 		"summary": "hp %.0f/%.0f attempts %d; server settlement %s; client can only request entry or transfer" % [
@@ -484,6 +486,8 @@ func boss_local_status_row(row_id: String, mode_id: String) -> Dictionary:
 		"formation_valid": bool(formation.get("ok", false)),
 		"formation_failures": _string_array(formation.get("failures", [])),
 		"player_count": player_count,
+		"slot_layout_policy": slot_layout_policy,
+		"slot_labels": formation.get("slot_labels", _boss_slot_labels(player_count)),
 		"min_players": BOSS_MIN_PLAYERS,
 		"max_players": BOSS_MAX_PLAYERS,
 		"requires_server_confirmation": true,

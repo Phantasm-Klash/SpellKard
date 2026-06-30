@@ -667,8 +667,13 @@ func _assert_boss_status_row(row: Dictionary, mode_id: String) -> bool:
 		return _fail("boss status row must show server settlement authority %s" % [row])
 	if not bool(row.get("requires_server_confirmation", false)):
 		return _fail("boss status row must require server confirmation %s" % [row])
-	if not String(row.get("value", "")).contains("hp") or not String(row.get("value", "")).contains("attempts"):
+	var value := String(row.get("value", ""))
+	if not value.contains("hp") or not value.contains("attempts") or not value.contains("layout"):
 		return _fail("boss status row value should include hp and attempts %s" % [row])
+	if String(row.get("slot_layout_policy", "")).is_empty():
+		return _fail("boss status row missing slot layout policy %s" % [row])
+	if typeof(row.get("slot_labels", [])) != TYPE_ARRAY:
+		return _fail("boss status row missing slot labels %s" % [row])
 	return true
 
 func _text(key: String) -> String:
