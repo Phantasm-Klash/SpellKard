@@ -1951,6 +1951,26 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: boss transfer idempotency invalid")
 		quit(1)
 		return true
+	var self_transfer: Dictionary = main_node.call("_request_boss_card_transfer", "world_boss", "p1", "p1", "team_focus")
+	if bool(self_transfer.get("ok", true)) or String(self_transfer.get("last_error_code", "")) != "transfer_self" or not (self_transfer.get("request", {}) as Dictionary).is_empty():
+		push_error("Smoke test failed: boss self-transfer gate invalid %s" % [self_transfer])
+		quit(1)
+		return true
+	var outside_transfer: Dictionary = main_node.call("_request_boss_card_transfer", "world_boss", "p1", "p9", "team_focus")
+	if bool(outside_transfer.get("ok", true)) or String(outside_transfer.get("last_error_code", "")) != "transfer_player_not_in_party":
+		push_error("Smoke test failed: boss transfer party gate invalid %s" % [outside_transfer])
+		quit(1)
+		return true
+	var missing_card_transfer: Dictionary = main_node.call("_request_boss_card_transfer", "world_boss", "p1", "p2", "")
+	if bool(missing_card_transfer.get("ok", true)) or String(missing_card_transfer.get("last_error_code", "")) != "transfer_card_missing":
+		push_error("Smoke test failed: boss missing-card transfer gate invalid %s" % [missing_card_transfer])
+		quit(1)
+		return true
+	var transfer_guard_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "world_boss_transfer")
+	if String(transfer_guard_row.get("local_validation", "")) != "party_members_only":
+		push_error("Smoke test failed: boss transfer local validation row missing %s" % [transfer_guard_row])
+		quit(1)
+		return true
 	var server_world_boss_snapshot: Dictionary = game_mode_model.apply_server_world_boss_snapshot({
 		"boss_instance_id": "world_boss_local_s0_001",
 		"season_id": "local_s0",

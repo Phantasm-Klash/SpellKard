@@ -372,6 +372,23 @@ func request_boss_card_transfer(mode_id: String, from_player_id: String, to_play
 		last_error_code = "boss_mode_invalid"
 		return _action_result(false, {})
 	var state := _state_for_mode(mode_id)
+	var party_ids := _string_array(state.get("party_ids", []))
+	if card_id.strip_edges().is_empty():
+		last_action_status = "failed"
+		last_error_code = "transfer_card_missing"
+		return _action_result(false, {})
+	if from_player_id.strip_edges().is_empty() or to_player_id.strip_edges().is_empty():
+		last_action_status = "failed"
+		last_error_code = "transfer_player_missing"
+		return _action_result(false, {})
+	if from_player_id == to_player_id:
+		last_action_status = "failed"
+		last_error_code = "transfer_self"
+		return _action_result(false, {})
+	if not party_ids.has(from_player_id) or not party_ids.has(to_player_id):
+		last_action_status = "failed"
+		last_error_code = "transfer_player_not_in_party"
+		return _action_result(false, {})
 	var transferred := _string_array(state.get("transferred_card_ids", []))
 	if transferred.has(card_id):
 		last_action_status = "failed"
@@ -652,6 +669,8 @@ func _boss_transfer_row(row_id: String, mode_id: String, state: Dictionary) -> D
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 		"requires_server_confirmation": true,
+		"local_validation": "party_members_only",
+		"last_error_code": last_error_code if last_action_status == "failed" else "none",
 		"enabled": true,
 	}
 
