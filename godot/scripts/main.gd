@@ -6184,9 +6184,12 @@ func _boss_settlement_receipt_context_text(row: Dictionary) -> String:
 	var receipt_status := String(row.get("receipt_status", receipt_projection.get("receipt_status", "")))
 	var receipt_id := String(row.get("result_receipt_id", receipt_projection.get("result_receipt_id", receipt.get("receipt_id", "")))).strip_edges()
 	var result_hash := String(row.get("result_hash", receipt_projection.get("result_hash", receipt.get("result_hash", "")))).strip_edges()
+	var replay_id := String(row.get("result_replay_id", receipt_projection.get("result_replay_id", receipt.get("replay_id", "")))).strip_edges()
+	var server_time := String(row.get("result_server_time", receipt_projection.get("result_server_time", receipt.get("server_time", "")))).strip_edges()
+	var key_id := String(row.get("result_key_id", receipt_projection.get("result_key_id", receipt.get("key_id", "")))).strip_edges()
 	var rejected_reason := String(row.get("result_rejected_reason", receipt_projection.get("result_rejected_reason", ""))).strip_edges()
 	var result_rejected := bool(row.get("result_rejected", receipt_projection.get("result_rejected", false))) or not rejected_reason.is_empty()
-	if receipt_status.is_empty() and receipt_id.is_empty() and result_hash.is_empty() and not result_rejected:
+	if receipt_status.is_empty() and receipt_id.is_empty() and result_hash.is_empty() and replay_id.is_empty() and server_time.is_empty() and key_id.is_empty() and not result_rejected:
 		return ""
 	var result_status := String(row.get("result_status", receipt_projection.get("result_status", "pending")))
 	var parts: Array[String] = [receipt_status if not receipt_status.is_empty() else "pending_server_receipt"]
@@ -6194,6 +6197,12 @@ func _boss_settlement_receipt_context_text(row: Dictionary) -> String:
 		parts.append("id %s" % receipt_id)
 	if not result_hash.is_empty():
 		parts.append("hash %s" % result_hash)
+	if not replay_id.is_empty():
+		parts.append("replay %s" % replay_id)
+	if not server_time.is_empty():
+		parts.append("time %s" % server_time)
+	if not key_id.is_empty():
+		parts.append("key %s" % key_id)
 	if not result_status.is_empty():
 		parts.append("result %s" % result_status)
 	var receipt_context := "boss server receipt %s" % " ".join(parts)
