@@ -148,11 +148,110 @@ func _validate_play_pages() -> bool:
 		return false
 	if not _assert_boss_status_row(_row_by_id(rows, "match_instance_boss_status"), "instance_boss"):
 		return false
+	if not main_node.call("_configure_boss_party", "world_boss", ["p1", "p2", "p3", "p4"]):
+		return _fail("world boss UI party setup failed")
+	if not main_node.call("_configure_boss_party", "instance_boss", ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]):
+		return _fail("instance boss UI party setup failed")
+	snapshot = await _open_snapshot("modes")
+	rows = main_node.call("_ui_screen_rows", 64)
+	if not _assert_boss_practice_preview_row(_row_by_id(rows, "world_boss_practice_preview"), "world_boss"):
+		return false
+	if not _assert_boss_practice_preview_row(_row_by_id(rows, "instance_boss_practice_preview"), "instance_boss"):
+		return false
+	var modes_overview_text := String(snapshot.get("overview_cards_text", ""))
+	if not modes_overview_text.contains(_text("screen.settings.boss_spellbook")) or not modes_overview_text.contains("phases") or not modes_overview_text.contains("digest"):
+		return _fail("modes overview cards missing boss practice preview card metrics %s" % modes_overview_text)
+	var world_entry_index := _row_index_by_id(rows, "world_boss_entry")
+	if world_entry_index < 0:
+		return _fail("modes page missing world boss entry row")
+	main_node.call("_ui_set_cursor", world_entry_index)
+	await _settle_frames(2)
+	snapshot = main_node.call("_ui_overlay_snapshot")
+	if not String(snapshot.get("control_preview", "")).contains("ready_for_server_entry") or not String(snapshot.get("detail", "")).contains("server required"):
+		return _fail("world boss entry should expose ready server-confirmation context %s" % [snapshot])
+	var instance_entry_index := _row_index_by_id(rows, "instance_boss_entry")
+	if instance_entry_index < 0:
+		return _fail("modes page missing instance boss entry row")
+	main_node.call("_ui_set_cursor", instance_entry_index)
+	await _settle_frames(2)
+	snapshot = main_node.call("_ui_overlay_snapshot")
+	if not String(snapshot.get("control_preview", "")).contains("blocked_local") or not String(snapshot.get("detail", "")).contains("entry_locked"):
+		return _fail("locked instance boss entry should expose local blocker context %s" % [snapshot])
+	if not await _validate_boss_settlement_receipts():
+		return false
 	snapshot = await _open_snapshot("network_match")
 	if not _assert_page_health(snapshot, "network_match", 2, 4):
 		return false
 	if not _contains_all(String(snapshot.get("overview_cards_text", "")), ["Gensoulkyo", "create room"]):
 		return _fail("network match overview cards invalid %s" % String(snapshot.get("overview_cards_text", "")))
+	return true
+
+func _validate_boss_settlement_receipts() -> bool:
+	stage = "boss_settlement_receipts"
+	if not main_node.call("_apply_world_boss_result", {
+		"match_id": "world_match_ui",
+		"boss_instance_id": "world_boss_0",
+		"boss_hp_after_global": 87500,
+		"boss_hp_global_max": 100000,
+		"damage_this_match": 12500,
+		"global_damage_applied": 12500,
+		"daily_attempts_left": 2,
+		"settlement_status": "applied",
+		"settlement_receipt": {
+			"receipt_id": "world_receipt_ui",
+			"result_hash": "world_hash_ui",
+			"replay_id": "world_replay_ui",
+			"server_time": "2026-06-30T00:00:00Z",
+			"key_id": "boss_result_key",
+		},
+		"server_authoritative": true,
+	}):
+		return _fail("world boss server result application failed")
+	if not main_node.call("_apply_instance_boss_result", {
+		"match_id": "instance_match_ui",
+		"boss_defeated": true,
+		"instance_cleared": true,
+		"survivors": 4,
+		"failed_mechanic": false,
+		"boss_hp_after": 0,
+		"clear_time_seconds": 142,
+		"three_star_time_seconds": 180,
+		"deaths": 0,
+		"bombs_used": 1,
+		"bomb_limit": 3,
+		"settlement_status": "cleared",
+		"settlement_receipt": {
+			"receipt_id": "instance_receipt_ui",
+			"result_hash": "instance_hash_ui",
+			"replay_id": "instance_replay_ui",
+			"server_time": "2026-06-30T00:01:00Z",
+			"key_id": "boss_result_key",
+		},
+		"server_authoritative": true,
+	}):
+		return _fail("instance boss server result application failed")
+	var snapshot: Dictionary = await _open_snapshot("modes")
+	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 64)
+	if not _assert_boss_result_receipt_row(_row_by_id(rows, "world_boss_result"), "world_boss", "world_receipt_ui", "world_hash_ui"):
+		return false
+	if not _assert_boss_result_receipt_row(_row_by_id(rows, "instance_boss_result"), "instance_boss", "instance_receipt_ui", "instance_hash_ui"):
+		return false
+	var world_result_index := _row_index_by_id(rows, "world_boss_result")
+	if world_result_index < 0:
+		return _fail("modes page missing world boss result row")
+	main_node.call("_ui_set_cursor", world_result_index)
+	await _settle_frames(2)
+	snapshot = main_node.call("_ui_overlay_snapshot")
+	if not String(snapshot.get("detail", "")).contains("boss server receipt") or not String(snapshot.get("detail", "")).contains("world_receipt_ui"):
+		return _fail("world boss result detail missing server receipt context %s" % [snapshot])
+	var instance_result_index := _row_index_by_id(rows, "instance_boss_result")
+	if instance_result_index < 0:
+		return _fail("modes page missing instance boss result row")
+	main_node.call("_ui_set_cursor", instance_result_index)
+	await _settle_frames(2)
+	snapshot = main_node.call("_ui_overlay_snapshot")
+	if not String(snapshot.get("control_preview", "")).contains("server_receipt_ready") or not String(snapshot.get("detail", "")).contains("instance_receipt_ui"):
+		return _fail("instance boss result detail missing server receipt context %s" % [snapshot])
 	return true
 
 func _validate_result_reward_loop() -> bool:
@@ -457,6 +556,16 @@ func _validate_collection_page_contract() -> bool:
 		return false
 	if not String(snapshot.get("section_tabs", "")).contains(_text("ui.menu_section_overview")):
 		return _fail("replay filter tabs should expose verification overview %s" % [snapshot])
+	if not String(snapshot.get("page_focus_action_ids", "")).contains("replay_filter_replay_local_ready") or String(snapshot.get("focus_action", "")) != "replay_filter_replay_local_ready":
+		return _fail("replay focus action should target local-ready filter %s" % [snapshot])
+	var replay_focus_result: Dictionary = main_node.call("_ui_press_visible_focus_action")
+	await _settle_frames(2)
+	if not bool(replay_focus_result.get("ok", false)) or String(replay_focus_result.get("row_id", "")) != "replay_filter_replay_local_ready" or String(main_node.get("ui_screen_model").current_screen) != "replay":
+		return _fail("replay focus action should apply local-ready filter %s" % [replay_focus_result])
+	var focused_filter_row := _row_by_id(main_node.call("_ui_screen_rows", 12), "replay_filter_replay_local_ready")
+	if not bool(focused_filter_row.get("active", false)):
+		return _fail("replay focus action did not activate local-ready filter %s" % [focused_filter_row])
+	snapshot = main_node.call("_ui_overlay_snapshot")
 	var replay_summary_card_result: Dictionary = main_node.call("_ui_press_visible_overview_card", 0)
 	if not bool(replay_summary_card_result.get("ok", false)) or String(replay_summary_card_result.get("row_id", "")) != "replay_verification_summary" or String(replay_summary_card_result.get("screen", "")) != "replay":
 		return _fail("replay verification summary overview card should stay on replay page %s" % [replay_summary_card_result])
@@ -464,15 +573,38 @@ func _validate_collection_page_contract() -> bool:
 	var replay_filter_index := _row_index_by_id(replay_rows, "replay_filter_replay_local_ready")
 	if replay_filter_index < 0 or String(replay_rows[replay_filter_index].get("ui_action", "")) != "set_replay_filter":
 		return _fail("replay page missing local-ready filter action %s" % [replay_rows])
+	var load_action := _row_by_id(replay_rows, "replay_action_load")
 	var favorite_action := _row_by_id(replay_rows, "replay_action_favorite")
 	var remove_action := _row_by_id(replay_rows, "replay_action_remove")
-	if favorite_action.is_empty() or remove_action.is_empty() or String(favorite_action.get("ui_action", "")) != "toggle_replay_favorite" or String(remove_action.get("ui_action", "")) != "remove_replay_from_index" or bool(favorite_action.get("client_result_authoritative", true)):
-		return _fail("replay page missing favorite/remove action rows favorite=%s remove=%s" % [favorite_action, remove_action])
+	if load_action.is_empty() or favorite_action.is_empty() or remove_action.is_empty() or String(load_action.get("ui_action", "")) != "load_replay" or String(favorite_action.get("ui_action", "")) != "toggle_replay_favorite" or String(remove_action.get("ui_action", "")) != "remove_replay_from_index" or bool(load_action.get("client_result_authoritative", true)) or bool(favorite_action.get("client_result_authoritative", true)):
+		return _fail("replay page missing load/favorite/remove action rows load=%s favorite=%s remove=%s" % [load_action, favorite_action, remove_action])
 	if not _assert_replay_ui_authority_row(_row_by_id(replay_rows, "replay_filter_replay_local_ready")):
+		return false
+	if not _assert_replay_ui_authority_row(load_action):
 		return false
 	if not _assert_replay_ui_authority_row(favorite_action):
 		return false
 	if not _assert_replay_ui_authority_row(remove_action):
+		return false
+	if String(load_action.get("replay_id", "")).is_empty():
+		if bool(load_action.get("enabled", true)) or bool(load_action.get("can_play", true)) or String(load_action.get("local_load_policy", "")) != "none":
+			return _fail("empty replay load action should stay disabled %s" % [load_action])
+	elif String(load_action.get("local_load_policy", "")) != "loadable_local_practice" or not bool(load_action.get("can_play", false)) or bool(load_action.get("requires_server_audit", true)):
+		return _fail("replay load action should expose local-only load policy %s" % [load_action])
+	var replay_load_index := _row_index_by_id(replay_rows, "replay_action_load")
+	if replay_load_index >= 0:
+		main_node.call("_ui_set_cursor", replay_load_index)
+		await _settle_frames(2)
+		snapshot = main_node.call("_ui_overlay_snapshot")
+		var load_control_text := String(snapshot.get("control_buttons_text", ""))
+		if bool(load_action.get("enabled", false)):
+			if not load_control_text.contains(_text("screen.replay.load")) or not String(snapshot.get("control_preview", "")).contains(String(load_action.get("local_load_policy", ""))):
+				return _fail("replay load action should expose context control %s" % [snapshot])
+			var load_control_result: Dictionary = main_node.call("_ui_press_visible_control", 0)
+			await _settle_frames(2)
+			if not bool(load_control_result.get("ok", false)) or String(load_control_result.get("action", "")) != "accept_selected" or String(load_control_result.get("row_id", "")) != "replay_action_load":
+				return _fail("replay load context control invalid %s" % [load_control_result])
+	if not await _validate_server_replay_pending_guard():
 		return false
 	main_node.call("_ui_set_cursor", replay_filter_index)
 	var replay_filter_result: Dictionary = main_node.call("_ui_accept_selected")
@@ -485,6 +617,113 @@ func _validate_collection_page_contract() -> bool:
 		if replay_entry.is_empty() or String(replay_entry.get("ui_action", "")) != "load_replay" or String(replay_entry.get("ui_control", "")) != "replay" or String(replay_entry.get("section", "")) != "replay_local_ready":
 			return _fail("replay entry row should stay loadable after filter %s" % [replay_rows])
 	return true
+
+func _validate_server_replay_pending_guard() -> bool:
+	stage = "replay_server_pending_guard"
+	var replay_model: RefCounted = main_node.get("replay_list_model")
+	var replay_store: RefCounted = main_node.get("replay_store")
+	if replay_model == null or replay_store == null:
+		return _fail("replay model missing")
+	var previous_entries: Array[Dictionary] = []
+	for entry in replay_store.call("load_index"):
+		if typeof(entry) == TYPE_DICTIONARY:
+			previous_entries.append((entry as Dictionary).duplicate(true))
+	var previous_cursor := int(replay_model.get("cursor"))
+	var previous_filter := String(replay_model.get("active_verification_filter"))
+	var base_entry: Dictionary = previous_entries[0] if not previous_entries.is_empty() else {}
+	var pending_path := _server_pending_replay_path(replay_store, base_entry)
+	if pending_path.is_empty():
+		return _fail("could not prepare server pending replay file")
+	var pending_entries: Array[Dictionary] = [_server_pending_replay_entry(base_entry, pending_path)]
+	if not bool(replay_store.call("save_index", pending_entries)):
+		return _fail("could not save server pending replay index")
+	replay_model.set("cursor", 0)
+	replay_model.call("set_verification_filter", "replay_server_pending")
+	if not main_node.call("_open_ui_screen", "replay"):
+		return _fail("replay page did not open for server pending guard")
+	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 12)
+	var load_index := _row_index_by_id(rows, "replay_action_load")
+	var load_row := _row_by_id(rows, "replay_action_load")
+	if load_index < 0 or load_row.is_empty():
+		return _fail("server pending replay load row missing %s" % [rows])
+	if bool(load_row.get("enabled", true)) \
+			or bool(load_row.get("can_play", true)) \
+			or String(load_row.get("local_load_policy", "")) != "blocked_server_audit" \
+			or not bool(load_row.get("requires_server_audit", false)):
+		return _fail("server pending replay load row should be blocked %s" % [load_row])
+	var guard: Dictionary = load_row.get("replay_action_guard", {})
+	if bool(guard.get("ok", true)) \
+			or String(guard.get("reason", "")) != "server_record_pending_audit" \
+			or bool(guard.get("client_result_authoritative", true)):
+		return _fail("server pending replay load guard invalid %s" % [guard])
+	main_node.call("_ui_set_cursor", load_index)
+	await _settle_frames(2)
+	var snapshot: Dictionary = main_node.call("_ui_overlay_snapshot")
+	var preview := String(snapshot.get("control_preview", ""))
+	if not preview.contains("guard_blocked") \
+			or not preview.contains("server_record_pending_audit") \
+			or not preview.contains("blocked_server_audit") \
+			or not preview.contains("server_audit_pending") \
+			or not preview.contains("settlement_server"):
+		return _fail("server pending replay guard preview missing %s" % [snapshot])
+	var load_control_result: Dictionary = main_node.call("_ui_press_visible_control", 0)
+	if bool(load_control_result.get("ok", false)):
+		return _fail("server pending replay load control should stay disabled %s" % [load_control_result])
+	replay_store.call("save_index", previous_entries)
+	replay_model.call("refresh")
+	replay_model.set("cursor", previous_cursor)
+	replay_model.call("set_verification_filter", previous_filter)
+	main_node.call("_open_ui_screen", "replay")
+	await _settle_frames(2)
+	return true
+
+func _server_pending_replay_path(replay_store: RefCounted, base_entry: Dictionary) -> String:
+	var existing_path := String(base_entry.get("path", ""))
+	if not existing_path.is_empty() and FileAccess.file_exists(existing_path):
+		return existing_path
+	var path := String(replay_store.call("latest_path"))
+	var snapshot := {
+		"ruleset_version": "ruleset-local-s0",
+		"match_seed": 12345,
+		"final_result_hash": 123456,
+		"input_stream": [{"tick": 10}, {"tick": 11}, {"tick": 12}],
+		"metadata": {
+			"replay_id": "server-ui-pending-file",
+			"mode": "pvp_duel",
+			"result": "server_record",
+			"final_tick": 12,
+			"saved_at": "2026-06-30T00:02:00Z",
+		},
+	}
+	if bool(replay_store.call("save_snapshot", snapshot, path)):
+		return path
+	return ""
+
+func _server_pending_replay_entry(base_entry: Dictionary, path: String) -> Dictionary:
+	var entry: Dictionary = base_entry.duplicate(true)
+	entry.merge({
+		"replay_id": "server-ui-pending",
+		"path": path,
+		"saved_at": "2026-06-30T00:02:00Z",
+		"opponent": "server",
+		"mode": "pvp_duel",
+		"result": "server_record",
+		"ruleset_version": "ruleset-local-s0",
+		"game_version": "ui-smoke",
+		"pattern_id": "server_pending",
+		"score": 1000,
+		"final_tick": 12,
+		"final_result_hash": 123456,
+		"input_count": 3,
+		"input_first_tick": 10,
+		"input_last_tick": 12,
+		"input_tick_span": 3,
+		"input_tick_monotonic": true,
+		"input_tick_contiguous": true,
+		"input_integrity_status": "valid",
+		"server_authoritative": true,
+	}, true)
+	return entry
 
 func _press_home_button(index: int, expected_screen: String) -> bool:
 	if not main_node.call("_open_ui_screen", "main_menu"):
@@ -681,6 +920,8 @@ func _assert_boss_status_row(row: Dictionary, mode_id: String) -> bool:
 		return _fail("boss status row must show server settlement authority %s" % [row])
 	if not bool(row.get("requires_server_confirmation", false)):
 		return _fail("boss status row must require server confirmation %s" % [row])
+	if String(row.get("projection_scope", row.get("display_scope", "local_display_only"))) != "local_display_only":
+		return _fail("boss status row must stay local display scoped %s" % [row])
 	var value := String(row.get("value", ""))
 	if not value.contains("hp") or not value.contains("attempts") or not value.contains("layout"):
 		return _fail("boss status row value should include hp and attempts %s" % [row])
@@ -688,6 +929,66 @@ func _assert_boss_status_row(row: Dictionary, mode_id: String) -> bool:
 		return _fail("boss status row missing slot layout policy %s" % [row])
 	if typeof(row.get("slot_labels", [])) != TYPE_ARRAY:
 		return _fail("boss status row missing slot labels %s" % [row])
+	return true
+
+func _assert_boss_practice_preview_row(row: Dictionary, mode_id: String) -> bool:
+	if row.is_empty():
+		return _fail("boss practice preview row missing for %s" % mode_id)
+	if String(row.get("mode_id", "")) != mode_id:
+		return _fail("boss practice preview mode mismatch %s row=%s" % [mode_id, row])
+	if String(row.get("mode_category", "")) != "boss":
+		return _fail("boss practice preview row missing boss category %s" % [row])
+	if bool(row.get("client_result_authoritative", true)) or bool(row.get("server_authoritative", true)):
+		return _fail("boss practice preview must not claim result/server authority %s" % [row])
+	if String(row.get("projection_scope", "")) != "local_practice_preview_only" or String(row.get("preview_authority_scope", "")) != "local_practice_preview_only":
+		return _fail("boss practice preview scope mismatch %s" % [row])
+	if String(row.get("replay_verification_scope", "")) != "local_practice_hash":
+		return _fail("boss practice preview replay scope mismatch %s" % [row])
+	if String(row.get("damage_authority", "")) != "server" or String(row.get("reward_authority", "")) != "server" or String(row.get("settlement_authority", "")) != "server":
+		return _fail("boss practice preview must keep online authority on server %s" % [row])
+	if bool(row.get("requires_server_confirmation", true)):
+		return _fail("boss practice preview should not require server confirmation %s" % [row])
+	if String(row.get("ui_control", "")) != "card" or String(row.get("preview_card_kind", "")) != "boss_spellbook_practice_preview" or String(row.get("overview_card_kind", "")) != "boss_practice_preview":
+		return _fail("boss practice preview card contract mismatch %s" % [row])
+	if String(row.get("render_slot", "")) != "mode_cards" or String(row.get("section", "")) != "boss_preview":
+		return _fail("boss practice preview card placement mismatch %s" % [row])
+	var metrics: Array = row.get("preview_card_metrics", [])
+	var badges: Array = row.get("preview_card_authority_badges", [])
+	if metrics.size() < 5 or not badges.has("local_practice_preview_only") or not badges.has("replay_local_practice_hash") or not badges.has("damage_server"):
+		return _fail("boss practice preview card metrics/badges mismatch %s" % [row])
+	if not String(row.get("preview_card_primary_metric", "")).contains("digest") or not String(row.get("preview_card_secondary_metric", "")).contains("headroom"):
+		return _fail("boss practice preview card metric text mismatch %s" % [row])
+	if int(row.get("preview_bundle_signature_digest", 0)) <= 0 or int(row.get("preview_phase_count", 0)) < 3:
+		return _fail("boss practice preview missing deterministic digest %s" % [row])
+	if String(row.get("performance_budget_status", "")) != "within_budget":
+		return _fail("boss practice preview budget status invalid %s" % [row])
+	return true
+
+func _assert_boss_result_receipt_row(row: Dictionary, mode_id: String, expected_receipt_id: String, expected_hash: String) -> bool:
+	if row.is_empty():
+		return _fail("boss result row missing for %s" % mode_id)
+	if String(row.get("mode_id", "")) != mode_id:
+		return _fail("boss result mode mismatch %s row=%s" % [mode_id, row])
+	if String(row.get("mode_category", "")) != "boss":
+		return _fail("boss result row missing boss category %s" % [row])
+	if bool(row.get("client_result_authoritative", true)):
+		return _fail("boss result row must not be client authoritative %s" % [row])
+	if String(row.get("damage_authority", "")) != "server" or String(row.get("reward_authority", "")) != "server" or String(row.get("settlement_authority", "")) != "server":
+		return _fail("boss result row must keep server damage/reward/settlement authority %s" % [row])
+	if String(row.get("receipt_status", "")) != "server_receipt_ready":
+		return _fail("boss result row missing ready receipt status %s" % [row])
+	if String(row.get("result_receipt_id", "")) != expected_receipt_id or String(row.get("result_hash", "")) != expected_hash:
+		return _fail("boss result row receipt mismatch %s" % [row])
+	if typeof(row.get("settlement_receipt_projection", {})) != TYPE_DICTIONARY:
+		return _fail("boss result row missing receipt projection %s" % [row])
+	var projection: Dictionary = row.get("settlement_receipt_projection", {})
+	if String(projection.get("projection_scope", "")) != "server_settlement_receipt_projection":
+		return _fail("boss result projection scope mismatch %s" % [projection])
+	if bool(projection.get("client_result_authoritative", true)):
+		return _fail("boss result projection must not be client authoritative %s" % [projection])
+	var receipt: Dictionary = projection.get("settlement_receipt", {})
+	if String(receipt.get("receipt_id", "")) != expected_receipt_id or String(receipt.get("result_hash", "")) != expected_hash:
+		return _fail("boss result projection receipt mismatch %s" % [projection])
 	return true
 
 func _assert_page_authority_contract(snapshot: Dictionary, label: String, expected_scope: String, expected_text: String) -> bool:

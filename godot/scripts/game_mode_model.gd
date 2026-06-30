@@ -19,9 +19,13 @@ const BOSS_FRIENDLY_FIRE_POLICIES := ["disabled", "player_bullets_only", "all_fr
 const BOSS_ARENA_POLICIES := ["fixed_directions", "shared_ring", "personal_lanes"]
 const BOSS_CARDINAL_LABELS: Array[String] = ["north", "east", "south", "west"]
 const BOSS_EIGHT_DIRECTION_LABELS: Array[String] = ["north", "north_east", "east", "south_east", "south", "south_west", "west", "north_west"]
+const BOSS_LOCAL_PREVIEW_SPELLBOOK_ID := "original_boss_archive"
+const BOSS_LOCAL_PREVIEW_SEED := 20260625
+const BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE := "local_practice_preview_only"
 
 var matchmaking_model: RefCounted = null
 var network_match_model: RefCounted = null
+var boss_spellbook_model: RefCounted = null
 var selected_mode_id := MODE_CERTIFICATION
 var last_action_status := "none"
 var last_error_code := "none"
@@ -35,9 +39,14 @@ var mode_action_requests: Array[Dictionary] = []
 func _init() -> void:
 	reset_local_state()
 
-func configure(matchmaking: RefCounted, network_match: RefCounted) -> void:
+func configure(matchmaking: RefCounted, network_match: RefCounted, spellbook_model: RefCounted = null) -> void:
 	matchmaking_model = matchmaking
 	network_match_model = network_match
+	if spellbook_model != null:
+		boss_spellbook_model = spellbook_model
+
+func configure_boss_spellbook(spellbook_model: RefCounted) -> void:
+	boss_spellbook_model = spellbook_model
 
 func reset_local_state() -> void:
 	certification_state = {
@@ -291,8 +300,126 @@ func validate_boss_entry(mode_id: String) -> Dictionary:
 		"client_result_authoritative": false,
 	}
 
+func boss_entry_preview(mode_id: String) -> Dictionary:
+	var validation := validate_boss_entry(mode_id)
+	var failures := _string_array(validation.get("failures", []))
+	var reason := "none" if failures.is_empty() else failures[0]
+	return {
+		"ok": bool(validation.get("ok", false)),
+		"reason": reason,
+		"failures": failures,
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"entry_period": String(validation.get("entry_period", "")),
+		"attempts_left": int(validation.get("attempts_left", 0)),
+		"required_rating": String(validation.get("required_rating", "")),
+		"player_rating": String(validation.get("player_rating", "")),
+		"required_key_id": String(validation.get("required_key_id", "")),
+		"owned_key_count": int(validation.get("owned_key_count", 0)),
+		"local_validation": "boss_entry_preflight",
+		"local_validation_rules": ["attempts_available", "party_size", "rating_requirement", "key_requirement"],
+		"intent_authority": "client_request_only",
+		"server_confirmation_status": "required" if bool(validation.get("ok", false)) else "blocked_local",
+		"requires_server_confirmation": true,
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"server_authoritative": bool(validation.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
+func boss_action_availability_projection(mode_id: String) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"action_status": "blocked_local",
+			"local_blockers": ["boss_mode_invalid"],
+			"display_ready": false,
+			"entry_valid": false,
+			"can_request_entry": false,
+			"can_request_transfer": false,
+			"server_confirmation_status": "blocked_local",
+			"projection_scope": "local_display_only",
+			"intent_authority": "client_request_only",
+			"damage_authority": "server",
+			"reward_authority": "server",
+			"settlement_authority": "server",
+			"requires_server_confirmation": true,
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var state := _state_for_mode(mode_id)
+	var entry := boss_entry_preview(mode_id)
+	var formation := validate_boss_formation(mode_id)
+	var playfield := boss_playfield_projection(mode_id)
+	var hud := boss_hud_projection(mode_id)
+	var entry_failures := _string_array(entry.get("failures", []))
+	var formation_failures := _string_array(formation.get("failures", []))
+	var display_blockers: Array[String] = []
+	if not bool(playfield.get("ok", false)):
+		display_blockers.append(String(playfield.get("reason", "playfield_projection_failed")))
+	if not bool(hud.get("ok", false)):
+		display_blockers.append(String(hud.get("reason", "hud_projection_failed")))
+	for failure in formation_failures:
+		if not display_blockers.has(failure):
+			display_blockers.append(failure)
+	var display_ready := display_blockers.is_empty() and bool(playfield.get("formation_valid", false))
+	var local_blockers: Array[String] = []
+	for failure in entry_failures:
+		if not local_blockers.has(failure):
+			local_blockers.append(failure)
+	for failure in display_blockers:
+		if not local_blockers.has(failure):
+			local_blockers.append(failure)
+	var party_ids := _string_array(state.get("party_ids", []))
+	var can_request_entry := bool(entry.get("ok", false))
+	var can_request_transfer := bool(formation.get("ok", false)) and party_ids.size() >= 2
+	var action_status := "ready_for_server_entry" if can_request_entry else "blocked_local"
+	if can_request_entry and not display_ready:
+		action_status = "entry_ready_display_blocked"
+	return {
+		"ok": can_request_entry and display_ready,
+		"reason": "none" if local_blockers.is_empty() else local_blockers[0],
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"action_status": action_status,
+		"local_blockers": local_blockers,
+		"display_blockers": display_blockers,
+		"entry_failures": entry_failures,
+		"formation_failures": formation_failures,
+		"display_ready": display_ready,
+		"entry_valid": can_request_entry,
+		"formation_valid": bool(formation.get("ok", false)),
+		"can_request_entry": can_request_entry,
+		"can_request_transfer": can_request_transfer,
+		"can_display_playfield": display_ready,
+		"player_count": int(formation.get("player_count", 0)),
+		"slot_layout_policy": String(formation.get("slot_layout_policy", "")),
+		"slot_labels": formation.get("slot_labels", []),
+		"attempts_left": int(entry.get("attempts_left", 0)),
+		"required_rating": String(entry.get("required_rating", "")),
+		"player_rating": String(entry.get("player_rating", "")),
+		"required_key_id": String(entry.get("required_key_id", "")),
+		"owned_key_count": int(entry.get("owned_key_count", 0)),
+		"entry_preflight": entry,
+		"playfield_projection": playfield,
+		"hud_projection": hud,
+		"server_confirmation_status": String(entry.get("server_confirmation_status", "required" if can_request_entry else "blocked_local")),
+		"projection_scope": "local_display_only",
+		"intent_authority": "client_request_only",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"requires_server_confirmation": true,
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
 func request_boss_entry(mode_id: String) -> Dictionary:
-	var entry := validate_boss_entry(mode_id)
+	var entry := boss_entry_preview(mode_id)
 	if not bool(entry.get("ok", false)):
 		last_action_status = "failed"
 		var failures: Array = entry.get("failures", [])
@@ -393,10 +520,57 @@ func boss_formation_summary(mode_id: String) -> String:
 		String(validation.get("aim_policy", "toward_center")),
 	]
 
+func boss_formation_contract(mode_id: String) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"projection_scope": "local_display_only",
+			"damage_authority": "server",
+			"reward_authority": "server",
+			"settlement_authority": "server",
+			"requires_server_confirmation": true,
+			"client_result_authoritative": false,
+		}
+	var state := _state_for_mode(mode_id)
+	var positions: Array = state.get("positions", [])
+	var count := positions.size()
+	return {
+		"ok": true,
+		"reason": "none",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"slot_count": count,
+		"min_players": BOSS_MIN_PLAYERS,
+		"max_players": BOSS_MAX_PLAYERS,
+		"fixed_direction_counts": [4, 8],
+		"slot_layout_policy": _boss_slot_layout_policy(count),
+		"slot_labels": _boss_slot_labels(count),
+		"spawn_space": "unit_ring",
+		"center_normalized": BOSS_DISPLAY_CENTER,
+		"display_radius_ratio": BOSS_DISPLAY_RADIUS,
+		"boss_center": state.get("boss_center", BOSS_CENTER),
+		"aim_policy": String(state.get("aim_policy", "toward_center")),
+		"shooting_target": "boss_center",
+		"all_slots_face_center": true,
+		"friendly_fire": String(state.get("friendly_fire", "disabled")),
+		"arena_policy": String(state.get("arena_policy", "fixed_directions")),
+		"projection_scope": "local_display_only",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"requires_server_confirmation": true,
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
 func boss_display_slots(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO, Vector2.ONE)) -> Array[Dictionary]:
 	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
 		return []
 	var state := _state_for_mode(mode_id)
+	var contract := boss_formation_contract(mode_id)
 	var positions: Array = state.get("positions", [])
 	var slots: Array[Dictionary] = []
 	for raw_position in positions:
@@ -415,6 +589,7 @@ func boss_display_slots(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO, 
 			"slot_count": int(position.get("slot_count", positions.size())),
 			"slot_label": String(position.get("slot_label", _boss_slot_label(int(position.get("slot_index", -1)), positions.size()))),
 			"slot_layout_policy": _boss_slot_layout_policy(positions.size()),
+			"formation_contract": contract,
 			"normalized_spawn": spawn,
 			"normalized_display_position": normalized_position,
 			"screen_position": screen_position,
@@ -444,6 +619,7 @@ func boss_playfield_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2
 	var state := _state_for_mode(mode_id)
 	var formation := validate_boss_formation(mode_id)
 	var entry := validate_boss_entry(mode_id)
+	var contract := boss_formation_contract(mode_id)
 	var current_hp := float(state.get("current_hp", 0.0))
 	var max_hp := float(state.get("max_hp", 0.0))
 	var screen_center := playfield.position + Vector2(
@@ -470,6 +646,7 @@ func boss_playfield_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2
 		"screen_radius_pixels": radius_pixels,
 		"screen_bounds": screen_bounds,
 		"display_slots": boss_display_slots(mode_id, playfield),
+		"formation_contract": contract,
 		"player_count": int(formation.get("player_count", 0)),
 		"slot_layout_policy": String(formation.get("slot_layout_policy", "")),
 		"slot_labels": formation.get("slot_labels", []),
@@ -483,6 +660,7 @@ func boss_playfield_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2
 		"friendly_fire_warning": String(state.get("friendly_fire_warning", "none")),
 		"requires_server_confirmation": true,
 		"damage_authority": "server",
+		"reward_authority": "server",
 		"settlement_authority": "server",
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
@@ -504,6 +682,7 @@ func boss_hud_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO,
 	var playfield_projection := boss_playfield_projection(mode_id, playfield)
 	var entry := validate_boss_entry(mode_id)
 	var formation := validate_boss_formation(mode_id)
+	var contract := boss_formation_contract(mode_id)
 	var current_hp := float(playfield_projection.get("current_hp", state.get("current_hp", 0.0)))
 	var max_hp := float(playfield_projection.get("max_hp", state.get("max_hp", 0.0)))
 	var entry_failures := _string_array(entry.get("failures", []))
@@ -537,6 +716,7 @@ func boss_hud_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO,
 		"max_players": BOSS_MAX_PLAYERS,
 		"slot_layout_policy": String(formation.get("slot_layout_policy", "")),
 		"slot_labels": formation.get("slot_labels", []),
+		"formation_contract": contract,
 		"friendly_fire": String(state.get("friendly_fire", "disabled")),
 		"arena_policy": String(state.get("arena_policy", "fixed_directions")),
 		"friendly_fire_warning": String(state.get("friendly_fire_warning", "none")),
@@ -578,6 +758,7 @@ func boss_local_status_row(row_id: String, mode_id: String) -> Dictionary:
 	var player_count := int(formation.get("player_count", 0))
 	var result_status := String(state.get("last_result_status", "pending"))
 	var slot_layout_policy := String(formation.get("slot_layout_policy", _boss_slot_layout_policy(player_count)))
+	var contract := boss_formation_contract(mode_id)
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.world_boss" if mode_id == MODE_WORLD_BOSS else "screen.mode.instance_boss",
@@ -612,6 +793,7 @@ func boss_local_status_row(row_id: String, mode_id: String) -> Dictionary:
 		"player_count": player_count,
 		"slot_layout_policy": slot_layout_policy,
 		"slot_labels": formation.get("slot_labels", _boss_slot_labels(player_count)),
+		"formation_contract": contract,
 		"min_players": BOSS_MIN_PLAYERS,
 		"max_players": BOSS_MAX_PLAYERS,
 		"requires_server_confirmation": true,
@@ -619,6 +801,165 @@ func boss_local_status_row(row_id: String, mode_id: String) -> Dictionary:
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 		"enabled": true,
+	}
+
+func boss_display_contract_row(row_id: String, mode_id: String) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"id": row_id,
+			"label_key": "screen.mode.boss.playfield",
+			"value": "invalid boss mode",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"display_ready": false,
+			"display_blockers": ["boss_mode_invalid"],
+			"projection_scope": "local_display_only",
+			"damage_authority": "server",
+			"reward_authority": "server",
+			"settlement_authority": "server",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+			"enabled": false,
+		}
+	var state := _state_for_mode(mode_id)
+	var playfield_projection := boss_playfield_projection(mode_id)
+	var hud_projection := boss_hud_projection(mode_id)
+	var entry_preview := boss_entry_preview(mode_id)
+	var action_projection := boss_action_availability_projection(mode_id)
+	var formation_failures := _string_array(playfield_projection.get("formation_failures", []))
+	var entry_failures := _string_array(entry_preview.get("failures", []))
+	var display_blockers: Array[String] = []
+	if not bool(playfield_projection.get("ok", false)):
+		display_blockers.append(String(playfield_projection.get("reason", "playfield_projection_failed")))
+	if not bool(hud_projection.get("ok", false)):
+		display_blockers.append(String(hud_projection.get("reason", "hud_projection_failed")))
+	for failure in formation_failures:
+		if not display_blockers.has(failure):
+			display_blockers.append(failure)
+	var display_ready := display_blockers.is_empty() and bool(playfield_projection.get("formation_valid", false))
+	var entry_status := "entry_ready" if bool(entry_preview.get("ok", false)) else "entry_blocked:%s" % ",".join(entry_failures)
+	var hp_ratio := float(playfield_projection.get("hp_ratio", 0.0))
+	return {
+		"id": row_id,
+		"label_key": "screen.mode.boss.playfield",
+		"value": "display %s slots %d hp %.0f%% %s" % [
+			"ready" if display_ready else "blocked",
+			int(playfield_projection.get("player_count", 0)),
+			hp_ratio * 100.0,
+			entry_status,
+		],
+		"summary": "local Boss playfield and HUD display contract only; entry intent, damage, rewards, and settlement require server confirmation",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"display_ready": display_ready,
+		"display_status": "ready" if display_ready else "blocked",
+		"display_blockers": display_blockers,
+		"display_scope": "local_display_only",
+		"projection_scope": "local_display_only",
+		"persistent_hp": mode_id == MODE_WORLD_BOSS,
+		"playfield_projection": playfield_projection,
+		"hud_projection": hud_projection,
+		"display_slots": playfield_projection.get("display_slots", []),
+		"formation_contract": playfield_projection.get("formation_contract", {}),
+		"action_availability": action_projection,
+		"action_status": String(action_projection.get("action_status", "")),
+		"local_blockers": action_projection.get("local_blockers", []),
+		"can_request_entry": bool(action_projection.get("can_request_entry", false)),
+		"can_request_transfer": bool(action_projection.get("can_request_transfer", false)),
+		"can_display_playfield": bool(action_projection.get("can_display_playfield", false)),
+		"formation_valid": bool(playfield_projection.get("formation_valid", false)),
+		"formation_failures": formation_failures,
+		"entry_valid": bool(entry_preview.get("ok", false)),
+		"entry_failures": entry_failures,
+		"entry_preflight": entry_preview,
+		"entry_server_confirmation_status": String(entry_preview.get("server_confirmation_status", "")),
+		"player_count": int(playfield_projection.get("player_count", 0)),
+		"slot_layout_policy": String(playfield_projection.get("slot_layout_policy", "")),
+		"slot_labels": playfield_projection.get("slot_labels", []),
+		"hp_ratio": hp_ratio,
+		"friendly_fire": String(state.get("friendly_fire", "disabled")),
+		"arena_policy": String(state.get("arena_policy", "fixed_directions")),
+		"friendly_fire_warning": String(state.get("friendly_fire_warning", "none")),
+		"requires_server_confirmation": true,
+		"intent_authority": "client_request_only",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+		"enabled": display_ready,
+	}
+
+func boss_practice_preview_projection(mode_id: String) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"projection_scope": "local_practice_preview_only",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	if boss_spellbook_model == null or not boss_spellbook_model.has_method("phase_export_data"):
+		return {
+			"ok": false,
+			"reason": "boss_spellbook_unavailable",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"projection_scope": BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+			"preview_authority_scope": BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+			"damage_authority": "server",
+			"reward_authority": "server",
+			"settlement_authority": "server",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var export_data: Dictionary = boss_spellbook_model.phase_export_data(BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, BOSS_LOCAL_PREVIEW_SEED)
+	if export_data.is_empty():
+		return {
+			"ok": false,
+			"reason": "boss_spellbook_preview_missing",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"spellbook_id": BOSS_LOCAL_PREVIEW_SPELLBOOK_ID,
+			"preview_seed": BOSS_LOCAL_PREVIEW_SEED,
+			"projection_scope": BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+			"preview_authority_scope": BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+			"damage_authority": "server",
+			"reward_authority": "server",
+			"settlement_authority": "server",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var phase_ids := _string_array(export_data.get("preview_phase_ids", []))
+	var phase_digests := _int_array(export_data.get("preview_phase_signature_digests", []))
+	return {
+		"ok": String(export_data.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)) == BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+		"reason": "none" if String(export_data.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)) == BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE else "preview_authority_scope_mismatch",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"spellbook_id": String(export_data.get("spellbook_id", BOSS_LOCAL_PREVIEW_SPELLBOOK_ID)),
+		"preview_seed": int(export_data.get("seed", BOSS_LOCAL_PREVIEW_SEED)),
+		"preview_bundle_id": String(export_data.get("preview_bundle_id", "")),
+		"preview_bundle_signature_digest": int(export_data.get("preview_bundle_signature_digest", 0)),
+		"preview_phase_count": int(export_data.get("preview_phase_count", phase_ids.size())),
+		"preview_phase_ids": phase_ids,
+		"preview_phase_signature_digests": phase_digests,
+		"preview_max_emit_per_tick": int(export_data.get("max_preview_emit_per_tick", 0)),
+		"preview_min_budget_headroom": int(export_data.get("min_preview_budget_headroom", 0)),
+		"performance_budget_status": String(export_data.get("performance_budget_status", "")),
+		"preview_authority_scope": String(export_data.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)),
+		"projection_scope": BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+		"replay_verification_scope": "local_practice_hash",
+		"practice_mode": "boss_spellbook_practice",
+		"server_confirmation_status": "not_applicable_local_preview",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"requires_server_confirmation": false,
+		"server_authoritative": false,
+		"client_result_authoritative": false,
 	}
 
 func validate_boss_formation(mode_id: String) -> Dictionary:
@@ -678,46 +1019,76 @@ func validate_boss_formation(mode_id: String) -> Dictionary:
 		"slot_angles_degrees": slot_angles,
 		"slot_layout_policy": _boss_slot_layout_policy(count),
 		"slot_labels": _boss_slot_labels(count),
+		"formation_contract": boss_formation_contract(mode_id),
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
+func boss_transfer_preview(mode_id: String, from_player_id: String, to_player_id: String, card_id: String) -> Dictionary:
+	var failures: Array[String] = []
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		failures.append("boss_mode_invalid")
+	var state := _state_for_mode(mode_id)
+	var party_ids := _string_array(state.get("party_ids", []))
+	var transferred := _string_array(state.get("transferred_card_ids", []))
+	var clean_card_id := card_id.strip_edges()
+	var clean_from_player_id := from_player_id.strip_edges()
+	var clean_to_player_id := to_player_id.strip_edges()
+	if clean_card_id.is_empty():
+		failures.append("transfer_card_missing")
+	if clean_from_player_id.is_empty() or clean_to_player_id.is_empty():
+		failures.append("transfer_player_missing")
+	if not clean_from_player_id.is_empty() and clean_from_player_id == clean_to_player_id:
+		failures.append("transfer_self")
+	if not clean_from_player_id.is_empty() and not clean_to_player_id.is_empty() and (not party_ids.has(clean_from_player_id) or not party_ids.has(clean_to_player_id)):
+		failures.append("transfer_player_not_in_party")
+	if not clean_card_id.is_empty() and transferred.has(clean_card_id):
+		failures.append("transfer_duplicate")
+	var reason := "none" if failures.is_empty() else failures[0]
+	return {
+		"ok": failures.is_empty(),
+		"reason": reason,
+		"failures": failures,
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"from_player_id": clean_from_player_id,
+		"to_player_id": clean_to_player_id,
+		"card_id": clean_card_id,
+		"party_ids": party_ids,
+		"transferred_card_ids": transferred,
+		"transfer_policy": "once_per_card_per_match",
+		"local_validation": "boss_transfer_preflight",
+		"local_validation_rules": ["party_members_only", "no_self_transfer", "card_id_required", "once_per_card_per_match"],
+		"intent_authority": "client_request_only",
+		"server_confirmation_status": "required" if failures.is_empty() else "blocked_local",
+		"requires_server_confirmation": true,
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 	}
 
 func request_boss_card_transfer(mode_id: String, from_player_id: String, to_player_id: String, card_id: String) -> Dictionary:
-	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
-		last_action_status = "failed"
-		last_error_code = "boss_mode_invalid"
-		return _action_result(false, {})
 	var state := _state_for_mode(mode_id)
-	var party_ids := _string_array(state.get("party_ids", []))
-	if card_id.strip_edges().is_empty():
+	var preview := boss_transfer_preview(mode_id, from_player_id, to_player_id, card_id)
+	if not bool(preview.get("ok", false)):
 		last_action_status = "failed"
-		last_error_code = "transfer_card_missing"
-		return _action_result(false, {})
-	if from_player_id.strip_edges().is_empty() or to_player_id.strip_edges().is_empty():
-		last_action_status = "failed"
-		last_error_code = "transfer_player_missing"
-		return _action_result(false, {})
-	if from_player_id == to_player_id:
-		last_action_status = "failed"
-		last_error_code = "transfer_self"
-		return _action_result(false, {})
-	if not party_ids.has(from_player_id) or not party_ids.has(to_player_id):
-		last_action_status = "failed"
-		last_error_code = "transfer_player_not_in_party"
+		last_error_code = String(preview.get("reason", "transfer_invalid"))
 		return _action_result(false, {})
 	var transferred := _string_array(state.get("transferred_card_ids", []))
-	if transferred.has(card_id):
-		last_action_status = "failed"
-		last_error_code = "transfer_duplicate"
-		return _action_result(false, {})
-	transferred.append(card_id)
+	var clean_card_id := String(preview.get("card_id", ""))
+	var clean_from_player_id := String(preview.get("from_player_id", ""))
+	var clean_to_player_id := String(preview.get("to_player_id", ""))
+	transferred.append(clean_card_id)
 	state["transferred_card_ids"] = transferred
 	var requests: Array = state.get("transfer_requests", [])
 	var transfer := {
-		"from_player_id": from_player_id,
-		"to_player_id": to_player_id,
-		"card_id": card_id,
+		"from_player_id": clean_from_player_id,
+		"to_player_id": clean_to_player_id,
+		"card_id": clean_card_id,
 		"status": "requested",
+		"preflight": preview,
 	}
 	requests.append(transfer)
 	state["transfer_requests"] = requests
@@ -745,6 +1116,7 @@ func apply_world_boss_result(result: Dictionary) -> bool:
 	world_boss_state["last_result_status"] = str(result.get("settlement_status", "defeated" if float(world_boss_state.get("current_hp", 0.0)) <= 0.0 else "applied"))
 	world_boss_state["last_result_source"] = "server_settlement_projection"
 	world_boss_state["server_authoritative"] = bool(result.get("server_authority", result.get("server_authoritative", true)))
+	_apply_boss_settlement_receipt(world_boss_state, result)
 	var defeated_at_from_server := str(result.get("defeated_at", "")).strip_edges()
 	if not defeated_at_from_server.is_empty():
 		world_boss_state["defeated_at"] = defeated_at_from_server
@@ -763,7 +1135,8 @@ func apply_instance_boss_result(result: Dictionary) -> bool:
 	var boss_defeated := bool(result.get("boss_defeated", result.get("instance_cleared", false)))
 	var survivors := int(result.get("survivors", 0))
 	var failed_mechanic := bool(result.get("failed_mechanic", false))
-	var cleared := bool(result.get("instance_cleared", boss_defeated and survivors > 0 and not failed_mechanic))
+	var survivor_required := bool(result.get("survivor_required", instance_boss_state.get("survivor_required", true)))
+	var cleared := bool(result.get("instance_cleared", boss_defeated and (survivors > 0 or not survivor_required) and not failed_mechanic))
 	instance_boss_state["boss_defeated"] = boss_defeated
 	instance_boss_state["survivors"] = survivors
 	instance_boss_state["failed_mechanic"] = failed_mechanic
@@ -773,7 +1146,8 @@ func apply_instance_boss_result(result: Dictionary) -> bool:
 	instance_boss_state["clear_time_seconds"] = int(result.get("clear_time_seconds", 0))
 	instance_boss_state["three_star_time_seconds"] = int(result.get("three_star_time_seconds", instance_boss_state.get("three_star_time_seconds", 180)))
 	instance_boss_state["deaths"] = int(result.get("deaths", 0))
-	instance_boss_state["survivor_required"] = bool(result.get("survivor_required", true))
+	instance_boss_state["survivor_required"] = survivor_required
+	instance_boss_state["clear_conditions"] = ["boss_hp_zero", "survivor_required" if survivor_required else "survivor_optional", "no_failed_mechanic"]
 	instance_boss_state["bombs_used"] = int(result.get("bombs_used", instance_boss_state.get("bombs_used", 0)))
 	instance_boss_state["bomb_limit"] = int(result.get("bomb_limit", instance_boss_state.get("bomb_limit", 0)))
 	instance_boss_state["last_result_match_id"] = str(result.get("match_id", instance_boss_state.get("last_result_match_id", "")))
@@ -781,6 +1155,7 @@ func apply_instance_boss_result(result: Dictionary) -> bool:
 	instance_boss_state["last_result_source"] = "server_settlement_projection"
 	instance_boss_state["stars"] = _calculate_instance_stars(result, cleared)
 	instance_boss_state["server_authoritative"] = bool(result.get("server_authority", result.get("server_authoritative", true)))
+	_apply_boss_settlement_receipt(instance_boss_state, result)
 	last_action_status = "instance_boss_result"
 	last_error_code = "none"
 	return true
@@ -820,8 +1195,10 @@ func _world_boss_rows() -> Array[Dictionary]:
 		_boss_entry_row("world_boss_entry", MODE_WORLD_BOSS, world_boss_state),
 		_boss_party_row("world_boss_party", MODE_WORLD_BOSS, world_boss_state),
 		_boss_formation_row("world_boss_formation", MODE_WORLD_BOSS, world_boss_state),
+		boss_display_contract_row("world_boss_display", MODE_WORLD_BOSS),
 		_boss_playfield_row("world_boss_playfield", MODE_WORLD_BOSS),
 		_boss_hud_row("world_boss_hud", MODE_WORLD_BOSS),
+		_boss_practice_preview_row("world_boss_practice_preview", MODE_WORLD_BOSS),
 		_boss_transfer_row("world_boss_transfer", MODE_WORLD_BOSS, world_boss_state),
 		_world_boss_result_row(),
 		{"id": "world_boss_announcement", "label_key": "screen.mode.boss.announcement", "value": str(world_boss_state.get("world_announcement", "")), "mode_category": "boss", "server_authoritative": bool(world_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": not str(world_boss_state.get("defeated_at", "")).is_empty()},
@@ -837,8 +1214,10 @@ func _instance_boss_rows() -> Array[Dictionary]:
 		{"id": "instance_boss_stars", "label_key": "screen.mode.instance.stars", "value": int(instance_boss_state.get("stars", 0)), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": bool(instance_boss_state.get("cleared", false))},
 		_boss_party_row("instance_boss_party", MODE_INSTANCE_BOSS, instance_boss_state),
 		_boss_formation_row("instance_boss_formation", MODE_INSTANCE_BOSS, instance_boss_state),
+		boss_display_contract_row("instance_boss_display", MODE_INSTANCE_BOSS),
 		_boss_playfield_row("instance_boss_playfield", MODE_INSTANCE_BOSS),
 		_boss_hud_row("instance_boss_hud", MODE_INSTANCE_BOSS),
+		_boss_practice_preview_row("instance_boss_practice_preview", MODE_INSTANCE_BOSS),
 		_boss_transfer_row("instance_boss_transfer", MODE_INSTANCE_BOSS, instance_boss_state),
 		_instance_boss_result_row(),
 	]
@@ -895,6 +1274,12 @@ func _default_boss_state(is_world: bool) -> Dictionary:
 		"last_result_match_id": "",
 		"last_result_status": "pending",
 		"last_result_source": "",
+		"last_result_receipt_id": "",
+		"last_result_hash": "",
+		"last_result_replay_id": "",
+		"last_result_server_time": "",
+		"last_result_key_id": "",
+		"last_result_receipt_source": "",
 		"server_authoritative": false,
 		"client_result_authoritative": false,
 	}
@@ -1028,6 +1413,7 @@ func _boss_rules_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
 	var positions: Array = state.get("positions", [])
 	var display_slots := boss_display_slots(mode_id)
+	var contract := boss_formation_contract(mode_id)
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.boss.party",
@@ -1039,6 +1425,7 @@ func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 		"player_count": int(state.get("player_count", positions.size())),
 		"slot_layout_policy": _boss_slot_layout_policy(positions.size()),
 		"slot_labels": _boss_slot_labels(positions.size()),
+		"formation_contract": contract,
 		"min_players": BOSS_MIN_PLAYERS,
 		"max_players": BOSS_MAX_PLAYERS,
 		"boss_center": state.get("boss_center", BOSS_CENTER),
@@ -1052,7 +1439,8 @@ func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 	}
 
 func _boss_entry_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
-	var validation := validate_boss_entry(mode_id)
+	var validation := boss_entry_preview(mode_id)
+	var action_projection := boss_action_availability_projection(mode_id)
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.boss.entry",
@@ -1071,10 +1459,19 @@ func _boss_entry_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 		"player_rating": String(validation.get("player_rating", "")),
 		"required_key_id": String(validation.get("required_key_id", "")),
 		"owned_key_count": int(validation.get("owned_key_count", 0)),
+		"entry_preflight": validation,
+		"action_availability": action_projection,
+		"action_status": String(action_projection.get("action_status", "")),
+		"local_blockers": action_projection.get("local_blockers", []),
+		"can_request_entry": bool(action_projection.get("can_request_entry", false)),
+		"can_request_transfer": bool(action_projection.get("can_request_transfer", false)),
+		"can_display_playfield": bool(action_projection.get("can_display_playfield", false)),
 		"intent_authority": "client_request_only",
-		"server_confirmation_status": "required",
-		"local_validation": "entry_gate",
+		"server_confirmation_status": String(validation.get("server_confirmation_status", "")),
+		"local_validation": "boss_entry_preflight",
 		"local_validation_rules": ["attempts_available", "party_size", "rating_requirement", "key_requirement"],
+		"damage_authority": "server",
+		"reward_authority": "server",
 		"settlement_authority": "server",
 		"requires_server_confirmation": true,
 		"server_authoritative": bool(state.get("server_authoritative", false)),
@@ -1085,6 +1482,7 @@ func _boss_entry_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 func _boss_formation_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
 	var validation := validate_boss_formation(mode_id)
 	var display_slots := boss_display_slots(mode_id)
+	var contract := boss_formation_contract(mode_id)
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.boss.party",
@@ -1098,6 +1496,7 @@ func _boss_formation_row(row_id: String, mode_id: String, state: Dictionary) -> 
 		"slot_angles_degrees": validation.get("slot_angles_degrees", []),
 		"slot_layout_policy": String(validation.get("slot_layout_policy", "")),
 		"slot_labels": validation.get("slot_labels", []),
+		"formation_contract": contract,
 		"player_count": int(validation.get("player_count", 0)),
 		"min_players": BOSS_MIN_PLAYERS,
 		"max_players": BOSS_MAX_PLAYERS,
@@ -1127,8 +1526,10 @@ func _boss_playfield_row(row_id: String, mode_id: String) -> Dictionary:
 		"mode_category": "boss",
 		"playfield_projection": projection,
 		"display_slots": projection.get("display_slots", []),
+		"formation_contract": projection.get("formation_contract", {}),
 		"projection_scope": String(projection.get("projection_scope", "local_display_only")),
 		"damage_authority": String(projection.get("damage_authority", "server")),
+		"reward_authority": String(projection.get("reward_authority", "server")),
 		"settlement_authority": String(projection.get("settlement_authority", "server")),
 		"formation_valid": bool(projection.get("formation_valid", false)),
 		"entry_valid": bool(projection.get("entry_valid", false)),
@@ -1150,6 +1551,7 @@ func _boss_hud_row(row_id: String, mode_id: String) -> Dictionary:
 		"hud_projection": projection,
 		"playfield_projection": projection.get("playfield_projection", {}),
 		"display_slots": projection.get("display_slots", []),
+		"formation_contract": projection.get("formation_contract", {}),
 		"projection_scope": String(projection.get("projection_scope", "local_display_only")),
 		"damage_authority": String(projection.get("damage_authority", "server")),
 		"reward_authority": String(projection.get("reward_authority", "server")),
@@ -1164,10 +1566,93 @@ func _boss_hud_row(row_id: String, mode_id: String) -> Dictionary:
 		"enabled": bool(projection.get("ok", false)),
 	}
 
+func _boss_practice_preview_row(row_id: String, mode_id: String) -> Dictionary:
+	var projection := boss_practice_preview_projection(mode_id)
+	var phase_count := int(projection.get("preview_phase_count", 0))
+	var digest := int(projection.get("preview_bundle_signature_digest", 0))
+	var max_emit := int(projection.get("preview_max_emit_per_tick", 0))
+	var headroom := int(projection.get("preview_min_budget_headroom", 0))
+	var budget_status := String(projection.get("performance_budget_status", ""))
+	var preview_metrics: Array[Dictionary] = [
+		{"id": "phases", "label": "phases", "value": phase_count},
+		{"id": "digest", "label": "digest", "value": digest},
+		{"id": "max_emit", "label": "max emit", "value": max_emit},
+		{"id": "headroom", "label": "headroom", "value": headroom},
+		{"id": "budget", "label": "budget", "value": budget_status},
+	]
+	var authority_badges: Array[String] = [
+		"local_practice_preview_only",
+		"replay_local_practice_hash",
+		"damage_server",
+		"reward_server",
+		"settlement_server",
+	]
+	return {
+		"id": row_id,
+		"label_key": "screen.settings.boss_spellbook",
+		"value": "practice preview phases %d digest %d max_emit %d headroom %d %s" % [
+			phase_count,
+			digest,
+			max_emit,
+			headroom,
+			budget_status,
+		],
+		"summary": "local Boss spellbook practice preview only; Replay can verify preview digest, but online damage, rewards, hp, and settlement stay server-authoritative",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"mode_group": "boss",
+		"section": "boss_preview",
+		"section_label_key": "ui.menu_section_boss",
+		"ui_control": "card",
+		"ui_control_label_key": "ui.control_card",
+		"preview_card_kind": "boss_spellbook_practice_preview",
+		"preview_card_title_key": "screen.settings.boss_spellbook",
+		"preview_card_summary": "local practice preview; Replay hash can verify the bundle, online outcomes remain server authoritative",
+		"preview_card_metrics": preview_metrics,
+		"preview_card_primary_metric": "phases %d digest %d" % [phase_count, digest],
+		"preview_card_secondary_metric": "max_emit %d headroom %d %s" % [max_emit, headroom, budget_status],
+		"preview_card_authority_badges": authority_badges,
+		"preview_card_action_hint": "open practice/replay verification only",
+		"overview_card_kind": "boss_practice_preview",
+		"render_slot": "mode_cards",
+		"preview_projection": projection,
+		"spellbook_id": String(projection.get("spellbook_id", BOSS_LOCAL_PREVIEW_SPELLBOOK_ID)),
+		"preview_seed": int(projection.get("preview_seed", BOSS_LOCAL_PREVIEW_SEED)),
+		"preview_bundle_id": String(projection.get("preview_bundle_id", "")),
+		"preview_bundle_signature_digest": digest,
+		"preview_phase_count": phase_count,
+		"preview_phase_ids": projection.get("preview_phase_ids", []),
+		"preview_phase_signature_digests": projection.get("preview_phase_signature_digests", []),
+		"preview_max_emit_per_tick": max_emit,
+		"preview_min_budget_headroom": headroom,
+		"performance_budget_status": budget_status,
+		"preview_authority_scope": String(projection.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)),
+		"projection_scope": String(projection.get("projection_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)),
+		"replay_verification_scope": String(projection.get("replay_verification_scope", "local_practice_hash")),
+		"practice_mode": String(projection.get("practice_mode", "boss_spellbook_practice")),
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"server_confirmation_status": String(projection.get("server_confirmation_status", "not_applicable_local_preview")),
+		"requires_server_confirmation": false,
+		"server_authoritative": false,
+		"client_result_authoritative": false,
+		"enabled": bool(projection.get("ok", false)),
+	}
+
 func _boss_transfer_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
 	var requests: Array = state.get("transfer_requests", [])
 	var transferred_ids := _string_array(state.get("transferred_card_ids", []))
+	var action_projection := boss_action_availability_projection(mode_id)
 	var latest_request := _latest_boss_transfer_request(requests)
+	var latest_preview: Dictionary = latest_request.get("preflight", {}) if not latest_request.is_empty() else {}
+	if latest_preview.is_empty() and not latest_request.is_empty():
+		latest_preview = boss_transfer_preview(
+			mode_id,
+			String(latest_request.get("from_player_id", "")),
+			String(latest_request.get("to_player_id", "")),
+			String(latest_request.get("card_id", ""))
+		)
 	var latest_summary := "none"
 	if not latest_request.is_empty():
 		latest_summary = "%s->%s %s %s" % [
@@ -1190,16 +1675,26 @@ func _boss_transfer_row(row_id: String, mode_id: String, state: Dictionary) -> D
 		"transferred_card_count": transferred_ids.size(),
 		"pending_server_confirmation_count": _boss_pending_transfer_count(requests),
 		"latest_transfer_request": latest_request,
+		"latest_transfer_preview": latest_preview,
 		"latest_transfer_summary": latest_summary,
+		"action_availability": action_projection,
+		"action_status": String(action_projection.get("action_status", "")),
+		"local_blockers": action_projection.get("local_blockers", []),
+		"can_request_entry": bool(action_projection.get("can_request_entry", false)),
+		"can_request_transfer": bool(action_projection.get("can_request_transfer", false)),
+		"can_display_playfield": bool(action_projection.get("can_display_playfield", false)),
 		"transfer_policy": "once_per_card_per_match",
 		"local_validation_rules": ["party_members_only", "no_self_transfer", "card_id_required", "once_per_card_per_match"],
+		"preflight_available": true,
 		"intent_authority": "client_request_only",
 		"server_confirmation_status": "pending" if _boss_pending_transfer_count(requests) > 0 else "none",
+		"damage_authority": "server",
+		"reward_authority": "server",
 		"settlement_authority": "server",
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 		"requires_server_confirmation": true,
-		"local_validation": "party_members_only",
+		"local_validation": "boss_transfer_preflight",
 		"last_error_code": last_error_code if last_action_status == "failed" else "none",
 		"enabled": true,
 	}
@@ -1221,6 +1716,7 @@ func _boss_pending_transfer_count(requests: Array) -> int:
 	return count
 
 func _world_boss_result_row() -> Dictionary:
+	var receipt_projection := boss_settlement_receipt_projection(MODE_WORLD_BOSS)
 	return {
 		"id": "world_boss_result",
 		"label_key": "screen.mode.boss.result",
@@ -1242,6 +1738,15 @@ func _world_boss_result_row() -> Dictionary:
 		"defeat_timestamp_source": "pending_server" if bool(world_boss_state.get("defeat_timestamp_pending_server", false)) else ("server" if not str(world_boss_state.get("defeated_at", "")).is_empty() else "none"),
 		"result_status": str(world_boss_state.get("last_result_status", "pending")),
 		"result_source": str(world_boss_state.get("last_result_source", "")),
+		"result_receipt_id": str(world_boss_state.get("last_result_receipt_id", "")),
+		"result_hash": str(world_boss_state.get("last_result_hash", "")),
+		"result_replay_id": str(world_boss_state.get("last_result_replay_id", "")),
+		"result_server_time": str(world_boss_state.get("last_result_server_time", "")),
+		"result_key_id": str(world_boss_state.get("last_result_key_id", "")),
+		"receipt_source": str(world_boss_state.get("last_result_receipt_source", "")),
+		"receipt_status": String(receipt_projection.get("receipt_status", "")),
+		"settlement_receipt": receipt_projection.get("settlement_receipt", {}),
+		"settlement_receipt_projection": receipt_projection,
 		"damage_authority": "server",
 		"reward_authority": "server",
 		"settlement_authority": "server",
@@ -1253,6 +1758,7 @@ func _world_boss_result_row() -> Dictionary:
 
 func _instance_boss_result_row() -> Dictionary:
 	var star_conditions := _instance_boss_star_conditions(instance_boss_state)
+	var receipt_projection := boss_settlement_receipt_projection(MODE_INSTANCE_BOSS)
 	var met_conditions := 0
 	for condition in star_conditions:
 		if typeof(condition) == TYPE_DICTIONARY and bool((condition as Dictionary).get("met", false)):
@@ -1274,6 +1780,8 @@ func _instance_boss_result_row() -> Dictionary:
 		"cleared": bool(instance_boss_state.get("cleared", false)),
 		"boss_defeated": bool(instance_boss_state.get("boss_defeated", false)),
 		"survivors": int(instance_boss_state.get("survivors", 0)),
+		"survivor_required": bool(instance_boss_state.get("survivor_required", true)),
+		"clear_rule": "survivor_required" if bool(instance_boss_state.get("survivor_required", true)) else "survivor_optional",
 		"failed_mechanic": bool(instance_boss_state.get("failed_mechanic", false)),
 		"clear_time_seconds": int(instance_boss_state.get("clear_time_seconds", 0)),
 		"three_star_time_seconds": int(instance_boss_state.get("three_star_time_seconds", 180)),
@@ -1285,6 +1793,15 @@ func _instance_boss_result_row() -> Dictionary:
 		"star_condition_summary": "%d/%d" % [met_conditions, star_conditions.size()],
 		"result_status": str(instance_boss_state.get("last_result_status", "pending")),
 		"result_source": str(instance_boss_state.get("last_result_source", "")),
+		"result_receipt_id": str(instance_boss_state.get("last_result_receipt_id", "")),
+		"result_hash": str(instance_boss_state.get("last_result_hash", "")),
+		"result_replay_id": str(instance_boss_state.get("last_result_replay_id", "")),
+		"result_server_time": str(instance_boss_state.get("last_result_server_time", "")),
+		"result_key_id": str(instance_boss_state.get("last_result_key_id", "")),
+		"receipt_source": str(instance_boss_state.get("last_result_receipt_source", "")),
+		"receipt_status": String(receipt_projection.get("receipt_status", "")),
+		"settlement_receipt": receipt_projection.get("settlement_receipt", {}),
+		"settlement_receipt_projection": receipt_projection,
 		"damage_authority": "server",
 		"reward_authority": "server",
 		"settlement_authority": "server",
@@ -1321,7 +1838,8 @@ func _instance_boss_star_conditions(state: Dictionary) -> Array[Dictionary]:
 			"label_key": "screen.mode.instance.conditions",
 			"met": cleared and boss_defeated and not failed_mechanic and (survivors > 0 or not survivor_required),
 			"actual": "cleared" if cleared else "failed",
-			"target": "boss_hp_zero_survivor_no_failed_mechanic",
+			"target": "boss_hp_zero_survivor_no_failed_mechanic" if survivor_required else "boss_hp_zero_no_failed_mechanic",
+			"survivor_required": survivor_required,
 		},
 		{
 			"id": "time_star",
@@ -1345,6 +1863,79 @@ func _instance_boss_star_conditions(state: Dictionary) -> Array[Dictionary]:
 			"target_bombs": bomb_limit,
 		},
 	]
+
+func boss_settlement_receipt_projection(mode_id: String) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"receipt_status": "invalid",
+			"settlement_authority": "server",
+			"reward_authority": "server",
+			"damage_authority": "server",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var state := _state_for_mode(mode_id)
+	var receipt_id := str(state.get("last_result_receipt_id", "")).strip_edges()
+	var result_hash := str(state.get("last_result_hash", "")).strip_edges()
+	var replay_id := str(state.get("last_result_replay_id", "")).strip_edges()
+	var server_time := str(state.get("last_result_server_time", "")).strip_edges()
+	var key_id := str(state.get("last_result_key_id", "")).strip_edges()
+	var receipt_source := str(state.get("last_result_receipt_source", "")).strip_edges()
+	var has_receipt := not receipt_id.is_empty() or not result_hash.is_empty() or not server_time.is_empty()
+	var receipt := {
+		"receipt_id": receipt_id,
+		"result_hash": result_hash,
+		"replay_id": replay_id,
+		"server_time": server_time,
+		"key_id": key_id,
+		"source": receipt_source,
+	}
+	return {
+		"ok": has_receipt,
+		"reason": "none" if has_receipt else "pending_server_receipt",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"receipt_status": "server_receipt_ready" if has_receipt else "pending_server_receipt",
+		"result_status": str(state.get("last_result_status", "pending")),
+		"result_source": str(state.get("last_result_source", "")),
+		"settlement_receipt": receipt,
+		"result_receipt_id": receipt_id,
+		"result_hash": result_hash,
+		"result_replay_id": replay_id,
+		"result_server_time": server_time,
+		"result_key_id": key_id,
+		"receipt_source": receipt_source,
+		"persistent_hp": mode_id == MODE_WORLD_BOSS,
+		"projection_scope": "server_settlement_receipt_projection",
+		"settlement_authority": "server",
+		"reward_authority": "server",
+		"damage_authority": "server",
+		"requires_server_confirmation": true,
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
+func _apply_boss_settlement_receipt(state: Dictionary, result: Dictionary) -> void:
+	var receipt: Dictionary = {}
+	if typeof(result.get("settlement_receipt", {})) == TYPE_DICTIONARY:
+		receipt = result.get("settlement_receipt", {})
+	var receipt_id := str(result.get("settlement_key", result.get("receipt_id", result.get("settlement_receipt_id", receipt.get("receipt_id", ""))))).strip_edges()
+	if receipt_id.is_empty():
+		receipt_id = str(result.get("match_id", state.get("last_result_match_id", ""))).strip_edges()
+	var result_hash := str(result.get("result_hash", result.get("state_hash", receipt.get("result_hash", receipt.get("state_hash", ""))))).strip_edges()
+	var replay_id := str(result.get("replay_id", receipt.get("replay_id", ""))).strip_edges()
+	var server_time := str(result.get("server_time", result.get("settled_at", receipt.get("server_time", receipt.get("settled_at", ""))))).strip_edges()
+	var key_id := str(result.get("key_id", result.get("battle_key_id", receipt.get("key_id", receipt.get("battle_key_id", ""))))).strip_edges()
+	state["last_result_receipt_id"] = receipt_id
+	state["last_result_hash"] = result_hash
+	state["last_result_replay_id"] = replay_id
+	state["last_result_server_time"] = server_time
+	state["last_result_key_id"] = key_id
+	state["last_result_receipt_source"] = "server_settlement_receipt"
 
 func _apply_boss_rule_config(state: Dictionary, source: Dictionary) -> void:
 	var friendly_fire := _sanitized_boss_friendly_fire(String(source.get("friendly_fire", state.get("friendly_fire", "disabled"))))
@@ -1393,4 +1984,12 @@ func _string_array(source: Variant) -> Array[String]:
 		return values
 	for item in source as Array:
 		values.append(str(item))
+	return values
+
+func _int_array(source: Variant) -> Array[int]:
+	var values: Array[int] = []
+	if typeof(source) != TYPE_ARRAY:
+		return values
+	for item in source as Array:
+		values.append(int(item))
 	return values

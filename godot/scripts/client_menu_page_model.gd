@@ -172,7 +172,8 @@ const PAGE_SPECS := {
 		"visual_treatment": "mode_selector",
 		"state_regions": ["mode_cards", "mode_rules", "mode_status"],
 		"primary_row_ids": ["mode_summary", "certification", "pvp_duel", "battle_royale", "world_boss", "instance_boss"],
-		"secondary_row_ids": ["br_candidates", "world_boss_rules", "world_boss_entry", "world_boss_party", "world_boss_formation", "world_boss_playfield", "world_boss_hud", "world_boss_transfer", "world_boss_result", "instance_boss_rules", "instance_boss_entry", "instance_boss_party", "instance_boss_formation", "instance_boss_playfield", "instance_boss_hud", "instance_boss_transfer", "instance_boss_result"],
+		"secondary_row_ids": ["br_candidates", "world_boss_rules", "world_boss_entry", "world_boss_party", "world_boss_formation", "world_boss_display", "world_boss_playfield", "world_boss_hud", "world_boss_practice_preview", "world_boss_transfer", "world_boss_result", "instance_boss_rules", "instance_boss_entry", "instance_boss_party", "instance_boss_formation", "instance_boss_display", "instance_boss_playfield", "instance_boss_hud", "instance_boss_practice_preview", "instance_boss_transfer", "instance_boss_result"],
+		"overview_priority_ids": ["world_boss_practice_preview", "instance_boss_practice_preview", "world_boss_entry", "instance_boss_entry", "battle_royale"],
 		"setting_groups": [],
 		"social_groups": [],
 		"mode_groups": ["certification", "pvp", "boss"],
@@ -399,7 +400,8 @@ const PAGE_SPECS := {
 		"focus_sections": ["navigation_rail", "category_tabs", "status_cards", "focus_panel", "filter_tabs", "overview_cards", "quick_routes", "row_window"],
 		"state_regions": ["verification_summary", "replay_rows", "entry_actions"],
 		"primary_row_ids": ["replay_verification_summary"],
-		"secondary_row_ids": [],
+		"secondary_row_ids": ["replay_filter_replay_local_ready", "replay_action_load", "replay_action_favorite", "replay_action_remove"],
+		"focus_action_ids": ["replay_filter_replay_local_ready", "replay_action_load", "replay_action_favorite", "replay_action_remove"],
 		"setting_groups": [],
 		"social_groups": [],
 		"mode_groups": ["replay"],
@@ -629,7 +631,10 @@ func page_spec(screen_id: String, overrides: Dictionary = {}) -> Dictionary:
 	spec["scene_family"] = String(scene_contract.get("family", ""))
 	spec["required_bindings"] = _string_array(scene_contract.get("required_bindings", []))
 	spec["render_slots"] = _string_array(scene_contract.get("render_slots", []))
-	spec["overview_priority_ids"] = _string_array(spec.get("primary_row_ids", []))
+	if _string_array(spec.get("overview_priority_ids", [])).is_empty():
+		spec["overview_priority_ids"] = _string_array(spec.get("primary_row_ids", []))
+	else:
+		spec["overview_priority_ids"] = _string_array(spec.get("overview_priority_ids", []))
 	spec["state_regions"] = _string_array(spec.get("state_regions", []))
 	spec["status_region_ids"] = _string_array(spec.get("status_region_ids", []))
 	spec["layout_slots"] = _string_array(spec.get("layout_slots", []))

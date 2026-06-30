@@ -102,14 +102,30 @@ func verification_summary_row() -> Dictionary:
 	var server_pending := int(counts.get("replay_server_pending", 0))
 	var metadata_invalid := int(counts.get("replay_metadata_invalid", 0))
 	var rejected_server_claim := int(counts.get("rejected_server_claim", 0))
+	var filtered_indices := _filtered_indices()
+	var selected := selected_entry()
+	var selected_source_index := _source_index_for_replay_id(str(selected.get("replay_id", "")))
+	var selected_filtered_index := filtered_indices.find(selected_source_index)
+	var selected_row_model := _row_from_entry(selected, selected_source_index) if not selected.is_empty() and selected_source_index >= 0 else {}
 	return {
 		"id": "replay_verification_summary",
 		"label_key": "screen.main.replay",
 		"value": "filter %s local %d missing %d input %d server %d invalid %d" % [active_verification_filter, local_ready, missing_hash, input_invalid, server_pending, metadata_invalid],
 		"summary": "verification filter=%s local_ready=%d missing_hash=%d input_invalid=%d server_pending=%d metadata_invalid=%d rejected_server_claim=%d visible=%d" % [active_verification_filter, local_ready, missing_hash, input_invalid, server_pending, metadata_invalid, rejected_server_claim, _filtered_indices().size()],
 		"entry_count": entries.size(),
-		"visible_entry_count": _filtered_indices().size(),
+		"visible_entry_count": filtered_indices.size(),
 		"active_verification_filter": active_verification_filter,
+		"filter_empty": filtered_indices.is_empty(),
+		"selected_replay_id": str(selected.get("replay_id", "")),
+		"selected_source_index": selected_source_index,
+		"selected_filtered_index": selected_filtered_index + 1 if selected_filtered_index >= 0 else 0,
+		"filter_navigation_label": _filter_navigation_label(selected_filtered_index, filtered_indices.size()),
+		"selected_verification_status": String(selected_row_model.get("verification_status", "none")),
+		"selected_verification_section": String(selected_row_model.get("section", "")),
+		"selected_local_load_policy": String(selected_row_model.get("local_load_policy", "none")),
+		"selected_load_guard_reason": String(selected_row_model.get("local_load_guard_reason", "")),
+		"selected_requires_server_audit": bool(selected_row_model.get("requires_server_audit", false)),
+		"selected_can_play": bool(selected_row_model.get("can_play", false)),
 		"local_ready_count": local_ready,
 		"missing_final_hash_count": missing_hash,
 		"input_invalid_count": input_invalid,
@@ -160,7 +176,34 @@ func selected_action_rows() -> Array[Dictionary]:
 	var replay_id := str(entry.get("replay_id", ""))
 	var has_replay := not replay_id.is_empty()
 	var source_index := _source_index_for_replay_id(replay_id)
+	var selected_row_model := _row_from_entry(entry, source_index) if has_replay and source_index >= 0 else {}
+	var action_context := _selected_action_context(selected_row_model)
 	return [
+		{
+			"id": "replay_action_load",
+			"label_key": "screen.replay.load",
+			"value": String(selected_row_model.get("local_load_policy", "none")),
+			"summary": "load selected local-practice replay only; server-authoritative records require audit",
+			"replay_id": replay_id,
+			"path": String(selected_row_model.get("path", "")),
+			"source_index": source_index,
+			"verification_status": String(selected_row_model.get("verification_status", "none")),
+			"verification_section": String(selected_row_model.get("section", "")),
+			"local_load_policy": String(selected_row_model.get("local_load_policy", "none")),
+			"local_load_guard_reason": String(selected_row_model.get("local_load_guard_reason", "")),
+			"requires_server_audit": bool(selected_row_model.get("requires_server_audit", false)),
+			"can_play": bool(selected_row_model.get("can_play", false)),
+			"server_authoritative": false,
+			"local_hash_authority": "local_practice_verification_only",
+			"settlement_authority": "server",
+			"reward_authority": "server",
+			"client_result_authoritative": false,
+			"section": "overview",
+			"section_label_key": "ui.menu_section_overview",
+			"ui_control": "replay",
+			"ui_action": "load_replay",
+			"enabled": has_replay and bool(selected_row_model.get("can_play", false)),
+		}.merged(action_context, true),
 		{
 			"id": "replay_action_favorite",
 			"label_key": "screen.replay.favorite",
@@ -178,7 +221,7 @@ func selected_action_rows() -> Array[Dictionary]:
 			"ui_control": "button",
 			"ui_action": "toggle_replay_favorite",
 			"enabled": has_replay,
-		},
+		}.merged(action_context, true),
 		{
 			"id": "replay_action_remove",
 			"label_key": "screen.replay.remove",
@@ -196,7 +239,7 @@ func selected_action_rows() -> Array[Dictionary]:
 			"ui_control": "button",
 			"ui_action": "remove_replay_from_index",
 			"enabled": has_replay,
-		},
+		}.merged(action_context, true),
 	]
 
 func set_verification_filter(filter_id: String) -> bool:
@@ -264,9 +307,16 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 	var replay_authority_scope := "server_authoritative_record" if server_authoritative else "local_practice_record"
 	var requires_server_audit := server_authoritative or _entry_verification_section(verification_status) == "replay_server_pending"
 	var local_load_policy := "blocked_server_audit" if requires_server_audit else ("blocked_local_integrity" if not load_rejection_reason.is_empty() else "loadable_local_practice")
+	var filtered_indices := _filtered_indices()
+	var filtered_index := filtered_indices.find(index)
 	return {
 		"index": index + 1,
 		"source_index": index,
+		"filtered_index": filtered_index + 1 if filtered_index >= 0 else 0,
+		"filtered_count": filtered_indices.size(),
+		"selected_in_filter": index == cursor and filtered_index >= 0,
+		"active_verification_filter": active_verification_filter,
+		"filter_navigation_label": _filter_navigation_label(filtered_index, filtered_indices.size()),
 		"replay_id": str(entry.get("replay_id", "")),
 		"path": path,
 		"saved_at": str(entry.get("saved_at", "")),
@@ -350,6 +400,64 @@ func _entry_metadata_valid(entry: Dictionary) -> bool:
 		var result: Dictionary = replay_store.validate_index_metadata(entries_to_validate)
 		return bool(result.get("ok", false))
 	return true
+
+func _selected_action_context(row: Dictionary) -> Dictionary:
+	if row.is_empty():
+		return {
+			"selected_verification_status": "none",
+			"selected_verification_summary": "",
+			"selected_filter_navigation_label": "0/0",
+			"selected_replay_authority_scope": "none",
+			"selected_server_audit_status": "not_required",
+			"selected_local_playback_authority": "none",
+			"selected_filtered_index": 0,
+			"selected_filtered_count": 0,
+			"replay_action_guard": _replay_action_guard(row),
+		}
+	return {
+		"selected_verification_status": String(row.get("verification_status", "")),
+		"selected_verification_section": String(row.get("section", "")),
+		"selected_verification_summary": String(row.get("verification_summary", "")),
+		"selected_filter_navigation_label": String(row.get("filter_navigation_label", "")),
+		"selected_replay_authority_scope": String(row.get("replay_authority_scope", "")),
+		"selected_server_audit_status": String(row.get("server_audit_status", "")),
+		"selected_local_playback_authority": String(row.get("local_playback_authority", "")),
+		"selected_filtered_index": int(row.get("filtered_index", 0)),
+		"selected_filtered_count": int(row.get("filtered_count", 0)),
+		"replay_action_guard": _replay_action_guard(row),
+	}
+
+func _replay_action_guard(row: Dictionary) -> Dictionary:
+	if row.is_empty():
+		return {
+			"ok": false,
+			"reason": "no_replay_selected",
+			"local_load_policy": "none",
+			"requires_server_audit": false,
+			"server_audit_status": "not_required",
+			"local_playback_authority": "none",
+			"local_hash_authority": "local_practice_verification_only",
+			"settlement_authority": "server",
+			"reward_authority": "server",
+			"client_result_authoritative": false,
+		}
+	var reason := String(row.get("local_load_guard_reason", row.get("load_rejection_reason", "")))
+	var can_play := bool(row.get("can_play", false)) and reason.is_empty()
+	return {
+		"ok": can_play,
+		"reason": "loadable_local_practice" if can_play else reason,
+		"replay_id": String(row.get("replay_id", "")),
+		"verification_status": String(row.get("verification_status", "")),
+		"verification_section": String(row.get("section", "")),
+		"local_load_policy": String(row.get("local_load_policy", "none")),
+		"requires_server_audit": bool(row.get("requires_server_audit", false)),
+		"server_audit_status": String(row.get("server_audit_status", "")),
+		"local_playback_authority": String(row.get("local_playback_authority", "")),
+		"local_hash_authority": "local_practice_verification_only",
+		"settlement_authority": "server",
+		"reward_authority": "server",
+		"client_result_authoritative": false,
+	}
 
 func _entry_verification_status(entry: Dictionary, final_result_hash: int, metadata_valid: bool) -> String:
 	if not metadata_valid:
@@ -514,6 +622,11 @@ func _verification_filter_label_key(filter_id: String) -> String:
 	if filter_id == VERIFICATION_FILTER_ALL:
 		return "ui.menu_section_replay_all"
 	return "ui.menu_section_%s" % filter_id
+
+func _filter_navigation_label(filtered_index: int, filtered_count: int) -> String:
+	if filtered_count <= 0 or filtered_index < 0:
+		return "0/%d" % max(0, filtered_count)
+	return "%d/%d" % [filtered_index + 1, filtered_count]
 
 func _entry_input_integrity_status(entry: Dictionary) -> String:
 	if bool(entry.get("server_authoritative", false)):

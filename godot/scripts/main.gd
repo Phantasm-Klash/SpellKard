@@ -272,6 +272,8 @@ func _ready() -> void:
 	pattern_lab_model = PatternLabModelLib.new()
 	pattern_lab_model.configure(stage_select_model)
 	boss_spellbook_model = BossSpellbookModelLib.new()
+	if game_mode_model.has_method("configure_boss_spellbook"):
+		game_mode_model.configure_boss_spellbook(boss_spellbook_model)
 	if pattern_lab_model.has_method("configure_boss_spellbook"):
 		pattern_lab_model.configure_boss_spellbook(boss_spellbook_model)
 	_refresh_pattern_configs_from_stage()
@@ -1034,8 +1036,11 @@ func _build_replay_snapshot() -> Dictionary:
 	var spellbook_status: Dictionary = _boss_spellbook_run_status() if boss_spellbook_run_enabled else {}
 	var phase_id := String(spellbook_status.get("phase_id", ""))
 	var phase_preview: Dictionary = {}
+	var phase_export: Dictionary = {}
 	if boss_spellbook_run_enabled and boss_spellbook_model != null and boss_spellbook_model.has_method("deterministic_phase_preview") and not phase_id.is_empty():
 		phase_preview = boss_spellbook_model.deterministic_phase_preview(boss_spellbook_id, phase_id, practice_seed)
+	if boss_spellbook_run_enabled and boss_spellbook_model != null and boss_spellbook_model.has_method("phase_export_data"):
+		phase_export = boss_spellbook_model.phase_export_data(boss_spellbook_id, practice_seed)
 	snapshot["deck_snapshot"] = deck_builder.active_deck_snapshot() if deck_builder != null else {}
 	snapshot["practice_config"] = {
 		"start_tick": practice_start_tick,
@@ -1047,6 +1052,8 @@ func _build_replay_snapshot() -> Dictionary:
 		"spellbook_id": boss_spellbook_id if boss_spellbook_run_enabled else "",
 		"phase_id": phase_id,
 		"preview_export_id": String(phase_preview.get("export_id", "")),
+		"preview_bundle_id": String(phase_export.get("preview_bundle_id", "")),
+		"preview_bundle_signature_digest": int(phase_export.get("preview_bundle_signature_digest", 0)),
 	}
 	snapshot["metadata"] = {
 		"saved_at": Time.get_datetime_string_from_system(true, true),
@@ -1060,8 +1067,32 @@ func _build_replay_snapshot() -> Dictionary:
 		"catalog_id": "boss_spellbook" if boss_spellbook_run_enabled else "stage_pattern",
 		"spellbook_id": boss_spellbook_id if boss_spellbook_run_enabled else "",
 		"phase_id": phase_id,
+		"preview_export_schema_version": int(phase_preview.get("export_schema_version", 0)),
 		"preview_export_id": String(phase_preview.get("export_id", "")),
+		"preview_fixture_id": String(phase_preview.get("preview_fixture_id", "")),
+		"preview_authority_scope": String(phase_preview.get("preview_authority_scope", "")),
+		"preview_seed": int(phase_preview.get("seed", 0)),
 		"preview_signature": String(phase_preview.get("signature", "")),
+		"preview_signature_digest": int(phase_preview.get("signature_digest", 0)),
+		"preview_sample_ticks": phase_preview.get("sample_ticks", []),
+		"preview_sample_window_start_tick": int(phase_preview.get("sample_window_start_tick", 0)),
+		"preview_sample_window_end_tick": int(phase_preview.get("sample_window_end_tick", 0)),
+		"preview_sample_window_stride_ticks": int(phase_preview.get("sample_window_stride_ticks", 0)),
+		"preview_sample_signature_digests": phase_preview.get("sample_signature_digests", []),
+		"preview_sample_emit_counts": phase_preview.get("sample_emit_counts", []),
+		"preview_sample_count": (phase_preview.get("samples", []) as Array).size() if typeof(phase_preview.get("samples", [])) == TYPE_ARRAY else 0,
+		"preview_max_emit_per_tick": int(phase_preview.get("max_emit_per_tick", 0)),
+		"preview_bullet_cap_per_tick": int(phase_preview.get("bullet_cap_per_tick", 0)),
+		"preview_budget_headroom": int(phase_preview.get("budget_headroom", 0)),
+		"performance_budget_status": String(phase_preview.get("performance_budget_status", "")),
+		"preview_bundle_id": String(phase_export.get("preview_bundle_id", "")),
+		"preview_bundle_signature_digest": int(phase_export.get("preview_bundle_signature_digest", 0)),
+		"preview_phase_count": int(phase_export.get("preview_phase_count", 0)),
+		"preview_phase_ids": phase_export.get("preview_phase_ids", []),
+		"preview_phase_signature_digests": phase_export.get("preview_phase_signature_digests", []),
+		"preview_bundle_max_emit_per_tick": int(phase_export.get("max_preview_emit_per_tick", 0)),
+		"preview_bundle_min_budget_headroom": int(phase_export.get("min_preview_budget_headroom", 0)),
+		"preview_bundle_budget_status": String(phase_export.get("performance_budget_status", "")),
 		"mode": "boss_spellbook_practice" if boss_spellbook_run_enabled else "local_practice",
 		"result": "practice",
 	}
@@ -5377,6 +5408,8 @@ func _visible_overview_card_limit() -> int:
 	match screen_id:
 		"play", "certification", "community", "player_settings":
 			return mini(4, ui_overview_buttons.size())
+		"modes":
+			return mini(5, ui_overview_buttons.size())
 		"match":
 			return mini(5, ui_overview_buttons.size())
 		"network_match":
@@ -5452,12 +5485,14 @@ func _is_overview_candidate(row: Dictionary) -> bool:
 	var row_id := String(row.get("id", ""))
 	if row_id.is_empty():
 		return false
+	if not String(row.get("overview_card_kind", "")).is_empty():
+		return true
 	if row_id.ends_with("_summary"):
 		return _row_control_id(row) == "status"
 	if row.has("screen") or not String(row.get("ui_action", "")).is_empty():
 		return true
 	var control_id := _row_control_id(row)
-	return control_id in ["nav", "queue", "button", "select", "toggle", "slider", "link", "friend", "claim", "chest", "card", "replay"]
+	return control_id in ["nav", "queue", "button", "select", "toggle", "slider", "link", "friend", "claim", "chest", "card", "replay", "mode"]
 
 func _format_ui_overview_card(card: Dictionary) -> String:
 	var row: Dictionary = card.get("row", {})
@@ -5470,6 +5505,12 @@ func _format_ui_overview_card(card: Dictionary) -> String:
 	return "%s%s\n%s" % [marker, label, detail]
 
 func _overview_card_detail(row: Dictionary) -> String:
+	if not String(row.get("preview_card_primary_metric", "")).is_empty():
+		var primary_metric := String(row.get("preview_card_primary_metric", ""))
+		var secondary_metric := String(row.get("preview_card_secondary_metric", ""))
+		if not secondary_metric.is_empty():
+			return "%s | %s" % [primary_metric, secondary_metric]
+		return primary_metric
 	var control_state := _row_control_state_text(row)
 	if not control_state.is_empty():
 		return control_state
@@ -5704,6 +5745,13 @@ func _control_button_actions(row: Dictionary) -> Array[Dictionary]:
 			actions.append({"label": "+", "tooltip": "Increase value", "action": "adjust_selected", "direction": 1})
 		"toggle":
 			actions.append({"label": "Toggle", "tooltip": "Toggle value", "action": "adjust_selected", "direction": 1})
+	if _row_has_direct_control_action(row):
+		actions.append({
+			"label": _row_label_text(row),
+			"tooltip": _format_ui_row(row),
+			"action": "accept_selected",
+			"direction": 0,
+		})
 	if _row_is_binding_row(row):
 		actions.append({"label": "Capture", "tooltip": "Capture next key press", "action": "capture_selected", "direction": 0})
 	if _row_has_reset_action(row):
@@ -5719,10 +5767,23 @@ func _on_ui_control_button_pressed(button: Button) -> void:
 	var direction := int(button.get_meta("direction", 0))
 	if action == "adjust_selected":
 		_ui_adjust_selected_control(direction)
+	elif action == "accept_selected":
+		_ui_accept_selected()
 	elif action == "reset_selected":
 		_ui_reset_selected_control()
 	elif action == "capture_selected":
 		_ui_capture_selected_binding()
+
+func _row_has_direct_control_action(row: Dictionary) -> bool:
+	if row.is_empty() or not bool(row.get("enabled", true)):
+		return false
+	var row_id := String(row.get("id", ""))
+	var action := String(row.get("ui_action", ""))
+	return row_id.begins_with("replay_action_") and action in [
+		"load_replay",
+		"toggle_replay_favorite",
+		"remove_replay_from_index",
+	]
 
 func _ui_adjust_selected_control(direction: int) -> Dictionary:
 	if ui_screen_model == null:
@@ -5845,8 +5906,9 @@ func _ui_press_visible_control(index: int) -> Dictionary:
 		return {"ok": false, "action": "control_button_stale", "owner": String(button.get_meta("owner_screen", ""))}
 	var direction := int(button.get_meta("direction", 0))
 	var action := String(button.get_meta("control_action", ""))
+	var selected_id := String(ui_screen_model.selected_row().get("id", "")) if ui_screen_model != null else ""
 	_on_ui_control_button_pressed(button)
-	return {"ok": not action.is_empty(), "action": action, "direction": direction}
+	return {"ok": not action.is_empty(), "action": action, "direction": direction, "row_id": selected_id}
 
 func _on_ui_nav_button_pressed(button: Button) -> void:
 	if button == null or ui_screen_model == null:
@@ -6000,6 +6062,9 @@ func _ui_control_preview_text(row: Dictionary) -> String:
 	var state := _row_control_state_text(row)
 	if state.is_empty():
 		state = _row_label_text(row)
+	var boss_action_context := _boss_action_context_text(row)
+	if not boss_action_context.is_empty():
+		state = "%s | %s" % [state, boss_action_context]
 	if row.has("curve_graph"):
 		state = "%s | %s" % [state, String(row.get("curve_graph", ""))]
 	if row.has("speed_preview"):
@@ -6008,6 +6073,33 @@ func _ui_control_preview_text(row: Dictionary) -> String:
 		"control": _row_control_text(row),
 		"state": state,
 	})
+
+func _replay_action_guard_text(row: Dictionary) -> String:
+	if typeof(row.get("replay_action_guard", {})) != TYPE_DICTIONARY:
+		return ""
+	var guard: Dictionary = row.get("replay_action_guard", {})
+	var parts: Array[String] = []
+	parts.append("guard_ok" if bool(guard.get("ok", false)) else "guard_blocked")
+	var reason := String(guard.get("reason", ""))
+	if reason.is_empty():
+		reason = String(row.get("local_load_guard_reason", ""))
+	if not reason.is_empty():
+		parts.append(reason)
+	var policy := String(guard.get("local_load_policy", row.get("local_load_policy", "")))
+	if not policy.is_empty() and not parts.has(policy):
+		parts.append(policy)
+	var audit_status := String(guard.get("server_audit_status", ""))
+	if bool(guard.get("requires_server_audit", false)):
+		parts.append("server_audit_%s" % (audit_status if not audit_status.is_empty() else "required"))
+	var playback_authority := String(guard.get("local_playback_authority", ""))
+	if not playback_authority.is_empty() and playback_authority != "none":
+		parts.append(playback_authority)
+	var settlement_authority := String(guard.get("settlement_authority", ""))
+	if not settlement_authority.is_empty():
+		parts.append("settlement_%s" % settlement_authority)
+	if bool(guard.get("client_result_authoritative", true)):
+		parts.append("client_result_authoritative")
+	return " ".join(parts)
 
 func _ui_detail_text(row: Dictionary) -> String:
 	if row.is_empty():
@@ -6033,6 +6125,9 @@ func _ui_detail_text(row: Dictionary) -> String:
 	var control_state := _row_control_state_text(row)
 	if not control_state.is_empty():
 		detail_parts.append(localization.text_for("ui.menu_detail_control_state", {"state": control_state}))
+	var boss_action_context := _boss_action_context_text(row)
+	if not boss_action_context.is_empty():
+		detail_parts.append(boss_action_context)
 	if row.has("summary"):
 		detail_parts.append(str(row.get("summary", "")))
 	if row.has("value"):
@@ -6049,6 +6144,57 @@ func _ui_detail_text(row: Dictionary) -> String:
 		"label": _row_label_text(row),
 		"detail": _trim_ui_card_text(" | ".join(detail_parts), 92),
 	})
+
+func _boss_action_context_text(row: Dictionary) -> String:
+	if row.is_empty() or String(row.get("mode_category", "")) != "boss":
+		return ""
+	var receipt_context := _boss_settlement_receipt_context_text(row)
+	if not receipt_context.is_empty():
+		return receipt_context
+	var status := String(row.get("action_status", ""))
+	if status.is_empty() and typeof(row.get("action_availability", {})) == TYPE_DICTIONARY:
+		var action_availability: Dictionary = row.get("action_availability", {})
+		status = String(action_availability.get("action_status", ""))
+	if status.is_empty():
+		return ""
+	var blockers: Array[String] = _ui_string_array(row.get("local_blockers", []))
+	if blockers.is_empty() and typeof(row.get("action_availability", {})) == TYPE_DICTIONARY:
+		var action_context: Dictionary = row.get("action_availability", {})
+		blockers = _ui_string_array(action_context.get("local_blockers", []))
+	var confirmation := String(row.get("server_confirmation_status", ""))
+	if confirmation.is_empty() and typeof(row.get("action_availability", {})) == TYPE_DICTIONARY:
+		var action_projection: Dictionary = row.get("action_availability", {})
+		confirmation = String(action_projection.get("server_confirmation_status", ""))
+	var parts: Array[String] = [status]
+	if not confirmation.is_empty():
+		parts.append("server %s" % confirmation)
+	if not blockers.is_empty():
+		parts.append("blocked %s" % ",".join(blockers))
+	return "boss action %s" % " ".join(parts)
+
+func _boss_settlement_receipt_context_text(row: Dictionary) -> String:
+	var receipt_projection: Dictionary = {}
+	if typeof(row.get("settlement_receipt_projection", {})) == TYPE_DICTIONARY:
+		receipt_projection = row.get("settlement_receipt_projection", {})
+	var receipt: Dictionary = {}
+	if typeof(row.get("settlement_receipt", {})) == TYPE_DICTIONARY:
+		receipt = row.get("settlement_receipt", {})
+	elif typeof(receipt_projection.get("settlement_receipt", {})) == TYPE_DICTIONARY:
+		receipt = receipt_projection.get("settlement_receipt", {})
+	var receipt_status := String(row.get("receipt_status", receipt_projection.get("receipt_status", "")))
+	var receipt_id := String(row.get("result_receipt_id", receipt_projection.get("result_receipt_id", receipt.get("receipt_id", "")))).strip_edges()
+	var result_hash := String(row.get("result_hash", receipt_projection.get("result_hash", receipt.get("result_hash", "")))).strip_edges()
+	if receipt_status.is_empty() and receipt_id.is_empty() and result_hash.is_empty():
+		return ""
+	var result_status := String(row.get("result_status", receipt_projection.get("result_status", "pending")))
+	var parts: Array[String] = [receipt_status if not receipt_status.is_empty() else "pending_server_receipt"]
+	if not receipt_id.is_empty():
+		parts.append("id %s" % receipt_id)
+	if not result_hash.is_empty():
+		parts.append("hash %s" % result_hash)
+	if not result_status.is_empty():
+		parts.append("result %s" % result_status)
+	return "boss server receipt %s" % " ".join(parts)
 
 func _ui_hint_text(screen_id: String, row: Dictionary, rows: Array[Dictionary]) -> String:
 	var action_hint: String = localization.text_for("ui.menu_hint_apply")
@@ -6188,6 +6334,13 @@ func _row_control_state_text(row: Dictionary) -> String:
 	var control_id := _row_control_id(row)
 	if _row_is_binding_row(row) and input_capture_active and String(input_capture_action) == String(row.get("action", "")):
 		return "capturing..."
+	if String(row.get("preview_card_kind", "")) == "boss_spellbook_practice_preview":
+		var primary_metric := String(row.get("preview_card_primary_metric", ""))
+		var secondary_metric := String(row.get("preview_card_secondary_metric", ""))
+		if not primary_metric.is_empty() and not secondary_metric.is_empty():
+			return "%s | %s" % [primary_metric, secondary_metric]
+		if not primary_metric.is_empty():
+			return primary_metric
 	match control_id:
 		"toggle":
 			return localization.text_for("ui.on") if _row_toggle_control_value(row) else localization.text_for("ui.off")
@@ -6208,6 +6361,21 @@ func _row_control_state_text(row: Dictionary) -> String:
 			if option_index < 0 or option_index >= options.size():
 				return String(row.get("value", ""))
 			return "%s (%d/%d)" % [str(options[option_index]), option_index + 1, options.size()]
+		"replay":
+			var guard_text := _replay_action_guard_text(row)
+			if not guard_text.is_empty():
+				return guard_text
+			var policy := String(row.get("local_load_policy", ""))
+			var guard := String(row.get("local_load_guard_reason", ""))
+			if policy.is_empty() and not String(row.get("verification_status", "")).is_empty():
+				policy = String(row.get("verification_status", ""))
+			if guard.is_empty() and bool(row.get("requires_server_audit", false)):
+				guard = "server_audit_required"
+			if guard.is_empty():
+				return policy
+			if policy.is_empty():
+				return guard
+			return "%s %s" % [policy, guard]
 	return ""
 
 func _inline_control_state_text(row: Dictionary, control_state: String) -> String:
