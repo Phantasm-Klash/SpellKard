@@ -447,6 +447,8 @@ func _validate_collection_page_contract() -> bool:
 		return _fail("replay page missing verification summary row %s" % [replay_rows])
 	if not String(replay_rows[0].get("ui_action", "")).is_empty() or String(replay_rows[0].get("ui_control", "")) != "status" or bool(replay_rows[0].get("client_result_authoritative", true)):
 		return _fail("replay verification summary should be status-only %s" % [replay_rows[0]])
+	if not String(snapshot.get("section_tabs", "")).contains(_text("ui.menu_section_overview")):
+		return _fail("replay filter tabs should expose verification overview %s" % [snapshot])
 	var replay_summary_card_result: Dictionary = main_node.call("_ui_press_visible_overview_card", 0)
 	if not bool(replay_summary_card_result.get("ok", false)) or String(replay_summary_card_result.get("row_id", "")) != "replay_verification_summary" or String(replay_summary_card_result.get("screen", "")) != "replay":
 		return _fail("replay verification summary overview card should stay on replay page %s" % [replay_summary_card_result])

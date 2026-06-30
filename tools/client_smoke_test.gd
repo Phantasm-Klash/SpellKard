@@ -4126,6 +4126,10 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay verification aggregate invalid %s" % [replay_verification_summary])
 		quit(1)
 		return true
+	if String(replay_verification_summary.get("section", "")) != "overview" or String(replay_verification_summary.get("section_label_key", "")) != "ui.menu_section_overview":
+		push_error("Smoke test failed: replay verification aggregate section invalid %s" % [replay_verification_summary])
+		quit(1)
+		return true
 	if not main_node.call("_open_ui_screen", "replay"):
 		push_error("Smoke test failed: replay screen did not open")
 		quit(1)
@@ -4141,6 +4145,10 @@ func _process(_delta: float) -> bool:
 		return true
 	if String(ui_replay_rows[1].get("ui_control", "")) != "replay" or not String(ui_replay_rows[1].get("value", "")).contains("hash") or not String(ui_replay_rows[1].get("summary", "")).contains("local_practice_record") or not String(ui_replay_rows[1].get("summary", "")).contains("local practice final hash ready"):
 		push_error("Smoke test failed: replay UI verification summary invalid %s" % [ui_replay_rows[1]])
+		quit(1)
+		return true
+	if String(ui_replay_rows[1].get("section", "")) != "replay_local_ready" or String(ui_replay_rows[1].get("section_label_key", "")) != "ui.menu_section_replay_local_ready":
+		push_error("Smoke test failed: replay UI verification filter section invalid %s" % [ui_replay_rows[1]])
 		quit(1)
 		return true
 	main_node.call("_select_replay_index", 0)

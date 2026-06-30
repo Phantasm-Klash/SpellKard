@@ -102,6 +102,8 @@ func verification_summary_row() -> Dictionary:
 		"rejected_server_claim_count": rejected_server_claim,
 		"server_authoritative": false,
 		"client_result_authoritative": false,
+		"section": "overview",
+		"section_label_key": "ui.menu_section_overview",
 		"ui_control": "status",
 		"ui_action": "",
 		"enabled": true,
@@ -175,6 +177,8 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"verification_status": verification_status,
 		"verification_scope": _entry_verification_scope(server_authoritative, metadata_valid, server_claim_fields),
 		"verification_summary": _entry_verification_summary(entry, verification_status, metadata_valid, server_authoritative, server_claim_fields),
+		"section": _entry_verification_section(verification_status),
+		"section_label_key": _entry_verification_section_label_key(verification_status),
 		"replay_authority_scope": replay_authority_scope,
 		"favorite": bool(entry.get("favorite", false)),
 		"pattern_id": str(entry.get("pattern_id", "")),
@@ -232,6 +236,20 @@ func _entry_verification_status(entry: Dictionary, final_result_hash: int, metad
 	if bool(entry.get("server_authoritative", false)):
 		return "server_record_pending_audit"
 	return "local_final_hash_ready"
+
+func _entry_verification_section(verification_status: String) -> String:
+	match verification_status:
+		"local_final_hash_ready":
+			return "replay_local_ready"
+		"missing_final_hash":
+			return "replay_missing_hash"
+		"server_record_pending_audit":
+			return "replay_server_pending"
+		_:
+			return "replay_metadata_invalid"
+
+func _entry_verification_section_label_key(verification_status: String) -> String:
+	return "ui.menu_section_%s" % _entry_verification_section(verification_status)
 
 func _entry_verification_scope(server_authoritative: bool, metadata_valid: bool, server_claim_fields: Array[String]) -> String:
 	if not metadata_valid and not server_claim_fields.is_empty():
