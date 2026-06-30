@@ -5991,11 +5991,55 @@ func _validate_boss_action_availability(projection: Dictionary, mode_id: String,
 	if not bool(projection.get("can_request_transfer", false)):
 		push_error("Smoke test failed: boss action availability should allow transfer intent for valid party %s" % [projection])
 		return false
+	if not _validate_boss_ui_action_cards(projection.get("ui_action_cards", []), mode_id, expected_entry_ok, true, expected_reason):
+		return false
 	if not _validate_boss_entry_preview(projection.get("entry_preflight", {}), mode_id, expected_entry_ok, expected_reason):
 		return false
 	if not _validate_boss_playfield_projection({"playfield_projection": projection.get("playfield_projection", {})}, mode_id, expected_count, 1.0):
 		return false
 	return _validate_boss_hud_projection({"hud_projection": projection.get("hud_projection", {})}, mode_id, expected_count, 1.0)
+
+func _validate_boss_ui_action_cards(cards: Array, mode_id: String, expected_entry_enabled: bool, expected_transfer_enabled: bool, expected_entry_reason: String) -> bool:
+	if cards.size() != 2:
+		push_error("Smoke test failed: boss action cards count invalid %s" % [cards])
+		return false
+	var expected_kinds := ["boss_entry_intent", "boss_card_transfer_intent"]
+	var expected_actions := ["request_boss_entry", "request_boss_transfer"]
+	var expected_enabled := [expected_entry_enabled, expected_transfer_enabled]
+	for i in range(cards.size()):
+		if typeof(cards[i]) != TYPE_DICTIONARY:
+			push_error("Smoke test failed: boss action card not dictionary %s" % [cards])
+			return false
+		var card: Dictionary = cards[i]
+		if String(card.get("mode_id", "")) != mode_id or String(card.get("mode_category", "")) != "boss":
+			push_error("Smoke test failed: boss action card identity invalid %s" % [card])
+			return false
+		if String(card.get("action_card_kind", "")) != expected_kinds[i] or String(card.get("ui_action", "")) != expected_actions[i]:
+			push_error("Smoke test failed: boss action card action invalid %s" % [card])
+			return false
+		if String(card.get("ui_control", "")) != "card" or bool(card.get("enabled", false)) != bool(expected_enabled[i]):
+			push_error("Smoke test failed: boss action card UI state invalid %s" % [card])
+			return false
+		if String(card.get("request_scope", "")) != "intent_only" or not bool(card.get("requires_server_confirmation", false)):
+			push_error("Smoke test failed: boss action card request scope invalid %s" % [card])
+			return false
+		if String(card.get("damage_authority", "")) != "server" or String(card.get("reward_authority", "")) != "server" or String(card.get("settlement_authority", "")) != "server" or bool(card.get("client_result_authoritative", true)):
+			push_error("Smoke test failed: boss action card authority invalid %s" % [card])
+			return false
+		if i == 0:
+			var expected_status := "ready_for_server_confirmation" if expected_entry_enabled else "blocked_local"
+			var expected_confirmation := "required" if expected_entry_enabled else "blocked_local"
+			if String(card.get("action_status", "")) != expected_status or String(card.get("server_confirmation_status", "")) != expected_confirmation:
+				push_error("Smoke test failed: boss entry action card status invalid %s" % [card])
+				return false
+			if not expected_entry_enabled and String(card.get("blocked_reason", "")) != expected_entry_reason:
+				push_error("Smoke test failed: boss entry action card blocker invalid %s expected=%s" % [card, expected_entry_reason])
+				return false
+		else:
+			if String(card.get("action_status", "")) != "ready_for_server_confirmation" or String(card.get("server_confirmation_status", "")) != "required":
+				push_error("Smoke test failed: boss transfer action card status invalid %s" % [card])
+				return false
+	return true
 
 func _validate_boss_transfer_preview(preview: Dictionary, mode_id: String, expected_ok: bool, expected_reason: String) -> bool:
 	if preview.is_empty():
