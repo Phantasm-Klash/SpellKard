@@ -625,6 +625,21 @@ func _validate_collection_page_contract() -> bool:
 		return _fail("replay page missing playability summary contract %s" % [replay_rows])
 	if not _assert_replay_ui_authority_row(replay_playability_summary):
 		return false
+	var boss_practice_summary := _row_by_id(replay_rows, "replay_boss_practice_verification")
+	if boss_practice_summary.is_empty() \
+			or String(boss_practice_summary.get("ui_control", "")) != "status" \
+			or not String(boss_practice_summary.get("ui_action", "")).is_empty() \
+			or String(boss_practice_summary.get("overview_card_kind", "")) != "boss_practice_replay_verification" \
+			or String(boss_practice_summary.get("render_slot", "")) != "overview_cards" \
+			or String(boss_practice_summary.get("online_replay_authority", "")) != "server_audit_required" \
+			or String(boss_practice_summary.get("boss_hp_authority", "")) != "server" \
+			or bool(boss_practice_summary.get("client_result_authoritative", true)):
+		return _fail("replay page missing boss practice verification summary contract %s" % [replay_rows])
+	var boss_practice_badges: Array = boss_practice_summary.get("verification_card_authority_badges", [])
+	if not boss_practice_badges.has("local_practice_verification_only") or not boss_practice_badges.has("online_replay_server_audit") or not boss_practice_badges.has("boss_hp_server") or not boss_practice_badges.has("settlement_server"):
+		return _fail("boss practice replay verification badges missing authority boundaries %s" % [boss_practice_summary])
+	if not _assert_replay_ui_authority_row(boss_practice_summary):
+		return false
 	if not String(snapshot.get("section_tabs", "")).contains(_text("ui.menu_section_overview")):
 		return _fail("replay filter tabs should expose verification overview %s" % [snapshot])
 	if not String(snapshot.get("page_focus_action_ids", "")).contains("replay_filter_replay_boss_practice") or not String(snapshot.get("page_focus_action_ids", "")).contains("replay_filter_replay_local_ready"):
