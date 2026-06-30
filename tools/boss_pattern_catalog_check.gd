@@ -687,6 +687,8 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 			failures.append("server_claim_row_metadata:%s" % [server_claim_row])
 		if String(server_claim_row.get("verification_scope", "")) != "rejected_server_claim" or not String(server_claim_row.get("verification_summary", "")).contains("rejected server-authority claims"):
 			failures.append("server_claim_row_verification_summary:%s" % [server_claim_row])
+		if String(server_claim_row.get("local_load_policy", "")) != "blocked_server_audit" or not bool(server_claim_row.get("requires_server_audit", false)) or String(server_claim_row.get("server_audit_status", "")) != "pending":
+			failures.append("server_claim_row_audit_guard:%s" % [server_claim_row])
 		for expected_claim in ["boss_instance_id", "boss_current_hp", "boss_hp_after_global", "daily_attempts_left", "defeated_at", "reward_grants", "world_announcement"]:
 			if not _string_array_contains(server_claim_row.get("server_authority_claim_fields", []), expected_claim):
 				failures.append("server_claim_row_missing_field:%s:%s" % [expected_claim, server_claim_row])
@@ -695,6 +697,8 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 			failures.append("nested_server_claim_row_metadata:%s" % [nested_server_claim_row])
 		if String(nested_server_claim_row.get("verification_scope", "")) != "rejected_server_claim" or not String(nested_server_claim_row.get("verification_summary", "")).contains("rejected server-authority claims"):
 			failures.append("nested_server_claim_row_verification_summary:%s" % [nested_server_claim_row])
+		if String(nested_server_claim_row.get("local_load_policy", "")) != "blocked_server_audit" or not bool(nested_server_claim_row.get("requires_server_audit", false)) or String(nested_server_claim_row.get("server_audit_status", "")) != "pending":
+			failures.append("nested_server_claim_row_audit_guard:%s" % [nested_server_claim_row])
 		for expected_claim in ["boss_instance_id", "boss_current_hp", "boss_hp_after_global", "settlement_receipt", "reward_grants", "server_result_hash"]:
 			if not _string_array_contains(nested_server_claim_row.get("server_authority_claim_fields", []), expected_claim):
 				failures.append("nested_server_claim_row_missing_field:%s:%s" % [expected_claim, nested_server_claim_row])
@@ -703,6 +707,8 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 			failures.append("snapshot_server_claim_row_metadata:%s" % [snapshot_server_claim_row])
 		if String(snapshot_server_claim_row.get("verification_scope", "")) != "rejected_server_claim" or not String(snapshot_server_claim_row.get("verification_summary", "")).contains("rejected server-authority claims"):
 			failures.append("snapshot_server_claim_row_verification_summary:%s" % [snapshot_server_claim_row])
+		if String(snapshot_server_claim_row.get("local_load_policy", "")) != "blocked_server_audit" or not bool(snapshot_server_claim_row.get("requires_server_audit", false)) or String(snapshot_server_claim_row.get("server_audit_status", "")) != "pending":
+			failures.append("snapshot_server_claim_row_audit_guard:%s" % [snapshot_server_claim_row])
 		for expected_claim in ["boss_instance_id", "boss_hp_after_global", "settlement_receipt", "reward_grants", "server_result_hash"]:
 			if not _string_array_contains(snapshot_server_claim_row.get("server_authority_claim_fields", []), expected_claim):
 				failures.append("snapshot_server_claim_row_missing_field:%s:%s" % [expected_claim, snapshot_server_claim_row])

@@ -171,6 +171,64 @@ func verification_filter_rows() -> Array[Dictionary]:
 		})
 	return rows
 
+func boss_practice_verification_summary_row() -> Dictionary:
+	var boss_rows: Array[Dictionary] = []
+	for i in range(entries.size()):
+		if not _is_boss_spellbook_practice_entry(entries[i]):
+			continue
+		boss_rows.append(_row_from_entry(entries[i], i))
+	var ready_count := 0
+	var invalid_count := 0
+	var server_claim_count := 0
+	for row in boss_rows:
+		if bool(row.get("can_play", false)) and String(row.get("verification_scope", "")) == "local_practice_hash":
+			ready_count += 1
+		if String(row.get("section", "")) == "replay_metadata_invalid":
+			invalid_count += 1
+		if String(row.get("verification_scope", "")) == "rejected_server_claim":
+			server_claim_count += 1
+	var selected_boss_row := _selected_or_first_boss_practice_row(boss_rows)
+	var boss_context: Dictionary = selected_boss_row.get("boss_practice_verification", {}) if not selected_boss_row.is_empty() else {}
+	return {
+		"id": "replay_boss_practice_verification",
+		"label_key": "screen.settings.boss_spellbook",
+		"value": "boss practice %d ready %d invalid %d digest %d" % [
+			boss_rows.size(),
+			ready_count,
+			invalid_count,
+			int(boss_context.get("preview_bundle_signature_digest", 0)),
+		],
+		"summary": "Boss spellbook practice Replay verification is local hash/golden-fixture display only; online damage, rewards, hp, and settlement stay server-authoritative",
+		"boss_practice_entry_count": boss_rows.size(),
+		"boss_practice_ready_count": ready_count,
+		"boss_practice_invalid_count": invalid_count,
+		"boss_practice_rejected_server_claim_count": server_claim_count,
+		"selected_replay_id": String(selected_boss_row.get("replay_id", "")),
+		"selected_verification_status": String(selected_boss_row.get("verification_status", "none")),
+		"selected_local_load_policy": String(selected_boss_row.get("local_load_policy", "none")),
+		"selected_can_play": bool(selected_boss_row.get("can_play", false)),
+		"selected_requires_server_audit": bool(selected_boss_row.get("requires_server_audit", false)),
+		"boss_practice_verification": boss_context,
+		"preview_bundle_id": String(boss_context.get("preview_bundle_id", "")),
+		"preview_bundle_signature_digest": int(boss_context.get("preview_bundle_signature_digest", 0)),
+		"preview_phase_count": int(boss_context.get("preview_phase_count", 0)),
+		"preview_fixture_id": String(boss_context.get("preview_fixture_id", "")),
+		"preview_seed": int(boss_context.get("preview_seed", 0)),
+		"performance_budget_status": String(boss_context.get("performance_budget_status", "")),
+		"server_authoritative": false,
+		"local_hash_authority": "local_practice_verification_only",
+		"replay_verification_scope": "local_practice_hash",
+		"settlement_authority": "server",
+		"reward_authority": "server",
+		"damage_authority": "server",
+		"client_result_authoritative": false,
+		"section": "overview",
+		"section_label_key": "ui.menu_section_overview",
+		"ui_control": "status",
+		"ui_action": "",
+		"enabled": true,
+	}
+
 func selected_action_rows() -> Array[Dictionary]:
 	var entry := selected_entry()
 	var replay_id := str(entry.get("replay_id", ""))
@@ -303,9 +361,10 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 	var server_authoritative := bool(entry.get("server_authoritative", false))
 	var input_integrity_status := _entry_input_integrity_status(entry)
 	var verification_status := _entry_verification_status(entry, final_result_hash, metadata_valid)
-	var load_rejection_reason := _entry_local_load_rejection_reason(entry, verification_status, metadata_valid, server_authoritative)
+	var load_rejection_reason := _entry_local_load_rejection_reason(entry, verification_status, metadata_valid, server_authoritative, server_claim_fields)
 	var replay_authority_scope := "server_authoritative_record" if server_authoritative else "local_practice_record"
-	var requires_server_audit := server_authoritative or _entry_verification_section(verification_status) == "replay_server_pending"
+	var rejected_server_claim := not server_claim_fields.is_empty()
+	var requires_server_audit := server_authoritative or rejected_server_claim or _entry_verification_section(verification_status) == "replay_server_pending"
 	var local_load_policy := "blocked_server_audit" if requires_server_audit else ("blocked_local_integrity" if not load_rejection_reason.is_empty() else "loadable_local_practice")
 	var filtered_indices := _filtered_indices()
 	var filtered_index := filtered_indices.find(index)
@@ -381,6 +440,7 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"preview_bullet_cap_per_tick": int(entry.get("preview_bullet_cap_per_tick", 0)),
 		"preview_budget_headroom": int(entry.get("preview_budget_headroom", 0)),
 		"performance_budget_status": str(entry.get("performance_budget_status", "")),
+		"boss_practice_verification": _boss_practice_verification_context(entry, verification_status, metadata_valid, server_authoritative, server_claim_fields, load_rejection_reason),
 		"metadata_valid": metadata_valid,
 		"metadata_status": _entry_metadata_status(entry, metadata_valid),
 		"metadata_failures": metadata_failures,
@@ -400,6 +460,62 @@ func _entry_metadata_valid(entry: Dictionary) -> bool:
 		var result: Dictionary = replay_store.validate_index_metadata(entries_to_validate)
 		return bool(result.get("ok", false))
 	return true
+
+func _boss_practice_verification_context(entry: Dictionary, verification_status: String, metadata_valid: bool, server_authoritative: bool, server_claim_fields: Array[String], load_rejection_reason: String) -> Dictionary:
+	if not _is_boss_spellbook_practice_entry(entry):
+		return {}
+	var no_server_claims := not server_authoritative and server_claim_fields.is_empty()
+	var requires_server_audit := server_authoritative or not server_claim_fields.is_empty()
+	var loadable := metadata_valid and no_server_claims and load_rejection_reason.is_empty()
+	return {
+		"contract_kind": "boss_practice_replay_index_verification",
+		"ok": loadable,
+		"reason": "none" if loadable else (load_rejection_reason if not load_rejection_reason.is_empty() else verification_status),
+		"replay_id": String(entry.get("replay_id", "")),
+		"verification_status": verification_status,
+		"verification_scope": "local_practice_hash" if no_server_claims else "rejected_server_claim",
+		"preview_authority_scope": String(entry.get("preview_authority_scope", "")),
+		"replay_verification_scope": "local_practice_hash",
+		"local_playback_authority": "local_practice_hash" if not requires_server_audit else "server_audit_required",
+		"spellbook_id": String(entry.get("spellbook_id", "")),
+		"phase_id": String(entry.get("phase_id", "")),
+		"preview_seed": int(entry.get("preview_seed", entry.get("match_seed", 0))),
+		"preview_export_id": String(entry.get("preview_export_id", "")),
+		"preview_fixture_id": String(entry.get("preview_fixture_id", "")),
+		"preview_signature_digest": int(entry.get("preview_signature_digest", 0)),
+		"preview_sample_count": int(entry.get("preview_sample_count", 0)),
+		"preview_max_emit_per_tick": int(entry.get("preview_max_emit_per_tick", 0)),
+		"preview_budget_headroom": int(entry.get("preview_budget_headroom", 0)),
+		"preview_bundle_id": String(entry.get("preview_bundle_id", "")),
+		"preview_bundle_signature_digest": int(entry.get("preview_bundle_signature_digest", 0)),
+		"preview_phase_count": int(entry.get("preview_phase_count", 0)),
+		"preview_phase_ids": (entry.get("preview_phase_ids", []) as Array).duplicate(),
+		"preview_phase_signature_digests": (entry.get("preview_phase_signature_digests", []) as Array).duplicate(),
+		"performance_budget_status": String(entry.get("performance_budget_status", "")),
+		"local_load_policy": "blocked_server_audit" if requires_server_audit else ("loadable_local_practice" if load_rejection_reason.is_empty() else "blocked_local_integrity"),
+		"local_load_guard_reason": load_rejection_reason,
+		"online_outcome_status": "server_required",
+		"requires_server_audit": requires_server_audit,
+		"server_audit_status": "pending" if requires_server_audit else "not_required",
+		"server_authority_claim_fields": server_claim_fields,
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"server_authoritative": false,
+		"client_result_authoritative": false,
+	}
+
+func _selected_or_first_boss_practice_row(boss_rows: Array[Dictionary]) -> Dictionary:
+	if boss_rows.is_empty():
+		return {}
+	var selected_id := selected_replay_id()
+	for row in boss_rows:
+		if String(row.get("replay_id", "")) == selected_id:
+			return row
+	return boss_rows[0]
+
+func _is_boss_spellbook_practice_entry(entry: Dictionary) -> bool:
+	return String(entry.get("mode", "")) == "boss_spellbook_practice" or String(entry.get("catalog_id", "")) == "boss_spellbook"
 
 func _selected_action_context(row: Dictionary) -> Dictionary:
 	if row.is_empty():
@@ -422,6 +538,8 @@ func _selected_action_context(row: Dictionary) -> Dictionary:
 		"selected_replay_authority_scope": String(row.get("replay_authority_scope", "")),
 		"selected_server_audit_status": String(row.get("server_audit_status", "")),
 		"selected_local_playback_authority": String(row.get("local_playback_authority", "")),
+		"selected_boss_practice_verification_status": String((row.get("boss_practice_verification", {}) as Dictionary).get("verification_status", "none")) if typeof(row.get("boss_practice_verification", {})) == TYPE_DICTIONARY else "none",
+		"selected_boss_practice_verification": (row.get("boss_practice_verification", {}) as Dictionary).duplicate(true) if typeof(row.get("boss_practice_verification", {})) == TYPE_DICTIONARY else {},
 		"selected_filtered_index": int(row.get("filtered_index", 0)),
 		"selected_filtered_count": int(row.get("filtered_count", 0)),
 		"replay_action_guard": _replay_action_guard(row),
@@ -488,7 +606,7 @@ func _entry_verification_section_label_key(verification_status: String) -> Strin
 	return "ui.menu_section_%s" % _entry_verification_section(verification_status)
 
 func _entry_verification_scope(entry: Dictionary, server_authoritative: bool, metadata_valid: bool, server_claim_fields: Array[String]) -> String:
-	if not metadata_valid and not server_claim_fields.is_empty():
+	if not server_claim_fields.is_empty():
 		return "rejected_server_claim"
 	if server_authoritative:
 		return "server_audit_record"
@@ -500,7 +618,7 @@ func _entry_verification_scope(entry: Dictionary, server_authoritative: bool, me
 func _entry_verification_summary(entry: Dictionary, verification_status: String, metadata_valid: bool, server_authoritative: bool, server_claim_fields: Array[String]) -> String:
 	var final_tick := int(entry.get("final_tick", 0))
 	var final_hash := int(entry.get("final_result_hash", 0))
-	if not metadata_valid and not server_claim_fields.is_empty():
+	if not server_claim_fields.is_empty():
 		return "rejected server-authority claims %d fields; status %s" % [server_claim_fields.size(), verification_status]
 	if server_authoritative:
 		return "server replay audit pending; tick %d hash %d" % [final_tick, final_hash]
@@ -568,7 +686,10 @@ func local_load_guard_for_entry(entry: Dictionary) -> Dictionary:
 	var metadata_valid := _entry_metadata_valid(entry)
 	var server_authoritative := bool(entry.get("server_authoritative", false))
 	var verification_status := _entry_verification_status(entry, int(entry.get("final_result_hash", 0)), metadata_valid)
-	var rejection_reason := _entry_local_load_rejection_reason(entry, verification_status, metadata_valid, server_authoritative)
+	var server_claim_fields := _entry_server_authority_claim_fields(entry)
+	var rejection_reason := _entry_local_load_rejection_reason(entry, verification_status, metadata_valid, server_authoritative, server_claim_fields)
+	var requires_server_audit := server_authoritative or not server_claim_fields.is_empty() or _entry_verification_section(verification_status) == "replay_server_pending"
+	var local_load_policy := "blocked_server_audit" if requires_server_audit else ("blocked_local_integrity" if not rejection_reason.is_empty() else "loadable_local_practice")
 	return {
 		"ok": rejection_reason.is_empty(),
 		"reason": "loadable" if rejection_reason.is_empty() else rejection_reason,
@@ -577,6 +698,15 @@ func local_load_guard_for_entry(entry: Dictionary) -> Dictionary:
 		"input_integrity_status": _entry_input_integrity_status(entry),
 		"metadata_valid": metadata_valid,
 		"server_authoritative": server_authoritative,
+		"server_authority_claim_fields": server_claim_fields,
+		"local_load_policy": local_load_policy,
+		"requires_server_audit": requires_server_audit,
+		"server_audit_status": "pending" if requires_server_audit else "not_required",
+		"local_playback_authority": "server_audit_required" if requires_server_audit else "local_practice_hash",
+		"local_hash_authority": "local_practice_verification_only",
+		"settlement_authority": "server",
+		"reward_authority": "server",
+		"client_result_authoritative": false,
 	}
 
 func _entry_matches_active_filter(entry: Dictionary) -> bool:
@@ -586,7 +716,7 @@ func _entry_matches_active_filter(entry: Dictionary) -> bool:
 	var status_value := _entry_verification_status(entry, int(entry.get("final_result_hash", 0)), metadata_valid)
 	return _entry_verification_section(status_value) == active_verification_filter
 
-func _entry_local_load_rejection_reason(entry: Dictionary, verification_status: String, metadata_valid: bool, server_authoritative: bool) -> String:
+func _entry_local_load_rejection_reason(entry: Dictionary, verification_status: String, metadata_valid: bool, server_authoritative: bool, server_claim_fields: Array[String] = []) -> String:
 	var path := str(entry.get("path", ""))
 	if path.is_empty():
 		return "missing_path"
@@ -594,6 +724,8 @@ func _entry_local_load_rejection_reason(entry: Dictionary, verification_status: 
 		return "file_missing"
 	if server_authoritative:
 		return "server_record_pending_audit"
+	if not server_claim_fields.is_empty():
+		return "server_authority_claim_rejected"
 	if not metadata_valid:
 		return verification_status
 	if _entry_verification_section(verification_status) == "replay_input_invalid":
