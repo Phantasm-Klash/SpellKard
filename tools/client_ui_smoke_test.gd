@@ -319,6 +319,8 @@ func _validate_settings_pages() -> bool:
 	snapshot = main_node.call("_ui_overlay_snapshot")
 	if not _assert_page_health(snapshot, "input_settings", 2, 3):
 		return false
+	if String(snapshot.get("selected_row_id", "")) != "gamepad_curve":
+		return _fail("gamepad curve deep link should focus target row %s" % [snapshot])
 	rows = main_node.call("_ui_screen_rows", 48)
 	if not _rows_have_ids(rows, ["input_profile", "gamepad_curve", "gamepad_sensitivity", "binding_shoot", "binding_bomb"]):
 		return _fail("input settings rows missing gamepad/keybind controls")
@@ -326,6 +328,21 @@ func _validate_settings_pages() -> bool:
 		return false
 	if not String(snapshot.get("selected_speed_preview", "")).contains("move"):
 		return _fail("input settings should expose gamepad speed preview %s" % String(snapshot.get("selected_speed_preview", "")))
+	var parent_result: Dictionary = main_node.call("_ui_press_visible_quick_action", 0)
+	await _settle_frames(2)
+	if not bool(parent_result.get("ok", false)) or String(main_node.get("ui_screen_model").current_screen) != "player_settings":
+		return _fail("input settings parent quick action invalid %s" % [parent_result])
+	snapshot = main_node.call("_ui_overlay_snapshot")
+	if String(snapshot.get("selected_row_id", "")) != "settings_gamepad_curve":
+		return _fail("player settings should restore last hub row after parent return %s" % [snapshot])
+	var keybind_result: Dictionary = main_node.call("_ui_press_visible_overview_card", 2)
+	await _settle_frames(2)
+	if not bool(keybind_result.get("ok", false)) or String(keybind_result.get("row_id", "")) != "settings_keybinds" or String(main_node.get("ui_screen_model").current_screen) != "input_settings":
+		return _fail("key binding overview card route invalid %s" % [keybind_result])
+	snapshot = main_node.call("_ui_overlay_snapshot")
+	if String(snapshot.get("selected_row_id", "")) != "binding_shoot":
+		return _fail("key binding deep link should focus target row %s" % [snapshot])
+	rows = main_node.call("_ui_screen_rows", 48)
 	var preview_index := _row_index_by_id(rows, "gamepad_curve_preview")
 	if preview_index < 0:
 		return _fail("gamepad curve preview row missing")

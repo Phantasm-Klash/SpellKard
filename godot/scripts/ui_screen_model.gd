@@ -49,6 +49,7 @@ const NAVIGATION_SCREENS: Array[String] = [
 var current_screen := "main_menu"
 var cursor := 0
 var last_action := "none"
+var screen_cursors := {}
 
 var deck_builder: RefCounted = null
 var replay_list_model: RefCounted = null
@@ -115,8 +116,9 @@ func open(screen_id: String) -> bool:
 	if not SCREENS.has(screen_id):
 		last_action = "invalid"
 		return false
+	_remember_current_cursor()
 	current_screen = screen_id
-	cursor = 0
+	cursor = _remembered_cursor_for(screen_id)
 	last_action = "open"
 	return true
 
@@ -135,13 +137,45 @@ func select(delta: int) -> void:
 		last_action = "empty"
 		return
 	cursor = wrapi(cursor + delta, 0, rows.size())
+	_remember_current_cursor()
 	last_action = "select"
+
+func set_cursor(index: int, action: String = "select") -> void:
+	var rows := screen_rows(64)
+	if rows.is_empty():
+		cursor = 0
+	else:
+		cursor = clampi(index, 0, rows.size() - 1)
+	_remember_current_cursor()
+	last_action = action
+
+func select_row_by_id(row_id: String, action: String = "select") -> bool:
+	if row_id.is_empty():
+		return false
+	var rows := screen_rows(64)
+	for i in range(rows.size()):
+		var row: Dictionary = rows[i]
+		if String(row.get("id", "")) == row_id:
+			set_cursor(i, action)
+			return true
+	return false
 
 func selected_row() -> Dictionary:
 	var rows := screen_rows()
 	if rows.is_empty():
 		return {}
 	return rows[clampi(cursor, 0, rows.size() - 1)]
+
+func _remember_current_cursor() -> void:
+	if current_screen.is_empty():
+		return
+	screen_cursors[current_screen] = int(cursor)
+
+func _remembered_cursor_for(screen_id: String) -> int:
+	var rows := screen_rows(64)
+	if rows.is_empty():
+		return 0
+	return clampi(int(screen_cursors.get(screen_id, 0)), 0, rows.size() - 1)
 
 func page_layout(screen_id: String = "") -> Dictionary:
 	var source_screen := screen_id

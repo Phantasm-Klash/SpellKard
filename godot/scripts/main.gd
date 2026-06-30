@@ -2173,8 +2173,11 @@ func _ui_select_row_by_id(row_id: String, refresh: bool = true) -> bool:
 	var row_index := _ui_row_index_by_id(rows, row_id)
 	if row_index < 0:
 		return false
-	ui_screen_model.cursor = row_index
-	ui_screen_model.last_action = "select:%s" % row_id
+	if ui_screen_model.has_method("set_cursor"):
+		ui_screen_model.set_cursor(row_index, "select:%s" % row_id)
+	else:
+		ui_screen_model.cursor = row_index
+		ui_screen_model.last_action = "select:%s" % row_id
 	if refresh:
 		_update_ui_overlay()
 	return true
@@ -2211,12 +2214,15 @@ func _ui_select(delta: int) -> void:
 func _ui_set_cursor(index: int) -> void:
 	if ui_screen_model == null:
 		return
-	var rows: Array[Dictionary] = ui_screen_model.screen_rows(64)
-	if rows.is_empty():
-		ui_screen_model.cursor = 0
+	if ui_screen_model.has_method("set_cursor"):
+		ui_screen_model.set_cursor(index, "select")
 	else:
-		ui_screen_model.cursor = clampi(index, 0, rows.size() - 1)
-	ui_screen_model.last_action = "select"
+		var rows: Array[Dictionary] = ui_screen_model.screen_rows(64)
+		if rows.is_empty():
+			ui_screen_model.cursor = 0
+		else:
+			ui_screen_model.cursor = clampi(index, 0, rows.size() - 1)
+		ui_screen_model.last_action = "select"
 	_update_ui_overlay()
 
 func _ui_accept_selected() -> Dictionary:
@@ -5390,6 +5396,7 @@ func _update_ui_quick_actions(rows: Array[Dictionary], selected: Dictionary) -> 
 		button.set_meta("row_index", row_index)
 		button.set_meta("row_id", String(action_row.get("row_id", "")))
 		button.set_meta("screen_id", screen_id)
+		button.set_meta("target_row_id", String(action_row.get("target_row_id", "")))
 		button.text = String(action_row.get("label", ""))
 		button.tooltip_text = String(action_row.get("tooltip", button.text))
 
@@ -5424,6 +5431,7 @@ func _append_quick_action(result: Array[Dictionary], seen: Dictionary, row: Dict
 	result.append({
 		"row_index": row_index,
 		"row_id": row_id,
+		"target_row_id": String(row.get("target_row_id", "")),
 		"label": label,
 		"tooltip": _format_ui_row(row),
 	})
@@ -5452,6 +5460,7 @@ func _append_shell_navigation_quick_actions(result: Array[Dictionary], seen: Dic
 			"row_index": -1,
 			"row_id": row_id,
 			"screen": screen_id,
+			"target_row_id": String(row.get("target_row_id", "")),
 			"label": _row_label_text(row),
 			"tooltip": "%s: %s" % [_row_label_text(row), String(row.get("summary", ""))],
 		})
@@ -5486,8 +5495,9 @@ func _on_ui_quick_button_pressed(button: Button) -> void:
 		return
 	var row_index := int(button.get_meta("row_index", -1))
 	var screen_id := String(button.get_meta("screen_id", ""))
+	var target_row_id := String(button.get_meta("target_row_id", ""))
 	if row_index < 0 and not screen_id.is_empty():
-		_open_ui_screen(screen_id)
+		_open_ui_screen(screen_id, target_row_id)
 		return
 	if row_index < 0:
 		return
@@ -5505,8 +5515,9 @@ func _ui_press_visible_quick_action(index: int) -> Dictionary:
 	var row_index := int(button.get_meta("row_index", -1))
 	var row_id := String(button.get_meta("row_id", ""))
 	var screen_id := String(button.get_meta("screen_id", ""))
+	var target_row_id := String(button.get_meta("target_row_id", ""))
 	_on_ui_quick_button_pressed(button)
-	return {"ok": row_index >= 0 or not screen_id.is_empty(), "action": "quick_action", "row_index": row_index, "row_id": row_id, "screen": screen_id}
+	return {"ok": row_index >= 0 or not screen_id.is_empty(), "action": "quick_action", "row_index": row_index, "row_id": row_id, "screen": screen_id, "target_row_id": target_row_id}
 
 func _update_ui_control_buttons(row: Dictionary) -> void:
 	var actions := _control_button_actions(row)
