@@ -430,6 +430,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "sample_signature_digests",
         "sample_emit_counts",
         "preview_fixture_id",
+        "_phase_order_from_fixtures",
+        "_extract_phase_order",
+        "SPELLBOOK_PREVIEW_PHASE_ORDER differs",
         "spellbook golden fixture",
     ]:
         if token not in this_text:
@@ -639,6 +642,33 @@ def _extract_int_array_values(block: str, field: str) -> list[int]:
     return [int(item.strip()) for item in raw.split(",") if item.strip()]
 
 
+def _phase_order_from_fixtures(fixture_ids: list[str]) -> dict[str, list[str]]:
+    order: dict[str, list[str]] = {}
+    for fixture_id in fixture_ids:
+        parts = fixture_id.split(":")
+        if len(parts) != 3:
+            continue
+        spellbook_id, phase_id, _seed = parts
+        order.setdefault(spellbook_id, [])
+        if phase_id not in order[spellbook_id]:
+            order[spellbook_id].append(phase_id)
+    return order
+
+
+def _extract_phase_order(text: str) -> dict[str, list[str]]:
+    order_dict = _extract_const_dict(text, "SPELLBOOK_PREVIEW_PHASE_ORDER")
+    if order_dict is None:
+        return {}
+    order: dict[str, list[str]] = {}
+    for match in re.finditer(r'"([^"]+)"\s*:\s*\[([^\]]*)\]', order_dict):
+        order[match.group(1)] = [
+            item.strip().strip('"')
+            for item in match.group(2).split(",")
+            if item.strip()
+        ]
+    return order
+
+
 def _check_spellbook_fixture_parity(spellbook_text: str, replay_store_text: str) -> list[str]:
     errors: list[str] = []
     spellbook_dict = _extract_const_dict(spellbook_text, "GOLDEN_PREVIEW_FIXTURES")
@@ -661,6 +691,13 @@ def _check_spellbook_fixture_parity(spellbook_text: str, replay_store_text: str)
         errors.append(
             "godot/scripts/boss_spellbook_model.gd: missing replay golden fixtures: "
             + ", ".join(missing_in_spellbook)
+        )
+    expected_phase_order = _phase_order_from_fixtures(list(spellbook_fixtures))
+    replay_phase_order = _extract_phase_order(replay_store_text)
+    if replay_phase_order != expected_phase_order:
+        errors.append(
+            "godot/scripts/replay_store.gd: SPELLBOOK_PREVIEW_PHASE_ORDER differs from golden fixtures "
+            f"expected={expected_phase_order} actual={replay_phase_order}"
         )
 
     string_fields = ["export_id", "preview_fixture_id", "preview_authority_scope", "performance_budget_status"]
