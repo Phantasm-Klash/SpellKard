@@ -135,6 +135,9 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 			failures.append("missing_ruleset:%s" % replay_id)
 		if int(entry.get("final_tick", 0)) < 0:
 			failures.append("bad_final_tick:%s" % replay_id)
+		var input_status := _input_integrity_status_from_fields(entry)
+		if input_status != "valid" and input_status != "server_audit_not_local_checked" and input_status != "preview_input_not_recorded":
+			failures.append("%s:%s" % [input_status, replay_id])
 		if str(entry.get("mode", "")) == "boss_spellbook_practice" or str(entry.get("catalog_id", "")) == "boss_spellbook":
 			spellbook_entries += 1
 			var sample_ticks: Array[int] = _preview_sample_ticks_from_fields(entry)
@@ -423,11 +426,15 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 	var input_stream: Array = snapshot.get("input_stream", [])
 	var metadata: Dictionary = snapshot.get("metadata", {})
 	var final_hash := int(snapshot.get("final_result_hash", 0))
+	var final_tick_value := int(metadata.get("final_tick", 0))
+	var input_integrity := _input_integrity_from_stream(input_stream, final_tick_value)
 	var saved_at := str(metadata.get("saved_at", Time.get_datetime_string_from_system(true, true)))
 	var preview_digest := int(metadata.get("preview_signature_digest", snapshot.get("preview_signature_digest", 0)))
 	if preview_digest <= 0 and not str(metadata.get("preview_signature", "")).is_empty():
 		preview_digest = _stable_signature_digest(str(metadata.get("preview_signature", "")))
 	var is_spellbook_preview := str(metadata.get("mode", "")) == "boss_spellbook_practice" or str(metadata.get("catalog_id", "")) == "boss_spellbook"
+	if is_spellbook_preview and String(input_integrity.get("input_integrity_status", "")) == "input_integrity_missing":
+		input_integrity["input_integrity_status"] = "preview_input_not_recorded"
 	var preview_schema_version := int(metadata.get("preview_export_schema_version", 0))
 	if preview_schema_version <= 0 and is_spellbook_preview and not str(metadata.get("preview_signature", "")).is_empty():
 		preview_schema_version = SPELLBOOK_PREVIEW_EXPORT_SCHEMA_VERSION
@@ -451,7 +458,14 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"ruleset_version": str(snapshot.get("ruleset_version", "ruleset-local-s0")),
 		"match_seed": int(snapshot.get("match_seed", 0)),
 		"preview_seed": preview_seed,
-		"final_tick": int(metadata.get("final_tick", input_stream.size())),
+		"final_tick": final_tick_value,
+		"input_count": int(input_integrity.get("input_count", 0)),
+		"input_first_tick": int(input_integrity.get("input_first_tick", -1)),
+		"input_last_tick": int(input_integrity.get("input_last_tick", -1)),
+		"input_tick_span": int(input_integrity.get("input_tick_span", 0)),
+		"input_tick_monotonic": bool(input_integrity.get("input_tick_monotonic", false)),
+		"input_tick_contiguous": bool(input_integrity.get("input_tick_contiguous", false)),
+		"input_integrity_status": String(input_integrity.get("input_integrity_status", "input_integrity_missing")),
 		"score": int(metadata.get("score", 0)),
 		"graze": int(metadata.get("graze", 0)),
 		"hits": int(metadata.get("hits", 0)),
@@ -508,6 +522,9 @@ func _metadata_status(metadata: Dictionary) -> String:
 	return _spellbook_metadata_status_from_fields(metadata)
 
 func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
+	var input_status := _input_integrity_status_from_fields(fields)
+	if input_status != "valid" and input_status != "server_audit_not_local_checked" and input_status != "preview_input_not_recorded":
+		return input_status
 	if str(fields.get("mode", "")) != "boss_spellbook_practice" and str(fields.get("catalog_id", "")) != "boss_spellbook":
 		return "valid"
 	var preview_digest := int(fields.get("preview_signature_digest", 0))
@@ -618,6 +635,82 @@ func _stable_signature_digest(signature: String) -> int:
 	for index in range(signature.length()):
 		digest = int((digest * 131 + signature.unicode_at(index)) % 1000000007)
 	return digest
+
+func _input_integrity_from_stream(input_stream: Array, final_tick: int) -> Dictionary:
+	if input_stream.is_empty():
+		return {
+			"input_count": 0,
+			"input_first_tick": -1,
+			"input_last_tick": -1,
+			"input_tick_span": 0,
+			"input_tick_monotonic": false,
+			"input_tick_contiguous": false,
+			"input_integrity_status": "input_integrity_missing",
+		}
+	var first_tick := -1
+	var last_tick := -1
+	var previous_tick := -1
+	var monotonic := true
+	var contiguous := true
+	for index in range(input_stream.size()):
+		var raw_entry: Variant = input_stream[index]
+		if typeof(raw_entry) != TYPE_DICTIONARY:
+			monotonic = false
+			contiguous = false
+			continue
+		var input_entry: Dictionary = raw_entry
+		var input_tick := int(input_entry.get("tick", -1))
+		if index == 0:
+			first_tick = input_tick
+		else:
+			if input_tick <= previous_tick:
+				monotonic = false
+			if input_tick != previous_tick + 1:
+				contiguous = false
+		previous_tick = input_tick
+		last_tick = input_tick
+	var status := "valid"
+	if first_tick < 0 or last_tick < first_tick:
+		status = "input_tick_range_invalid"
+	elif not monotonic:
+		status = "input_tick_nonmonotonic"
+	elif not contiguous:
+		status = "input_tick_gap"
+	elif final_tick >= 0 and last_tick != final_tick:
+		status = "input_final_tick_mismatch"
+	return {
+		"input_count": input_stream.size(),
+		"input_first_tick": first_tick,
+		"input_last_tick": last_tick,
+		"input_tick_span": maxi(0, last_tick - first_tick + 1),
+		"input_tick_monotonic": monotonic,
+		"input_tick_contiguous": contiguous,
+		"input_integrity_status": status,
+	}
+
+func _input_integrity_status_from_fields(fields: Dictionary) -> String:
+	if bool(fields.get("server_authoritative", false)):
+		return "server_audit_not_local_checked"
+	var status := String(fields.get("input_integrity_status", ""))
+	if status.is_empty():
+		return "input_integrity_missing"
+	if status == "preview_input_not_recorded" and (String(fields.get("mode", "")) == "boss_spellbook_practice" or String(fields.get("catalog_id", "")) == "boss_spellbook"):
+		return status
+	if int(fields.get("input_count", 0)) <= 0:
+		return "input_integrity_missing"
+	var first_tick := int(fields.get("input_first_tick", -1))
+	var last_tick := int(fields.get("input_last_tick", -1))
+	if first_tick < 0 or last_tick < first_tick:
+		return "input_tick_range_invalid"
+	if not bool(fields.get("input_tick_monotonic", false)):
+		return "input_tick_nonmonotonic"
+	if not bool(fields.get("input_tick_contiguous", false)):
+		return "input_tick_gap"
+	if int(fields.get("input_tick_span", 0)) != last_tick - first_tick + 1:
+		return "input_tick_span_mismatch"
+	if int(fields.get("final_tick", last_tick)) != last_tick:
+		return "input_final_tick_mismatch"
+	return status
 
 func _expected_preview_fixture_id(fields: Dictionary) -> String:
 	return _expected_preview_fixture_id_from_parts(

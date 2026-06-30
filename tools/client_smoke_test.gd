@@ -4203,6 +4203,10 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay index list columns incomplete")
 		quit(1)
 		return true
+	if int(latest_replay.get("input_count", 0)) <= 0 or String(latest_replay.get("input_integrity_status", "")) != "valid" or not bool(latest_replay.get("input_tick_contiguous", false)) or int(latest_replay.get("input_last_tick", -1)) != int(latest_replay.get("final_tick", -2)):
+		push_error("Smoke test failed: replay input integrity metadata invalid %s" % [latest_replay])
+		quit(1)
+		return true
 	main_node.call("_refresh_replay_index")
 	if int(main_node.get("replay_index_entries").size()) <= 0 or String(main_node.get("replay_index_status")) == "empty":
 		push_error("Smoke test failed: replay index did not refresh in main scene")
@@ -4222,6 +4226,28 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay verification filter rows invalid %s" % [replay_filter_rows])
 		quit(1)
 		return true
+	if _row_index_by_id(replay_filter_rows, "replay_filter_replay_input_invalid") < 0:
+		push_error("Smoke test failed: replay verification filters missing input-invalid filter %s" % [replay_filter_rows])
+		quit(1)
+		return true
+	var bad_input_replay := latest_replay.duplicate(true)
+	bad_input_replay["replay_id"] = "input-gap-smoke"
+	bad_input_replay["input_tick_contiguous"] = false
+	bad_input_replay["input_integrity_status"] = "input_tick_gap"
+	var bad_input_validation: Dictionary = replay_store.validate_index_metadata([bad_input_replay])
+	if bool(bad_input_validation.get("ok", true)) or not (bad_input_validation.get("failures", []) as Array).has("input_tick_gap:input-gap-smoke"):
+		push_error("Smoke test failed: replay input gap validation did not reject %s" % [bad_input_validation])
+		quit(1)
+		return true
+	replay_list_model.entries = [bad_input_replay]
+	replay_list_model.cursor = 0
+	replay_list_model.set_verification_filter("replay_input_invalid")
+	var bad_input_rows: Array[Dictionary] = replay_list_model.row_models(4)
+	if bad_input_rows.is_empty() or String(bad_input_rows[0].get("section", "")) != "replay_input_invalid" or String(bad_input_rows[0].get("verification_status", "")) != "input_tick_gap" or String(bad_input_rows[0].get("verification_scope", "")) != "local_practice_input_integrity":
+		push_error("Smoke test failed: replay input invalid filter rows invalid %s" % [bad_input_rows])
+		quit(1)
+		return true
+	replay_list_model.refresh()
 	if not replay_list_model.set_verification_filter("replay_local_ready") or String(replay_list_model.get("active_verification_filter")) != "replay_local_ready":
 		push_error("Smoke test failed: replay verification filter did not activate")
 		quit(1)

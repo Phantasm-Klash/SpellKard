@@ -116,6 +116,7 @@
   "ui.menu_section_replay_all": "全部 Replay",
   "ui.menu_section_replay_local_ready": "本地已验证",
   "ui.menu_section_replay_missing_hash": "缺少 Hash",
+  "ui.menu_section_replay_input_invalid": "输入异常",
   "ui.menu_section_replay_server_pending": "服务端审计",
   "ui.menu_section_replay_metadata_invalid": "元数据异常",
   "ui.menu_section_input": "输入",

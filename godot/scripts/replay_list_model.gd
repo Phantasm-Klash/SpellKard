@@ -13,6 +13,7 @@ const VERIFICATION_FILTERS: Array[String] = [
 	VERIFICATION_FILTER_ALL,
 	"replay_local_ready",
 	"replay_missing_hash",
+	"replay_input_invalid",
 	"replay_server_pending",
 	"replay_metadata_invalid",
 ]
@@ -97,19 +98,21 @@ func verification_summary_row() -> Dictionary:
 	var counts := _verification_counts()
 	var local_ready := int(counts.get("replay_local_ready", 0))
 	var missing_hash := int(counts.get("replay_missing_hash", 0))
+	var input_invalid := int(counts.get("replay_input_invalid", 0))
 	var server_pending := int(counts.get("replay_server_pending", 0))
 	var metadata_invalid := int(counts.get("replay_metadata_invalid", 0))
 	var rejected_server_claim := int(counts.get("rejected_server_claim", 0))
 	return {
 		"id": "replay_verification_summary",
 		"label_key": "screen.main.replay",
-		"value": "filter %s local %d missing %d server %d invalid %d" % [active_verification_filter, local_ready, missing_hash, server_pending, metadata_invalid],
-		"summary": "verification filter=%s local_ready=%d missing_hash=%d server_pending=%d metadata_invalid=%d rejected_server_claim=%d visible=%d" % [active_verification_filter, local_ready, missing_hash, server_pending, metadata_invalid, rejected_server_claim, _filtered_indices().size()],
+		"value": "filter %s local %d missing %d input %d server %d invalid %d" % [active_verification_filter, local_ready, missing_hash, input_invalid, server_pending, metadata_invalid],
+		"summary": "verification filter=%s local_ready=%d missing_hash=%d input_invalid=%d server_pending=%d metadata_invalid=%d rejected_server_claim=%d visible=%d" % [active_verification_filter, local_ready, missing_hash, input_invalid, server_pending, metadata_invalid, rejected_server_claim, _filtered_indices().size()],
 		"entry_count": entries.size(),
 		"visible_entry_count": _filtered_indices().size(),
 		"active_verification_filter": active_verification_filter,
 		"local_ready_count": local_ready,
 		"missing_final_hash_count": missing_hash,
+		"input_invalid_count": input_invalid,
 		"server_pending_audit_count": server_pending,
 		"metadata_invalid_count": metadata_invalid,
 		"rejected_server_claim_count": rejected_server_claim,
@@ -243,6 +246,7 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 	var server_claim_fields := _entry_server_authority_claim_fields(entry)
 	var final_result_hash := int(entry.get("final_result_hash", 0))
 	var server_authoritative := bool(entry.get("server_authoritative", false))
+	var input_integrity_status := _entry_input_integrity_status(entry)
 	var verification_status := _entry_verification_status(entry, final_result_hash, metadata_valid)
 	var replay_authority_scope := "server_authoritative_record" if server_authoritative else "local_practice_record"
 	return {
@@ -260,8 +264,15 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"final_tick": int(entry.get("final_tick", 0)),
 		"final_result_hash": final_result_hash,
 		"can_verify_final_hash": final_result_hash != 0 and int(entry.get("final_tick", 0)) >= 0,
+		"input_count": int(entry.get("input_count", 0)),
+		"input_first_tick": int(entry.get("input_first_tick", -1)),
+		"input_last_tick": int(entry.get("input_last_tick", -1)),
+		"input_tick_span": int(entry.get("input_tick_span", 0)),
+		"input_tick_monotonic": bool(entry.get("input_tick_monotonic", false)),
+		"input_tick_contiguous": bool(entry.get("input_tick_contiguous", false)),
+		"input_integrity_status": input_integrity_status,
 		"verification_status": verification_status,
-		"verification_scope": _entry_verification_scope(server_authoritative, metadata_valid, server_claim_fields),
+		"verification_scope": _entry_verification_scope(entry, server_authoritative, metadata_valid, server_claim_fields),
 		"verification_summary": _entry_verification_summary(entry, verification_status, metadata_valid, server_authoritative, server_claim_fields),
 		"section": _entry_verification_section(verification_status),
 		"section_label_key": _entry_verification_section_label_key(verification_status),
@@ -317,10 +328,13 @@ func _entry_metadata_valid(entry: Dictionary) -> bool:
 func _entry_verification_status(entry: Dictionary, final_result_hash: int, metadata_valid: bool) -> String:
 	if not metadata_valid:
 		return _entry_metadata_status(entry, false)
-	if final_result_hash == 0:
-		return "missing_final_hash"
 	if bool(entry.get("server_authoritative", false)):
 		return "server_record_pending_audit"
+	var input_status := _entry_input_integrity_status(entry)
+	if input_status != "valid" and input_status != "preview_input_not_recorded":
+		return input_status
+	if final_result_hash == 0:
+		return "missing_final_hash"
 	return "local_final_hash_ready"
 
 func _entry_verification_section(verification_status: String) -> String:
@@ -329,6 +343,8 @@ func _entry_verification_section(verification_status: String) -> String:
 			return "replay_local_ready"
 		"missing_final_hash":
 			return "replay_missing_hash"
+		"input_integrity_missing", "input_tick_range_invalid", "input_tick_nonmonotonic", "input_tick_gap", "input_tick_span_mismatch", "input_final_tick_mismatch":
+			return "replay_input_invalid"
 		"server_record_pending_audit":
 			return "replay_server_pending"
 		_:
@@ -337,11 +353,14 @@ func _entry_verification_section(verification_status: String) -> String:
 func _entry_verification_section_label_key(verification_status: String) -> String:
 	return "ui.menu_section_%s" % _entry_verification_section(verification_status)
 
-func _entry_verification_scope(server_authoritative: bool, metadata_valid: bool, server_claim_fields: Array[String]) -> String:
+func _entry_verification_scope(entry: Dictionary, server_authoritative: bool, metadata_valid: bool, server_claim_fields: Array[String]) -> String:
 	if not metadata_valid and not server_claim_fields.is_empty():
 		return "rejected_server_claim"
 	if server_authoritative:
 		return "server_audit_record"
+	var input_status := _entry_input_integrity_status(entry)
+	if input_status != "valid" and input_status != "preview_input_not_recorded":
+		return "local_practice_input_integrity"
 	return "local_practice_hash"
 
 func _entry_verification_summary(entry: Dictionary, verification_status: String, metadata_valid: bool, server_authoritative: bool, server_claim_fields: Array[String]) -> String:
@@ -351,8 +370,15 @@ func _entry_verification_summary(entry: Dictionary, verification_status: String,
 		return "rejected server-authority claims %d fields; status %s" % [server_claim_fields.size(), verification_status]
 	if server_authoritative:
 		return "server replay audit pending; tick %d hash %d" % [final_tick, final_hash]
+	if _entry_verification_section(verification_status) == "replay_input_invalid":
+		return "local practice input integrity failed; status %s inputs %d range %d-%d" % [
+			verification_status,
+			int(entry.get("input_count", 0)),
+			int(entry.get("input_first_tick", -1)),
+			int(entry.get("input_last_tick", -1)),
+		]
 	if final_hash != 0:
-		return "local practice final hash ready; tick %d hash %d" % [final_tick, final_hash]
+		return "local practice final hash ready; tick %d hash %d inputs %d" % [final_tick, final_hash, int(entry.get("input_count", 0))]
 	return "local practice replay missing final hash; tick %d" % final_tick
 
 func _entry_metadata_status(entry: Dictionary, metadata_valid: bool) -> String:
@@ -389,6 +415,7 @@ func _verification_counts() -> Dictionary:
 	var counts := {
 		"replay_local_ready": 0,
 		"replay_missing_hash": 0,
+		"replay_input_invalid": 0,
 		"replay_server_pending": 0,
 		"replay_metadata_invalid": 0,
 		"rejected_server_claim": 0,
@@ -399,7 +426,7 @@ func _verification_counts() -> Dictionary:
 		var status_value := _entry_verification_status(entry, int(entry.get("final_result_hash", 0)), metadata_valid)
 		var section_value := _entry_verification_section(status_value)
 		counts[section_value] = int(counts.get(section_value, 0)) + 1
-		if _entry_verification_scope(bool(entry.get("server_authoritative", false)), metadata_valid, server_claim_fields) == "rejected_server_claim":
+		if _entry_verification_scope(entry, bool(entry.get("server_authoritative", false)), metadata_valid, server_claim_fields) == "rejected_server_claim":
 			counts["rejected_server_claim"] = int(counts.get("rejected_server_claim", 0)) + 1
 	return counts
 
@@ -432,6 +459,30 @@ func _verification_filter_label_key(filter_id: String) -> String:
 	if filter_id == VERIFICATION_FILTER_ALL:
 		return "ui.menu_section_replay_all"
 	return "ui.menu_section_%s" % filter_id
+
+func _entry_input_integrity_status(entry: Dictionary) -> String:
+	if bool(entry.get("server_authoritative", false)):
+		return "server_audit_not_local_checked"
+	var status := String(entry.get("input_integrity_status", ""))
+	if status.is_empty():
+		return "input_integrity_missing"
+	if status == "preview_input_not_recorded" and (String(entry.get("mode", "")) == "boss_spellbook_practice" or String(entry.get("catalog_id", "")) == "boss_spellbook"):
+		return status
+	if int(entry.get("input_count", 0)) <= 0:
+		return "input_integrity_missing"
+	var first_tick := int(entry.get("input_first_tick", -1))
+	var last_tick := int(entry.get("input_last_tick", -1))
+	if first_tick < 0 or last_tick < first_tick:
+		return "input_tick_range_invalid"
+	if not bool(entry.get("input_tick_monotonic", false)):
+		return "input_tick_nonmonotonic"
+	if not bool(entry.get("input_tick_contiguous", false)):
+		return "input_tick_gap"
+	if int(entry.get("input_tick_span", 0)) != last_tick - first_tick + 1:
+		return "input_tick_span_mismatch"
+	if int(entry.get("final_tick", last_tick)) != last_tick:
+		return "input_final_tick_mismatch"
+	return status
 
 func _source_index_for_replay_id(replay_id: String) -> int:
 	if replay_id.is_empty():
