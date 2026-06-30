@@ -395,6 +395,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "stale_sample_emit_count_replay_accepted",
         "negative_sample_digest_replay_accepted",
         "negative_sample_emit_count_replay_accepted",
+        "stale_sample_digest_row_metadata",
         "missing_sample_window_replay_accepted",
         "noncanonical_sample_ticks_replay_accepted",
         "stale_sample_window_start_replay_accepted",
