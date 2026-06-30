@@ -412,6 +412,7 @@ func _selected_action_context(row: Dictionary) -> Dictionary:
 			"selected_local_playback_authority": "none",
 			"selected_filtered_index": 0,
 			"selected_filtered_count": 0,
+			"replay_action_guard": _replay_action_guard(row),
 		}
 	return {
 		"selected_verification_status": String(row.get("verification_status", "")),
@@ -423,6 +424,39 @@ func _selected_action_context(row: Dictionary) -> Dictionary:
 		"selected_local_playback_authority": String(row.get("local_playback_authority", "")),
 		"selected_filtered_index": int(row.get("filtered_index", 0)),
 		"selected_filtered_count": int(row.get("filtered_count", 0)),
+		"replay_action_guard": _replay_action_guard(row),
+	}
+
+func _replay_action_guard(row: Dictionary) -> Dictionary:
+	if row.is_empty():
+		return {
+			"ok": false,
+			"reason": "no_replay_selected",
+			"local_load_policy": "none",
+			"requires_server_audit": false,
+			"server_audit_status": "not_required",
+			"local_playback_authority": "none",
+			"local_hash_authority": "local_practice_verification_only",
+			"settlement_authority": "server",
+			"reward_authority": "server",
+			"client_result_authoritative": false,
+		}
+	var reason := String(row.get("local_load_guard_reason", row.get("load_rejection_reason", "")))
+	var can_play := bool(row.get("can_play", false)) and reason.is_empty()
+	return {
+		"ok": can_play,
+		"reason": "loadable_local_practice" if can_play else reason,
+		"replay_id": String(row.get("replay_id", "")),
+		"verification_status": String(row.get("verification_status", "")),
+		"verification_section": String(row.get("section", "")),
+		"local_load_policy": String(row.get("local_load_policy", "none")),
+		"requires_server_audit": bool(row.get("requires_server_audit", false)),
+		"server_audit_status": String(row.get("server_audit_status", "")),
+		"local_playback_authority": String(row.get("local_playback_authority", "")),
+		"local_hash_authority": "local_practice_verification_only",
+		"settlement_authority": "server",
+		"reward_authority": "server",
+		"client_result_authoritative": false,
 	}
 
 func _entry_verification_status(entry: Dictionary, final_result_hash: int, metadata_valid: bool) -> String:
