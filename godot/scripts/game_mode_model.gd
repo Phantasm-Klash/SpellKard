@@ -732,6 +732,7 @@ func apply_world_boss_result(result: Dictionary) -> bool:
 		last_action_status = "failed"
 		last_error_code = "client_authoritative_world_boss_result"
 		return false
+	world_boss_state["boss_instance_id"] = str(result.get("boss_instance_id", world_boss_state.get("boss_instance_id", "")))
 	var hp_after: Variant = result.get("boss_hp_after_global", result.get("current_hp", world_boss_state.get("current_hp", 0.0)))
 	world_boss_state["current_hp"] = max(0.0, float(hp_after))
 	world_boss_state["max_hp"] = float(result.get("boss_hp_global_max", result.get("boss_max_hp", world_boss_state.get("max_hp", 0.0))))
@@ -744,12 +745,12 @@ func apply_world_boss_result(result: Dictionary) -> bool:
 	world_boss_state["last_result_status"] = str(result.get("settlement_status", "defeated" if float(world_boss_state.get("current_hp", 0.0)) <= 0.0 else "applied"))
 	world_boss_state["last_result_source"] = "server_settlement_projection"
 	world_boss_state["server_authoritative"] = bool(result.get("server_authority", result.get("server_authoritative", true)))
+	var defeated_at_from_server := str(result.get("defeated_at", "")).strip_edges()
+	if not defeated_at_from_server.is_empty():
+		world_boss_state["defeated_at"] = defeated_at_from_server
 	if bool(result.get("world_announcement_emitted", false)):
 		world_boss_state["world_announcement"] = str(result.get("world_announcement", "world_boss_defeated"))
-	if float(world_boss_state.get("current_hp", 0.0)) <= 0.0 and str(world_boss_state.get("defeated_at", "")).is_empty():
-		world_boss_state["defeated_at"] = str(result.get("defeated_at", Time.get_datetime_string_from_system(true, true)))
-		if str(world_boss_state.get("world_announcement", "")).is_empty():
-			world_boss_state["world_announcement"] = str(result.get("world_announcement", "defeated"))
+	world_boss_state["defeat_timestamp_pending_server"] = float(world_boss_state.get("current_hp", 0.0)) <= 0.0 and str(world_boss_state.get("defeated_at", "")).strip_edges().is_empty()
 	last_action_status = "world_boss_result"
 	last_error_code = "none"
 	return true
@@ -879,6 +880,7 @@ func _default_boss_state(is_world: bool) -> Dictionary:
 		"global_damage_applied": 0,
 		"defeated_at": "",
 		"world_announcement": "",
+		"defeat_timestamp_pending_server": false,
 		"boss_phase": "phase_1",
 		"clear_conditions": ["boss_hp_zero", "survivor_required", "no_failed_mechanic"],
 		"cleared": false,
@@ -1236,6 +1238,8 @@ func _world_boss_result_row() -> Dictionary:
 		"daily_attempts_left": int(world_boss_state.get("daily_attempts_left", 0)),
 		"defeated_at": str(world_boss_state.get("defeated_at", "")),
 		"world_announcement": str(world_boss_state.get("world_announcement", "")),
+		"defeat_timestamp_pending_server": bool(world_boss_state.get("defeat_timestamp_pending_server", false)),
+		"defeat_timestamp_source": "pending_server" if bool(world_boss_state.get("defeat_timestamp_pending_server", false)) else ("server" if not str(world_boss_state.get("defeated_at", "")).is_empty() else "none"),
 		"result_status": str(world_boss_state.get("last_result_status", "pending")),
 		"result_source": str(world_boss_state.get("last_result_source", "")),
 		"server_authoritative": bool(world_boss_state.get("server_authoritative", false)),

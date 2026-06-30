@@ -2099,6 +2099,24 @@ func _process(_delta: float) -> bool:
 		return true
 	if not main_node.call("_apply_world_boss_result", {
 		"boss_instance_id": "world_boss_local_s0_001",
+		"match_id": "wb-smoke-pending",
+		"boss_hp_after_global": 0,
+		"boss_max_hp": 100000,
+		"team_damage": 40000,
+		"global_damage_applied": 40000,
+		"daily_attempts_left": 2,
+		"server_authoritative": true,
+	}):
+		push_error("Smoke test failed: pending world boss result invalid")
+		quit(1)
+		return true
+	var pending_world_result_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "world_boss_result")
+	if not bool(pending_world_result_row.get("defeat_timestamp_pending_server", false)) or String(pending_world_result_row.get("defeat_timestamp_source", "")) != "pending_server" or not String(pending_world_result_row.get("defeated_at", "")).is_empty():
+		push_error("Smoke test failed: world boss pending defeat timestamp became client-authored %s" % [pending_world_result_row])
+		quit(1)
+		return true
+	if not main_node.call("_apply_world_boss_result", {
+		"boss_instance_id": "world_boss_local_s0_001",
 		"match_id": "wb-smoke-001",
 		"boss_hp_after_global": 0,
 		"boss_max_hp": 100000,
@@ -2123,6 +2141,10 @@ func _process(_delta: float) -> bool:
 		return true
 	if int(world_result_row.get("damage_this_match", 0)) != 5000 or int(world_result_row.get("global_damage_applied", 0)) != 5000 or String(world_result_row.get("result_status", "")) != "defeated":
 		push_error("Smoke test failed: world boss result row summary invalid %s" % [world_result_row])
+		quit(1)
+		return true
+	if bool(world_result_row.get("defeat_timestamp_pending_server", true)) or String(world_result_row.get("defeat_timestamp_source", "")) != "server" or String(world_result_row.get("defeated_at", "")) != "2026-06-25T00:00:00Z":
+		push_error("Smoke test failed: world boss server defeat timestamp projection invalid %s" % [world_result_row])
 		quit(1)
 		return true
 	if not main_node.call("_select_game_mode", "instance_boss") or not main_node.call("_configure_boss_party", "instance_boss", ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]):
