@@ -1375,6 +1375,8 @@ func _section_for_row(screen_id: String, row: Dictionary) -> String:
 				return "overview"
 			if row_id.begins_with("cert_"):
 				return "progress"
+			if row_id.contains("boss"):
+				return "boss"
 			return "modes"
 		"deck":
 			return "cards" if row.has("card_id") else "overview"

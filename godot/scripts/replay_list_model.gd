@@ -176,7 +176,33 @@ func selected_action_rows() -> Array[Dictionary]:
 	var replay_id := str(entry.get("replay_id", ""))
 	var has_replay := not replay_id.is_empty()
 	var source_index := _source_index_for_replay_id(replay_id)
+	var selected_row_model := _row_from_entry(entry, source_index) if has_replay and source_index >= 0 else {}
 	return [
+		{
+			"id": "replay_action_load",
+			"label_key": "screen.replay.load",
+			"value": String(selected_row_model.get("local_load_policy", "none")),
+			"summary": "load selected local-practice replay only; server-authoritative records require audit",
+			"replay_id": replay_id,
+			"path": String(selected_row_model.get("path", "")),
+			"source_index": source_index,
+			"verification_status": String(selected_row_model.get("verification_status", "none")),
+			"verification_section": String(selected_row_model.get("section", "")),
+			"local_load_policy": String(selected_row_model.get("local_load_policy", "none")),
+			"local_load_guard_reason": String(selected_row_model.get("local_load_guard_reason", "")),
+			"requires_server_audit": bool(selected_row_model.get("requires_server_audit", false)),
+			"can_play": bool(selected_row_model.get("can_play", false)),
+			"server_authoritative": false,
+			"local_hash_authority": "local_practice_verification_only",
+			"settlement_authority": "server",
+			"reward_authority": "server",
+			"client_result_authoritative": false,
+			"section": "overview",
+			"section_label_key": "ui.menu_section_overview",
+			"ui_control": "replay",
+			"ui_action": "load_replay",
+			"enabled": has_replay and bool(selected_row_model.get("can_play", false)),
+		},
 		{
 			"id": "replay_action_favorite",
 			"label_key": "screen.replay.favorite",

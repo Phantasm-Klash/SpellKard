@@ -474,16 +474,24 @@ func _validate_collection_page_contract() -> bool:
 	var replay_filter_index := _row_index_by_id(replay_rows, "replay_filter_replay_local_ready")
 	if replay_filter_index < 0 or String(replay_rows[replay_filter_index].get("ui_action", "")) != "set_replay_filter":
 		return _fail("replay page missing local-ready filter action %s" % [replay_rows])
+	var load_action := _row_by_id(replay_rows, "replay_action_load")
 	var favorite_action := _row_by_id(replay_rows, "replay_action_favorite")
 	var remove_action := _row_by_id(replay_rows, "replay_action_remove")
-	if favorite_action.is_empty() or remove_action.is_empty() or String(favorite_action.get("ui_action", "")) != "toggle_replay_favorite" or String(remove_action.get("ui_action", "")) != "remove_replay_from_index" or bool(favorite_action.get("client_result_authoritative", true)):
-		return _fail("replay page missing favorite/remove action rows favorite=%s remove=%s" % [favorite_action, remove_action])
+	if load_action.is_empty() or favorite_action.is_empty() or remove_action.is_empty() or String(load_action.get("ui_action", "")) != "load_replay" or String(favorite_action.get("ui_action", "")) != "toggle_replay_favorite" or String(remove_action.get("ui_action", "")) != "remove_replay_from_index" or bool(load_action.get("client_result_authoritative", true)) or bool(favorite_action.get("client_result_authoritative", true)):
+		return _fail("replay page missing load/favorite/remove action rows load=%s favorite=%s remove=%s" % [load_action, favorite_action, remove_action])
 	if not _assert_replay_ui_authority_row(_row_by_id(replay_rows, "replay_filter_replay_local_ready")):
+		return false
+	if not _assert_replay_ui_authority_row(load_action):
 		return false
 	if not _assert_replay_ui_authority_row(favorite_action):
 		return false
 	if not _assert_replay_ui_authority_row(remove_action):
 		return false
+	if String(load_action.get("replay_id", "")).is_empty():
+		if bool(load_action.get("enabled", true)) or bool(load_action.get("can_play", true)) or String(load_action.get("local_load_policy", "")) != "none":
+			return _fail("empty replay load action should stay disabled %s" % [load_action])
+	elif String(load_action.get("local_load_policy", "")) != "loadable_local_practice" or not bool(load_action.get("can_play", false)) or bool(load_action.get("requires_server_audit", true)):
+		return _fail("replay load action should expose local-only load policy %s" % [load_action])
 	main_node.call("_ui_set_cursor", replay_filter_index)
 	var replay_filter_result: Dictionary = main_node.call("_ui_accept_selected")
 	await _settle_frames(2)
@@ -691,6 +699,8 @@ func _assert_boss_status_row(row: Dictionary, mode_id: String) -> bool:
 		return _fail("boss status row must show server settlement authority %s" % [row])
 	if not bool(row.get("requires_server_confirmation", false)):
 		return _fail("boss status row must require server confirmation %s" % [row])
+	if String(row.get("projection_scope", row.get("display_scope", "local_display_only"))) != "local_display_only":
+		return _fail("boss status row must stay local display scoped %s" % [row])
 	var value := String(row.get("value", ""))
 	if not value.contains("hp") or not value.contains("attempts") or not value.contains("layout"):
 		return _fail("boss status row value should include hp and attempts %s" % [row])
