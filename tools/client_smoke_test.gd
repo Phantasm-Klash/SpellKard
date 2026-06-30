@@ -666,6 +666,58 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: battle royale player requirements invalid")
 		quit(1)
 		return true
+	if game_mode_model.configure_boss_party("world_boss", ["p1", "p2", "p3"]):
+		push_error("Smoke test failed: undersized world boss party accepted")
+		quit(1)
+		return true
+	if String(game_mode_model.last_error_code) != "boss_party_size":
+		push_error("Smoke test failed: undersized world boss party error invalid")
+		quit(1)
+		return true
+	if not game_mode_model.configure_boss_party("world_boss", ["p1", "p2", "p3", "p4"]):
+		push_error("Smoke test failed: world boss four-player party rejected")
+		quit(1)
+		return true
+	var world_formation: Dictionary = game_mode_model.validate_boss_formation("world_boss")
+	if not bool(world_formation.get("ok", false)) or int(world_formation.get("player_count", 0)) != 4 or String(world_formation.get("aim_policy", "")) != "toward_center" or bool(world_formation.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: world boss formation invalid %s" % [world_formation])
+		quit(1)
+		return true
+	var world_angles: Array = world_formation.get("slot_angles_degrees", [])
+	if world_angles.size() != 4 or absf(float(world_angles[0]) + 90.0) > 0.01 or absf(float(world_angles[1])) > 0.01 or absf(float(world_angles[2]) - 90.0) > 0.01 or absf(absf(float(world_angles[3])) - 180.0) > 0.01:
+		push_error("Smoke test failed: world boss formation angles invalid %s" % [world_angles])
+		quit(1)
+		return true
+	if not game_mode_model.configure_boss_party("instance_boss", ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]):
+		push_error("Smoke test failed: instance boss eight-player party rejected")
+		quit(1)
+		return true
+	var instance_formation: Dictionary = game_mode_model.validate_boss_formation("instance_boss")
+	if not bool(instance_formation.get("ok", false)) or int(instance_formation.get("player_count", 0)) != 8 or String(instance_formation.get("friendly_fire", "")) != "disabled":
+		push_error("Smoke test failed: instance boss formation invalid %s" % [instance_formation])
+		quit(1)
+		return true
+	var game_mode_state_rows: Array[Dictionary] = game_mode_model.mode_rows()
+	if not _rows_have_ids(game_mode_state_rows, ["world_boss_hp", "world_boss_party", "world_boss_formation", "world_boss_transfer", "instance_boss_hp", "instance_boss_party", "instance_boss_formation", "instance_boss_transfer"]):
+		push_error("Smoke test failed: boss mode state rows incomplete")
+		quit(1)
+		return true
+	var world_hp_row: Dictionary = _find_row_by_id(game_mode_state_rows, "world_boss_hp")
+	var instance_hp_row: Dictionary = _find_row_by_id(game_mode_state_rows, "instance_boss_hp")
+	var world_formation_row: Dictionary = _find_row_by_id(game_mode_state_rows, "world_boss_formation")
+	var instance_formation_row: Dictionary = _find_row_by_id(game_mode_state_rows, "instance_boss_formation")
+	if not bool(world_hp_row.get("persistent_hp", false)) or bool(instance_hp_row.get("persistent_hp", true)):
+		push_error("Smoke test failed: boss hp persistence flags invalid world=%s instance=%s" % [world_hp_row, instance_hp_row])
+		quit(1)
+		return true
+	if not bool(world_formation_row.get("formation_valid", false)) or bool(world_formation_row.get("client_result_authoritative", true)) or int((world_formation_row.get("items", []) as Array).size()) != 4:
+		push_error("Smoke test failed: world boss formation row invalid %s" % [world_formation_row])
+		quit(1)
+		return true
+	if not bool(instance_formation_row.get("formation_valid", false)) or int((instance_formation_row.get("items", []) as Array).size()) != 8:
+		push_error("Smoke test failed: instance boss formation row invalid %s" % [instance_formation_row])
+		quit(1)
+		return true
 	if not _validate_row_label_keys(mode_rows, localization):
 		quit(1)
 		return true

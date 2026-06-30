@@ -298,6 +298,74 @@ func configure_boss_party(mode_id: String, player_ids: Array) -> bool:
 	last_error_code = "none" if valid_count else "boss_party_size"
 	return valid_count
 
+func boss_formation_summary(mode_id: String) -> String:
+	var validation := validate_boss_formation(mode_id)
+	if not bool(validation.get("ok", false)):
+		return "%s invalid %s" % [mode_id, ",".join(_string_array(validation.get("failures", [])))]
+	return "%s %d slots %s %s" % [
+		mode_id,
+		int(validation.get("player_count", 0)),
+		String(validation.get("aim_policy", "toward_center")),
+		String(validation.get("friendly_fire", "disabled")),
+	]
+
+func validate_boss_formation(mode_id: String) -> Dictionary:
+	var failures: Array[String] = []
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {"ok": false, "failures": ["boss_mode_invalid"], "player_count": 0}
+	var state := _state_for_mode(mode_id)
+	var positions: Array = state.get("positions", [])
+	var party_ids := _string_array(state.get("party_ids", []))
+	var count := positions.size()
+	if count != party_ids.size():
+		failures.append("position_party_count_mismatch")
+	if count < BOSS_MIN_PLAYERS or count > BOSS_MAX_PLAYERS:
+		failures.append("party_size")
+	if String(state.get("aim_policy", "")) != "toward_center":
+		failures.append("aim_policy")
+	var expected_step := TAU / float(max(1, count))
+	var seen_ids: Array[String] = []
+	var slot_angles: Array[float] = []
+	for i in range(count):
+		var position: Dictionary = positions[i]
+		var player_id := String(position.get("player_id", ""))
+		if player_id.is_empty() or seen_ids.has(player_id):
+			failures.append("player_id:%d" % i)
+		seen_ids.append(player_id)
+		if int(position.get("slot_index", -1)) != i or int(position.get("slot_count", -1)) != count:
+			failures.append("slot:%d" % i)
+		var spawn: Vector2 = position.get("spawn", Vector2.ZERO)
+		var aim: Vector2 = position.get("aim", Vector2.ZERO)
+		var target: Vector2 = position.get("aim_target", BOSS_CENTER)
+		var angle := float(position.get("angle", 0.0))
+		slot_angles.append(rad_to_deg(angle))
+		if absf(spawn.length() - 1.0) > 0.001:
+			failures.append("spawn_radius:%d" % i)
+		if target.distance_to(BOSS_CENTER) > 0.001 or not bool(position.get("aim_to_center", false)):
+			failures.append("aim_target:%d" % i)
+		if aim.length() < 0.999 or aim.length() > 1.001:
+			failures.append("aim_unit:%d" % i)
+		elif aim.dot((BOSS_CENTER - spawn).normalized()) < 0.999:
+			failures.append("aim_center:%d" % i)
+		if count > 1:
+			var expected_angle := -PI * 0.5 + expected_step * float(i)
+			if absf(wrapf(angle - expected_angle, -PI, PI)) > 0.001:
+				failures.append("angle_step:%d" % i)
+	return {
+		"ok": failures.is_empty(),
+		"failures": failures,
+		"mode_id": mode_id,
+		"player_count": count,
+		"min_players": BOSS_MIN_PLAYERS,
+		"max_players": BOSS_MAX_PLAYERS,
+		"party_status": String(state.get("party_status", "waiting")),
+		"aim_policy": String(state.get("aim_policy", "toward_center")),
+		"friendly_fire": String(state.get("friendly_fire", "disabled")),
+		"slot_angles_degrees": slot_angles,
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
 func request_boss_card_transfer(mode_id: String, from_player_id: String, to_player_id: String, card_id: String) -> Dictionary:
 	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
 		last_action_status = "failed"
@@ -405,16 +473,19 @@ func _world_boss_rows() -> Array[Dictionary]:
 		_boss_hp_row("world_boss_hp", world_boss_state, true),
 		{"id": "world_boss_attempts", "label_key": "screen.mode.boss.attempts", "value": int(world_boss_state.get("daily_attempts_left", 0)), "mode_category": "boss", "server_authoritative": bool(world_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": int(world_boss_state.get("daily_attempts_left", 0)) > 0},
 		_boss_party_row("world_boss_party", MODE_WORLD_BOSS, world_boss_state),
+		_boss_formation_row("world_boss_formation", MODE_WORLD_BOSS, world_boss_state),
 		_boss_transfer_row("world_boss_transfer", MODE_WORLD_BOSS, world_boss_state),
 		{"id": "world_boss_announcement", "label_key": "screen.mode.boss.announcement", "value": str(world_boss_state.get("world_announcement", "")), "mode_category": "boss", "server_authoritative": bool(world_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": not str(world_boss_state.get("defeated_at", "")).is_empty()},
 	]
 
 func _instance_boss_rows() -> Array[Dictionary]:
 	return [
+		_boss_hp_row("instance_boss_hp", instance_boss_state, false),
 		{"id": "instance_boss_phase", "label_key": "screen.mode.instance.phase", "value": str(instance_boss_state.get("boss_phase", "phase_1")), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": true},
 		{"id": "instance_boss_conditions", "label_key": "screen.mode.instance.conditions", "value": "clear %s" % bool(instance_boss_state.get("cleared", false)), "items": instance_boss_state.get("clear_conditions", []), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": true},
 		{"id": "instance_boss_stars", "label_key": "screen.mode.instance.stars", "value": int(instance_boss_state.get("stars", 0)), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": bool(instance_boss_state.get("cleared", false))},
 		_boss_party_row("instance_boss_party", MODE_INSTANCE_BOSS, instance_boss_state),
+		_boss_formation_row("instance_boss_formation", MODE_INSTANCE_BOSS, instance_boss_state),
 		_boss_transfer_row("instance_boss_transfer", MODE_INSTANCE_BOSS, instance_boss_state),
 	]
 
@@ -544,6 +615,28 @@ func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 		"enabled": true,
+	}
+
+func _boss_formation_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
+	var validation := validate_boss_formation(mode_id)
+	return {
+		"id": row_id,
+		"label_key": "screen.mode.boss.party",
+		"value": boss_formation_summary(mode_id),
+		"items": state.get("positions", []),
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"formation_valid": bool(validation.get("ok", false)),
+		"formation_failures": validation.get("failures", []),
+		"slot_angles_degrees": validation.get("slot_angles_degrees", []),
+		"player_count": int(validation.get("player_count", 0)),
+		"min_players": BOSS_MIN_PLAYERS,
+		"max_players": BOSS_MAX_PLAYERS,
+		"aim_policy": String(validation.get("aim_policy", "toward_center")),
+		"friendly_fire": String(validation.get("friendly_fire", "disabled")),
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+		"enabled": bool(validation.get("ok", false)),
 	}
 
 func _boss_transfer_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
