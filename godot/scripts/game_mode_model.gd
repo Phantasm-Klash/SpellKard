@@ -225,6 +225,10 @@ func apply_server_world_boss_snapshot(snapshot: Dictionary) -> Dictionary:
 		last_action_status = "failed"
 		last_error_code = "client_authoritative_world_boss"
 		return {"ok": false, "reason": last_error_code}
+	if not _has_explicit_server_authority(snapshot):
+		last_action_status = "failed"
+		last_error_code = "server_authoritative_world_boss_required"
+		return {"ok": false, "reason": last_error_code}
 	world_boss_state["boss_instance_id"] = str(snapshot.get("boss_instance_id", world_boss_state.get("boss_instance_id", "")))
 	world_boss_state["season_id"] = str(snapshot.get("season_id", world_boss_state.get("season_id", "")))
 	world_boss_state["max_hp"] = float(snapshot.get("max_hp", world_boss_state.get("max_hp", 0.0)))
@@ -236,7 +240,7 @@ func apply_server_world_boss_snapshot(snapshot: Dictionary) -> Dictionary:
 	world_boss_state["defeated_by_match_id"] = str(snapshot.get("defeated_by_match_id", world_boss_state.get("defeated_by_match_id", "")))
 	world_boss_state["defeated_by_user_id"] = str(snapshot.get("defeated_by_user_id", world_boss_state.get("defeated_by_user_id", "")))
 	world_boss_state["world_announcement"] = "world_boss_defeated" if bool(snapshot.get("announcement_emitted", false)) else str(world_boss_state.get("world_announcement", ""))
-	world_boss_state["server_authoritative"] = bool(snapshot.get("server_authoritative", true))
+	world_boss_state["server_authoritative"] = true
 	_apply_boss_rule_config(world_boss_state, snapshot)
 	last_action_status = "world_boss_snapshot"
 	last_error_code = "none"
@@ -251,6 +255,10 @@ func apply_server_instance_boss_access(snapshot: Dictionary) -> Dictionary:
 		last_action_status = "failed"
 		last_error_code = "client_authoritative_instance_boss_access"
 		return {"ok": false, "reason": last_error_code}
+	if not _has_explicit_server_authority(snapshot):
+		last_action_status = "failed"
+		last_error_code = "server_authoritative_instance_boss_access_required"
+		return {"ok": false, "reason": last_error_code}
 	instance_boss_state["entry_period"] = str(snapshot.get("entry_period", instance_boss_state.get("entry_period", "weekly")))
 	instance_boss_state["entry_attempt_limit"] = int(snapshot.get("entry_attempt_limit", instance_boss_state.get("entry_attempt_limit", 5)))
 	instance_boss_state["entry_attempts_used"] = int(snapshot.get("entry_attempts_used", instance_boss_state.get("entry_attempts_used", 0)))
@@ -260,7 +268,7 @@ func apply_server_instance_boss_access(snapshot: Dictionary) -> Dictionary:
 	instance_boss_state["required_key_id"] = str(snapshot.get("required_key_id", instance_boss_state.get("required_key_id", "instance_key_local_s0")))
 	instance_boss_state["owned_key_count"] = max(0, int(snapshot.get("owned_key_count", instance_boss_state.get("owned_key_count", 0))))
 	instance_boss_state["entry_unlocked"] = bool(snapshot.get("entry_unlocked", _rating_meets_requirement(str(instance_boss_state.get("player_rating", "D")), str(instance_boss_state.get("required_rating", "C")))))
-	instance_boss_state["server_authoritative"] = bool(snapshot.get("server_authoritative", true))
+	instance_boss_state["server_authoritative"] = true
 	_apply_boss_rule_config(instance_boss_state, snapshot)
 	var entry_check := validate_boss_entry(MODE_INSTANCE_BOSS)
 	last_action_status = "instance_boss_access"
@@ -1292,6 +1300,12 @@ func apply_world_boss_result(result: Dictionary) -> bool:
 		world_boss_state["last_result_rejected_reason"] = last_error_code
 		world_boss_state["last_result_rejected_client_authoritative"] = true
 		return false
+	if not _has_explicit_server_authority(result):
+		last_action_status = "failed"
+		last_error_code = "server_authoritative_world_boss_result_required"
+		world_boss_state["last_result_rejected_reason"] = last_error_code
+		world_boss_state["last_result_rejected_client_authoritative"] = false
+		return false
 	world_boss_state["boss_instance_id"] = str(result.get("boss_instance_id", world_boss_state.get("boss_instance_id", "")))
 	var hp_after: Variant = result.get("boss_hp_after_global", result.get("current_hp", world_boss_state.get("current_hp", 0.0)))
 	world_boss_state["current_hp"] = max(0.0, float(hp_after))
@@ -1306,7 +1320,7 @@ func apply_world_boss_result(result: Dictionary) -> bool:
 	world_boss_state["last_result_source"] = "server_settlement_projection"
 	world_boss_state["last_result_rejected_reason"] = ""
 	world_boss_state["last_result_rejected_client_authoritative"] = false
-	world_boss_state["server_authoritative"] = bool(result.get("server_authority", result.get("server_authoritative", true)))
+	world_boss_state["server_authoritative"] = true
 	_apply_boss_settlement_receipt(world_boss_state, result)
 	var defeated_at_from_server := str(result.get("defeated_at", "")).strip_edges()
 	if not defeated_at_from_server.is_empty():
@@ -1324,6 +1338,12 @@ func apply_instance_boss_result(result: Dictionary) -> bool:
 		last_error_code = "client_authoritative_instance_boss_result"
 		instance_boss_state["last_result_rejected_reason"] = last_error_code
 		instance_boss_state["last_result_rejected_client_authoritative"] = true
+		return false
+	if not _has_explicit_server_authority(result):
+		last_action_status = "failed"
+		last_error_code = "server_authoritative_instance_boss_result_required"
+		instance_boss_state["last_result_rejected_reason"] = last_error_code
+		instance_boss_state["last_result_rejected_client_authoritative"] = false
 		return false
 	var boss_defeated := bool(result.get("boss_defeated", result.get("instance_cleared", false)))
 	var survivors := int(result.get("survivors", 0))
@@ -1349,7 +1369,7 @@ func apply_instance_boss_result(result: Dictionary) -> bool:
 	instance_boss_state["last_result_rejected_reason"] = ""
 	instance_boss_state["last_result_rejected_client_authoritative"] = false
 	instance_boss_state["stars"] = _calculate_instance_stars(result, cleared)
-	instance_boss_state["server_authoritative"] = bool(result.get("server_authority", result.get("server_authoritative", true)))
+	instance_boss_state["server_authoritative"] = true
 	_apply_boss_settlement_receipt(instance_boss_state, result)
 	last_action_status = "instance_boss_result"
 	last_error_code = "none"
@@ -1526,6 +1546,13 @@ func _action_result(ok: bool, request: Dictionary) -> Dictionary:
 		"last_action_status": last_action_status,
 		"last_error_code": last_error_code,
 	}
+
+func _has_explicit_server_authority(payload: Dictionary) -> bool:
+	if payload.has("server_authority"):
+		return bool(payload.get("server_authority", false))
+	if payload.has("server_authoritative"):
+		return bool(payload.get("server_authoritative", false))
+	return false
 
 func _boss_positions(player_ids: Array[String]) -> Array[Dictionary]:
 	var rows: Array[Dictionary] = []

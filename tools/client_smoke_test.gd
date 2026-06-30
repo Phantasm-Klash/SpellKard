@@ -2120,6 +2120,16 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: boss transfer local validation row missing %s" % [transfer_guard_row])
 		quit(1)
 		return true
+	var rejected_world_boss_snapshot_missing_authority: Dictionary = game_mode_model.apply_server_world_boss_snapshot({
+		"boss_instance_id": "world_boss_client_claim",
+		"max_hp": 100000,
+		"current_hp": 1,
+		"daily_attempts_left": 9,
+	})
+	if bool(rejected_world_boss_snapshot_missing_authority.get("ok", true)) or String(game_mode_model.last_error_code) != "server_authoritative_world_boss_required" or int(game_mode_model.world_boss_state.get("current_hp", 0)) != 100000:
+		push_error("Smoke test failed: world boss snapshot without server authority accepted %s state=%s" % [rejected_world_boss_snapshot_missing_authority, game_mode_model.world_boss_state])
+		quit(1)
+		return true
 	var server_world_boss_snapshot: Dictionary = game_mode_model.apply_server_world_boss_snapshot({
 		"boss_instance_id": "world_boss_local_s0_001",
 		"season_id": "local_s0",
@@ -2168,6 +2178,17 @@ func _process(_delta: float) -> bool:
 		return true
 	if String(game_mode_model.last_error_code) != "client_authoritative_world_boss_result" or int(game_mode_model.world_boss_state.get("current_hp", 0)) != 40000:
 		push_error("Smoke test failed: rejected world boss result mutated state %s" % [game_mode_model.world_boss_state])
+		quit(1)
+		return true
+	if main_node.call("_apply_world_boss_result", {
+		"boss_hp_after_global": 1,
+		"team_damage": 39999,
+	}):
+		push_error("Smoke test failed: world boss result without server authority accepted")
+		quit(1)
+		return true
+	if String(game_mode_model.last_error_code) != "server_authoritative_world_boss_result_required" or int(game_mode_model.world_boss_state.get("current_hp", 0)) != 40000:
+		push_error("Smoke test failed: rejected no-authority world boss result mutated state %s" % [game_mode_model.world_boss_state])
 		quit(1)
 		return true
 	var rejected_world_result_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "world_boss_result")
@@ -2286,6 +2307,15 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: client-authored instance boss access accepted %s" % [rejected_instance_access])
 		quit(1)
 		return true
+	var rejected_instance_access_missing_authority: Dictionary = main_node.call("_apply_server_instance_boss_access", {
+		"entry_attempts_left": 9,
+		"entry_unlocked": true,
+		"owned_key_count": 9,
+	})
+	if bool(rejected_instance_access_missing_authority.get("ok", true)) or String(game_mode_model.last_error_code) != "server_authoritative_instance_boss_access_required" or int(game_mode_model.instance_boss_state.get("entry_attempts_left", 0)) != 1:
+		push_error("Smoke test failed: instance boss access without server authority accepted %s state=%s" % [rejected_instance_access_missing_authority, game_mode_model.instance_boss_state])
+		quit(1)
+		return true
 	var locked_instance_access: Dictionary = main_node.call("_apply_server_instance_boss_access", {
 		"entry_period": "weekly",
 		"entry_attempt_limit": 5,
@@ -2388,6 +2418,18 @@ func _process(_delta: float) -> bool:
 		return true
 	if String(game_mode_model.last_error_code) != "client_authoritative_instance_boss_result" or bool(game_mode_model.instance_boss_state.get("cleared", false)):
 		push_error("Smoke test failed: rejected instance boss result mutated state %s" % [game_mode_model.instance_boss_state])
+		quit(1)
+		return true
+	if main_node.call("_apply_instance_boss_result", {
+		"boss_defeated": true,
+		"survivors": 8,
+		"clear_time_seconds": 1,
+	}):
+		push_error("Smoke test failed: instance boss result without server authority accepted")
+		quit(1)
+		return true
+	if String(game_mode_model.last_error_code) != "server_authoritative_instance_boss_result_required" or bool(game_mode_model.instance_boss_state.get("cleared", false)):
+		push_error("Smoke test failed: rejected no-authority instance boss result mutated state %s" % [game_mode_model.instance_boss_state])
 		quit(1)
 		return true
 	var rejected_instance_result_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_result")
