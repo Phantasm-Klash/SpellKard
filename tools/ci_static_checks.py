@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -120,6 +121,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
             errors.append(f"godot/scripts/boss_pattern_catalog.gd: missing catalog contract token {token}")
 
     spellbook_text = spellbook.read_text(encoding="utf-8")
+    errors.extend(_check_spellbook_fixture_parity(spellbook_text, replay_store.read_text(encoding="utf-8")))
     for token in [
         "EXPORT_SCHEMA_VERSION",
         "DEFAULT_PREVIEW_SEED",
@@ -233,6 +235,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "SPELLBOOK_PREVIEW_SAMPLE_WINDOW_END_TICK",
         "SPELLBOOK_PREVIEW_SAMPLE_WINDOW_STRIDE_TICKS",
         "SPELLBOOK_PREVIEW_GOLDEN_FIXTURES",
+        '"preview_fixture_id"',
         "_golden_preview_fixture_for_fields",
         "_golden_fixture_failures",
         "unknown_preview_fixture",
@@ -406,6 +409,19 @@ def check_boss_pattern_catalog_contract() -> list[str]:
     ]:
         if token not in check_text:
             errors.append(f"tools/boss_pattern_catalog_check.gd: missing catalog check token {token}")
+    this_text = Path(__file__).read_text(encoding="utf-8")
+    for token in [
+        "_check_spellbook_fixture_parity",
+        "_extract_fixture_blocks",
+        "_extract_number_value",
+        "_extract_int_array_values",
+        "sample_signature_digests",
+        "sample_emit_counts",
+        "preview_fixture_id",
+        "spellbook golden fixture",
+    ]:
+        if token not in this_text:
+            errors.append(f"tools/ci_static_checks.py: missing golden fixture parity token {token}")
     return errors
 
 
@@ -456,7 +472,7 @@ def check_assets_manifest() -> list[str]:
 
 
 def _extract_const_dict(text: str, const_name: str) -> str | None:
-    marker = f"const {const_name} :="
+    marker = f"const {const_name}"
     start = text.find(marker)
     if start < 0:
         return None
@@ -525,6 +541,142 @@ def _extract_top_level_keys(dict_text: str) -> set[str]:
             depth -= 1
         index += 1
     return keys
+
+
+def _extract_fixture_blocks(dict_text: str) -> dict[str, str]:
+    fixtures: dict[str, str] = {}
+    index = 0
+    depth = 0
+    in_string = False
+    escaped = False
+    while index < len(dict_text):
+        char = dict_text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            index += 1
+            continue
+        if char == '"':
+            if depth == 1:
+                end = index + 1
+                while end < len(dict_text):
+                    if dict_text[end] == '"' and dict_text[end - 1] != "\\":
+                        break
+                    end += 1
+                key = dict_text[index + 1 : end]
+                after = end + 1
+                while after < len(dict_text) and dict_text[after].isspace():
+                    after += 1
+                if after < len(dict_text) and dict_text[after] == ":":
+                    block_start = dict_text.find("{", after)
+                    if block_start >= 0:
+                        block_depth = 0
+                        block_in_string = False
+                        block_escaped = False
+                        for block_end in range(block_start, len(dict_text)):
+                            block_char = dict_text[block_end]
+                            if block_in_string:
+                                if block_escaped:
+                                    block_escaped = False
+                                elif block_char == "\\":
+                                    block_escaped = True
+                                elif block_char == '"':
+                                    block_in_string = False
+                                continue
+                            if block_char == '"':
+                                block_in_string = True
+                            elif block_char == "{":
+                                block_depth += 1
+                            elif block_char == "}":
+                                block_depth -= 1
+                                if block_depth == 0:
+                                    fixtures[key] = dict_text[block_start : block_end + 1]
+                                    index = block_end + 1
+                                    break
+                        continue
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+        index += 1
+    return fixtures
+
+
+def _extract_number_value(block: str, field: str) -> int | None:
+    match = re.search(rf'"{re.escape(field)}"\s*:\s*(-?\d+)', block)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _extract_int_array_values(block: str, field: str) -> list[int]:
+    marker = f'"{field}":'
+    index = block.find(marker)
+    if index < 0:
+        return []
+    open_bracket = block.find("[", index)
+    close_bracket = block.find("]", open_bracket)
+    if open_bracket < 0 or close_bracket < 0:
+        return []
+    raw = block[open_bracket + 1 : close_bracket]
+    return [int(item.strip()) for item in raw.split(",") if item.strip()]
+
+
+def _check_spellbook_fixture_parity(spellbook_text: str, replay_store_text: str) -> list[str]:
+    errors: list[str] = []
+    spellbook_dict = _extract_const_dict(spellbook_text, "GOLDEN_PREVIEW_FIXTURES")
+    replay_dict = _extract_const_dict(replay_store_text, "SPELLBOOK_PREVIEW_GOLDEN_FIXTURES")
+    if spellbook_dict is None:
+        return ["godot/scripts/boss_spellbook_model.gd: missing GOLDEN_PREVIEW_FIXTURES dictionary"]
+    if replay_dict is None:
+        return ["godot/scripts/replay_store.gd: missing SPELLBOOK_PREVIEW_GOLDEN_FIXTURES dictionary"]
+
+    spellbook_fixtures = _extract_fixture_blocks(spellbook_dict)
+    replay_fixtures = _extract_fixture_blocks(replay_dict)
+    missing_in_replay = sorted(set(spellbook_fixtures) - set(replay_fixtures))
+    missing_in_spellbook = sorted(set(replay_fixtures) - set(spellbook_fixtures))
+    if missing_in_replay:
+        errors.append(
+            "godot/scripts/replay_store.gd: missing spellbook golden fixtures: "
+            + ", ".join(missing_in_replay)
+        )
+    if missing_in_spellbook:
+        errors.append(
+            "godot/scripts/boss_spellbook_model.gd: missing replay golden fixtures: "
+            + ", ".join(missing_in_spellbook)
+        )
+
+    string_fields = ["export_id", "preview_fixture_id", "preview_authority_scope", "performance_budget_status"]
+    number_fields = [
+        "export_schema_version",
+        "signature_digest",
+        "sample_window_start_tick",
+        "sample_window_end_tick",
+        "sample_window_stride_ticks",
+        "sample_count",
+        "max_emit_per_tick",
+        "bullet_cap_per_tick",
+        "budget_headroom",
+    ]
+    array_fields = ["sample_ticks", "sample_signature_digests", "sample_emit_counts"]
+    for fixture_id in sorted(set(spellbook_fixtures) & set(replay_fixtures)):
+        spellbook_block = spellbook_fixtures[fixture_id]
+        replay_block = replay_fixtures[fixture_id]
+        for field in string_fields:
+            if _extract_string_value(spellbook_block, field) != _extract_string_value(replay_block, field):
+                errors.append(f"spellbook golden fixture {fixture_id}: {field} differs between spellbook and replay store")
+        for field in number_fields:
+            if _extract_number_value(spellbook_block, field) != _extract_number_value(replay_block, field):
+                errors.append(f"spellbook golden fixture {fixture_id}: {field} differs between spellbook and replay store")
+        for field in array_fields:
+            if _extract_int_array_values(spellbook_block, field) != _extract_int_array_values(replay_block, field):
+                errors.append(f"spellbook golden fixture {fixture_id}: {field} differs between spellbook and replay store")
+    return errors
 
 
 def _extract_page_blocks(page_specs_text: str) -> dict[str, str]:
