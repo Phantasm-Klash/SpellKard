@@ -321,6 +321,20 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 	server_claim_entry["reward_grants"] = [{"currency": "spirit", "amount": 25}]
 	server_claim_entry["settlement_status"] = "cleared"
 	server_claim_entry["world_announcement"] = "world_boss_defeated"
+	var nested_server_claim_entry := valid_entries[0].duplicate(true)
+	nested_server_claim_entry["replay_id"] = "fixture_nested_server_claim_spellbook_preview"
+	nested_server_claim_entry["boss_snapshot"] = {
+		"boss_instance_id": "world_boss_nested_claim",
+		"boss_state": {
+			"boss_current_hp": 399000,
+			"boss_hp_after_global": 387000,
+		},
+	}
+	nested_server_claim_entry["settlement"] = {
+		"settlement_receipt": {"receipt_id": "server-only-nested"},
+		"reward_grants": [{"currency": "spirit", "amount": 30}],
+		"server_result_hash": "nested-server-hash-only",
+	}
 	var snapshot_server_claim_entry := _snapshot_server_claim_replay_entry_for_preview(store, String(valid_entries[0].get("spellbook_id", "")), String(valid_entries[0].get("phase_id", "")), first_preview)
 	var wrong_authority_scope_entry := valid_entries[0].duplicate(true)
 	wrong_authority_scope_entry["replay_id"] = "fixture_wrong_authority_scope_spellbook_preview"
@@ -461,7 +475,7 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 	var bad_sample_digest_count_entry := valid_entries[0].duplicate(true)
 	bad_sample_digest_count_entry["replay_id"] = "fixture_bad_sample_digest_count_spellbook_preview"
 	bad_sample_digest_count_entry["preview_sample_signature_digests"] = [int((bad_sample_digest_count_entry.get("preview_sample_signature_digests", []) as Array)[0])]
-	var invalid_entries: Array[Dictionary] = [invalid_entry, bad_schema_entry, authoritative_entry, server_claim_entry, wrong_authority_scope_entry, over_budget_entry, stale_fixture_entry, stale_export_entry, stale_seed_entry, stale_bundle_id_entry, stale_bundle_digest_entry, missing_bundle_digest_entry, stale_bundle_phase_count_entry, stale_bundle_phase_ids_entry, stale_bundle_phase_digest_entry, missing_bundle_phase_ids_entry, missing_bundle_phase_digest_entry, stale_bundle_max_emit_entry, stale_bundle_headroom_entry, stale_bundle_budget_status_entry, bad_sample_count_entry, bad_sample_digest_count_entry, bad_sample_emit_count_entry, stale_max_emit_entry, stale_bullet_cap_entry, missing_sample_entry, noncanonical_sample_ticks_entry, stale_sample_window_start_entry, stale_sample_window_end_entry, stale_sample_window_stride_entry, negative_sample_emit_count_entry]
+	var invalid_entries: Array[Dictionary] = [invalid_entry, bad_schema_entry, authoritative_entry, server_claim_entry, nested_server_claim_entry, wrong_authority_scope_entry, over_budget_entry, stale_fixture_entry, stale_export_entry, stale_seed_entry, stale_bundle_id_entry, stale_bundle_digest_entry, missing_bundle_digest_entry, stale_bundle_phase_count_entry, stale_bundle_phase_ids_entry, stale_bundle_phase_digest_entry, missing_bundle_phase_ids_entry, missing_bundle_phase_digest_entry, stale_bundle_max_emit_entry, stale_bundle_headroom_entry, stale_bundle_budget_status_entry, bad_sample_count_entry, bad_sample_digest_count_entry, bad_sample_emit_count_entry, stale_max_emit_entry, stale_bullet_cap_entry, missing_sample_entry, noncanonical_sample_ticks_entry, stale_sample_window_start_entry, stale_sample_window_end_entry, stale_sample_window_stride_entry, negative_sample_emit_count_entry]
 	var valid_result: Dictionary = store.validate_index_metadata(valid_entries)
 	if not bool(valid_result.get("ok", false)):
 		failures.append("valid_replay_rejected:%s" % [valid_result.get("failures", [])])
@@ -478,6 +492,10 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		failures.append("server_claim_preview_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(server_claim_entry)).get("ok", false)):
 		failures.append("server_claim_replay_accepted")
+	if bool(store.validate_spellbook_preview_metadata(nested_server_claim_entry, first_preview).get("ok", false)):
+		failures.append("nested_server_claim_preview_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(nested_server_claim_entry)).get("ok", false)):
+		failures.append("nested_server_claim_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(snapshot_server_claim_entry)).get("ok", false)):
 		failures.append("snapshot_server_claim_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(stale_digest_entry)).get("ok", false)):
@@ -652,6 +670,12 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		for expected_claim in ["boss_instance_id", "boss_current_hp", "boss_hp_after_global", "daily_attempts_left", "defeated_at", "reward_grants", "world_announcement"]:
 			if not _string_array_contains(server_claim_row.get("server_authority_claim_fields", []), expected_claim):
 				failures.append("server_claim_row_missing_field:%s:%s" % [expected_claim, server_claim_row])
+		var nested_server_claim_row: Dictionary = replay_list._row_from_entry(nested_server_claim_entry, rows.size() + 31)
+		if bool(nested_server_claim_row.get("metadata_valid", true)) or String(nested_server_claim_row.get("metadata_status", "")) != "local_preview_server_claim":
+			failures.append("nested_server_claim_row_metadata:%s" % [nested_server_claim_row])
+		for expected_claim in ["boss_instance_id", "boss_current_hp", "boss_hp_after_global", "settlement_receipt", "reward_grants", "server_result_hash"]:
+			if not _string_array_contains(nested_server_claim_row.get("server_authority_claim_fields", []), expected_claim):
+				failures.append("nested_server_claim_row_missing_field:%s:%s" % [expected_claim, nested_server_claim_row])
 		var snapshot_server_claim_row: Dictionary = replay_list._row_from_entry(snapshot_server_claim_entry, rows.size() + 24)
 		if bool(snapshot_server_claim_row.get("metadata_valid", true)) or String(snapshot_server_claim_row.get("metadata_status", "")) != "local_preview_server_claim":
 			failures.append("snapshot_server_claim_row_metadata:%s" % [snapshot_server_claim_row])

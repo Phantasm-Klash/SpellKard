@@ -49,6 +49,17 @@ const SPELLBOOK_PREVIEW_SERVER_AUTHORITY_FIELDS: Array[String] = [
 	"clear_stars",
 	"server_result_hash",
 ]
+const SPELLBOOK_PREVIEW_SERVER_AUTHORITY_NESTED_FIELDS: Array[String] = [
+	"boss_snapshot",
+	"boss_state",
+	"boss_result",
+	"settlement",
+	"settlement_receipt",
+	"reward",
+	"rewards",
+	"result_receipt",
+	"server_receipt",
+]
 
 var last_error := ""
 
@@ -860,6 +871,13 @@ func _server_authority_claim_fields(fields: Dictionary) -> Array[String]:
 	for field_name in SPELLBOOK_PREVIEW_SERVER_AUTHORITY_FIELDS:
 		if fields.has(field_name) and not claims.has(field_name):
 			claims.append(field_name)
+	for container_name in SPELLBOOK_PREVIEW_SERVER_AUTHORITY_NESTED_FIELDS:
+		if not fields.has(container_name):
+			continue
+		var nested_claims := _server_authority_nested_claim_fields(fields.get(container_name), container_name)
+		for nested_claim in nested_claims:
+			if not claims.has(nested_claim):
+				claims.append(nested_claim)
 	return claims
 
 func _server_authority_claim_fields_from_sources(primary_fields: Dictionary, secondary_fields: Dictionary = {}) -> Array[String]:
@@ -867,6 +885,36 @@ func _server_authority_claim_fields_from_sources(primary_fields: Dictionary, sec
 	for field_name in _server_authority_claim_fields(secondary_fields):
 		if not claims.has(field_name):
 			claims.append(field_name)
+	return claims
+
+func _server_authority_nested_claim_fields(value: Variant, container_name: String) -> Array[String]:
+	var claims: Array[String] = []
+	match typeof(value):
+		TYPE_DICTIONARY:
+			var nested: Dictionary = value
+			for field_name in SPELLBOOK_PREVIEW_SERVER_AUTHORITY_FIELDS:
+				if nested.has(field_name) and not claims.has(field_name):
+					claims.append(field_name)
+			for child_key in nested.keys():
+				var child_name := String(child_key)
+				var child_value: Variant = nested[child_key]
+				var should_scan := SPELLBOOK_PREVIEW_SERVER_AUTHORITY_NESTED_FIELDS.has(child_name) or typeof(child_value) == TYPE_DICTIONARY or typeof(child_value) == TYPE_ARRAY
+				if not should_scan:
+					continue
+				for nested_claim in _server_authority_nested_claim_fields(child_value, child_name):
+					if not claims.has(nested_claim):
+						claims.append(nested_claim)
+		TYPE_ARRAY:
+			var nested_array: Array = value
+			if not nested_array.is_empty() and not claims.has(container_name):
+				claims.append(container_name)
+			for item in nested_array:
+				for nested_claim in _server_authority_nested_claim_fields(item, container_name):
+					if not claims.has(nested_claim):
+						claims.append(nested_claim)
+		_:
+			if not claims.has(container_name):
+				claims.append(container_name)
 	return claims
 
 func _normalized_int_array(value: Variant) -> Array[int]:

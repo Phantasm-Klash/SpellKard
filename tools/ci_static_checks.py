@@ -220,6 +220,14 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         errors.append("godot/scripts/replay_store.gd: missing exact spellbook preview metadata validator")
     replay_store_text = replay_store.read_text(encoding="utf-8")
     replay_list_text = replay_list.read_text(encoding="utf-8")
+    for token in [
+        "SPELLBOOK_PREVIEW_SERVER_AUTHORITY_NESTED_FIELDS",
+        "_server_authority_nested_claim_fields",
+        "boss_snapshot",
+        "settlement_receipt",
+    ]:
+        if token not in replay_store_text:
+            errors.append(f"godot/scripts/replay_store.gd: missing nested server-authority replay token {token}")
     if "metadata_status_for_entry" not in replay_store_text or "metadata_status_for_entry" not in replay_list_text:
         errors.append("spellbook replay metadata status contract missing metadata_status_for_entry")
     if "metadata_failures_for_entry" not in replay_store_text or "metadata_failures_for_entry" not in replay_list_text:
@@ -309,12 +317,17 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "max_spellbook_emit",
         "fixture_authoritative_spellbook_preview",
         "fixture_wrong_authority_scope_spellbook_preview",
+        "fixture_nested_server_claim_spellbook_preview",
         "fixture_bad_schema_spellbook_preview",
         "fixture_over_budget_spellbook_preview",
         "fixture_stale_digest_spellbook_preview",
         "stale_digest_replay_accepted",
         "wrong_authority_scope_replay_accepted",
         "wrong_authority_scope_preview_accepted",
+        "nested_server_claim_replay_accepted",
+        "nested_server_claim_preview_accepted",
+        "nested_server_claim_row_metadata",
+        "nested_server_claim_row_missing_field",
         "preview_signature_digest_mismatch",
         "preview_authority_scope_mismatch",
         "fixture_stale_fixture_spellbook_preview",
