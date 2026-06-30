@@ -1134,7 +1134,8 @@ func apply_instance_boss_result(result: Dictionary) -> bool:
 	var boss_defeated := bool(result.get("boss_defeated", result.get("instance_cleared", false)))
 	var survivors := int(result.get("survivors", 0))
 	var failed_mechanic := bool(result.get("failed_mechanic", false))
-	var cleared := bool(result.get("instance_cleared", boss_defeated and survivors > 0 and not failed_mechanic))
+	var survivor_required := bool(result.get("survivor_required", instance_boss_state.get("survivor_required", true)))
+	var cleared := bool(result.get("instance_cleared", boss_defeated and (survivors > 0 or not survivor_required) and not failed_mechanic))
 	instance_boss_state["boss_defeated"] = boss_defeated
 	instance_boss_state["survivors"] = survivors
 	instance_boss_state["failed_mechanic"] = failed_mechanic
@@ -1144,7 +1145,8 @@ func apply_instance_boss_result(result: Dictionary) -> bool:
 	instance_boss_state["clear_time_seconds"] = int(result.get("clear_time_seconds", 0))
 	instance_boss_state["three_star_time_seconds"] = int(result.get("three_star_time_seconds", instance_boss_state.get("three_star_time_seconds", 180)))
 	instance_boss_state["deaths"] = int(result.get("deaths", 0))
-	instance_boss_state["survivor_required"] = bool(result.get("survivor_required", true))
+	instance_boss_state["survivor_required"] = survivor_required
+	instance_boss_state["clear_conditions"] = ["boss_hp_zero", "survivor_required" if survivor_required else "survivor_optional", "no_failed_mechanic"]
 	instance_boss_state["bombs_used"] = int(result.get("bombs_used", instance_boss_state.get("bombs_used", 0)))
 	instance_boss_state["bomb_limit"] = int(result.get("bomb_limit", instance_boss_state.get("bomb_limit", 0)))
 	instance_boss_state["last_result_match_id"] = str(result.get("match_id", instance_boss_state.get("last_result_match_id", "")))
@@ -1776,6 +1778,8 @@ func _instance_boss_result_row() -> Dictionary:
 		"cleared": bool(instance_boss_state.get("cleared", false)),
 		"boss_defeated": bool(instance_boss_state.get("boss_defeated", false)),
 		"survivors": int(instance_boss_state.get("survivors", 0)),
+		"survivor_required": bool(instance_boss_state.get("survivor_required", true)),
+		"clear_rule": "survivor_required" if bool(instance_boss_state.get("survivor_required", true)) else "survivor_optional",
 		"failed_mechanic": bool(instance_boss_state.get("failed_mechanic", false)),
 		"clear_time_seconds": int(instance_boss_state.get("clear_time_seconds", 0)),
 		"three_star_time_seconds": int(instance_boss_state.get("three_star_time_seconds", 180)),
@@ -1832,7 +1836,8 @@ func _instance_boss_star_conditions(state: Dictionary) -> Array[Dictionary]:
 			"label_key": "screen.mode.instance.conditions",
 			"met": cleared and boss_defeated and not failed_mechanic and (survivors > 0 or not survivor_required),
 			"actual": "cleared" if cleared else "failed",
-			"target": "boss_hp_zero_survivor_no_failed_mechanic",
+			"target": "boss_hp_zero_survivor_no_failed_mechanic" if survivor_required else "boss_hp_zero_no_failed_mechanic",
+			"survivor_required": survivor_required,
 		},
 		{
 			"id": "time_star",

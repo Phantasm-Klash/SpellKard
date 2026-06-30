@@ -2357,6 +2357,58 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	if not main_node.call("_apply_instance_boss_result", {
+		"match_id": "ib-smoke-mutual-default",
+		"settlement_key": "instance-boss-result:ib-smoke-mutual-default",
+		"result_hash": "sha256:instanceboss-mutual-default",
+		"server_time": "2026-06-25T00:04:30Z",
+		"boss_defeated": true,
+		"survivors": 0,
+		"failed_mechanic": false,
+		"clear_time_seconds": 170,
+		"server_authoritative": true,
+	}):
+		push_error("Smoke test failed: default survivor-required instance boss result rejected")
+		quit(1)
+		return true
+	var default_survivor_required_result: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_result")
+	if bool(default_survivor_required_result.get("cleared", true)) or String(default_survivor_required_result.get("clear_rule", "")) != "survivor_required" or int(default_survivor_required_result.get("stars", -1)) != 0:
+		push_error("Smoke test failed: default survivor-required instance boss mutual defeat cleared %s" % [default_survivor_required_result])
+		quit(1)
+		return true
+	if not main_node.call("_apply_instance_boss_result", {
+		"match_id": "ib-smoke-mutual-allowed",
+		"settlement_key": "instance-boss-result:ib-smoke-mutual-allowed",
+		"result_hash": "sha256:instanceboss-mutual-allowed",
+		"replay_id": "instance-boss-replay-mutual-allowed",
+		"server_time": "2026-06-25T00:04:45Z",
+		"key_id": "battle-local-dev",
+		"boss_defeated": true,
+		"survivors": 0,
+		"survivor_required": false,
+		"failed_mechanic": false,
+		"clear_time_seconds": 170,
+		"three_star_time_seconds": 180,
+		"deaths": 8,
+		"bombs_used": 4,
+		"bomb_limit": 3,
+		"server_authoritative": true,
+	}):
+		push_error("Smoke test failed: survivor-optional instance boss result invalid")
+		quit(1)
+		return true
+	var survivor_optional_result: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_result")
+	if not bool(survivor_optional_result.get("cleared", false)) or bool(survivor_optional_result.get("survivor_required", true)) or String(survivor_optional_result.get("clear_rule", "")) != "survivor_optional":
+		push_error("Smoke test failed: survivor-optional instance boss result not projected as cleared %s" % [survivor_optional_result])
+		quit(1)
+		return true
+	if int(survivor_optional_result.get("stars", 0)) != 2 or String(survivor_optional_result.get("star_condition_summary", "")) != "2/4":
+		push_error("Smoke test failed: survivor-optional instance boss star summary invalid %s" % [survivor_optional_result])
+		quit(1)
+		return true
+	if not _validate_boss_result_authority_row(survivor_optional_result, "instance_boss", true):
+		quit(1)
+		return true
+	if not main_node.call("_apply_instance_boss_result", {
 		"match_id": "ib-smoke-001",
 		"settlement_key": "instance-boss-result:ib-smoke-001",
 		"result_hash": "sha256:instanceboss",
