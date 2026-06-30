@@ -556,15 +556,18 @@ func _validate_collection_page_contract() -> bool:
 		return false
 	if not String(snapshot.get("section_tabs", "")).contains(_text("ui.menu_section_overview")):
 		return _fail("replay filter tabs should expose verification overview %s" % [snapshot])
-	if not String(snapshot.get("page_focus_action_ids", "")).contains("replay_filter_replay_local_ready") or String(snapshot.get("focus_action", "")) != "replay_filter_replay_local_ready":
-		return _fail("replay focus action should target local-ready filter %s" % [snapshot])
+	if not String(snapshot.get("page_focus_action_ids", "")).contains("replay_filter_replay_boss_practice") or not String(snapshot.get("page_focus_action_ids", "")).contains("replay_filter_replay_local_ready"):
+		return _fail("replay focus actions should include boss-practice and local-ready filters %s" % [snapshot])
+	var expected_focus_action := "replay_filter_replay_boss_practice" if String(snapshot.get("focus_action", "")) == "replay_filter_replay_boss_practice" else "replay_filter_replay_local_ready"
 	var replay_focus_result: Dictionary = main_node.call("_ui_press_visible_focus_action")
 	await _settle_frames(2)
-	if not bool(replay_focus_result.get("ok", false)) or String(replay_focus_result.get("row_id", "")) != "replay_filter_replay_local_ready" or String(main_node.get("ui_screen_model").current_screen) != "replay":
-		return _fail("replay focus action should apply local-ready filter %s" % [replay_focus_result])
-	var focused_filter_row := _row_by_id(main_node.call("_ui_screen_rows", 12), "replay_filter_replay_local_ready")
+	if not bool(replay_focus_result.get("ok", false)) or String(replay_focus_result.get("row_id", "")) != expected_focus_action or String(main_node.get("ui_screen_model").current_screen) != "replay":
+		return _fail("replay focus action should apply configured filter %s expected=%s" % [replay_focus_result, expected_focus_action])
+	var focused_filter_row := _row_by_id(main_node.call("_ui_screen_rows", 12), expected_focus_action)
 	if not bool(focused_filter_row.get("active", false)):
-		return _fail("replay focus action did not activate local-ready filter %s" % [focused_filter_row])
+		return _fail("replay focus action did not activate filter %s" % [focused_filter_row])
+	if String(focused_filter_row.get("verification_filter", "")) != expected_focus_action.trim_prefix("replay_filter_") or bool(focused_filter_row.get("client_result_authoritative", true)):
+		return _fail("replay boss-practice focus row invalid %s" % [focused_filter_row])
 	snapshot = main_node.call("_ui_overlay_snapshot")
 	var replay_summary_card_result: Dictionary = main_node.call("_ui_press_visible_overview_card", 0)
 	if not bool(replay_summary_card_result.get("ok", false)) or String(replay_summary_card_result.get("row_id", "")) != "replay_verification_summary" or String(replay_summary_card_result.get("screen", "")) != "replay":
@@ -573,6 +576,11 @@ func _validate_collection_page_contract() -> bool:
 	var replay_filter_index := _row_index_by_id(replay_rows, "replay_filter_replay_local_ready")
 	if replay_filter_index < 0 or String(replay_rows[replay_filter_index].get("ui_action", "")) != "set_replay_filter":
 		return _fail("replay page missing local-ready filter action %s" % [replay_rows])
+	var boss_filter_index := _row_index_by_id(replay_rows, "replay_filter_replay_boss_practice")
+	if boss_filter_index < 0 or String(replay_rows[boss_filter_index].get("ui_action", "")) != "set_replay_filter":
+		return _fail("replay page missing boss-practice filter action %s" % [replay_rows])
+	if not _assert_replay_ui_authority_row(replay_rows[boss_filter_index]):
+		return false
 	var load_action := _row_by_id(replay_rows, "replay_action_load")
 	var favorite_action := _row_by_id(replay_rows, "replay_action_favorite")
 	var remove_action := _row_by_id(replay_rows, "replay_action_remove")
@@ -1008,8 +1016,8 @@ func _assert_replay_ui_authority_row(row: Dictionary) -> bool:
 		return _fail("replay authority row missing")
 	if String(row.get("local_hash_authority", "")) != "local_practice_verification_only":
 		return _fail("replay UI row missing local hash authority %s" % [row])
-	if String(row.get("settlement_authority", "")) != "server" or String(row.get("reward_authority", "")) != "server":
-		return _fail("replay UI row missing server settlement/reward authority %s" % [row])
+	if String(row.get("damage_authority", "")) != "server" or String(row.get("settlement_authority", "")) != "server" or String(row.get("reward_authority", "")) != "server":
+		return _fail("replay UI row missing server damage/settlement/reward authority %s" % [row])
 	if bool(row.get("client_result_authoritative", true)):
 		return _fail("replay UI row must not be client-result authoritative %s" % [row])
 	return true

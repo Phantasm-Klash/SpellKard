@@ -4654,6 +4654,20 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: fallback server-claim replay guard invalid row=%s context=%s guard=%s" % [fallback_claim_row, fallback_claim_context, fallback_claim_guard])
 		quit(1)
 		return true
+	if not replay_list_model.set_verification_filter("replay_boss_practice") or String(replay_list_model.get("active_verification_filter")) != "replay_boss_practice":
+		push_error("Smoke test failed: boss practice replay verification filter did not activate")
+		quit(1)
+		return true
+	var boss_filtered_rows: Array[Dictionary] = replay_list_model.row_models(4)
+	if boss_filtered_rows.size() != 1 \
+			or String(boss_filtered_rows[0].get("mode", "")) != "boss_spellbook_practice" \
+			or String(boss_filtered_rows[0].get("verification_scope", "")) != "local_practice_hash" \
+			or String(boss_filtered_rows[0].get("active_verification_filter", "")) != "replay_boss_practice" \
+			or bool(boss_filtered_rows[0].get("client_result_authoritative", true)) \
+			or String(boss_filtered_rows[0].get("damage_authority", "server")) != "server":
+		push_error("Smoke test failed: boss practice replay filtered rows invalid %s" % [boss_filtered_rows])
+		quit(1)
+		return true
 	replay_list_model.refresh()
 	if not replay_list_model.set_verification_filter("replay_local_ready") or String(replay_list_model.get("active_verification_filter")) != "replay_local_ready":
 		push_error("Smoke test failed: replay verification filter did not activate")
@@ -4689,6 +4703,19 @@ func _process(_delta: float) -> bool:
 	var local_filter_index := _row_index_by_id(ui_replay_rows, "replay_filter_replay_local_ready")
 	if local_filter_index < 0:
 		push_error("Smoke test failed: replay UI missing local-ready filter")
+		quit(1)
+		return true
+	var boss_filter_index := _row_index_by_id(ui_replay_rows, "replay_filter_replay_boss_practice")
+	if boss_filter_index < 0:
+		push_error("Smoke test failed: replay UI missing boss-practice filter")
+		quit(1)
+		return true
+	var boss_filter_row: Dictionary = _find_row_by_id(ui_replay_rows, "replay_filter_replay_boss_practice")
+	if String(boss_filter_row.get("verification_filter", "")) != "replay_boss_practice" \
+			or String(boss_filter_row.get("ui_action", "")) != "set_replay_filter" \
+			or bool(boss_filter_row.get("client_result_authoritative", true)) \
+			or String(boss_filter_row.get("settlement_authority", "")) != "server":
+		push_error("Smoke test failed: replay boss-practice filter row invalid %s" % [boss_filter_row])
 		quit(1)
 		return true
 	var load_action_row: Dictionary = _find_row_by_id(ui_replay_rows, "replay_action_load")
