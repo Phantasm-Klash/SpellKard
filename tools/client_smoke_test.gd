@@ -8,6 +8,7 @@ const BulletPatternLibrary := preload("res://scripts/bullet_pattern_library.gd")
 const BulletEngine := preload("res://scripts/bullet_engine.gd")
 const BossPatternCatalog := preload("res://scripts/boss_pattern_catalog.gd")
 const BossSpellbookModel := preload("res://scripts/boss_spellbook_model.gd")
+const ReplayListModelScript := preload("res://scripts/replay_list_model.gd")
 const PlayerSettingsStore := preload("res://scripts/player_settings_store.gd")
 const InputProfile := preload("res://scripts/input_profile.gd")
 const AudioSettings := preload("res://scripts/audio_settings.gd")
@@ -4613,6 +4614,34 @@ func _process(_delta: float) -> bool:
 			or not bool(boss_practice_load_action.get("can_play", false)) \
 			or bool(boss_practice_load_action.get("requires_server_audit", true)):
 		push_error("Smoke test failed: boss practice load action context invalid %s" % [boss_practice_load_action])
+		quit(1)
+		return true
+	var fallback_claim_replay := boss_practice_replay.duplicate(true)
+	fallback_claim_replay["replay_id"] = "boss-practice-claim-fallback"
+	fallback_claim_replay["server_authority_claim_fields"] = ["damage_total"]
+	var fallback_replay_list_model: RefCounted = ReplayListModelScript.new()
+	fallback_replay_list_model.entries = [fallback_claim_replay]
+	fallback_replay_list_model.cursor = 0
+	fallback_replay_list_model.set_verification_filter("all")
+	var fallback_claim_rows: Array[Dictionary] = fallback_replay_list_model.row_models(2)
+	if fallback_claim_rows.is_empty():
+		push_error("Smoke test failed: fallback server-claim replay row missing")
+		quit(1)
+		return true
+	var fallback_claim_row: Dictionary = fallback_claim_rows[0]
+	var fallback_claim_context: Dictionary = fallback_claim_row.get("boss_practice_verification", {})
+	var fallback_claim_guard: Dictionary = fallback_replay_list_model.local_load_guard_for_entry(fallback_claim_replay)
+	if String(fallback_claim_row.get("verification_scope", "")) != "rejected_server_claim" \
+			or String(fallback_claim_row.get("local_load_policy", "")) != "blocked_local_integrity" \
+			or String(fallback_claim_row.get("load_rejection_reason", "")) != "server_authority_claim_rejected" \
+			or bool(fallback_claim_row.get("can_play", true)) \
+			or bool(fallback_claim_context.get("ok", true)) \
+			or String(fallback_claim_context.get("verification_scope", "")) != "rejected_server_claim" \
+			or String(fallback_claim_context.get("reason", "")) != "server_authority_claim_rejected" \
+			or bool(fallback_claim_guard.get("ok", true)) \
+			or String(fallback_claim_guard.get("reason", "")) != "server_authority_claim_rejected" \
+			or (fallback_claim_guard.get("server_authority_claim_fields", []) as Array).is_empty():
+		push_error("Smoke test failed: fallback server-claim replay guard invalid row=%s context=%s guard=%s" % [fallback_claim_row, fallback_claim_context, fallback_claim_guard])
 		quit(1)
 		return true
 	replay_list_model.refresh()

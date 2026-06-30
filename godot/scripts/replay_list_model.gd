@@ -361,7 +361,7 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 	var server_authoritative := bool(entry.get("server_authoritative", false))
 	var input_integrity_status := _entry_input_integrity_status(entry)
 	var verification_status := _entry_verification_status(entry, final_result_hash, metadata_valid)
-	var load_rejection_reason := _entry_local_load_rejection_reason(entry, verification_status, metadata_valid, server_authoritative)
+	var load_rejection_reason := _entry_local_load_rejection_reason(entry, verification_status, metadata_valid, server_authoritative, server_claim_fields)
 	var replay_authority_scope := "server_authoritative_record" if server_authoritative else "local_practice_record"
 	var requires_server_audit := server_authoritative or _entry_verification_section(verification_status) == "replay_server_pending"
 	var local_load_policy := "blocked_server_audit" if requires_server_audit else ("blocked_local_integrity" if not load_rejection_reason.is_empty() else "loadable_local_practice")
@@ -468,7 +468,7 @@ func _boss_practice_verification_context(entry: Dictionary, verification_status:
 	return {
 		"contract_kind": "boss_practice_replay_index_verification",
 		"ok": loadable,
-		"reason": "none" if loadable else verification_status,
+		"reason": "none" if loadable else (load_rejection_reason if not load_rejection_reason.is_empty() else verification_status),
 		"replay_id": String(entry.get("replay_id", "")),
 		"verification_status": verification_status,
 		"verification_scope": "local_practice_hash" if no_server_claims else "rejected_server_claim",
@@ -602,7 +602,7 @@ func _entry_verification_section_label_key(verification_status: String) -> Strin
 	return "ui.menu_section_%s" % _entry_verification_section(verification_status)
 
 func _entry_verification_scope(entry: Dictionary, server_authoritative: bool, metadata_valid: bool, server_claim_fields: Array[String]) -> String:
-	if not metadata_valid and not server_claim_fields.is_empty():
+	if not server_claim_fields.is_empty():
 		return "rejected_server_claim"
 	if server_authoritative:
 		return "server_audit_record"
@@ -614,7 +614,7 @@ func _entry_verification_scope(entry: Dictionary, server_authoritative: bool, me
 func _entry_verification_summary(entry: Dictionary, verification_status: String, metadata_valid: bool, server_authoritative: bool, server_claim_fields: Array[String]) -> String:
 	var final_tick := int(entry.get("final_tick", 0))
 	var final_hash := int(entry.get("final_result_hash", 0))
-	if not metadata_valid and not server_claim_fields.is_empty():
+	if not server_claim_fields.is_empty():
 		return "rejected server-authority claims %d fields; status %s" % [server_claim_fields.size(), verification_status]
 	if server_authoritative:
 		return "server replay audit pending; tick %d hash %d" % [final_tick, final_hash]
@@ -682,7 +682,8 @@ func local_load_guard_for_entry(entry: Dictionary) -> Dictionary:
 	var metadata_valid := _entry_metadata_valid(entry)
 	var server_authoritative := bool(entry.get("server_authoritative", false))
 	var verification_status := _entry_verification_status(entry, int(entry.get("final_result_hash", 0)), metadata_valid)
-	var rejection_reason := _entry_local_load_rejection_reason(entry, verification_status, metadata_valid, server_authoritative)
+	var server_claim_fields := _entry_server_authority_claim_fields(entry)
+	var rejection_reason := _entry_local_load_rejection_reason(entry, verification_status, metadata_valid, server_authoritative, server_claim_fields)
 	return {
 		"ok": rejection_reason.is_empty(),
 		"reason": "loadable" if rejection_reason.is_empty() else rejection_reason,
@@ -691,6 +692,7 @@ func local_load_guard_for_entry(entry: Dictionary) -> Dictionary:
 		"input_integrity_status": _entry_input_integrity_status(entry),
 		"metadata_valid": metadata_valid,
 		"server_authoritative": server_authoritative,
+		"server_authority_claim_fields": server_claim_fields,
 	}
 
 func _entry_matches_active_filter(entry: Dictionary) -> bool:
@@ -700,7 +702,7 @@ func _entry_matches_active_filter(entry: Dictionary) -> bool:
 	var status_value := _entry_verification_status(entry, int(entry.get("final_result_hash", 0)), metadata_valid)
 	return _entry_verification_section(status_value) == active_verification_filter
 
-func _entry_local_load_rejection_reason(entry: Dictionary, verification_status: String, metadata_valid: bool, server_authoritative: bool) -> String:
+func _entry_local_load_rejection_reason(entry: Dictionary, verification_status: String, metadata_valid: bool, server_authoritative: bool, server_claim_fields: Array[String] = []) -> String:
 	var path := str(entry.get("path", ""))
 	if path.is_empty():
 		return "missing_path"
@@ -708,6 +710,8 @@ func _entry_local_load_rejection_reason(entry: Dictionary, verification_status: 
 		return "file_missing"
 	if server_authoritative:
 		return "server_record_pending_audit"
+	if not server_claim_fields.is_empty():
+		return "server_authority_claim_rejected"
 	if not metadata_valid:
 		return verification_status
 	if _entry_verification_section(verification_status) == "replay_input_invalid":
