@@ -4276,6 +4276,10 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay verification aggregate invalid %s" % [replay_verification_summary])
 		quit(1)
 		return true
+	if bool(replay_verification_summary.get("filter_empty", true)) or int(replay_verification_summary.get("visible_entry_count", 0)) <= 0 or int(replay_verification_summary.get("selected_filtered_index", 0)) <= 0 or not String(replay_verification_summary.get("filter_navigation_label", "")).contains("/"):
+		push_error("Smoke test failed: replay verification aggregate navigation invalid %s" % [replay_verification_summary])
+		quit(1)
+		return true
 	var replay_filter_rows: Array[Dictionary] = replay_list_model.verification_filter_rows()
 	if replay_filter_rows.size() < 5 or String(replay_filter_rows[0].get("verification_filter", "")) != "all" or not bool(replay_filter_rows[0].get("active", false)) or bool(replay_filter_rows[0].get("client_result_authoritative", true)):
 		push_error("Smoke test failed: replay verification filter rows invalid %s" % [replay_filter_rows])
@@ -4378,6 +4382,10 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay UI verification aggregate invalid %s" % [ui_replay_rows[0]])
 		quit(1)
 		return true
+	if bool(ui_replay_rows[0].get("filter_empty", true)) or int(ui_replay_rows[0].get("selected_filtered_index", 0)) <= 0 or String(ui_replay_rows[0].get("filter_navigation_label", "")).is_empty():
+		push_error("Smoke test failed: replay UI verification navigation invalid %s" % [ui_replay_rows[0]])
+		quit(1)
+		return true
 	var local_filter_index := _row_index_by_id(ui_replay_rows, "replay_filter_replay_local_ready")
 	if local_filter_index < 0:
 		push_error("Smoke test failed: replay UI missing local-ready filter")
@@ -4412,6 +4420,10 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay UI verification summary invalid %s" % [replay_entry_row])
 		quit(1)
 		return true
+	if int(replay_entry_row.get("filtered_index", 0)) <= 0 or int(replay_entry_row.get("filtered_count", 0)) <= 0 or not bool(replay_entry_row.get("selected_in_filter", false)) or String(replay_entry_row.get("active_verification_filter", "")) != "replay_local_ready" or not String(replay_entry_row.get("filter_navigation_label", "")).contains("/"):
+		push_error("Smoke test failed: replay UI filtered navigation row invalid %s" % [replay_entry_row])
+		quit(1)
+		return true
 	if not _validate_replay_row_authority(replay_entry_row, "local_practice_verification_only", "server"):
 		quit(1)
 		return true
@@ -4430,6 +4442,10 @@ func _process(_delta: float) -> bool:
 	var selected_row := replay_rows[0]
 	if not selected_row.has("saved_at") or not selected_row.has("mode") or not selected_row.has("result") or not selected_row.has("version") or not bool(selected_row.get("can_play", false)):
 		push_error("Smoke test failed: replay list row invalid")
+		quit(1)
+		return true
+	if int(selected_row.get("filtered_index", 0)) <= 0 or int(selected_row.get("filtered_count", 0)) <= 0 or String(selected_row.get("filter_navigation_label", "")).is_empty():
+		push_error("Smoke test failed: replay list filtered navigation invalid %s" % [selected_row])
 		quit(1)
 		return true
 	if int(selected_row.get("final_result_hash", 0)) == 0 or not bool(selected_row.get("can_verify_final_hash", false)) or String(selected_row.get("verification_status", "")) != "local_final_hash_ready" or String(selected_row.get("verification_scope", "")) != "local_practice_hash" or not String(selected_row.get("verification_summary", "")).contains("local practice final hash ready") or String(selected_row.get("replay_authority_scope", "")) != "local_practice_record":

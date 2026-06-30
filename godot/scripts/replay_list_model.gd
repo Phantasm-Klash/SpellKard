@@ -102,14 +102,23 @@ func verification_summary_row() -> Dictionary:
 	var server_pending := int(counts.get("replay_server_pending", 0))
 	var metadata_invalid := int(counts.get("replay_metadata_invalid", 0))
 	var rejected_server_claim := int(counts.get("rejected_server_claim", 0))
+	var filtered_indices := _filtered_indices()
+	var selected := selected_entry()
+	var selected_source_index := _source_index_for_replay_id(str(selected.get("replay_id", "")))
+	var selected_filtered_index := filtered_indices.find(selected_source_index)
 	return {
 		"id": "replay_verification_summary",
 		"label_key": "screen.main.replay",
 		"value": "filter %s local %d missing %d input %d server %d invalid %d" % [active_verification_filter, local_ready, missing_hash, input_invalid, server_pending, metadata_invalid],
 		"summary": "verification filter=%s local_ready=%d missing_hash=%d input_invalid=%d server_pending=%d metadata_invalid=%d rejected_server_claim=%d visible=%d" % [active_verification_filter, local_ready, missing_hash, input_invalid, server_pending, metadata_invalid, rejected_server_claim, _filtered_indices().size()],
 		"entry_count": entries.size(),
-		"visible_entry_count": _filtered_indices().size(),
+		"visible_entry_count": filtered_indices.size(),
 		"active_verification_filter": active_verification_filter,
+		"filter_empty": filtered_indices.is_empty(),
+		"selected_replay_id": str(selected.get("replay_id", "")),
+		"selected_source_index": selected_source_index,
+		"selected_filtered_index": selected_filtered_index + 1 if selected_filtered_index >= 0 else 0,
+		"filter_navigation_label": _filter_navigation_label(selected_filtered_index, filtered_indices.size()),
 		"local_ready_count": local_ready,
 		"missing_final_hash_count": missing_hash,
 		"input_invalid_count": input_invalid,
@@ -264,9 +273,16 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 	var replay_authority_scope := "server_authoritative_record" if server_authoritative else "local_practice_record"
 	var requires_server_audit := server_authoritative or _entry_verification_section(verification_status) == "replay_server_pending"
 	var local_load_policy := "blocked_server_audit" if requires_server_audit else ("blocked_local_integrity" if not load_rejection_reason.is_empty() else "loadable_local_practice")
+	var filtered_indices := _filtered_indices()
+	var filtered_index := filtered_indices.find(index)
 	return {
 		"index": index + 1,
 		"source_index": index,
+		"filtered_index": filtered_index + 1 if filtered_index >= 0 else 0,
+		"filtered_count": filtered_indices.size(),
+		"selected_in_filter": index == cursor and filtered_index >= 0,
+		"active_verification_filter": active_verification_filter,
+		"filter_navigation_label": _filter_navigation_label(filtered_index, filtered_indices.size()),
 		"replay_id": str(entry.get("replay_id", "")),
 		"path": path,
 		"saved_at": str(entry.get("saved_at", "")),
@@ -514,6 +530,11 @@ func _verification_filter_label_key(filter_id: String) -> String:
 	if filter_id == VERIFICATION_FILTER_ALL:
 		return "ui.menu_section_replay_all"
 	return "ui.menu_section_%s" % filter_id
+
+func _filter_navigation_label(filtered_index: int, filtered_count: int) -> String:
+	if filtered_count <= 0 or filtered_index < 0:
+		return "0/%d" % max(0, filtered_count)
+	return "%d/%d" % [filtered_index + 1, filtered_count]
 
 func _entry_input_integrity_status(entry: Dictionary) -> String:
 	if bool(entry.get("server_authoritative", false)):
