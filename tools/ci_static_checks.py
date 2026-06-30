@@ -1072,6 +1072,7 @@ def check_ui_page_contracts() -> list[str]:
         '"selected_row_visible"',
         "func _assert_deep_row_visible(screen_id: String, row_id: String)",
         "func _assert_page_authority_contract(snapshot: Dictionary, label: String, expected_scope: String, expected_text: String)",
+        "func _assert_replay_ui_authority_row(row: Dictionary)",
         '"visible_label_unwrapped_count"',
         '"visible_label_out_of_panel_count"',
         '"boss_server_settlement"',

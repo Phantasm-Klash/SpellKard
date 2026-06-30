@@ -453,6 +453,8 @@ func _validate_collection_page_contract() -> bool:
 		return _fail("replay page missing verification summary row %s" % [replay_rows])
 	if not String(replay_rows[0].get("ui_action", "")).is_empty() or String(replay_rows[0].get("ui_control", "")) != "status" or bool(replay_rows[0].get("client_result_authoritative", true)):
 		return _fail("replay verification summary should be status-only %s" % [replay_rows[0]])
+	if not _assert_replay_ui_authority_row(replay_rows[0]):
+		return false
 	if not String(snapshot.get("section_tabs", "")).contains(_text("ui.menu_section_overview")):
 		return _fail("replay filter tabs should expose verification overview %s" % [snapshot])
 	var replay_summary_card_result: Dictionary = main_node.call("_ui_press_visible_overview_card", 0)
@@ -466,6 +468,12 @@ func _validate_collection_page_contract() -> bool:
 	var remove_action := _row_by_id(replay_rows, "replay_action_remove")
 	if favorite_action.is_empty() or remove_action.is_empty() or String(favorite_action.get("ui_action", "")) != "toggle_replay_favorite" or String(remove_action.get("ui_action", "")) != "remove_replay_from_index" or bool(favorite_action.get("client_result_authoritative", true)):
 		return _fail("replay page missing favorite/remove action rows favorite=%s remove=%s" % [favorite_action, remove_action])
+	if not _assert_replay_ui_authority_row(_row_by_id(replay_rows, "replay_filter_replay_local_ready")):
+		return false
+	if not _assert_replay_ui_authority_row(favorite_action):
+		return false
+	if not _assert_replay_ui_authority_row(remove_action):
+		return false
 	main_node.call("_ui_set_cursor", replay_filter_index)
 	var replay_filter_result: Dictionary = main_node.call("_ui_accept_selected")
 	await _settle_frames(2)
@@ -692,6 +700,17 @@ func _assert_page_authority_contract(snapshot: Dictionary, label: String, expect
 		return _fail("%s page authority must not be client-result authoritative %s" % [label, summary])
 	if not String(snapshot.get("page_experience_text", "")).contains(expected_text):
 		return _fail("%s page summary text missing authority contract %s" % [label, String(snapshot.get("page_experience_text", ""))])
+	return true
+
+func _assert_replay_ui_authority_row(row: Dictionary) -> bool:
+	if row.is_empty():
+		return _fail("replay authority row missing")
+	if String(row.get("local_hash_authority", "")) != "local_practice_verification_only":
+		return _fail("replay UI row missing local hash authority %s" % [row])
+	if String(row.get("settlement_authority", "")) != "server" or String(row.get("reward_authority", "")) != "server":
+		return _fail("replay UI row missing server settlement/reward authority %s" % [row])
+	if bool(row.get("client_result_authoritative", true)):
+		return _fail("replay UI row must not be client-result authoritative %s" % [row])
 	return true
 
 func _text(key: String) -> String:
