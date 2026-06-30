@@ -11,11 +11,13 @@ var active_verification_filter := "all"
 const VERIFICATION_FILTER_ALL := "all"
 const VERIFICATION_FILTERS: Array[String] = [
 	VERIFICATION_FILTER_ALL,
+	"replay_boss_practice",
 	"replay_local_ready",
 	"replay_missing_hash",
 	"replay_input_invalid",
 	"replay_server_pending",
 	"replay_metadata_invalid",
+	"rejected_server_claim",
 ]
 
 func configure(store: RefCounted) -> void:
@@ -102,6 +104,7 @@ func verification_summary_row() -> Dictionary:
 	var server_pending := int(counts.get("replay_server_pending", 0))
 	var metadata_invalid := int(counts.get("replay_metadata_invalid", 0))
 	var rejected_server_claim := int(counts.get("rejected_server_claim", 0))
+	var boss_practice := int(counts.get("replay_boss_practice", 0))
 	var filtered_indices := _filtered_indices()
 	var selected := selected_entry()
 	var selected_source_index := _source_index_for_replay_id(str(selected.get("replay_id", "")))
@@ -110,8 +113,8 @@ func verification_summary_row() -> Dictionary:
 	return {
 		"id": "replay_verification_summary",
 		"label_key": "screen.main.replay",
-		"value": "filter %s local %d missing %d input %d server %d invalid %d" % [active_verification_filter, local_ready, missing_hash, input_invalid, server_pending, metadata_invalid],
-		"summary": "verification filter=%s local_ready=%d missing_hash=%d input_invalid=%d server_pending=%d metadata_invalid=%d rejected_server_claim=%d visible=%d" % [active_verification_filter, local_ready, missing_hash, input_invalid, server_pending, metadata_invalid, rejected_server_claim, _filtered_indices().size()],
+		"value": "filter %s boss %d local %d missing %d input %d server %d invalid %d" % [active_verification_filter, boss_practice, local_ready, missing_hash, input_invalid, server_pending, metadata_invalid],
+		"summary": "verification filter=%s boss_practice=%d local_ready=%d missing_hash=%d input_invalid=%d server_pending=%d metadata_invalid=%d rejected_server_claim=%d visible=%d" % [active_verification_filter, boss_practice, local_ready, missing_hash, input_invalid, server_pending, metadata_invalid, rejected_server_claim, _filtered_indices().size()],
 		"entry_count": entries.size(),
 		"visible_entry_count": filtered_indices.size(),
 		"active_verification_filter": active_verification_filter,
@@ -132,8 +135,10 @@ func verification_summary_row() -> Dictionary:
 		"server_pending_audit_count": server_pending,
 		"metadata_invalid_count": metadata_invalid,
 		"rejected_server_claim_count": rejected_server_claim,
+		"boss_practice_count": boss_practice,
 		"server_authoritative": false,
 		"local_hash_authority": "local_practice_verification_only",
+		"damage_authority": "server",
 		"settlement_authority": "server",
 		"reward_authority": "server",
 		"client_result_authoritative": false,
@@ -160,6 +165,7 @@ func verification_filter_rows() -> Array[Dictionary]:
 			"entry_count": count,
 			"server_authoritative": false,
 			"local_hash_authority": "local_practice_verification_only",
+			"damage_authority": "server",
 			"settlement_authority": "server",
 			"reward_authority": "server",
 			"client_result_authoritative": false,
@@ -253,6 +259,7 @@ func selected_action_rows() -> Array[Dictionary]:
 			"can_play": bool(selected_row_model.get("can_play", false)),
 			"server_authoritative": false,
 			"local_hash_authority": "local_practice_verification_only",
+			"damage_authority": "server",
 			"settlement_authority": "server",
 			"reward_authority": "server",
 			"client_result_authoritative": false,
@@ -271,6 +278,7 @@ func selected_action_rows() -> Array[Dictionary]:
 			"source_index": source_index,
 			"server_authoritative": false,
 			"local_hash_authority": "local_practice_verification_only",
+			"damage_authority": "server",
 			"settlement_authority": "server",
 			"reward_authority": "server",
 			"client_result_authoritative": false,
@@ -289,6 +297,7 @@ func selected_action_rows() -> Array[Dictionary]:
 			"source_index": source_index,
 			"server_authoritative": false,
 			"local_hash_authority": "local_practice_verification_only",
+			"damage_authority": "server",
 			"settlement_authority": "server",
 			"reward_authority": "server",
 			"client_result_authoritative": false,
@@ -407,6 +416,7 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"server_audit_status": "pending" if requires_server_audit else "not_required",
 		"local_playback_authority": "server_audit_required" if requires_server_audit else "local_practice_hash",
 		"local_hash_authority": "local_practice_verification_only",
+		"damage_authority": "server",
 		"settlement_authority": "server",
 		"reward_authority": "server",
 		"client_result_authoritative": false,
@@ -555,6 +565,7 @@ func _replay_action_guard(row: Dictionary) -> Dictionary:
 			"server_audit_status": "not_required",
 			"local_playback_authority": "none",
 			"local_hash_authority": "local_practice_verification_only",
+			"damage_authority": "server",
 			"settlement_authority": "server",
 			"reward_authority": "server",
 			"client_result_authoritative": false,
@@ -572,6 +583,7 @@ func _replay_action_guard(row: Dictionary) -> Dictionary:
 		"server_audit_status": String(row.get("server_audit_status", "")),
 		"local_playback_authority": String(row.get("local_playback_authority", "")),
 		"local_hash_authority": "local_practice_verification_only",
+		"damage_authority": "server",
 		"settlement_authority": "server",
 		"reward_authority": "server",
 		"client_result_authoritative": false,
@@ -665,6 +677,7 @@ func _entry_server_authority_claim_fields(entry: Dictionary) -> Array[String]:
 
 func _verification_counts() -> Dictionary:
 	var counts := {
+		"replay_boss_practice": 0,
 		"replay_local_ready": 0,
 		"replay_missing_hash": 0,
 		"replay_input_invalid": 0,
@@ -678,6 +691,8 @@ func _verification_counts() -> Dictionary:
 		var status_value := _entry_verification_status(entry, int(entry.get("final_result_hash", 0)), metadata_valid)
 		var section_value := _entry_verification_section(status_value)
 		counts[section_value] = int(counts.get(section_value, 0)) + 1
+		if _is_boss_spellbook_practice_entry(entry):
+			counts["replay_boss_practice"] = int(counts.get("replay_boss_practice", 0)) + 1
 		if _entry_verification_scope(entry, bool(entry.get("server_authoritative", false)), metadata_valid, server_claim_fields) == "rejected_server_claim":
 			counts["rejected_server_claim"] = int(counts.get("rejected_server_claim", 0)) + 1
 	return counts
@@ -704,6 +719,7 @@ func local_load_guard_for_entry(entry: Dictionary) -> Dictionary:
 		"server_audit_status": "pending" if requires_server_audit else "not_required",
 		"local_playback_authority": "server_audit_required" if requires_server_audit else "local_practice_hash",
 		"local_hash_authority": "local_practice_verification_only",
+		"damage_authority": "server",
 		"settlement_authority": "server",
 		"reward_authority": "server",
 		"client_result_authoritative": false,
@@ -712,7 +728,12 @@ func local_load_guard_for_entry(entry: Dictionary) -> Dictionary:
 func _entry_matches_active_filter(entry: Dictionary) -> bool:
 	if active_verification_filter == VERIFICATION_FILTER_ALL:
 		return true
+	if active_verification_filter == "replay_boss_practice":
+		return _is_boss_spellbook_practice_entry(entry)
 	var metadata_valid := _entry_metadata_valid(entry)
+	var server_claim_fields := _entry_server_authority_claim_fields(entry)
+	if active_verification_filter == "rejected_server_claim":
+		return _entry_verification_scope(entry, bool(entry.get("server_authoritative", false)), metadata_valid, server_claim_fields) == "rejected_server_claim"
 	var status_value := _entry_verification_status(entry, int(entry.get("final_result_hash", 0)), metadata_valid)
 	return _entry_verification_section(status_value) == active_verification_filter
 
@@ -753,6 +774,8 @@ func _clamp_cursor_to_filter() -> void:
 func _verification_filter_label_key(filter_id: String) -> String:
 	if filter_id == VERIFICATION_FILTER_ALL:
 		return "ui.menu_section_replay_all"
+	if filter_id == "rejected_server_claim":
+		return "ui.menu_section_replay_rejected_server_claim"
 	return "ui.menu_section_%s" % filter_id
 
 func _filter_navigation_label(filtered_index: int, filtered_count: int) -> String:
