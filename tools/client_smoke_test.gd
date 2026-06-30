@@ -3900,6 +3900,13 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: practice validation authority row invalid %s" % [practice_validation_row])
 		quit(1)
 		return true
+	if String(practice_validation_row.get("verification_status", "")) != "practice_recording" \
+			or String(practice_validation_row.get("verification_scope", "")) != "local_practice_hash" \
+			or bool(practice_validation_row.get("replay_mode", true)) \
+			or int(practice_validation_row.get("state_hash_sample_interval_ticks", 0)) != 60:
+		push_error("Smoke test failed: practice validation runtime contract invalid %s" % [practice_validation_row])
+		quit(1)
+		return true
 	var practice_power_cursor: int = _row_index_by_id(practice_rows, "practice_power_up")
 	main_node.call("_ui_set_cursor", practice_power_cursor)
 	var power_before: float = float(main_node.get("practice_initial_power"))
@@ -4738,6 +4745,22 @@ func _process(_delta: float) -> bool:
 		return true
 	if int(main_node.get("replay_expected_final_hash")) != int(main_node.get("replay_actual_final_hash")):
 		push_error("Smoke test failed: replay final hash mismatch")
+		quit(1)
+		return true
+	if not main_node.call("_open_ui_screen", "practice"):
+		push_error("Smoke test failed: practice screen did not reopen for replay validation contract")
+		quit(1)
+		return true
+	practice_rows = main_node.call("_ui_screen_rows", 48)
+	practice_validation_row = _find_row_by_id(practice_rows, "practice_validation_status")
+	if String(practice_validation_row.get("verification_status", "")) != "replay_final_hash_valid" \
+			or String(practice_validation_row.get("replay_final_hash_status", "")) != "valid" \
+			or not bool(practice_validation_row.get("replay_mode", false)) \
+			or not bool(practice_validation_row.get("can_verify_final_hash", false)) \
+			or int(practice_validation_row.get("replay_expected_final_hash", 0)) != int(practice_validation_row.get("replay_actual_final_hash", -1)) \
+			or bool(practice_validation_row.get("client_result_authoritative", true)) \
+			or String(practice_validation_row.get("settlement_authority", "")) != "server":
+		push_error("Smoke test failed: replay final validation contract invalid %s" % [practice_validation_row])
 		quit(1)
 		return true
 	stage = "i18n_overlay"

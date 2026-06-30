@@ -2937,6 +2937,7 @@ func _decorate_client_experience_rows(rows: Array[Dictionary]) -> Array[Dictiona
 	for source_row in rows:
 		var row := source_row.duplicate(true)
 		_decorate_gamepad_speed_preview(row)
+		_decorate_practice_verification_contract(row)
 		decorated.append(row)
 	return decorated
 
@@ -2951,6 +2952,68 @@ func _decorate_gamepad_speed_preview(row: Dictionary) -> void:
 	row["speed_preview"] = input_profile.movement_speed_preview_summary(move_speed, focus_speed)
 	row["speed_samples"] = input_profile.movement_speed_preview_samples(move_speed, focus_speed)
 	row["summary"] = "%s | %s" % [String(row.get("summary", "")), String(row.get("speed_preview", ""))]
+
+func _decorate_practice_verification_contract(row: Dictionary) -> void:
+	if String(row.get("id", "")) != "practice_validation_status":
+		return
+	var contract := _practice_verification_contract()
+	for key in contract.keys():
+		row[key] = contract[key]
+
+func _practice_verification_contract() -> Dictionary:
+	var final_tick := 0
+	var input_count := 0
+	var event_count := 0
+	if replay_recorder != null:
+		final_tick = replay_recorder.final_recorded_tick()
+		input_count = replay_recorder.input_stream.size()
+		event_count = replay_recorder.event_stream.size()
+	var has_snapshot := not replay_snapshot.is_empty()
+	var has_expected_final_hash := has_snapshot and replay_expected_final_hash != 0
+	var final_hash_status := replay_final_hash_status if has_snapshot or replay_mode else "not_loaded"
+	var verification_status := "practice_recording"
+	if replay_mode:
+		if replay_validation_failed:
+			verification_status = "replay_hash_invalid"
+		elif final_hash_status == "valid":
+			verification_status = "replay_final_hash_valid"
+		elif final_hash_status == "missing":
+			verification_status = "replay_final_hash_missing"
+		else:
+			verification_status = "replay_hash_pending"
+	var can_verify_final_hash := replay_mode and has_expected_final_hash
+	return {
+		"value": "%s tick %d final %s" % [verification_status, tick, final_hash_status],
+		"summary": "practice/replay hash verification is local-only; online damage, rewards, and settlement stay server-authoritative",
+		"verification_status": verification_status,
+		"verification_scope": "local_practice_hash",
+		"replay_authority_scope": "local_practice_record",
+		"replay_verification_scope": "local_practice_hash",
+		"local_playback_authority": "local_practice_hash",
+		"local_hash_authority": "local_practice_verification_only",
+		"state_hash_sample_interval_ticks": 60,
+		"current_tick": tick,
+		"final_recorded_tick": final_tick,
+		"input_count": input_count,
+		"event_count": event_count,
+		"replay_mode": replay_mode,
+		"replay_paused": replay_paused,
+		"replay_snapshot_loaded": has_snapshot,
+		"replay_validation_failed": replay_validation_failed,
+		"replay_first_mismatch_tick": replay_first_mismatch_tick,
+		"replay_final_hash_status": final_hash_status,
+		"replay_expected_final_hash": replay_expected_final_hash,
+		"replay_actual_final_hash": replay_actual_final_hash,
+		"can_verify_final_hash": can_verify_final_hash,
+		"local_verification_ready": replay_mode and not replay_validation_failed and (final_hash_status == "valid" or final_hash_status == "pending"),
+		"requires_server_audit": false,
+		"damage_authority": "server",
+		"settlement_authority": "server",
+		"reward_authority": "server",
+		"requires_server_confirmation": false,
+		"server_authoritative": false,
+		"client_result_authoritative": false,
+	}
 
 func _ui_page_layout() -> Dictionary:
 	if ui_screen_model != null and ui_screen_model.has_method("page_layout"):
