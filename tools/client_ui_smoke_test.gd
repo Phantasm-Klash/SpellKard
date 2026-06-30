@@ -161,6 +161,26 @@ func _validate_play_pages() -> bool:
 	var modes_overview_text := String(snapshot.get("overview_cards_text", ""))
 	if not modes_overview_text.contains(_text("screen.settings.boss_spellbook")) or not modes_overview_text.contains("phases") or not modes_overview_text.contains("digest"):
 		return _fail("modes overview cards missing boss practice preview card metrics %s" % modes_overview_text)
+	var world_preview_index := _row_index_by_id(rows, "world_boss_practice_preview")
+	if world_preview_index < 0:
+		return _fail("modes page missing world boss practice preview row")
+	main_node.call("_ui_set_cursor", world_preview_index)
+	await _settle_frames(2)
+	var preview_action: Dictionary = main_node.call("_ui_accept_selected")
+	await _settle_frames(2)
+	if not bool(preview_action.get("ok", false)) \
+			or String(preview_action.get("action", "")) != "start_boss_practice_preview" \
+			or String(preview_action.get("screen", "")) != "practice" \
+			or String(preview_action.get("mode_id", "")) != "world_boss" \
+			or String(preview_action.get("local_hash_authority", "")) != "local_practice_verification_only" \
+			or String(preview_action.get("online_result_authority", "")) != "server_settlement_required" \
+			or bool(preview_action.get("client_result_authoritative", true)):
+		return _fail("world boss practice preview action invalid %s" % [preview_action])
+	snapshot = main_node.call("_ui_overlay_snapshot")
+	if String(snapshot.get("screen", "")) != "practice" or not bool(snapshot.get("layout_show_gameplay", false)) or bool(snapshot.get("layout_show_secondary_shell", true)):
+		return _fail("world boss practice preview should open unobstructed practice %s" % [snapshot])
+	snapshot = await _open_snapshot("modes")
+	rows = main_node.call("_ui_screen_rows", 64)
 	if not String(snapshot.get("page_focus_action_ids", "")).contains("world_boss_authority") or not String(snapshot.get("page_focus_action_ids", "")).contains("instance_boss_authority"):
 		return _fail("modes focus actions should prioritize Boss authority cards %s" % [snapshot])
 	var world_authority_row := _row_by_id(rows, "world_boss_authority")
@@ -1059,8 +1079,12 @@ func _assert_boss_practice_preview_row(row: Dictionary, mode_id: String) -> bool
 		return _fail("boss practice preview must keep online authority on server %s" % [row])
 	if bool(row.get("requires_server_confirmation", true)):
 		return _fail("boss practice preview should not require server confirmation %s" % [row])
-	if String(row.get("ui_control", "")) != "card" or String(row.get("preview_card_kind", "")) != "boss_spellbook_practice_preview" or String(row.get("overview_card_kind", "")) != "boss_practice_preview":
+	if String(row.get("ui_control", "")) != "card" or String(row.get("ui_action", "")) != "start_boss_practice_preview" or String(row.get("preview_card_kind", "")) != "boss_spellbook_practice_preview" or String(row.get("overview_card_kind", "")) != "boss_practice_preview":
 		return _fail("boss practice preview card contract mismatch %s" % [row])
+	if String(row.get("local_practice_action", "")) != "start_boss_spellbook_run" or String(row.get("local_practice_target_screen", "")) != "practice":
+		return _fail("boss practice preview local action contract mismatch %s" % [row])
+	if String(row.get("local_hash_authority", "")) != "local_practice_verification_only" or String(row.get("online_result_authority", "")) != "server_settlement_required":
+		return _fail("boss practice preview action authority mismatch %s" % [row])
 	if String(row.get("render_slot", "")) != "mode_cards" or String(row.get("section", "")) != "boss_preview":
 		return _fail("boss practice preview card placement mismatch %s" % [row])
 	var metrics: Array = row.get("preview_card_metrics", [])

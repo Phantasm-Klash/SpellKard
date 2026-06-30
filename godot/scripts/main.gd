@@ -2459,6 +2459,23 @@ func _dispatch_ui_action(row: Dictionary) -> Dictionary:
 		"start_boss_spellbook_run":
 			var start_spellbook_ok: bool = _start_boss_spellbook_run(String(row.get("spellbook_id", boss_spellbook_id)))
 			return _set_ui_action_result(start_spellbook_ok, action, _boss_spellbook_run_status())
+		"start_boss_practice_preview":
+			var preview_seed := int(row.get("preview_seed", practice_seed))
+			var preview_spellbook_id := String(row.get("spellbook_id", boss_spellbook_id))
+			practice_seed = preview_seed
+			active_match_seed = practice_seed
+			var preview_ok: bool = _start_boss_spellbook_run(preview_spellbook_id)
+			if preview_ok:
+				_open_ui_screen(String(row.get("local_practice_target_screen", "practice")))
+			var preview_status := _boss_spellbook_run_status()
+			preview_status["mode_id"] = String(row.get("mode_id", ""))
+			preview_status["preview_seed"] = preview_seed
+			preview_status["preview_bundle_id"] = String(row.get("preview_bundle_id", ""))
+			preview_status["local_hash_authority"] = String(row.get("local_hash_authority", "local_practice_verification_only"))
+			preview_status["online_result_authority"] = String(row.get("online_result_authority", "server_settlement_required"))
+			preview_status["screen"] = String(ui_screen_model.current_screen if ui_screen_model != null else "")
+			preview_status["client_result_authoritative"] = false
+			return _set_ui_action_result(preview_ok, action, preview_status)
 		"apply_stage_practice_plan":
 			var plan_result: Dictionary = _apply_stage_practice_plan()
 			return _set_ui_action_result(bool(plan_result.get("ok", false)), action, plan_result)
