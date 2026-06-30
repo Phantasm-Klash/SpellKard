@@ -5185,7 +5185,7 @@ func _validate_boss_playfield_projection(row: Dictionary, mode_id: String, expec
 	if String(projection.get("mode_id", "")) != mode_id or String(projection.get("mode_category", "")) != "boss" or String(projection.get("display_kind", "")) != "boss_playfield_projection":
 		push_error("Smoke test failed: boss playfield identity invalid %s" % [projection])
 		return false
-	if String(projection.get("projection_scope", "")) != "local_display_only" or String(projection.get("damage_authority", "")) != "server" or String(projection.get("settlement_authority", "")) != "server":
+	if String(projection.get("projection_scope", "")) != "local_display_only" or String(projection.get("damage_authority", "")) != "server" or String(projection.get("reward_authority", "")) != "server" or String(projection.get("settlement_authority", "")) != "server":
 		push_error("Smoke test failed: boss playfield authority labels invalid %s" % [projection])
 		return false
 	if bool(projection.get("client_result_authoritative", true)) or not bool(projection.get("requires_server_confirmation", false)):
