@@ -5382,6 +5382,62 @@ func _validate_boss_party_row_contract(row: Dictionary, mode_id: String, expecte
 			return false
 	if not _validate_boss_formation_contract(row.get("formation_contract", {}), mode_id, expected_count):
 		return false
+	if not _validate_boss_formation_display_summary(row.get("formation_display_summary", {}), mode_id, expected_count):
+		return false
+	return true
+
+func _validate_boss_formation_display_summary(summary: Dictionary, mode_id: String, expected_count: int) -> bool:
+	if summary.is_empty():
+		push_error("Smoke test failed: boss formation display summary missing for %s" % mode_id)
+		return false
+	if not bool(summary.get("ok", false)) or String(summary.get("mode_id", "")) != mode_id or String(summary.get("mode_category", "")) != "boss":
+		push_error("Smoke test failed: boss formation display summary identity invalid %s" % [summary])
+		return false
+	if String(summary.get("display_summary_kind", "")) != "boss_formation_display_summary":
+		push_error("Smoke test failed: boss formation display summary kind invalid %s" % [summary])
+		return false
+	if String(summary.get("projection_scope", "")) != "local_display_only" or String(summary.get("damage_authority", "")) != "server" or String(summary.get("reward_authority", "")) != "server" or String(summary.get("settlement_authority", "")) != "server":
+		push_error("Smoke test failed: boss formation display summary authority labels invalid %s" % [summary])
+		return false
+	if bool(summary.get("client_result_authoritative", true)) or not bool(summary.get("requires_server_confirmation", false)):
+		push_error("Smoke test failed: boss formation display summary authority flags invalid %s" % [summary])
+		return false
+	var expected_layout_policy := "cardinal_4" if expected_count == 4 else ("eight_direction_8" if expected_count == 8 else "even_ring_%d" % expected_count)
+	if int(summary.get("player_count", 0)) != expected_count or int(summary.get("slot_count", 0)) != expected_count or String(summary.get("slot_layout_policy", "")) != expected_layout_policy:
+		push_error("Smoke test failed: boss formation display summary count/layout invalid %s" % [summary])
+		return false
+	if not bool(summary.get("fixed_direction_display", false)) or not bool(summary.get("center_aim_valid", false)) or not bool(summary.get("all_slots_face_center", false)):
+		push_error("Smoke test failed: boss formation display summary center aim invalid %s" % [summary])
+		return false
+	if (summary.get("center_normalized", Vector2.INF) as Vector2).distance_to(Vector2(0.5, 0.5)) > 0.001 or absf(float(summary.get("display_radius_ratio", 0.0)) - 0.42) > 0.001:
+		push_error("Smoke test failed: boss formation display summary geometry invalid %s" % [summary])
+		return false
+	var expected_labels := _expected_boss_slot_labels(expected_count)
+	var labels: Array = summary.get("slot_labels", [])
+	var slot_summaries: Array = summary.get("slot_summaries", [])
+	var slot_points: Array = summary.get("slot_points", [])
+	if labels.size() != expected_count or slot_summaries.size() != expected_count or slot_points.size() != expected_count:
+		push_error("Smoke test failed: boss formation display summary slots missing %s" % [summary])
+		return false
+	for i in range(expected_count):
+		if String(labels[i]) != expected_labels[i] or not String(slot_summaries[i]).contains(expected_labels[i]):
+			push_error("Smoke test failed: boss formation display summary label invalid %s expected=%s" % [summary, expected_labels])
+			return false
+		var point: Dictionary = slot_points[i]
+		var normalized_position: Vector2 = point.get("normalized_display_position", Vector2.ZERO)
+		var aim_vector: Vector2 = point.get("aim_vector", Vector2.ZERO)
+		if int(point.get("slot_index", -1)) != i or String(point.get("slot_label", "")) != expected_labels[i] or bool(point.get("client_result_authoritative", true)):
+			push_error("Smoke test failed: boss formation display point identity invalid %s" % [point])
+			return false
+		if normalized_position.x < 0.05 or normalized_position.x > 0.95 or normalized_position.y < 0.05 or normalized_position.y > 0.95:
+			push_error("Smoke test failed: boss formation display point out of bounds %s" % [point])
+			return false
+		if not bool(point.get("aim_to_center", false)) or aim_vector.length() < 0.99 or aim_vector.length() > 1.01:
+			push_error("Smoke test failed: boss formation display point aim invalid %s" % [point])
+			return false
+	if int(summary.get("formation_display_signature", 0)) == 0 or not String(summary.get("formation_display_signature_source", "")).contains(expected_layout_policy):
+		push_error("Smoke test failed: boss formation display signature invalid %s" % [summary])
+		return false
 	return true
 
 func _validate_boss_formation_contract(contract: Dictionary, mode_id: String, expected_count: int) -> bool:
@@ -5457,6 +5513,8 @@ func _validate_boss_playfield_projection(row: Dictionary, mode_id: String, expec
 		return false
 	if not _validate_boss_formation_contract(projection.get("formation_contract", {}), mode_id, expected_count):
 		return false
+	if not _validate_boss_formation_display_summary(projection.get("formation_display_summary", {}), mode_id, expected_count):
+		return false
 	if absf(float(projection.get("hp_ratio", -1.0)) - expected_hp_ratio) > 0.001:
 		push_error("Smoke test failed: boss playfield hp ratio invalid %s expected %.3f" % [projection, expected_hp_ratio])
 		return false
@@ -5486,6 +5544,8 @@ func _validate_boss_playfield_projection(row: Dictionary, mode_id: String, expec
 		return false
 	if row.has("formation_contract") and not _validate_boss_formation_contract(row.get("formation_contract", {}), mode_id, expected_count):
 		return false
+	if row.has("formation_display_summary") and not _validate_boss_formation_display_summary(row.get("formation_display_summary", {}), mode_id, expected_count):
+		return false
 	return true
 
 func _validate_boss_hud_projection(row: Dictionary, mode_id: String, expected_count: int, expected_hp_ratio: float) -> bool:
@@ -5513,6 +5573,8 @@ func _validate_boss_hud_projection(row: Dictionary, mode_id: String, expected_co
 		return false
 	if not _validate_boss_formation_contract(projection.get("formation_contract", {}), mode_id, expected_count):
 		return false
+	if not _validate_boss_formation_display_summary(projection.get("formation_display_summary", {}), mode_id, expected_count):
+		return false
 	if absf(float(projection.get("hp_ratio", -1.0)) - expected_hp_ratio) > 0.001:
 		push_error("Smoke test failed: boss HUD hp ratio invalid %s expected %.3f" % [projection, expected_hp_ratio])
 		return false
@@ -5526,6 +5588,8 @@ func _validate_boss_hud_projection(row: Dictionary, mode_id: String, expected_co
 		push_error("Smoke test failed: boss HUD row authority invalid %s" % [row])
 		return false
 	if row.has("formation_contract") and not _validate_boss_formation_contract(row.get("formation_contract", {}), mode_id, expected_count):
+		return false
+	if row.has("formation_display_summary") and not _validate_boss_formation_display_summary(row.get("formation_display_summary", {}), mode_id, expected_count):
 		return false
 	return _validate_boss_playfield_projection({"playfield_projection": projection.get("playfield_projection", {})}, mode_id, expected_count, expected_hp_ratio)
 
@@ -5570,6 +5634,8 @@ func _validate_boss_display_contract_row(row: Dictionary, mode_id: String, expec
 		push_error("Smoke test failed: boss display formation summary invalid %s" % [row])
 		return false
 	if not _validate_boss_formation_contract(row.get("formation_contract", {}), mode_id, expected_count):
+		return false
+	if not _validate_boss_formation_display_summary(row.get("formation_display_summary", {}), mode_id, expected_count):
 		return false
 	if not _validate_boss_playfield_projection({"playfield_projection": row.get("playfield_projection", {})}, mode_id, expected_count, expected_hp_ratio):
 		return false
