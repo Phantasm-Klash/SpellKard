@@ -2469,8 +2469,15 @@ func _dispatch_ui_action(row: Dictionary) -> Dictionary:
 				_open_ui_screen(String(row.get("local_practice_target_screen", "practice")))
 			var preview_status := _boss_spellbook_run_status()
 			preview_status["mode_id"] = String(row.get("mode_id", ""))
+			preview_status["spellbook_id"] = preview_spellbook_id
 			preview_status["preview_seed"] = preview_seed
 			preview_status["preview_bundle_id"] = String(row.get("preview_bundle_id", ""))
+			preview_status["preview_bundle_signature_digest"] = int(row.get("preview_bundle_signature_digest", 0))
+			preview_status["preview_phase_count"] = int(row.get("preview_phase_count", 0))
+			preview_status["preview_authority_scope"] = String(row.get("preview_authority_scope", "local_practice_preview_only"))
+			preview_status["projection_scope"] = String(row.get("projection_scope", "local_practice_preview_only"))
+			preview_status["replay_verification_scope"] = String(row.get("replay_verification_scope", "local_practice_hash"))
+			preview_status["performance_budget_status"] = String(row.get("performance_budget_status", ""))
 			preview_status["local_hash_authority"] = String(row.get("local_hash_authority", "local_practice_verification_only"))
 			preview_status["online_result_authority"] = String(row.get("online_result_authority", "server_settlement_required"))
 			preview_status["screen"] = String(ui_screen_model.current_screen if ui_screen_model != null else "")
