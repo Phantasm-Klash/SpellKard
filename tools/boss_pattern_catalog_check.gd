@@ -291,6 +291,11 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 	var authoritative_entry := valid_entries[0].duplicate(true)
 	authoritative_entry["replay_id"] = "fixture_authoritative_spellbook_preview"
 	authoritative_entry["server_authoritative"] = true
+	var first_preview: Dictionary = spellbook_model.deterministic_phase_preview(
+		String(valid_entries[0].get("spellbook_id", "")),
+		String(valid_entries[0].get("phase_id", "")),
+		20260625
+	)
 	var server_claim_entry := valid_entries[0].duplicate(true)
 	server_claim_entry["replay_id"] = "fixture_server_claim_spellbook_preview"
 	server_claim_entry["boss_instance_id"] = "world_boss_local_s0_001"
@@ -303,6 +308,7 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 	server_claim_entry["reward_grants"] = [{"currency": "spirit", "amount": 25}]
 	server_claim_entry["settlement_status"] = "cleared"
 	server_claim_entry["world_announcement"] = "world_boss_defeated"
+	var snapshot_server_claim_entry := _snapshot_server_claim_replay_entry_for_preview(store, String(valid_entries[0].get("spellbook_id", "")), String(valid_entries[0].get("phase_id", "")), first_preview)
 	var wrong_authority_scope_entry := valid_entries[0].duplicate(true)
 	wrong_authority_scope_entry["replay_id"] = "fixture_wrong_authority_scope_spellbook_preview"
 	wrong_authority_scope_entry["preview_authority_scope"] = "server_settlement_authoritative"
@@ -431,11 +437,6 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 	var invalid_result: Dictionary = store.validate_index_metadata(invalid_entries)
 	if bool(invalid_result.get("ok", false)):
 		failures.append("invalid_replay_accepted")
-	var first_preview: Dictionary = spellbook_model.deterministic_phase_preview(
-		String(valid_entries[0].get("spellbook_id", "")),
-		String(valid_entries[0].get("phase_id", "")),
-		20260625
-	)
 	if bool(store.validate_spellbook_preview_metadata(stale_digest_entry, first_preview).get("ok", false)):
 		failures.append("stale_digest_preview_accepted")
 	if bool(store.validate_spellbook_preview_metadata(wrong_authority_scope_entry, first_preview).get("ok", false)):
@@ -446,6 +447,8 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		failures.append("server_claim_preview_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(server_claim_entry)).get("ok", false)):
 		failures.append("server_claim_replay_accepted")
+	if bool(store.validate_index_metadata(_single_entry_array(snapshot_server_claim_entry)).get("ok", false)):
+		failures.append("snapshot_server_claim_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(stale_digest_entry)).get("ok", false)):
 		failures.append("stale_digest_replay_accepted")
 	if bool(store.validate_index_metadata(_single_entry_array(stale_fixture_entry)).get("ok", false)):
@@ -600,6 +603,12 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		for expected_claim in ["boss_instance_id", "boss_current_hp", "boss_hp_after_global", "daily_attempts_left", "defeated_at", "reward_grants", "world_announcement"]:
 			if not _string_array_contains(server_claim_row.get("server_authority_claim_fields", []), expected_claim):
 				failures.append("server_claim_row_missing_field:%s:%s" % [expected_claim, server_claim_row])
+		var snapshot_server_claim_row: Dictionary = replay_list._row_from_entry(snapshot_server_claim_entry, rows.size() + 24)
+		if bool(snapshot_server_claim_row.get("metadata_valid", true)) or String(snapshot_server_claim_row.get("metadata_status", "")) != "local_preview_server_claim":
+			failures.append("snapshot_server_claim_row_metadata:%s" % [snapshot_server_claim_row])
+		for expected_claim in ["boss_instance_id", "boss_hp_after_global", "settlement_receipt", "reward_grants", "server_result_hash"]:
+			if not _string_array_contains(snapshot_server_claim_row.get("server_authority_claim_fields", []), expected_claim):
+				failures.append("snapshot_server_claim_row_missing_field:%s:%s" % [expected_claim, snapshot_server_claim_row])
 		var wrong_authority_scope_row: Dictionary = replay_list._row_from_entry(wrong_authority_scope_entry, rows.size() + 3)
 		if bool(wrong_authority_scope_row.get("metadata_valid", true)) or String(wrong_authority_scope_row.get("metadata_status", "")) != "preview_authority_scope_mismatch":
 			failures.append("wrong_authority_scope_row_metadata:%s" % [wrong_authority_scope_row])
@@ -808,6 +817,48 @@ func _legacy_replay_entry_for_preview(store: RefCounted, spellbook_id: String, p
 		},
 	}
 	return store._build_index_entry(snapshot, "user://replays/legacy_fixture_%s_%s.json" % [spellbook_id, phase_id])
+
+func _snapshot_server_claim_replay_entry_for_preview(store: RefCounted, spellbook_id: String, phase_id: String, preview: Dictionary) -> Dictionary:
+	var snapshot := {
+		"ruleset_version": "ruleset-local-s0",
+		"game_version": "prototype",
+		"match_seed": int(preview.get("seed", 0)),
+		"final_result_hash": int(preview.get("signature_digest", 0)),
+		"input_stream": [],
+		"boss_instance_id": "world_boss_snapshot_claim",
+		"boss_hp_after_global": 412000,
+		"settlement_receipt": {"receipt_id": "server-only"},
+		"reward_grants": [{"currency": "spirit", "amount": 99}],
+		"server_result_hash": "server-hash-only",
+		"metadata": {
+			"saved_at": "2026-06-29T04:20:00Z",
+			"final_tick": 180,
+			"mode": "boss_spellbook_practice",
+			"catalog_id": "boss_spellbook",
+			"spellbook_id": spellbook_id,
+			"phase_id": phase_id,
+			"preview_export_schema_version": int(preview.get("export_schema_version", 0)),
+			"preview_export_id": String(preview.get("export_id", "")),
+			"preview_authority_scope": String(preview.get("preview_authority_scope", "")),
+			"preview_fixture_id": "%s:%s:%d" % [spellbook_id, phase_id, int(preview.get("seed", 0))],
+			"preview_seed": int(preview.get("seed", 0)),
+			"preview_signature_digest": int(preview.get("signature_digest", 0)),
+			"preview_sample_ticks": (preview.get("sample_ticks", []) as Array).duplicate(),
+			"preview_sample_window_start_tick": int(preview.get("sample_window_start_tick", 0)),
+			"preview_sample_window_end_tick": int(preview.get("sample_window_end_tick", 0)),
+			"preview_sample_window_stride_ticks": int(preview.get("sample_window_stride_ticks", 0)),
+			"preview_sample_signature_digests": (preview.get("sample_signature_digests", []) as Array).duplicate(),
+			"preview_sample_emit_counts": (preview.get("sample_emit_counts", []) as Array).duplicate(),
+			"preview_sample_count": (preview.get("samples", []) as Array).size(),
+			"preview_max_emit_per_tick": int(preview.get("max_emit_per_tick", 0)),
+			"preview_bullet_cap_per_tick": int(preview.get("bullet_cap_per_tick", 0)),
+			"preview_budget_headroom": int(preview.get("budget_headroom", 0)),
+			"performance_budget_status": String(preview.get("performance_budget_status", "")),
+			"server_authoritative": false,
+			"result": "practice",
+		},
+	}
+	return store._build_index_entry(snapshot, "user://replays/snapshot_claim_fixture_%s_%s.json" % [spellbook_id, phase_id])
 
 func _single_entry_array(entry: Dictionary) -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []

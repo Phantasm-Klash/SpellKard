@@ -407,7 +407,7 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 	var preview_bullet_cap_per_tick := int(metadata.get("preview_bullet_cap_per_tick", 0))
 	if preview_bullet_cap_per_tick <= 0 and preview_max_emit_per_tick >= 0:
 		preview_bullet_cap_per_tick = preview_max_emit_per_tick + int(metadata.get("preview_budget_headroom", 0))
-	var server_authority_claim_fields := _server_authority_claim_fields(metadata)
+	var server_authority_claim_fields := _server_authority_claim_fields_from_sources(metadata, snapshot)
 	var entry := {
 		"replay_id": "%s_%s_%d" % [str(snapshot.get("ruleset_version", "local")), str(snapshot.get("match_seed", 0)), final_hash],
 		"path": path,
@@ -746,6 +746,13 @@ func _server_authority_claim_fields(fields: Dictionary) -> Array[String]:
 				claims.append(field_name)
 	for field_name in SPELLBOOK_PREVIEW_SERVER_AUTHORITY_FIELDS:
 		if fields.has(field_name) and not claims.has(field_name):
+			claims.append(field_name)
+	return claims
+
+func _server_authority_claim_fields_from_sources(primary_fields: Dictionary, secondary_fields: Dictionary = {}) -> Array[String]:
+	var claims := _server_authority_claim_fields(primary_fields)
+	for field_name in _server_authority_claim_fields(secondary_fields):
+		if not claims.has(field_name):
 			claims.append(field_name)
 	return claims
 
