@@ -267,6 +267,9 @@ func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary)
 	if not bool(base_result.get("ok", false)):
 		for failure in base_result.get("failures", []):
 			failures.append(String(failure))
+	var source_authority_claim_fields := _server_authority_claim_fields(preview)
+	if not source_authority_claim_fields.is_empty():
+		failures.append("preview_source_server_claim:%s:%s" % [str(entry.get("replay_id", "")), ",".join(source_authority_claim_fields)])
 	if String(preview.get("preview_fixture_id", "")) != _expected_preview_fixture_id(preview):
 		failures.append("preview_fixture_source_mismatch:%s" % str(entry.get("replay_id", "")))
 	if String(preview.get("export_id", "")) != _expected_preview_export_id(preview):

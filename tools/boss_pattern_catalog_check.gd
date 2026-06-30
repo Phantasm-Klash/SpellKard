@@ -551,6 +551,22 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		failures.append("stale_source_fixture_failure_missing:%s" % [stale_source_result.get("failures", [])])
 	if not saw_source_export_failure:
 		failures.append("stale_source_export_failure_missing:%s" % [stale_source_result.get("failures", [])])
+	var server_claim_source_preview := first_preview.duplicate(true)
+	server_claim_source_preview["boss_snapshot"] = {
+		"boss_instance_id": "world_boss_source_claim",
+		"boss_current_hp": 300000,
+		"reward_grants": [{"currency": "spirit", "amount": 40}],
+	}
+	server_claim_source_preview["settlement_receipt"] = {"receipt_id": "source-preview-server-only"}
+	var server_claim_source_result: Dictionary = store.validate_spellbook_preview_metadata(valid_entries[0], server_claim_source_preview)
+	if bool(server_claim_source_result.get("ok", false)):
+		failures.append("server_claim_source_preview_accepted")
+	var saw_source_server_claim_failure := false
+	for failure in server_claim_source_result.get("failures", []):
+		if String(failure).begins_with("preview_source_server_claim:"):
+			saw_source_server_claim_failure = true
+	if not saw_source_server_claim_failure:
+		failures.append("server_claim_source_failure_missing:%s" % [server_claim_source_result.get("failures", [])])
 	if bool(store.validate_spellbook_preview_metadata(stale_sample_entry, first_preview).get("ok", false)):
 		failures.append("stale_sample_preview_accepted")
 	if bool(store.validate_spellbook_preview_metadata(stale_sample_digest_entry, first_preview).get("ok", false)):
