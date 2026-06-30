@@ -439,6 +439,20 @@ func _validate_collection_page_contract() -> bool:
 	await _settle_frames(2)
 	if not bool(focus_result.get("ok", false)) or String(focus_result.get("row_id", "")) != "collection_deck" or String(main_node.get("ui_screen_model").current_screen) != "deck":
 		return _fail("collection focus action should open deck %s" % [focus_result])
+	snapshot = await _open_snapshot("replay")
+	if not _assert_page_health(snapshot, "replay", 2, 4):
+		return false
+	var replay_rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 8)
+	if replay_rows.is_empty() or String(replay_rows[0].get("id", "")) != "replay_verification_summary":
+		return _fail("replay page missing verification summary row %s" % [replay_rows])
+	if not String(replay_rows[0].get("ui_action", "")).is_empty() or String(replay_rows[0].get("ui_control", "")) != "status" or bool(replay_rows[0].get("client_result_authoritative", true)):
+		return _fail("replay verification summary should be status-only %s" % [replay_rows[0]])
+	var replay_summary_card_result: Dictionary = main_node.call("_ui_press_visible_overview_card", 0)
+	if not bool(replay_summary_card_result.get("ok", false)) or String(replay_summary_card_result.get("row_id", "")) != "replay_verification_summary" or String(replay_summary_card_result.get("screen", "")) != "replay":
+		return _fail("replay verification summary overview card should stay on replay page %s" % [replay_summary_card_result])
+	if replay_rows.size() > 1:
+		if String(replay_rows[1].get("replay_id", "")).is_empty() or String(replay_rows[1].get("ui_action", "")) != "load_replay" or String(replay_rows[1].get("ui_control", "")) != "replay":
+			return _fail("replay entry row should stay loadable %s" % [replay_rows[1]])
 	return true
 
 func _press_home_button(index: int, expected_screen: String) -> bool:

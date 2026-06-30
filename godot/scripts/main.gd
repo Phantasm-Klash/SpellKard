@@ -5321,8 +5321,8 @@ func _is_overview_candidate(row: Dictionary) -> bool:
 	if row_id.is_empty():
 		return false
 	if row_id.ends_with("_summary"):
-		return false
-	if row.has("screen") or row.has("ui_action"):
+		return _row_control_id(row) == "status"
+	if row.has("screen") or not String(row.get("ui_action", "")).is_empty():
 		return true
 	var control_id := _row_control_id(row)
 	return control_id in ["nav", "queue", "button", "select", "toggle", "slider", "link", "friend", "claim", "chest", "card", "replay"]
@@ -5383,7 +5383,7 @@ func _on_ui_overview_button_pressed(button: Button) -> void:
 func _overview_card_should_accept(row: Dictionary) -> bool:
 	if row.is_empty() or not bool(row.get("enabled", true)):
 		return false
-	return row.has("screen") or row.has("ui_action") or row.has("character_id") or row.has("stage_id") or row.has("pattern_id") or row.has("card_id") or row.has("replay_id")
+	return row.has("screen") or not String(row.get("ui_action", "")).is_empty() or row.has("character_id") or row.has("stage_id") or row.has("pattern_id") or row.has("card_id") or not String(row.get("replay_id", "")).is_empty()
 
 func _ui_press_visible_overview_card(index: int) -> Dictionary:
 	if index < 0 or index >= ui_overview_buttons.size():

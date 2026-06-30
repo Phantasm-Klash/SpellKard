@@ -889,7 +889,8 @@ func _replay_rows(limit: int) -> Array[Dictionary]:
 		rows.append(replay_list_model.verification_summary_row())
 	for row in replay_list_model.row_models(limit):
 		var replay_row: Dictionary = row.duplicate(true)
-		replay_row["ui_action"] = "load_replay"
+		if not String(replay_row.get("replay_id", "")).is_empty():
+			replay_row["ui_action"] = "load_replay"
 		replay_row["ui_control"] = "replay"
 		replay_row["value"] = "%s hash %s" % [
 			String(replay_row.get("verification_status", "unchecked")),

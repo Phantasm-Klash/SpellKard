@@ -103,6 +103,7 @@ func verification_summary_row() -> Dictionary:
 		"server_authoritative": false,
 		"client_result_authoritative": false,
 		"ui_control": "status",
+		"ui_action": "",
 		"enabled": true,
 	}
 
