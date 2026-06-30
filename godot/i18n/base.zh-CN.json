@@ -301,6 +301,7 @@
   "screen.mode.br.zero_order": "第零回合顺序",
   "screen.mode.boss.hp": "Boss 血量",
   "screen.mode.boss.attempts": "挑战次数",
+  "screen.mode.boss.entry": "进入条件",
   "screen.mode.boss.party": "队伍",
   "screen.mode.boss.transfer": "卡牌让渡",
   "screen.mode.boss.result": "Boss 结果",

@@ -12,6 +12,7 @@ const BR_POOL_CARDS_PER_PLAYER := 4
 const BOSS_MIN_PLAYERS := 4
 const BOSS_MAX_PLAYERS := 8
 const BOSS_CENTER := Vector2.ZERO
+const BOSS_ENTRY_RATING_ORDER := ["D", "C", "B", "A", "S"]
 
 var matchmaking_model: RefCounted = null
 var network_match_model: RefCounted = null
@@ -223,6 +224,81 @@ func apply_server_world_boss_snapshot(snapshot: Dictionary) -> Dictionary:
 	last_action_status = "world_boss_snapshot"
 	last_error_code = "none"
 	return {"ok": true, "reason": "none", "current_hp": int(world_boss_state.get("current_hp", 0)), "attempts_left": int(world_boss_state.get("daily_attempts_left", 0))}
+
+func apply_server_instance_boss_access(snapshot: Dictionary) -> Dictionary:
+	if snapshot.is_empty():
+		last_action_status = "failed"
+		last_error_code = "instance_boss_access_missing"
+		return {"ok": false, "reason": last_error_code}
+	if bool(snapshot.get("client_result_authoritative", false)):
+		last_action_status = "failed"
+		last_error_code = "client_authoritative_instance_boss_access"
+		return {"ok": false, "reason": last_error_code}
+	instance_boss_state["entry_period"] = str(snapshot.get("entry_period", instance_boss_state.get("entry_period", "weekly")))
+	instance_boss_state["entry_attempt_limit"] = int(snapshot.get("entry_attempt_limit", instance_boss_state.get("entry_attempt_limit", 5)))
+	instance_boss_state["entry_attempts_used"] = int(snapshot.get("entry_attempts_used", instance_boss_state.get("entry_attempts_used", 0)))
+	instance_boss_state["entry_attempts_left"] = max(0, int(snapshot.get("entry_attempts_left", instance_boss_state.get("entry_attempts_left", 0))))
+	instance_boss_state["required_rating"] = str(snapshot.get("required_rating", instance_boss_state.get("required_rating", "C")))
+	instance_boss_state["player_rating"] = str(snapshot.get("player_rating", certification_state.get("rating_code", "D")))
+	instance_boss_state["required_key_id"] = str(snapshot.get("required_key_id", instance_boss_state.get("required_key_id", "instance_key_local_s0")))
+	instance_boss_state["owned_key_count"] = max(0, int(snapshot.get("owned_key_count", instance_boss_state.get("owned_key_count", 0))))
+	instance_boss_state["entry_unlocked"] = bool(snapshot.get("entry_unlocked", _rating_meets_requirement(str(instance_boss_state.get("player_rating", "D")), str(instance_boss_state.get("required_rating", "C")))))
+	instance_boss_state["server_authoritative"] = bool(snapshot.get("server_authoritative", true))
+	var entry_check := validate_boss_entry(MODE_INSTANCE_BOSS)
+	last_action_status = "instance_boss_access"
+	last_error_code = "none" if bool(entry_check.get("ok", false)) else String((entry_check.get("failures", ["entry_locked"]) as Array)[0])
+	return {"ok": bool(entry_check.get("ok", false)), "reason": last_error_code, "attempts_left": int(instance_boss_state.get("entry_attempts_left", 0)), "entry_unlocked": bool(instance_boss_state.get("entry_unlocked", false))}
+
+func validate_boss_entry(mode_id: String) -> Dictionary:
+	var failures: Array[String] = []
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {"ok": false, "failures": ["boss_mode_invalid"], "mode_id": mode_id}
+	var state := _state_for_mode(mode_id)
+	if mode_id == MODE_WORLD_BOSS:
+		if int(state.get("daily_attempts_left", 0)) <= 0:
+			failures.append("attempts_exhausted")
+	else:
+		if int(state.get("entry_attempts_left", 0)) <= 0:
+			failures.append("attempts_exhausted")
+		if not bool(state.get("entry_unlocked", false)):
+			failures.append("entry_locked")
+		if not _rating_meets_requirement(String(state.get("player_rating", "D")), String(state.get("required_rating", "C"))):
+			failures.append("rating_required")
+		if String(state.get("required_key_id", "")).strip_edges() != "" and int(state.get("owned_key_count", 0)) <= 0:
+			failures.append("key_required")
+	var formation := validate_boss_formation(mode_id)
+	if not bool(formation.get("ok", false)):
+		failures.append("party_required")
+	return {
+		"ok": failures.is_empty(),
+		"failures": failures,
+		"mode_id": mode_id,
+		"entry_period": String(state.get("entry_period", "daily" if mode_id == MODE_WORLD_BOSS else "weekly")),
+		"attempts_left": int(state.get("daily_attempts_left", 0)) if mode_id == MODE_WORLD_BOSS else int(state.get("entry_attempts_left", 0)),
+		"required_rating": String(state.get("required_rating", "")),
+		"player_rating": String(state.get("player_rating", certification_state.get("rating_code", "D"))),
+		"required_key_id": String(state.get("required_key_id", "")),
+		"owned_key_count": int(state.get("owned_key_count", 0)),
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
+func request_boss_entry(mode_id: String) -> Dictionary:
+	var entry := validate_boss_entry(mode_id)
+	if not bool(entry.get("ok", false)):
+		last_action_status = "failed"
+		var failures: Array = entry.get("failures", [])
+		last_error_code = "entry_locked" if failures.is_empty() else String(failures[0])
+		return _action_result(false, {})
+	var request := _record_mode_action(mode_id, "enter_boss_instance" if mode_id == MODE_INSTANCE_BOSS else "enter_world_boss", {
+		"entry_period": String(entry.get("entry_period", "")),
+		"attempts_left": int(entry.get("attempts_left", 0)),
+		"required_rating": String(entry.get("required_rating", "")),
+		"required_key_id": String(entry.get("required_key_id", "")),
+	})
+	last_action_status = "boss_entry_request"
+	last_error_code = "none"
+	return _action_result(true, request)
 
 func configure_battle_royale_players(players: Array) -> bool:
 	var player_ids := _string_array(players)
@@ -498,6 +574,7 @@ func _world_boss_rows() -> Array[Dictionary]:
 	return [
 		_boss_hp_row("world_boss_hp", world_boss_state, true),
 		{"id": "world_boss_attempts", "label_key": "screen.mode.boss.attempts", "value": int(world_boss_state.get("daily_attempts_left", 0)), "mode_category": "boss", "server_authoritative": bool(world_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": int(world_boss_state.get("daily_attempts_left", 0)) > 0},
+		_boss_entry_row("world_boss_entry", MODE_WORLD_BOSS, world_boss_state),
 		_boss_party_row("world_boss_party", MODE_WORLD_BOSS, world_boss_state),
 		_boss_formation_row("world_boss_formation", MODE_WORLD_BOSS, world_boss_state),
 		_boss_transfer_row("world_boss_transfer", MODE_WORLD_BOSS, world_boss_state),
@@ -508,6 +585,7 @@ func _world_boss_rows() -> Array[Dictionary]:
 func _instance_boss_rows() -> Array[Dictionary]:
 	return [
 		_boss_hp_row("instance_boss_hp", instance_boss_state, false),
+		_boss_entry_row("instance_boss_entry", MODE_INSTANCE_BOSS, instance_boss_state),
 		{"id": "instance_boss_phase", "label_key": "screen.mode.instance.phase", "value": str(instance_boss_state.get("boss_phase", "phase_1")), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": true},
 		{"id": "instance_boss_conditions", "label_key": "screen.mode.instance.conditions", "value": "clear %s" % bool(instance_boss_state.get("cleared", false)), "items": instance_boss_state.get("clear_conditions", []), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": true},
 		{"id": "instance_boss_stars", "label_key": "screen.mode.instance.stars", "value": int(instance_boss_state.get("stars", 0)), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": bool(instance_boss_state.get("cleared", false))},
@@ -524,6 +602,17 @@ func _default_boss_state(is_world: bool) -> Dictionary:
 		"current_hp": 100000.0 if is_world else 25000.0,
 		"season_id": "s0",
 		"daily_attempts_left": 3,
+		"daily_attempt_limit": 3,
+		"daily_attempts_used": 0,
+		"entry_period": "daily" if is_world else "weekly",
+		"entry_attempt_limit": 3 if is_world else 5,
+		"entry_attempts_used": 0,
+		"entry_attempts_left": 3 if is_world else 1,
+		"entry_unlocked": true if is_world else false,
+		"required_rating": "" if is_world else "C",
+		"player_rating": "D",
+		"required_key_id": "" if is_world else "instance_key_local_s0",
+		"owned_key_count": 0,
 		"friendly_fire": "disabled",
 		"party_ids": [],
 		"party_status": "waiting",
@@ -656,6 +745,32 @@ func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 		"enabled": true,
 	}
 
+func _boss_entry_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
+	var validation := validate_boss_entry(mode_id)
+	return {
+		"id": row_id,
+		"label_key": "screen.mode.boss.entry",
+		"value": "%s attempts %d key %d" % [
+			String(validation.get("entry_period", "")),
+			int(validation.get("attempts_left", 0)),
+			int(validation.get("owned_key_count", 0)),
+		],
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"entry_valid": bool(validation.get("ok", false)),
+		"entry_failures": validation.get("failures", []),
+		"entry_period": String(validation.get("entry_period", "")),
+		"attempts_left": int(validation.get("attempts_left", 0)),
+		"required_rating": String(validation.get("required_rating", "")),
+		"player_rating": String(validation.get("player_rating", "")),
+		"required_key_id": String(validation.get("required_key_id", "")),
+		"owned_key_count": int(validation.get("owned_key_count", 0)),
+		"requires_server_confirmation": true,
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+		"enabled": bool(validation.get("ok", false)),
+	}
+
 func _boss_formation_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
 	var validation := validate_boss_formation(mode_id)
 	return {
@@ -757,6 +872,17 @@ func _calculate_instance_stars(result: Dictionary, cleared: bool) -> int:
 	if int(result.get("deaths", 99)) == 0 and int(result.get("bombs_used", 99)) <= int(result.get("bomb_limit", 3)):
 		stars += 1
 	return clampi(stars, 1, 3)
+
+func _rating_meets_requirement(player_rating: String, required_rating: String) -> bool:
+	if required_rating.strip_edges().is_empty():
+		return true
+	var player_index := BOSS_ENTRY_RATING_ORDER.find(player_rating.to_upper())
+	var required_index := BOSS_ENTRY_RATING_ORDER.find(required_rating.to_upper())
+	if required_index < 0:
+		return true
+	if player_index < 0:
+		return false
+	return player_index >= required_index
 
 func _string_array(source: Variant) -> Array[String]:
 	var values: Array[String] = []

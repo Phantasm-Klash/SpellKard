@@ -1567,6 +1567,20 @@ func _request_boss_card_transfer(mode_id: String, from_player_id: String, to_pla
 	_update_ui_overlay()
 	return result
 
+func _apply_server_instance_boss_access(snapshot: Dictionary) -> Dictionary:
+	if game_mode_model == null:
+		return {"ok": false, "reason": "missing"}
+	var result: Dictionary = game_mode_model.apply_server_instance_boss_access(snapshot)
+	_update_ui_overlay()
+	return result
+
+func _request_boss_entry(mode_id: String) -> Dictionary:
+	if game_mode_model == null:
+		return {"ok": false, "last_error_code": "missing"}
+	var result: Dictionary = game_mode_model.request_boss_entry(mode_id)
+	_update_ui_overlay()
+	return result
+
 func _submit_battle_royale_card_to_server(card_id: String, action_tick: int) -> Dictionary:
 	var local_result: Dictionary = _select_battle_royale_card(card_id, action_tick)
 	if not bool(local_result.get("ok", false)):
@@ -2592,6 +2606,16 @@ func _dispatch_ui_action(row: Dictionary) -> Dictionary:
 				"request_type": String(transfer_result.get("action_type", request_record.get("action_type", ""))),
 				"authoritative": bool(transfer_result.get("server_authoritative", false)),
 				"last_error_code": String(transfer_result.get("last_error_code", "")),
+			})
+		"request_boss_entry":
+			var entry_mode_id := String(row.get("mode_id", ""))
+			var entry_result: Dictionary = _request_boss_entry(entry_mode_id)
+			var entry_request: Dictionary = entry_result.get("request", {})
+			return _set_ui_action_result(bool(entry_result.get("ok", false)), action, {
+				"mode_id": entry_mode_id,
+				"request_type": String(entry_request.get("action_type", "")),
+				"authoritative": bool(entry_request.get("server_authoritative", false)),
+				"last_error_code": String(entry_result.get("last_error_code", "")),
 			})
 		"request_activity_claim":
 			var claim_kind := String(row.get("activity_kind", ""))

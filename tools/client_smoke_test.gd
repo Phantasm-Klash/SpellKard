@@ -1957,6 +1957,11 @@ func _process(_delta: float) -> bool:
 	if not _validate_boss_party_row_contract(world_boss_party_row, "world_boss", 4):
 		quit(1)
 		return true
+	var world_boss_entry: Dictionary = game_mode_model.validate_boss_entry("world_boss")
+	if not bool(world_boss_entry.get("ok", false)) or bool(world_boss_entry.get("client_result_authoritative", true)) or int(world_boss_entry.get("attempts_left", 0)) != 3:
+		push_error("Smoke test failed: world boss entry gate invalid %s" % [world_boss_entry])
+		quit(1)
+		return true
 	var transfer_result: Dictionary = main_node.call("_request_boss_card_transfer", "world_boss", "p1", "p2", "focus_lens")
 	if not bool(transfer_result.get("ok", false)) or String(transfer_result.get("request", {}).get("action_type", "")) != "transfer_card" or bool(transfer_result.get("request", {}).get("client_result_authoritative", true)):
 		push_error("Smoke test failed: world boss transfer request invalid")
@@ -2068,6 +2073,68 @@ func _process(_delta: float) -> bool:
 	if not _validate_boss_party_row_contract(instance_boss_party_row, "instance_boss", 8):
 		quit(1)
 		return true
+	var rejected_instance_access: Dictionary = main_node.call("_apply_server_instance_boss_access", {
+		"client_result_authoritative": true,
+		"entry_attempts_left": 9,
+		"entry_unlocked": true,
+	})
+	if bool(rejected_instance_access.get("ok", true)) or String(game_mode_model.last_error_code) != "client_authoritative_instance_boss_access":
+		push_error("Smoke test failed: client-authored instance boss access accepted %s" % [rejected_instance_access])
+		quit(1)
+		return true
+	var locked_instance_access: Dictionary = main_node.call("_apply_server_instance_boss_access", {
+		"entry_period": "weekly",
+		"entry_attempt_limit": 5,
+		"entry_attempts_used": 4,
+		"entry_attempts_left": 1,
+		"required_rating": "C",
+		"player_rating": "D",
+		"required_key_id": "instance_key_local_s0",
+		"owned_key_count": 0,
+		"entry_unlocked": false,
+		"server_authoritative": true,
+	})
+	if bool(locked_instance_access.get("ok", true)) or not ["entry_locked", "rating_required", "key_required"].has(String(locked_instance_access.get("reason", ""))):
+		push_error("Smoke test failed: locked instance boss access invalid %s state=%s" % [locked_instance_access, game_mode_model.instance_boss_state])
+		quit(1)
+		return true
+	var locked_entry: Dictionary = game_mode_model.validate_boss_entry("instance_boss")
+	var locked_entry_failures: Array = locked_entry.get("failures", [])
+	if bool(locked_entry.get("ok", true)) or not locked_entry_failures.has("entry_locked") or not locked_entry_failures.has("rating_required") or not locked_entry_failures.has("key_required") or bool(locked_entry.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: locked instance entry failures invalid %s" % [locked_entry])
+		quit(1)
+		return true
+	var locked_entry_request: Dictionary = main_node.call("_request_boss_entry", "instance_boss")
+	if bool(locked_entry_request.get("ok", true)) or String(locked_entry_request.get("last_error_code", "")) != "entry_locked":
+		push_error("Smoke test failed: locked instance entry request invalid %s" % [locked_entry_request])
+		quit(1)
+		return true
+	var unlocked_instance_access: Dictionary = main_node.call("_apply_server_instance_boss_access", {
+		"entry_period": "weekly",
+		"entry_attempt_limit": 5,
+		"entry_attempts_used": 2,
+		"entry_attempts_left": 3,
+		"required_rating": "C",
+		"player_rating": "B",
+		"required_key_id": "instance_key_local_s0",
+		"owned_key_count": 2,
+		"entry_unlocked": true,
+		"server_authoritative": true,
+	})
+	if not bool(unlocked_instance_access.get("ok", false)) or int(unlocked_instance_access.get("attempts_left", 0)) != 3:
+		push_error("Smoke test failed: unlocked instance boss access invalid %s state=%s" % [unlocked_instance_access, game_mode_model.instance_boss_state])
+		quit(1)
+		return true
+	var instance_entry_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_entry")
+	if not bool(instance_entry_row.get("entry_valid", false)) or not bool(instance_entry_row.get("server_authoritative", false)) or bool(instance_entry_row.get("client_result_authoritative", true)) or int(instance_entry_row.get("owned_key_count", 0)) != 2 or String(instance_entry_row.get("required_rating", "")) != "C":
+		push_error("Smoke test failed: instance boss entry row invalid %s" % [instance_entry_row])
+		quit(1)
+		return true
+	var instance_entry_request: Dictionary = main_node.call("_request_boss_entry", "instance_boss")
+	if not bool(instance_entry_request.get("ok", false)) or String(instance_entry_request.get("request", {}).get("action_type", "")) != "enter_boss_instance" or bool(instance_entry_request.get("request", {}).get("client_result_authoritative", true)):
+		push_error("Smoke test failed: instance boss entry request invalid %s" % [instance_entry_request])
+		quit(1)
+		return true
 	if main_node.call("_apply_instance_boss_result", {
 		"client_result_authoritative": true,
 		"boss_defeated": true,
@@ -2120,7 +2187,7 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	var game_mode_rows: Array[Dictionary] = main_node.call("_game_mode_rows")
-	if not _rows_have_ids(game_mode_rows, ["cert_rating", "cert_rank", "cert_top30", "cert_stage", "br_players", "br_pool", "br_round", "br_candidates", "br_zero_order", "world_boss_hp", "world_boss_attempts", "world_boss_party", "world_boss_transfer", "world_boss_result", "world_boss_announcement", "instance_boss_phase", "instance_boss_conditions", "instance_boss_stars", "instance_boss_party", "instance_boss_transfer", "instance_boss_result", "mode_action_log"]):
+	if not _rows_have_ids(game_mode_rows, ["cert_rating", "cert_rank", "cert_top30", "cert_stage", "br_players", "br_pool", "br_round", "br_candidates", "br_zero_order", "world_boss_hp", "world_boss_attempts", "world_boss_entry", "world_boss_party", "world_boss_transfer", "world_boss_result", "world_boss_announcement", "instance_boss_entry", "instance_boss_phase", "instance_boss_conditions", "instance_boss_stars", "instance_boss_party", "instance_boss_transfer", "instance_boss_result", "mode_action_log"]):
 		push_error("Smoke test failed: game mode rows incomplete")
 		quit(1)
 		return true

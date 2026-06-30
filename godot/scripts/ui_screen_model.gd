@@ -1087,6 +1087,9 @@ func _decorate_game_mode_state_rows(source_rows: Array[Dictionary]) -> Array[Dic
 				row["ui_action"] = "request_boss_transfer"
 				row["transfer_request"] = transfer_request
 				row["enabled"] = bool(transfer_request.get("valid", false))
+			"world_boss_entry", "instance_boss_entry":
+				row["ui_action"] = "request_boss_entry"
+				row["enabled"] = bool(row.get("entry_valid", false))
 		rows.append(row)
 	return rows
 

@@ -301,6 +301,7 @@
   "screen.mode.br.zero_order": "BR Zero Order",
   "screen.mode.boss.hp": "Boss HP",
   "screen.mode.boss.attempts": "Attempts",
+  "screen.mode.boss.entry": "Entry Gate",
   "screen.mode.boss.party": "Party",
   "screen.mode.boss.transfer": "Card Transfer",
   "screen.mode.boss.result": "Boss Result",
