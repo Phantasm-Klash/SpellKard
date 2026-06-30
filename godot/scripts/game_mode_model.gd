@@ -17,6 +17,8 @@ const BOSS_DISPLAY_RADIUS := 0.42
 const BOSS_ENTRY_RATING_ORDER := ["D", "C", "B", "A", "S"]
 const BOSS_FRIENDLY_FIRE_POLICIES := ["disabled", "player_bullets_only", "all_friendly_fire"]
 const BOSS_ARENA_POLICIES := ["fixed_directions", "shared_ring", "personal_lanes"]
+const BOSS_CARDINAL_LABELS: Array[String] = ["north", "east", "south", "west"]
+const BOSS_EIGHT_DIRECTION_LABELS: Array[String] = ["north", "north_east", "east", "south_east", "south", "south_west", "west", "north_west"]
 
 var matchmaking_model: RefCounted = null
 var network_match_model: RefCounted = null
@@ -387,8 +389,8 @@ func boss_formation_summary(mode_id: String) -> String:
 	return "%s %d slots %s %s" % [
 		mode_id,
 		int(validation.get("player_count", 0)),
+		String(validation.get("slot_layout_policy", "free_ring")),
 		String(validation.get("aim_policy", "toward_center")),
-		String(validation.get("friendly_fire", "disabled")),
 	]
 
 func boss_display_slots(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO, Vector2.ONE)) -> Array[Dictionary]:
@@ -411,6 +413,8 @@ func boss_display_slots(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO, 
 			"mode_id": mode_id,
 			"slot_index": int(position.get("slot_index", -1)),
 			"slot_count": int(position.get("slot_count", positions.size())),
+			"slot_label": String(position.get("slot_label", _boss_slot_label(int(position.get("slot_index", -1)), positions.size()))),
+			"slot_layout_policy": _boss_slot_layout_policy(positions.size()),
 			"normalized_spawn": spawn,
 			"normalized_display_position": normalized_position,
 			"screen_position": screen_position,
@@ -544,6 +548,8 @@ func validate_boss_formation(mode_id: String) -> Dictionary:
 		"arena_policy": String(state.get("arena_policy", "fixed_directions")),
 		"friendly_fire_warning": String(state.get("friendly_fire_warning", "none")),
 		"slot_angles_degrees": slot_angles,
+		"slot_layout_policy": _boss_slot_layout_policy(count),
+		"slot_labels": _boss_slot_labels(count),
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 	}
@@ -819,8 +825,32 @@ func _boss_positions(player_ids: Array[String]) -> Array[Dictionary]:
 			"aim_to_center": true,
 			"slot_index": i,
 			"slot_count": count,
+			"slot_label": _boss_slot_label(i, count),
+			"slot_layout_policy": _boss_slot_layout_policy(count),
 		})
 	return rows
+
+func _boss_slot_layout_policy(count: int) -> String:
+	match count:
+		4:
+			return "cardinal_4"
+		8:
+			return "eight_direction_8"
+		_:
+			return "even_ring_%d" % count
+
+func _boss_slot_labels(count: int) -> Array[String]:
+	var labels: Array[String] = []
+	for i in range(max(0, count)):
+		labels.append(_boss_slot_label(i, count))
+	return labels
+
+func _boss_slot_label(index: int, count: int) -> String:
+	if count == 4 and index >= 0 and index < BOSS_CARDINAL_LABELS.size():
+		return BOSS_CARDINAL_LABELS[index]
+	if count == 8 and index >= 0 and index < BOSS_EIGHT_DIRECTION_LABELS.size():
+		return BOSS_EIGHT_DIRECTION_LABELS[index]
+	return "slot_%02d" % max(0, index)
 
 func _boss_hp_row(row_id: String, state: Dictionary, persistent_hp: bool) -> Dictionary:
 	var current_hp := float(state.get("current_hp", 0.0))
@@ -871,6 +901,8 @@ func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 		"mode_id": mode_id,
 		"mode_category": "boss",
 		"player_count": int(state.get("player_count", positions.size())),
+		"slot_layout_policy": _boss_slot_layout_policy(positions.size()),
+		"slot_labels": _boss_slot_labels(positions.size()),
 		"min_players": BOSS_MIN_PLAYERS,
 		"max_players": BOSS_MAX_PLAYERS,
 		"boss_center": state.get("boss_center", BOSS_CENTER),
@@ -923,6 +955,8 @@ func _boss_formation_row(row_id: String, mode_id: String, state: Dictionary) -> 
 		"formation_valid": bool(validation.get("ok", false)),
 		"formation_failures": validation.get("failures", []),
 		"slot_angles_degrees": validation.get("slot_angles_degrees", []),
+		"slot_layout_policy": String(validation.get("slot_layout_policy", "")),
+		"slot_labels": validation.get("slot_labels", []),
 		"player_count": int(validation.get("player_count", 0)),
 		"min_players": BOSS_MIN_PLAYERS,
 		"max_players": BOSS_MAX_PLAYERS,

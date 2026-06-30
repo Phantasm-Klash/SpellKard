@@ -4640,13 +4640,30 @@ func _validate_boss_party_row_contract(row: Dictionary, mode_id: String, expecte
 	if String(row.get("aim_policy", "")) != "toward_center" or String(row.get("friendly_fire", "")) != "disabled" or bool(row.get("client_result_authoritative", true)):
 		push_error("Smoke test failed: boss party row authority/display contract invalid %s" % [row])
 		return false
+	var expected_layout_policy := "cardinal_4" if expected_count == 4 else ("eight_direction_8" if expected_count == 8 else "even_ring_%d" % expected_count)
+	if String(row.get("slot_layout_policy", "")) != expected_layout_policy:
+		push_error("Smoke test failed: boss party layout policy invalid %s" % [row])
+		return false
+	var expected_labels := _expected_boss_slot_labels(expected_count)
+	var slot_labels: Array = row.get("slot_labels", [])
+	if slot_labels.size() != expected_labels.size():
+		push_error("Smoke test failed: boss party slot labels missing %s" % [row])
+		return false
+	for i in range(expected_labels.size()):
+		if String(slot_labels[i]) != expected_labels[i]:
+			push_error("Smoke test failed: boss party slot label invalid %s expected=%s" % [row, expected_labels])
+			return false
 	if display_slots.size() != expected_count:
 		push_error("Smoke test failed: boss party display slots missing %s" % [row])
 		return false
-	for position in positions:
+	for i in range(positions.size()):
+		var position: Variant = positions[i]
 		var entry: Dictionary = position
 		var spawn: Vector2 = entry.get("spawn", Vector2.ZERO)
 		var aim: Vector2 = entry.get("aim", Vector2.ZERO)
+		if String(entry.get("slot_layout_policy", "")) != expected_layout_policy or String(entry.get("slot_label", "")) != expected_labels[i]:
+			push_error("Smoke test failed: boss position layout metadata invalid %s expected=%s" % [entry, expected_labels])
+			return false
 		if not bool(entry.get("aim_to_center", false)) or entry.get("aim_target", Vector2.INF) != Vector2.ZERO:
 			push_error("Smoke test failed: boss position does not target center %s" % [entry])
 			return false
@@ -4668,6 +4685,11 @@ func _validate_boss_display_slots(slots: Array[Dictionary], mode_id: String, exp
 		if String(slot.get("mode_id", "")) != mode_id or int(slot.get("slot_index", -1)) != i or int(slot.get("slot_count", -1)) != expected_count:
 			push_error("Smoke test failed: boss display slot identity invalid %s" % [slot])
 			return false
+		var expected_layout_policy := "cardinal_4" if expected_count == 4 else ("eight_direction_8" if expected_count == 8 else "even_ring_%d" % expected_count)
+		var expected_labels := _expected_boss_slot_labels(expected_count)
+		if String(slot.get("slot_layout_policy", "")) != expected_layout_policy or String(slot.get("slot_label", "")) != expected_labels[i]:
+			push_error("Smoke test failed: boss display slot layout metadata invalid %s expected=%s" % [slot, expected_labels])
+			return false
 		if bool(slot.get("client_result_authoritative", true)) or String(slot.get("friendly_fire", "")) != "disabled":
 			push_error("Smoke test failed: boss display slot authority invalid %s" % [slot])
 			return false
@@ -4684,6 +4706,16 @@ func _validate_boss_display_slots(slots: Array[Dictionary], mode_id: String, exp
 			push_error("Smoke test failed: boss display slot target invalid %s" % [slot])
 			return false
 	return true
+
+func _expected_boss_slot_labels(expected_count: int) -> Array[String]:
+	if expected_count == 4:
+		return ["north", "east", "south", "west"]
+	if expected_count == 8:
+		return ["north", "north_east", "east", "south_east", "south", "south_west", "west", "north_west"]
+	var labels: Array[String] = []
+	for i in range(max(0, expected_count)):
+		labels.append("slot_%02d" % i)
+	return labels
 
 func _validate_bullet_engine_graze_rules() -> bool:
 	var player := Vector2(100, 100)
