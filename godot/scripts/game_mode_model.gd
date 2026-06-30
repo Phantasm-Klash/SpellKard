@@ -431,6 +431,63 @@ func boss_display_slots(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO, 
 		})
 	return slots
 
+func boss_playfield_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO, Vector2.ONE)) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var state := _state_for_mode(mode_id)
+	var formation := validate_boss_formation(mode_id)
+	var entry := validate_boss_entry(mode_id)
+	var current_hp := float(state.get("current_hp", 0.0))
+	var max_hp := float(state.get("max_hp", 0.0))
+	var screen_center := playfield.position + Vector2(
+		BOSS_DISPLAY_CENTER.x * playfield.size.x,
+		BOSS_DISPLAY_CENTER.y * playfield.size.y
+	)
+	var radius_pixels := minf(playfield.size.x, playfield.size.y) * BOSS_DISPLAY_RADIUS
+	var screen_bounds := Rect2(screen_center - Vector2(radius_pixels, radius_pixels), Vector2(radius_pixels * 2.0, radius_pixels * 2.0))
+	return {
+		"ok": true,
+		"reason": "none",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"display_kind": "boss_playfield_projection",
+		"projection_scope": "local_display_only",
+		"boss_instance_id": String(state.get("boss_instance_id", "")),
+		"persistent_hp": mode_id == MODE_WORLD_BOSS,
+		"current_hp": current_hp,
+		"max_hp": max_hp,
+		"hp_ratio": 0.0 if max_hp <= 0.0 else clampf(current_hp / max_hp, 0.0, 1.0),
+		"center_normalized": BOSS_DISPLAY_CENTER,
+		"display_radius_ratio": BOSS_DISPLAY_RADIUS,
+		"screen_center": screen_center,
+		"screen_radius_pixels": radius_pixels,
+		"screen_bounds": screen_bounds,
+		"display_slots": boss_display_slots(mode_id, playfield),
+		"player_count": int(formation.get("player_count", 0)),
+		"slot_layout_policy": String(formation.get("slot_layout_policy", "")),
+		"slot_labels": formation.get("slot_labels", []),
+		"formation_valid": bool(formation.get("ok", false)),
+		"formation_failures": formation.get("failures", []),
+		"entry_valid": bool(entry.get("ok", false)),
+		"entry_failures": entry.get("failures", []),
+		"aim_policy": String(state.get("aim_policy", "toward_center")),
+		"friendly_fire": String(state.get("friendly_fire", "disabled")),
+		"arena_policy": String(state.get("arena_policy", "fixed_directions")),
+		"friendly_fire_warning": String(state.get("friendly_fire_warning", "none")),
+		"requires_server_confirmation": true,
+		"damage_authority": "server",
+		"settlement_authority": "server",
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
 func boss_local_status_row(row_id: String, mode_id: String) -> Dictionary:
 	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
 		return {
@@ -694,6 +751,7 @@ func _world_boss_rows() -> Array[Dictionary]:
 		_boss_entry_row("world_boss_entry", MODE_WORLD_BOSS, world_boss_state),
 		_boss_party_row("world_boss_party", MODE_WORLD_BOSS, world_boss_state),
 		_boss_formation_row("world_boss_formation", MODE_WORLD_BOSS, world_boss_state),
+		_boss_playfield_row("world_boss_playfield", MODE_WORLD_BOSS),
 		_boss_transfer_row("world_boss_transfer", MODE_WORLD_BOSS, world_boss_state),
 		_world_boss_result_row(),
 		{"id": "world_boss_announcement", "label_key": "screen.mode.boss.announcement", "value": str(world_boss_state.get("world_announcement", "")), "mode_category": "boss", "server_authoritative": bool(world_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": not str(world_boss_state.get("defeated_at", "")).is_empty()},
@@ -709,6 +767,7 @@ func _instance_boss_rows() -> Array[Dictionary]:
 		{"id": "instance_boss_stars", "label_key": "screen.mode.instance.stars", "value": int(instance_boss_state.get("stars", 0)), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": bool(instance_boss_state.get("cleared", false))},
 		_boss_party_row("instance_boss_party", MODE_INSTANCE_BOSS, instance_boss_state),
 		_boss_formation_row("instance_boss_formation", MODE_INSTANCE_BOSS, instance_boss_state),
+		_boss_playfield_row("instance_boss_playfield", MODE_INSTANCE_BOSS),
 		_boss_transfer_row("instance_boss_transfer", MODE_INSTANCE_BOSS, instance_boss_state),
 		_instance_boss_result_row(),
 	]
@@ -971,6 +1030,34 @@ func _boss_formation_row(row_id: String, mode_id: String, state: Dictionary) -> 
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 		"enabled": bool(validation.get("ok", false)),
+	}
+
+func _boss_playfield_row(row_id: String, mode_id: String) -> Dictionary:
+	var projection := boss_playfield_projection(mode_id)
+	return {
+		"id": row_id,
+		"label_key": "screen.mode.boss.playfield",
+		"value": "slots %d center %.2f,%.2f radius %.2f hp %.0f%%" % [
+			int(projection.get("player_count", 0)),
+			(projection.get("center_normalized", BOSS_DISPLAY_CENTER) as Vector2).x,
+			(projection.get("center_normalized", BOSS_DISPLAY_CENTER) as Vector2).y,
+			float(projection.get("display_radius_ratio", BOSS_DISPLAY_RADIUS)),
+			float(projection.get("hp_ratio", 0.0)) * 100.0,
+		],
+		"summary": "local display projection only; damage, hp deltas, rewards, and settlement stay server-authoritative",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"playfield_projection": projection,
+		"display_slots": projection.get("display_slots", []),
+		"projection_scope": String(projection.get("projection_scope", "local_display_only")),
+		"damage_authority": String(projection.get("damage_authority", "server")),
+		"settlement_authority": String(projection.get("settlement_authority", "server")),
+		"formation_valid": bool(projection.get("formation_valid", false)),
+		"entry_valid": bool(projection.get("entry_valid", false)),
+		"requires_server_confirmation": true,
+		"server_authoritative": bool(projection.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+		"enabled": bool(projection.get("ok", false)),
 	}
 
 func _boss_transfer_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
