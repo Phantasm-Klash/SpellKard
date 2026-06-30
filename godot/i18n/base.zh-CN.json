@@ -307,6 +307,7 @@
   "screen.mode.br.candidates": "大逃杀候选卡",
   "screen.mode.br.zero_order": "第零回合顺序",
   "screen.mode.boss.hp": "Boss 血量",
+  "screen.mode.boss.rules": "Boss 规则",
   "screen.mode.boss.attempts": "挑战次数",
   "screen.mode.boss.entry": "进入条件",
   "screen.mode.boss.party": "队伍",

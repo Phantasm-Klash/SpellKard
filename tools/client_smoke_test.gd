@@ -719,16 +719,22 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	var game_mode_state_rows: Array[Dictionary] = game_mode_model.mode_rows()
-	if not _rows_have_ids(game_mode_state_rows, ["world_boss_hp", "world_boss_party", "world_boss_formation", "world_boss_transfer", "world_boss_result", "instance_boss_hp", "instance_boss_party", "instance_boss_formation", "instance_boss_transfer", "instance_boss_result"]):
+	if not _rows_have_ids(game_mode_state_rows, ["world_boss_hp", "world_boss_rules", "world_boss_party", "world_boss_formation", "world_boss_transfer", "world_boss_result", "instance_boss_hp", "instance_boss_rules", "instance_boss_party", "instance_boss_formation", "instance_boss_transfer", "instance_boss_result"]):
 		push_error("Smoke test failed: boss mode state rows incomplete")
 		quit(1)
 		return true
 	var world_hp_row: Dictionary = _find_row_by_id(game_mode_state_rows, "world_boss_hp")
+	var world_rules_row: Dictionary = _find_row_by_id(game_mode_state_rows, "world_boss_rules")
 	var instance_hp_row: Dictionary = _find_row_by_id(game_mode_state_rows, "instance_boss_hp")
+	var instance_rules_row: Dictionary = _find_row_by_id(game_mode_state_rows, "instance_boss_rules")
 	var world_formation_row: Dictionary = _find_row_by_id(game_mode_state_rows, "world_boss_formation")
 	var instance_formation_row: Dictionary = _find_row_by_id(game_mode_state_rows, "instance_boss_formation")
 	if not bool(world_hp_row.get("persistent_hp", false)) or bool(instance_hp_row.get("persistent_hp", true)):
 		push_error("Smoke test failed: boss hp persistence flags invalid world=%s instance=%s" % [world_hp_row, instance_hp_row])
+		quit(1)
+		return true
+	if String(world_rules_row.get("friendly_fire", "")) != "disabled" or String(world_rules_row.get("arena_policy", "")) != "fixed_directions" or bool(world_rules_row.get("client_result_authoritative", true)) or String(instance_rules_row.get("rules_source", "")) != "local_default":
+		push_error("Smoke test failed: boss rules default rows invalid world=%s instance=%s" % [world_rules_row, instance_rules_row])
 		quit(1)
 		return true
 	if not bool(world_formation_row.get("formation_valid", false)) or bool(world_formation_row.get("client_result_authoritative", true)) or int((world_formation_row.get("items", []) as Array).size()) != 4:
@@ -2009,6 +2015,8 @@ func _process(_delta: float) -> bool:
 		"daily_attempt_limit": 3,
 		"daily_attempts_used": 1,
 		"daily_attempts_left": 2,
+		"friendly_fire": "player_bullets_only",
+		"arena_policy": "shared_ring",
 		"server_authoritative": true,
 	})
 	if not bool(server_world_boss_snapshot.get("ok", false)) or int(game_mode_model.world_boss_state.get("current_hp", 0)) != 40000 or int(game_mode_model.world_boss_state.get("daily_attempts_left", 0)) != 2:
@@ -2018,6 +2026,11 @@ func _process(_delta: float) -> bool:
 	var world_boss_hp_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "world_boss_hp")
 	if not bool(world_boss_hp_row.get("persistent_hp", false)) or not bool(world_boss_hp_row.get("server_authoritative", false)) or bool(world_boss_hp_row.get("client_result_authoritative", true)) or absf(float(world_boss_hp_row.get("hp_ratio", 0.0)) - 0.4) > 0.001:
 		push_error("Smoke test failed: world boss hp row authority contract invalid %s" % [world_boss_hp_row])
+		quit(1)
+		return true
+	var world_boss_rules_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "world_boss_rules")
+	if String(world_boss_rules_row.get("friendly_fire", "")) != "player_bullets_only" or String(world_boss_rules_row.get("arena_policy", "")) != "shared_ring" or String(world_boss_rules_row.get("friendly_fire_warning", "")) != "player_bullets_can_hit_allies" or String(world_boss_rules_row.get("rules_source", "")) != "server_snapshot" or bool(world_boss_rules_row.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: world boss rules row server projection invalid %s" % [world_boss_rules_row])
 		quit(1)
 		return true
 	if main_node.call("_apply_world_boss_result", {
@@ -2127,6 +2140,8 @@ func _process(_delta: float) -> bool:
 		"required_key_id": "instance_key_local_s0",
 		"owned_key_count": 2,
 		"entry_unlocked": true,
+		"friendly_fire": "all_friendly_fire",
+		"movement_area_policy": "personal_lanes",
 		"server_authoritative": true,
 	})
 	if not bool(unlocked_instance_access.get("ok", false)) or int(unlocked_instance_access.get("attempts_left", 0)) != 3:
@@ -2136,6 +2151,11 @@ func _process(_delta: float) -> bool:
 	var instance_entry_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_entry")
 	if not bool(instance_entry_row.get("entry_valid", false)) or not bool(instance_entry_row.get("server_authoritative", false)) or bool(instance_entry_row.get("client_result_authoritative", true)) or int(instance_entry_row.get("owned_key_count", 0)) != 2 or String(instance_entry_row.get("required_rating", "")) != "C":
 		push_error("Smoke test failed: instance boss entry row invalid %s" % [instance_entry_row])
+		quit(1)
+		return true
+	var instance_rules_row_after_access: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_rules")
+	if String(instance_rules_row_after_access.get("friendly_fire", "")) != "all_friendly_fire" or String(instance_rules_row_after_access.get("arena_policy", "")) != "personal_lanes" or String(instance_rules_row_after_access.get("friendly_fire_warning", "")) != "all_friendly_fire_enabled" or not bool(instance_rules_row_after_access.get("server_authoritative", false)) or bool(instance_rules_row_after_access.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: instance boss rules row server projection invalid %s" % [instance_rules_row_after_access])
 		quit(1)
 		return true
 	var instance_entry_request: Dictionary = main_node.call("_request_boss_entry", "instance_boss")

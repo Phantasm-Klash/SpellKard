@@ -15,6 +15,8 @@ const BOSS_CENTER := Vector2.ZERO
 const BOSS_DISPLAY_CENTER := Vector2(0.5, 0.5)
 const BOSS_DISPLAY_RADIUS := 0.42
 const BOSS_ENTRY_RATING_ORDER := ["D", "C", "B", "A", "S"]
+const BOSS_FRIENDLY_FIRE_POLICIES := ["disabled", "player_bullets_only", "all_friendly_fire"]
+const BOSS_ARENA_POLICIES := ["fixed_directions", "shared_ring", "personal_lanes"]
 
 var matchmaking_model: RefCounted = null
 var network_match_model: RefCounted = null
@@ -223,6 +225,7 @@ func apply_server_world_boss_snapshot(snapshot: Dictionary) -> Dictionary:
 	world_boss_state["defeated_by_user_id"] = str(snapshot.get("defeated_by_user_id", world_boss_state.get("defeated_by_user_id", "")))
 	world_boss_state["world_announcement"] = "world_boss_defeated" if bool(snapshot.get("announcement_emitted", false)) else str(world_boss_state.get("world_announcement", ""))
 	world_boss_state["server_authoritative"] = bool(snapshot.get("server_authoritative", true))
+	_apply_boss_rule_config(world_boss_state, snapshot)
 	last_action_status = "world_boss_snapshot"
 	last_error_code = "none"
 	return {"ok": true, "reason": "none", "current_hp": int(world_boss_state.get("current_hp", 0)), "attempts_left": int(world_boss_state.get("daily_attempts_left", 0))}
@@ -246,6 +249,7 @@ func apply_server_instance_boss_access(snapshot: Dictionary) -> Dictionary:
 	instance_boss_state["owned_key_count"] = max(0, int(snapshot.get("owned_key_count", instance_boss_state.get("owned_key_count", 0))))
 	instance_boss_state["entry_unlocked"] = bool(snapshot.get("entry_unlocked", _rating_meets_requirement(str(instance_boss_state.get("player_rating", "D")), str(instance_boss_state.get("required_rating", "C")))))
 	instance_boss_state["server_authoritative"] = bool(snapshot.get("server_authoritative", true))
+	_apply_boss_rule_config(instance_boss_state, snapshot)
 	var entry_check := validate_boss_entry(MODE_INSTANCE_BOSS)
 	last_action_status = "instance_boss_access"
 	last_error_code = "none" if bool(entry_check.get("ok", false)) else String((entry_check.get("failures", ["entry_locked"]) as Array)[0])
@@ -415,6 +419,8 @@ func boss_display_slots(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO, 
 			"aim_target": position.get("aim_target", BOSS_CENTER),
 			"aim_to_center": bool(position.get("aim_to_center", false)),
 			"friendly_fire": String(state.get("friendly_fire", "disabled")),
+			"arena_policy": String(state.get("arena_policy", "fixed_directions")),
+			"friendly_fire_warning": String(state.get("friendly_fire_warning", "none")),
 			"boss_center": state.get("boss_center", BOSS_CENTER),
 			"server_authoritative": bool(state.get("server_authoritative", false)),
 			"client_result_authoritative": false,
@@ -465,6 +471,9 @@ func boss_local_status_row(row_id: String, mode_id: String) -> Dictionary:
 		"mode_category": "boss",
 		"persistent_hp": mode_id == MODE_WORLD_BOSS,
 		"hp_ratio": 0.0 if max_hp <= 0.0 else clampf(current_hp / max_hp, 0.0, 1.0),
+		"friendly_fire": String(state.get("friendly_fire", "disabled")),
+		"arena_policy": String(state.get("arena_policy", "fixed_directions")),
+		"friendly_fire_warning": String(state.get("friendly_fire_warning", "none")),
 		"attempts_left": attempts_left,
 		"entry_valid": bool(entry.get("ok", false)),
 		"entry_failures": entry_failures,
@@ -532,6 +541,8 @@ func validate_boss_formation(mode_id: String) -> Dictionary:
 		"party_status": String(state.get("party_status", "waiting")),
 		"aim_policy": String(state.get("aim_policy", "toward_center")),
 		"friendly_fire": String(state.get("friendly_fire", "disabled")),
+		"arena_policy": String(state.get("arena_policy", "fixed_directions")),
+		"friendly_fire_warning": String(state.get("friendly_fire_warning", "none")),
 		"slot_angles_degrees": slot_angles,
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
@@ -668,6 +679,7 @@ func _battle_royale_rows() -> Array[Dictionary]:
 func _world_boss_rows() -> Array[Dictionary]:
 	return [
 		_boss_hp_row("world_boss_hp", world_boss_state, true),
+		_boss_rules_row("world_boss_rules", MODE_WORLD_BOSS, world_boss_state),
 		{"id": "world_boss_attempts", "label_key": "screen.mode.boss.attempts", "value": int(world_boss_state.get("daily_attempts_left", 0)), "mode_category": "boss", "server_authoritative": bool(world_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": int(world_boss_state.get("daily_attempts_left", 0)) > 0},
 		_boss_entry_row("world_boss_entry", MODE_WORLD_BOSS, world_boss_state),
 		_boss_party_row("world_boss_party", MODE_WORLD_BOSS, world_boss_state),
@@ -680,6 +692,7 @@ func _world_boss_rows() -> Array[Dictionary]:
 func _instance_boss_rows() -> Array[Dictionary]:
 	return [
 		_boss_hp_row("instance_boss_hp", instance_boss_state, false),
+		_boss_rules_row("instance_boss_rules", MODE_INSTANCE_BOSS, instance_boss_state),
 		_boss_entry_row("instance_boss_entry", MODE_INSTANCE_BOSS, instance_boss_state),
 		{"id": "instance_boss_phase", "label_key": "screen.mode.instance.phase", "value": str(instance_boss_state.get("boss_phase", "phase_1")), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": true},
 		{"id": "instance_boss_conditions", "label_key": "screen.mode.instance.conditions", "value": "clear %s" % bool(instance_boss_state.get("cleared", false)), "items": instance_boss_state.get("clear_conditions", []), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": true},
@@ -709,6 +722,10 @@ func _default_boss_state(is_world: bool) -> Dictionary:
 		"required_key_id": "" if is_world else "instance_key_local_s0",
 		"owned_key_count": 0,
 		"friendly_fire": "disabled",
+		"arena_policy": "fixed_directions",
+		"movement_area_policy": "fixed_directions",
+		"friendly_fire_warning": "none",
+		"rules_source": "local_default",
 		"party_ids": [],
 		"party_status": "waiting",
 		"positions": [],
@@ -820,6 +837,28 @@ func _boss_hp_row(row_id: String, state: Dictionary, persistent_hp: bool) -> Dic
 		"enabled": true,
 	}
 
+func _boss_rules_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
+	var friendly_fire := String(state.get("friendly_fire", "disabled"))
+	var arena_policy := String(state.get("arena_policy", state.get("movement_area_policy", "fixed_directions")))
+	var warning := String(state.get("friendly_fire_warning", _boss_friendly_fire_warning(friendly_fire)))
+	return {
+		"id": row_id,
+		"label_key": "screen.mode.boss.rules",
+		"value": "%s / %s" % [friendly_fire, arena_policy],
+		"summary": "server mode config display only; damage and settlement stay server-authoritative; warning %s" % warning,
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"friendly_fire": friendly_fire,
+		"arena_policy": arena_policy,
+		"movement_area_policy": arena_policy,
+		"friendly_fire_warning": warning,
+		"rules_source": String(state.get("rules_source", "local_default")),
+		"requires_server_confirmation": true,
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+		"enabled": true,
+	}
+
 func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
 	var positions: Array = state.get("positions", [])
 	var display_slots := boss_display_slots(mode_id)
@@ -837,6 +876,8 @@ func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 		"boss_center": state.get("boss_center", BOSS_CENTER),
 		"aim_policy": str(state.get("aim_policy", "toward_center")),
 		"friendly_fire": str(state.get("friendly_fire", "disabled")),
+		"arena_policy": str(state.get("arena_policy", "fixed_directions")),
+		"friendly_fire_warning": str(state.get("friendly_fire_warning", "none")),
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 		"enabled": true,
@@ -887,6 +928,8 @@ func _boss_formation_row(row_id: String, mode_id: String, state: Dictionary) -> 
 		"max_players": BOSS_MAX_PLAYERS,
 		"aim_policy": String(validation.get("aim_policy", "toward_center")),
 		"friendly_fire": String(validation.get("friendly_fire", "disabled")),
+		"arena_policy": String(validation.get("arena_policy", "fixed_directions")),
+		"friendly_fire_warning": String(validation.get("friendly_fire_warning", "none")),
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 		"enabled": bool(validation.get("ok", false)),
@@ -971,6 +1014,36 @@ func _calculate_instance_stars(result: Dictionary, cleared: bool) -> int:
 	if int(result.get("deaths", 99)) == 0 and int(result.get("bombs_used", 99)) <= int(result.get("bomb_limit", 3)):
 		stars += 1
 	return clampi(stars, 1, 3)
+
+func _apply_boss_rule_config(state: Dictionary, source: Dictionary) -> void:
+	var friendly_fire := _sanitized_boss_friendly_fire(String(source.get("friendly_fire", state.get("friendly_fire", "disabled"))))
+	var arena_policy := _sanitized_boss_arena_policy(String(source.get("arena_policy", source.get("movement_area_policy", state.get("arena_policy", "fixed_directions")))))
+	state["friendly_fire"] = friendly_fire
+	state["arena_policy"] = arena_policy
+	state["movement_area_policy"] = arena_policy
+	state["friendly_fire_warning"] = _boss_friendly_fire_warning(friendly_fire)
+	state["rules_source"] = "server_snapshot" if bool(source.get("server_authoritative", state.get("server_authoritative", false))) else "local_default"
+
+func _sanitized_boss_friendly_fire(policy: String) -> String:
+	var normalized := policy.strip_edges().to_lower()
+	if BOSS_FRIENDLY_FIRE_POLICIES.has(normalized):
+		return normalized
+	return "disabled"
+
+func _sanitized_boss_arena_policy(policy: String) -> String:
+	var normalized := policy.strip_edges().to_lower()
+	if BOSS_ARENA_POLICIES.has(normalized):
+		return normalized
+	return "fixed_directions"
+
+func _boss_friendly_fire_warning(policy: String) -> String:
+	match _sanitized_boss_friendly_fire(policy):
+		"player_bullets_only":
+			return "player_bullets_can_hit_allies"
+		"all_friendly_fire":
+			return "all_friendly_fire_enabled"
+		_:
+			return "none"
 
 func _rating_meets_requirement(player_rating: String, required_rating: String) -> bool:
 	if required_rating.strip_edges().is_empty():
