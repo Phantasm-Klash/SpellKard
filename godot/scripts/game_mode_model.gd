@@ -385,6 +385,65 @@ func boss_formation_summary(mode_id: String) -> String:
 		String(validation.get("friendly_fire", "disabled")),
 	]
 
+func boss_local_status_row(row_id: String, mode_id: String) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"id": row_id,
+			"label_key": "screen.mode.boss.entry",
+			"value": "invalid boss mode",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"enabled": false,
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var state := _state_for_mode(mode_id)
+	var entry := validate_boss_entry(mode_id)
+	var formation := validate_boss_formation(mode_id)
+	var current_hp := float(state.get("current_hp", 0.0))
+	var max_hp := float(state.get("max_hp", 0.0))
+	var attempts_left := int(entry.get("attempts_left", 0))
+	var entry_failures := _string_array(entry.get("failures", []))
+	var entry_status := "ready" if bool(entry.get("ok", false)) else ",".join(entry_failures)
+	var player_count := int(formation.get("player_count", 0))
+	var result_status := String(state.get("last_result_status", "pending"))
+	return {
+		"id": row_id,
+		"label_key": "screen.mode.world_boss" if mode_id == MODE_WORLD_BOSS else "screen.mode.instance_boss",
+		"value": "hp %.0f/%.0f attempts %d party %d/%d-%d entry %s" % [
+			current_hp,
+			max_hp,
+			attempts_left,
+			player_count,
+			BOSS_MIN_PLAYERS,
+			BOSS_MAX_PLAYERS,
+			entry_status,
+		],
+		"summary": "hp %.0f/%.0f attempts %d; server settlement %s; client can only request entry or transfer" % [
+			current_hp,
+			max_hp,
+			attempts_left,
+			result_status,
+		],
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"persistent_hp": mode_id == MODE_WORLD_BOSS,
+		"hp_ratio": 0.0 if max_hp <= 0.0 else clampf(current_hp / max_hp, 0.0, 1.0),
+		"attempts_left": attempts_left,
+		"entry_valid": bool(entry.get("ok", false)),
+		"entry_failures": entry_failures,
+		"formation_valid": bool(formation.get("ok", false)),
+		"formation_failures": _string_array(formation.get("failures", [])),
+		"player_count": player_count,
+		"min_players": BOSS_MIN_PLAYERS,
+		"max_players": BOSS_MAX_PLAYERS,
+		"requires_server_confirmation": true,
+		"settlement_authority": "server",
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+		"enabled": true,
+	}
+
 func validate_boss_formation(mode_id: String) -> Dictionary:
 	var failures: Array[String] = []
 	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):

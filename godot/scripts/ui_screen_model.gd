@@ -351,7 +351,7 @@ func _layout_primary_rows(screen_id: String) -> Array[String]:
 		"main_menu":
 			return ["play", "collection", "community", "player_settings"]
 		"play":
-			return ["play_practice", "play_matchmaking", "play_pvp_duel", "play_world_boss", "play_room", "play_deck"]
+			return ["play_practice", "play_matchmaking", "play_pvp_duel", "play_world_boss", "play_world_boss_status", "play_room", "play_deck"]
 		"certification":
 			return ["cert_queue", "cert_practice", "cert_deck", "cert_rules"]
 		"community":
@@ -1043,9 +1043,33 @@ func _decorate_match_rows(source_rows: Array[Dictionary]) -> Array[Dictionary]:
 				row["ui_action"] = "cancel_queue"
 			"reconnect_status":
 				row["ui_action"] = "finish_reconnect"
+			"matchmaking_boss":
+				row = _decorate_boss_matchmaking_card(row)
 		rows.append(row)
+	rows.append_array(_match_boss_status_rows())
 	rows.append(_local_settlement_preview_row())
 	return rows
+
+func _match_boss_status_rows() -> Array[Dictionary]:
+	var rows: Array[Dictionary] = []
+	if game_mode_model == null or not game_mode_model.has_method("boss_local_status_row"):
+		return rows
+	rows.append(game_mode_model.boss_local_status_row("match_world_boss_status", "world_boss"))
+	rows.append(game_mode_model.boss_local_status_row("match_instance_boss_status", "instance_boss"))
+	return rows
+
+func _decorate_boss_matchmaking_card(row: Dictionary) -> Dictionary:
+	if game_mode_model == null or not game_mode_model.has_method("boss_local_status_row"):
+		return row
+	var boss_status: Dictionary = game_mode_model.boss_local_status_row("match_world_boss_status_preview", "world_boss")
+	var status_text := String(boss_status.get("summary", boss_status.get("value", "")))
+	if not status_text.is_empty():
+		row["summary"] = "%s | %s" % [String(row.get("summary", "")), status_text]
+		row["value"] = "%s | %s" % [String(row.get("value", "")), String(boss_status.get("value", ""))]
+	row["requires_server_confirmation"] = true
+	row["settlement_authority"] = "server"
+	row["client_result_authoritative"] = false
+	return row
 
 func _local_settlement_preview_row() -> Dictionary:
 	var selected_mode := "certification"
@@ -1281,7 +1305,7 @@ func _section_for_row(screen_id: String, row: Dictionary) -> String:
 				return "online_play"
 			if row_id == "play_pvp_duel" or row_id == "play_battle_royale":
 				return "pvp"
-			if row_id == "play_world_boss" or row_id == "play_instance_boss":
+			if row_id == "play_world_boss" or row_id == "play_instance_boss" or row_id == "play_world_boss_status" or row_id == "play_instance_boss_status":
 				return "boss"
 			if row_id.begins_with("play_"):
 				return "modes"
@@ -1314,6 +1338,8 @@ func _section_for_row(screen_id: String, row: Dictionary) -> String:
 				return "loadout"
 			if row_id == "local_settlement_preview":
 				return "results"
+			if row_id == "match_world_boss_status" or row_id == "match_instance_boss_status":
+				return "boss"
 			if row_id.begins_with("matchmaking_"):
 				return "matchmaking"
 			if row_id == "selected_mode" or target_screen == "modes" or action == "select_mode" or row_id.begins_with("mode_"):

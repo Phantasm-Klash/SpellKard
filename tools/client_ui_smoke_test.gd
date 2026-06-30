@@ -100,11 +100,17 @@ func _validate_play_pages() -> bool:
 		return _fail("status cards should not duplicate subpage cards %s" % status_text)
 	if not _contains_all(String(snapshot.get("overview_cards_text", "")), _text_keys(["screen.play.practice", "screen.play.matchmaking", "screen.mode.pvp_duel", "screen.mode.world_boss"])):
 		return _fail("play overview cards missing expected mode entries %s" % String(snapshot.get("overview_cards_text", "")))
+	if not String(snapshot.get("overview_cards_text", "")).contains("hp"):
+		return _fail("play overview cards missing boss local status %s" % String(snapshot.get("overview_cards_text", "")))
 	if _contains_any(String(snapshot.get("quick_actions_text", "")), _text_keys(["screen.main.start_match", "screen.main.network_match", "screen.play.practice"])):
 		return _fail("play quick actions should only carry shell navigation %s" % String(snapshot.get("quick_actions_text", "")))
 	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 32)
-	if not _rows_have_ids(rows, ["play_practice", "play_matchmaking", "play_pvp_duel", "play_world_boss", "play_certification_hub"]):
+	if not _rows_have_ids(rows, ["play_practice", "play_matchmaking", "play_pvp_duel", "play_world_boss", "play_world_boss_status", "play_instance_boss_status", "play_certification_hub"]):
 		return _fail("play rows missing expected modes")
+	if not _assert_boss_status_row(_row_by_id(rows, "play_world_boss_status"), "world_boss"):
+		return false
+	if not _assert_boss_status_row(_row_by_id(rows, "play_instance_boss_status"), "instance_boss"):
+		return false
 	var focus_result: Dictionary = main_node.call("_ui_press_visible_focus_action")
 	await _settle_frames(2)
 	if not bool(focus_result.get("ok", false)) or String(focus_result.get("row_id", "")) != "play_matchmaking" or String(main_node.get("ui_screen_model").current_screen) != "match":
@@ -131,6 +137,13 @@ func _validate_play_pages() -> bool:
 		return _fail("match overview cards invalid %s" % String(snapshot.get("overview_cards_text", "")))
 	if not _contains_all(String(snapshot.get("overview_cards_text", "")), _text_keys(["screen.match.local_settlement"])):
 		return _fail("match overview cards missing settlement loop %s" % String(snapshot.get("overview_cards_text", "")))
+	rows = main_node.call("_ui_screen_rows", 64)
+	if not _rows_have_ids(rows, ["matchmaking_boss", "match_world_boss_status", "match_instance_boss_status"]):
+		return _fail("match rows missing boss status rows")
+	if not _assert_boss_status_row(_row_by_id(rows, "match_world_boss_status"), "world_boss"):
+		return false
+	if not _assert_boss_status_row(_row_by_id(rows, "match_instance_boss_status"), "instance_boss"):
+		return false
 	snapshot = await _open_snapshot("network_match")
 	if not _assert_page_health(snapshot, "network_match", 2, 4):
 		return false
@@ -603,6 +616,23 @@ func _row_by_id(rows: Array[Dictionary], row_id: String) -> Dictionary:
 		if String(row.get("id", "")) == row_id:
 			return row
 	return {}
+
+func _assert_boss_status_row(row: Dictionary, mode_id: String) -> bool:
+	if row.is_empty():
+		return _fail("boss status row missing for %s" % mode_id)
+	if String(row.get("mode_id", "")) != mode_id:
+		return _fail("boss status mode mismatch %s row=%s" % [mode_id, row])
+	if String(row.get("mode_category", "")) != "boss":
+		return _fail("boss status row missing boss category %s" % [row])
+	if bool(row.get("client_result_authoritative", true)):
+		return _fail("boss status row must not be client authoritative %s" % [row])
+	if String(row.get("settlement_authority", "")) != "server":
+		return _fail("boss status row must show server settlement authority %s" % [row])
+	if not bool(row.get("requires_server_confirmation", false)):
+		return _fail("boss status row must require server confirmation %s" % [row])
+	if not String(row.get("value", "")).contains("hp") or not String(row.get("value", "")).contains("attempts"):
+		return _fail("boss status row value should include hp and attempts %s" % [row])
+	return true
 
 func _text(key: String) -> String:
 	var localization: Variant = main_node.get("localization")
