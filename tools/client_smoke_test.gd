@@ -2097,6 +2097,9 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: rejected world boss result row became authoritative %s" % [rejected_world_result_row])
 		quit(1)
 		return true
+	if not _validate_boss_result_authority_row(rejected_world_result_row, "world_boss", false):
+		quit(1)
+		return true
 	if not main_node.call("_apply_world_boss_result", {
 		"boss_instance_id": "world_boss_local_s0_001",
 		"match_id": "wb-smoke-pending",
@@ -2137,6 +2140,9 @@ func _process(_delta: float) -> bool:
 	var world_result_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "world_boss_result")
 	if not bool(world_result_row.get("enabled", false)) or not bool(world_result_row.get("server_authoritative", false)) or bool(world_result_row.get("client_result_authoritative", true)) or String(world_result_row.get("result_source", "")) != "server_settlement_projection":
 		push_error("Smoke test failed: world boss result row authority invalid %s" % [world_result_row])
+		quit(1)
+		return true
+	if not _validate_boss_result_authority_row(world_result_row, "world_boss", true):
 		quit(1)
 		return true
 	if int(world_result_row.get("damage_this_match", 0)) != 5000 or int(world_result_row.get("global_damage_applied", 0)) != 5000 or String(world_result_row.get("result_status", "")) != "defeated":
@@ -2272,6 +2278,9 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: rejected instance boss result row became authoritative %s" % [rejected_instance_result_row])
 		quit(1)
 		return true
+	if not _validate_boss_result_authority_row(rejected_instance_result_row, "instance_boss", false):
+		quit(1)
+		return true
 	if not main_node.call("_apply_instance_boss_result", {
 		"match_id": "ib-smoke-001",
 		"boss_defeated": true,
@@ -2299,6 +2308,9 @@ func _process(_delta: float) -> bool:
 	var instance_result_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_result")
 	if not bool(instance_result_row.get("enabled", false)) or not bool(instance_result_row.get("server_authoritative", false)) or bool(instance_result_row.get("client_result_authoritative", true)) or String(instance_result_row.get("result_source", "")) != "server_settlement_projection":
 		push_error("Smoke test failed: instance boss result row authority invalid %s" % [instance_result_row])
+		quit(1)
+		return true
+	if not _validate_boss_result_authority_row(instance_result_row, "instance_boss", true):
 		quit(1)
 		return true
 	if not bool(instance_result_row.get("cleared", false)) or int(instance_result_row.get("stars", 0)) != 3 or String(instance_result_row.get("result_status", "")) != "cleared":
@@ -4278,6 +4290,9 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay input invalid filter rows invalid %s" % [bad_input_rows])
 		quit(1)
 		return true
+	if not _validate_replay_row_authority(bad_input_rows[0], "local_practice_verification_only", "server"):
+		quit(1)
+		return true
 	if main_node.call("_load_selected_replay_snapshot") or String(main_node.get("replay_file_status")) != "load_failed" or String(main_node.get("replay_index_action_status")) != "input_tick_gap":
 		push_error("Smoke test failed: replay input invalid load was not blocked status=%s action=%s" % [main_node.get("replay_file_status"), main_node.get("replay_index_action_status")])
 		quit(1)
@@ -4309,6 +4324,9 @@ func _process(_delta: float) -> bool:
 			or String(server_replay_rows[0].get("load_rejection_reason", "")) != "server_record_pending_audit" \
 			or String(server_replay_rows[0].get("local_load_guard_reason", "")) != "server_record_pending_audit":
 		push_error("Smoke test failed: server replay pending-audit row invalid %s" % [server_replay_rows])
+		quit(1)
+		return true
+	if not _validate_replay_row_authority(server_replay_rows[0], "local_practice_verification_only", "server"):
 		quit(1)
 		return true
 	var server_replay_guard: Dictionary = replay_list_model.local_load_guard_for_entry(server_replay)
@@ -4382,6 +4400,9 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay UI verification summary invalid %s" % [replay_entry_row])
 		quit(1)
 		return true
+	if not _validate_replay_row_authority(replay_entry_row, "local_practice_verification_only", "server"):
+		quit(1)
+		return true
 	if String(replay_entry_row.get("section", "")) != "replay_local_ready" or String(replay_entry_row.get("section_label_key", "")) != "ui.menu_section_replay_local_ready":
 		push_error("Smoke test failed: replay UI verification filter section invalid %s" % [replay_entry_row])
 		quit(1)
@@ -4401,6 +4422,9 @@ func _process(_delta: float) -> bool:
 		return true
 	if int(selected_row.get("final_result_hash", 0)) == 0 or not bool(selected_row.get("can_verify_final_hash", false)) or String(selected_row.get("verification_status", "")) != "local_final_hash_ready" or String(selected_row.get("verification_scope", "")) != "local_practice_hash" or not String(selected_row.get("verification_summary", "")).contains("local practice final hash ready") or String(selected_row.get("replay_authority_scope", "")) != "local_practice_record":
 		push_error("Smoke test failed: replay verification row contract invalid %s" % [selected_row])
+		quit(1)
+		return true
+	if not _validate_replay_row_authority(selected_row, "local_practice_verification_only", "server"):
 		quit(1)
 		return true
 	var saved_snapshot: Dictionary = replay_store.load_snapshot()
@@ -4587,6 +4611,21 @@ func _find_replay_index_entry(entries: Array[Dictionary], replay_id: String) -> 
 		if String(entry.get("replay_id", "")) == replay_id:
 			return entry
 	return {}
+
+func _validate_replay_row_authority(row: Dictionary, expected_hash_authority: String, expected_settlement_authority: String) -> bool:
+	if row.is_empty():
+		push_error("Smoke test failed: replay authority row missing")
+		return false
+	if bool(row.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: replay row became client result authoritative %s" % [row])
+		return false
+	if String(row.get("local_hash_authority", "")) != expected_hash_authority:
+		push_error("Smoke test failed: replay local hash authority invalid %s" % [row])
+		return false
+	if String(row.get("settlement_authority", "")) != expected_settlement_authority or String(row.get("reward_authority", "")) != expected_settlement_authority:
+		push_error("Smoke test failed: replay settlement/reward authority invalid %s" % [row])
+		return false
+	return true
 
 func _validate_menu_scene_contracts(scene_contracts: Array[Dictionary]) -> bool:
 	for contract in scene_contracts:
@@ -4949,6 +4988,36 @@ func _validate_boss_draw_snapshot(snapshot: Dictionary, mode_id: String, expecte
 	if not _validate_boss_hud_projection({"hud_projection": snapshot.get("hud_projection", {})}, mode_id, expected_count, expected_hp_ratio):
 		return false
 	return _validate_boss_playfield_projection({"playfield_projection": snapshot.get("projection", {})}, mode_id, expected_count, expected_hp_ratio)
+
+func _validate_boss_result_authority_row(row: Dictionary, mode_id: String, expect_server_projection: bool) -> bool:
+	if row.is_empty():
+		push_error("Smoke test failed: boss result row missing for %s" % mode_id)
+		return false
+	if String(row.get("mode_id", "")) != mode_id or String(row.get("mode_category", "")) != "boss":
+		push_error("Smoke test failed: boss result identity invalid %s" % [row])
+		return false
+	if bool(row.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: boss result became client-authoritative %s" % [row])
+		return false
+	if String(row.get("damage_authority", "")) != "server" or String(row.get("reward_authority", "")) != "server" or String(row.get("settlement_authority", "")) != "server":
+		push_error("Smoke test failed: boss result authority labels invalid %s" % [row])
+		return false
+	if not bool(row.get("requires_server_confirmation", false)):
+		push_error("Smoke test failed: boss result missing server confirmation flag %s" % [row])
+		return false
+	if bool(row.get("persistent_hp", false)) != (mode_id == "world_boss"):
+		push_error("Smoke test failed: boss result persistence invalid %s" % [row])
+		return false
+	if bool(row.get("server_authoritative", false)) != expect_server_projection:
+		push_error("Smoke test failed: boss result server projection state invalid %s expected=%s" % [row, expect_server_projection])
+		return false
+	if expect_server_projection and String(row.get("result_source", "")) != "server_settlement_projection":
+		push_error("Smoke test failed: boss result source invalid %s" % [row])
+		return false
+	if not expect_server_projection and String(row.get("result_source", "")) == "server_settlement_projection":
+		push_error("Smoke test failed: boss rejected result carried server projection %s" % [row])
+		return false
+	return true
 
 func _validate_boss_display_slots(slots: Array[Dictionary], mode_id: String, expected_count: int) -> bool:
 	if slots.size() != expected_count:

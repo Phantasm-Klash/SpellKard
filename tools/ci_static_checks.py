@@ -1078,6 +1078,7 @@ def check_protocol_client_scripts() -> list[str]:
         "godot/scripts/battle_network_client_model.gd",
         "godot/scripts/network_security_model.gd",
         "godot/scripts/protocol_descriptor_model.gd",
+        "godot/scripts/game_mode_model.gd",
     )
     for rel in required:
         path = ROOT / rel
@@ -1113,6 +1114,58 @@ def check_protocol_client_scripts() -> list[str]:
         ]:
             if token not in text:
                 errors.append(f"tools/client_smoke_test.gd: missing BattleModeAction smoke token {token}")
+    game_mode_model = ROOT / "godot" / "scripts" / "game_mode_model.gd"
+    if game_mode_model.exists():
+        text = game_mode_model.read_text(encoding="utf-8")
+        for token in [
+            "func _world_boss_result_row()",
+            "func _instance_boss_result_row()",
+            "\"damage_authority\": \"server\"",
+            "\"reward_authority\": \"server\"",
+            "\"settlement_authority\": \"server\"",
+            "\"requires_server_confirmation\": true",
+            "\"client_result_authoritative\": false",
+            "\"defeat_timestamp_source\"",
+            "\"star_conditions\"",
+        ]:
+            if token not in text:
+                errors.append(f"godot/scripts/game_mode_model.gd: missing Boss result authority token {token}")
+    smoke_test = ROOT / "tools" / "client_smoke_test.gd"
+    if smoke_test.exists():
+        text = smoke_test.read_text(encoding="utf-8")
+        for token in [
+            "func _validate_boss_result_authority_row(",
+            "\"damage_authority\"",
+            "\"reward_authority\"",
+            "\"settlement_authority\"",
+            "\"requires_server_confirmation\"",
+        ]:
+            if token not in text:
+                errors.append(f"tools/client_smoke_test.gd: missing Boss result authority smoke token {token}")
+    replay_list = ROOT / "godot" / "scripts" / "replay_list_model.gd"
+    if replay_list.exists():
+        text = replay_list.read_text(encoding="utf-8")
+        for token in [
+            "\"local_hash_authority\": \"local_practice_verification_only\"",
+            "\"settlement_authority\": \"server\"",
+            "\"reward_authority\": \"server\"",
+            "\"client_result_authoritative\": false",
+            "\"local_playback_authority\"",
+            "\"requires_server_audit\"",
+        ]:
+            if token not in text:
+                errors.append(f"godot/scripts/replay_list_model.gd: missing replay authority token {token}")
+    smoke_test = ROOT / "tools" / "client_smoke_test.gd"
+    if smoke_test.exists():
+        text = smoke_test.read_text(encoding="utf-8")
+        for token in [
+            "func _validate_replay_row_authority(",
+            "\"local_hash_authority\"",
+            "\"settlement_authority\"",
+            "\"reward_authority\"",
+        ]:
+            if token not in text:
+                errors.append(f"tools/client_smoke_test.gd: missing replay authority smoke token {token}")
     return errors
 
 
