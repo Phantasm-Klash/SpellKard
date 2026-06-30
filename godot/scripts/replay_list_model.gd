@@ -363,7 +363,8 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 	var verification_status := _entry_verification_status(entry, final_result_hash, metadata_valid)
 	var load_rejection_reason := _entry_local_load_rejection_reason(entry, verification_status, metadata_valid, server_authoritative, server_claim_fields)
 	var replay_authority_scope := "server_authoritative_record" if server_authoritative else "local_practice_record"
-	var requires_server_audit := server_authoritative or _entry_verification_section(verification_status) == "replay_server_pending"
+	var rejected_server_claim := not server_claim_fields.is_empty()
+	var requires_server_audit := server_authoritative or rejected_server_claim or _entry_verification_section(verification_status) == "replay_server_pending"
 	var local_load_policy := "blocked_server_audit" if requires_server_audit else ("blocked_local_integrity" if not load_rejection_reason.is_empty() else "loadable_local_practice")
 	var filtered_indices := _filtered_indices()
 	var filtered_index := filtered_indices.find(index)
@@ -464,6 +465,7 @@ func _boss_practice_verification_context(entry: Dictionary, verification_status:
 	if not _is_boss_spellbook_practice_entry(entry):
 		return {}
 	var no_server_claims := not server_authoritative and server_claim_fields.is_empty()
+	var requires_server_audit := server_authoritative or not server_claim_fields.is_empty()
 	var loadable := metadata_valid and no_server_claims and load_rejection_reason.is_empty()
 	return {
 		"contract_kind": "boss_practice_replay_index_verification",
@@ -474,7 +476,7 @@ func _boss_practice_verification_context(entry: Dictionary, verification_status:
 		"verification_scope": "local_practice_hash" if no_server_claims else "rejected_server_claim",
 		"preview_authority_scope": String(entry.get("preview_authority_scope", "")),
 		"replay_verification_scope": "local_practice_hash",
-		"local_playback_authority": "local_practice_hash",
+		"local_playback_authority": "local_practice_hash" if not requires_server_audit else "server_audit_required",
 		"spellbook_id": String(entry.get("spellbook_id", "")),
 		"phase_id": String(entry.get("phase_id", "")),
 		"preview_seed": int(entry.get("preview_seed", entry.get("match_seed", 0))),
@@ -490,10 +492,12 @@ func _boss_practice_verification_context(entry: Dictionary, verification_status:
 		"preview_phase_ids": (entry.get("preview_phase_ids", []) as Array).duplicate(),
 		"preview_phase_signature_digests": (entry.get("preview_phase_signature_digests", []) as Array).duplicate(),
 		"performance_budget_status": String(entry.get("performance_budget_status", "")),
-		"local_load_policy": "loadable_local_practice" if load_rejection_reason.is_empty() else "blocked_local_integrity",
+		"local_load_policy": "blocked_server_audit" if requires_server_audit else ("loadable_local_practice" if load_rejection_reason.is_empty() else "blocked_local_integrity"),
 		"local_load_guard_reason": load_rejection_reason,
 		"online_outcome_status": "server_required",
-		"requires_server_audit": false,
+		"requires_server_audit": requires_server_audit,
+		"server_audit_status": "pending" if requires_server_audit else "not_required",
+		"server_authority_claim_fields": server_claim_fields,
 		"damage_authority": "server",
 		"reward_authority": "server",
 		"settlement_authority": "server",
@@ -684,6 +688,8 @@ func local_load_guard_for_entry(entry: Dictionary) -> Dictionary:
 	var verification_status := _entry_verification_status(entry, int(entry.get("final_result_hash", 0)), metadata_valid)
 	var server_claim_fields := _entry_server_authority_claim_fields(entry)
 	var rejection_reason := _entry_local_load_rejection_reason(entry, verification_status, metadata_valid, server_authoritative, server_claim_fields)
+	var requires_server_audit := server_authoritative or not server_claim_fields.is_empty() or _entry_verification_section(verification_status) == "replay_server_pending"
+	var local_load_policy := "blocked_server_audit" if requires_server_audit else ("blocked_local_integrity" if not rejection_reason.is_empty() else "loadable_local_practice")
 	return {
 		"ok": rejection_reason.is_empty(),
 		"reason": "loadable" if rejection_reason.is_empty() else rejection_reason,
@@ -693,6 +699,14 @@ func local_load_guard_for_entry(entry: Dictionary) -> Dictionary:
 		"metadata_valid": metadata_valid,
 		"server_authoritative": server_authoritative,
 		"server_authority_claim_fields": server_claim_fields,
+		"local_load_policy": local_load_policy,
+		"requires_server_audit": requires_server_audit,
+		"server_audit_status": "pending" if requires_server_audit else "not_required",
+		"local_playback_authority": "server_audit_required" if requires_server_audit else "local_practice_hash",
+		"local_hash_authority": "local_practice_verification_only",
+		"settlement_authority": "server",
+		"reward_authority": "server",
+		"client_result_authoritative": false,
 	}
 
 func _entry_matches_active_filter(entry: Dictionary) -> bool:

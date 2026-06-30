@@ -4632,14 +4632,24 @@ func _process(_delta: float) -> bool:
 	var fallback_claim_context: Dictionary = fallback_claim_row.get("boss_practice_verification", {})
 	var fallback_claim_guard: Dictionary = fallback_replay_list_model.local_load_guard_for_entry(fallback_claim_replay)
 	if String(fallback_claim_row.get("verification_scope", "")) != "rejected_server_claim" \
-			or String(fallback_claim_row.get("local_load_policy", "")) != "blocked_local_integrity" \
+			or String(fallback_claim_row.get("local_load_policy", "")) != "blocked_server_audit" \
+			or String(fallback_claim_row.get("server_audit_status", "")) != "pending" \
+			or not bool(fallback_claim_row.get("requires_server_audit", false)) \
 			or String(fallback_claim_row.get("load_rejection_reason", "")) != "server_authority_claim_rejected" \
 			or bool(fallback_claim_row.get("can_play", true)) \
 			or bool(fallback_claim_context.get("ok", true)) \
 			or String(fallback_claim_context.get("verification_scope", "")) != "rejected_server_claim" \
 			or String(fallback_claim_context.get("reason", "")) != "server_authority_claim_rejected" \
+			or String(fallback_claim_context.get("local_load_policy", "")) != "blocked_server_audit" \
+			or String(fallback_claim_context.get("server_audit_status", "")) != "pending" \
+			or not bool(fallback_claim_context.get("requires_server_audit", false)) \
+			or String(fallback_claim_context.get("local_playback_authority", "")) != "server_audit_required" \
+			or (fallback_claim_context.get("server_authority_claim_fields", []) as Array).is_empty() \
 			or bool(fallback_claim_guard.get("ok", true)) \
 			or String(fallback_claim_guard.get("reason", "")) != "server_authority_claim_rejected" \
+			or String(fallback_claim_guard.get("local_load_policy", "")) != "blocked_server_audit" \
+			or String(fallback_claim_guard.get("server_audit_status", "")) != "pending" \
+			or not bool(fallback_claim_guard.get("requires_server_audit", false)) \
 			or (fallback_claim_guard.get("server_authority_claim_fields", []) as Array).is_empty():
 		push_error("Smoke test failed: fallback server-claim replay guard invalid row=%s context=%s guard=%s" % [fallback_claim_row, fallback_claim_context, fallback_claim_guard])
 		quit(1)
