@@ -247,6 +247,8 @@
   "screen.main.social": "Social",
   "screen.main.promotions": "Promotions",
   "screen.main.replay": "Replay",
+  "screen.replay.favorite": "Favorite Replay",
+  "screen.replay.remove": "Remove From Index",
   "screen.main.player_settings": "Player Settings",
   "screen.main.settings": "Settings",
   "screen.play.summary": "Play Summary",

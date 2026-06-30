@@ -456,6 +456,10 @@ func _validate_collection_page_contract() -> bool:
 	var replay_filter_index := _row_index_by_id(replay_rows, "replay_filter_replay_local_ready")
 	if replay_filter_index < 0 or String(replay_rows[replay_filter_index].get("ui_action", "")) != "set_replay_filter":
 		return _fail("replay page missing local-ready filter action %s" % [replay_rows])
+	var favorite_action := _row_by_id(replay_rows, "replay_action_favorite")
+	var remove_action := _row_by_id(replay_rows, "replay_action_remove")
+	if favorite_action.is_empty() or remove_action.is_empty() or String(favorite_action.get("ui_action", "")) != "toggle_replay_favorite" or String(remove_action.get("ui_action", "")) != "remove_replay_from_index" or bool(favorite_action.get("client_result_authoritative", true)):
+		return _fail("replay page missing favorite/remove action rows favorite=%s remove=%s" % [favorite_action, remove_action])
 	main_node.call("_ui_set_cursor", replay_filter_index)
 	var replay_filter_result: Dictionary = main_node.call("_ui_accept_selected")
 	await _settle_frames(2)

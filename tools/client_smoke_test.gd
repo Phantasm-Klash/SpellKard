@@ -4150,7 +4150,7 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	var ui_replay_rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 12)
-	if ui_replay_rows.size() < 7 or String(ui_replay_rows[0].get("id", "")) != "replay_verification_summary" or String(ui_replay_rows[1].get("ui_action", "")) != "set_replay_filter":
+	if ui_replay_rows.size() < 9 or String(ui_replay_rows[0].get("id", "")) != "replay_verification_summary" or String(ui_replay_rows[1].get("ui_action", "")) != "set_replay_filter":
 		push_error("Smoke test failed: replay screen rows invalid")
 		quit(1)
 		return true
@@ -4161,6 +4161,23 @@ func _process(_delta: float) -> bool:
 	var local_filter_index := _row_index_by_id(ui_replay_rows, "replay_filter_replay_local_ready")
 	if local_filter_index < 0:
 		push_error("Smoke test failed: replay UI missing local-ready filter")
+		quit(1)
+		return true
+	var favorite_action_row: Dictionary = _find_row_by_id(ui_replay_rows, "replay_action_favorite")
+	var remove_action_row: Dictionary = _find_row_by_id(ui_replay_rows, "replay_action_remove")
+	if favorite_action_row.is_empty() or remove_action_row.is_empty() or String(favorite_action_row.get("ui_action", "")) != "toggle_replay_favorite" or String(remove_action_row.get("ui_action", "")) != "remove_replay_from_index" or bool(favorite_action_row.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: replay UI action rows invalid favorite=%s remove=%s" % [favorite_action_row, remove_action_row])
+		quit(1)
+		return true
+	main_node.call("_ui_set_cursor", _row_index_by_id(ui_replay_rows, "replay_action_favorite"))
+	var replay_favorite_result: Dictionary = main_node.call("_ui_accept_selected")
+	if not bool(replay_favorite_result.get("ok", false)) or String(replay_favorite_result.get("action", "")) != "toggle_replay_favorite":
+		push_error("Smoke test failed: replay UI favorite action invalid %s" % [replay_favorite_result])
+		quit(1)
+		return true
+	var replay_favorite_restore: Dictionary = main_node.call("_ui_accept_selected")
+	if not bool(replay_favorite_restore.get("ok", false)) or String(replay_favorite_restore.get("action", "")) != "toggle_replay_favorite":
+		push_error("Smoke test failed: replay UI favorite restore invalid %s" % [replay_favorite_restore])
 		quit(1)
 		return true
 	main_node.call("_ui_set_cursor", local_filter_index)

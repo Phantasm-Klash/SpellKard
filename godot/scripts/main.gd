@@ -1196,6 +1196,25 @@ func _set_replay_verification_filter(filter_id: String) -> bool:
 	_sync_replay_index_state()
 	return ok
 
+func _select_replay_source_index_from_row(row: Dictionary) -> bool:
+	if replay_list_model == null:
+		return false
+	var source_index := int(row.get("source_index", -1))
+	if source_index >= 0:
+		var ok: bool = replay_list_model.select_index(source_index)
+		_sync_replay_index_state()
+		return ok
+	var replay_id := String(row.get("replay_id", ""))
+	if replay_id.is_empty():
+		return false
+	var replay_rows: Array[Dictionary] = replay_list_model.row_models(64)
+	for replay_row in replay_rows:
+		if String(replay_row.get("replay_id", "")) == replay_id:
+			var ok_by_id: bool = replay_list_model.select_index(int(replay_row.get("source_index", -1)))
+			_sync_replay_index_state()
+			return ok_by_id
+	return false
+
 func _sync_replay_index_state() -> void:
 	if replay_list_model == null:
 		return
@@ -2557,6 +2576,20 @@ func _dispatch_ui_action(row: Dictionary) -> Dictionary:
 			return _set_ui_action_result(filter_ok, action, {
 				"verification_filter": filter_id,
 				"visible_entry_count": replay_list_model.row_models(64).size() if replay_list_model != null else 0,
+			})
+		"toggle_replay_favorite":
+			var selected_for_favorite := _select_replay_source_index_from_row(row)
+			var favorite_ok := selected_for_favorite and _toggle_selected_replay_favorite()
+			return _set_ui_action_result(favorite_ok, action, {
+				"replay_id": String(row.get("replay_id", "")),
+				"status": replay_index_action_status,
+			})
+		"remove_replay_from_index":
+			var selected_for_remove := _select_replay_source_index_from_row(row)
+			var remove_ok := selected_for_remove and _remove_selected_replay_from_index()
+			return _set_ui_action_result(remove_ok, action, {
+				"replay_id": String(row.get("replay_id", "")),
+				"status": replay_index_action_status,
 			})
 		"save_replay":
 			var save_ok: bool = _save_replay_snapshot()
@@ -5514,7 +5547,7 @@ func _is_quick_action_row(row: Dictionary) -> bool:
 	match row_id:
 		"cert_queue", "cert_practice", "settings_gamepad_curve", "settings_keybinds", "settings_volume", "settings_resolution", "play_queue_selected", "queue_status", "ready", "cancel", "gensoulkyo_login", "gensoulkyo_create_room", "battle_client_prepare", "battle_client_connect", "battle_client_input_header", "matchmaking_quick", "matchmaking_ranked", "matchmaking_pvp", "matchmaking_boss", "local_settlement_preview", "matchmaking_room":
 			return true
-	if action in ["advance_queue", "start_certification_queue", "ready_match", "cancel_queue", "battle_client_prepare", "battle_client_connect", "battle_client_input_header", "open_social_link", "invite_friend", "dismiss_announcement", "request_activity_claim", "select_mode", "queue_mode", "local_settle_match", "open_chest", "save_deck", "save_replay", "run_balance_simulation", "run_latency_tests"]:
+	if action in ["advance_queue", "start_certification_queue", "ready_match", "cancel_queue", "battle_client_prepare", "battle_client_connect", "battle_client_input_header", "open_social_link", "invite_friend", "dismiss_announcement", "request_activity_claim", "select_mode", "queue_mode", "local_settle_match", "open_chest", "save_deck", "save_replay", "toggle_replay_favorite", "remove_replay_from_index", "run_balance_simulation", "run_latency_tests"]:
 		return true
 	return false
 

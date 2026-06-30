@@ -889,6 +889,8 @@ func _replay_rows(limit: int) -> Array[Dictionary]:
 		rows.append(replay_list_model.verification_summary_row())
 	if replay_list_model.has_method("verification_filter_rows"):
 		rows.append_array(replay_list_model.verification_filter_rows())
+	if replay_list_model.has_method("selected_action_rows"):
+		rows.append_array(replay_list_model.selected_action_rows())
 	for row in replay_list_model.row_models(limit):
 		var replay_row: Dictionary = row.duplicate(true)
 		if not String(replay_row.get("replay_id", "")).is_empty():
@@ -1403,7 +1405,7 @@ func _section_for_row(screen_id: String, row: Dictionary) -> String:
 		"workshop":
 			return "workshop"
 		"replay":
-			if row_id == "replay_verification_summary" or row_id.begins_with("replay_filter_"):
+			if row_id == "replay_verification_summary" or row_id.begins_with("replay_filter_") or row_id.begins_with("replay_action_"):
 				return "overview"
 			return "replay"
 		"player_settings":
@@ -1500,6 +1502,8 @@ func _control_for_row(screen_id: String, row: Dictionary) -> String:
 				return "replay"
 			"set_replay_filter":
 				return "button"
+			"toggle_replay_favorite", "remove_replay_from_index":
+				return "replay"
 			"toggle_deck_card", "save_deck":
 				return "card"
 			"cycle_input_profile", "cycle_input_binding", "cycle_language", "cycle_voice_locale", "cycle_gamepad_curve", "cycle_resolution", "cycle_window_mode", "cycle_fps_limit", "cycle_character", "cycle_stage", "cycle_network_quality", "cycle_palette":

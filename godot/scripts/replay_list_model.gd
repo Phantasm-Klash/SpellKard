@@ -146,6 +146,44 @@ func verification_filter_rows() -> Array[Dictionary]:
 		})
 	return rows
 
+func selected_action_rows() -> Array[Dictionary]:
+	var entry := selected_entry()
+	var replay_id := str(entry.get("replay_id", ""))
+	var has_replay := not replay_id.is_empty()
+	var source_index := _source_index_for_replay_id(replay_id)
+	return [
+		{
+			"id": "replay_action_favorite",
+			"label_key": "screen.replay.favorite",
+			"value": "on" if bool(entry.get("favorite", false)) else "off",
+			"summary": "toggle local replay index favorite marker",
+			"replay_id": replay_id,
+			"source_index": source_index,
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+			"section": "overview",
+			"section_label_key": "ui.menu_section_overview",
+			"ui_control": "button",
+			"ui_action": "toggle_replay_favorite",
+			"enabled": has_replay,
+		},
+		{
+			"id": "replay_action_remove",
+			"label_key": "screen.replay.remove",
+			"value": "index only",
+			"summary": "remove selected replay from local index; replay file remains untouched",
+			"replay_id": replay_id,
+			"source_index": source_index,
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+			"section": "overview",
+			"section_label_key": "ui.menu_section_overview",
+			"ui_control": "button",
+			"ui_action": "remove_replay_from_index",
+			"enabled": has_replay,
+		},
+	]
+
 func set_verification_filter(filter_id: String) -> bool:
 	if not VERIFICATION_FILTERS.has(filter_id):
 		action_status = "filter_failed"
@@ -394,3 +432,11 @@ func _verification_filter_label_key(filter_id: String) -> String:
 	if filter_id == VERIFICATION_FILTER_ALL:
 		return "ui.menu_section_replay_all"
 	return "ui.menu_section_%s" % filter_id
+
+func _source_index_for_replay_id(replay_id: String) -> int:
+	if replay_id.is_empty():
+		return -1
+	for i in range(entries.size()):
+		if str(entries[i].get("replay_id", "")) == replay_id:
+			return i
+	return -1
