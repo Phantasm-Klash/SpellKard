@@ -102,6 +102,8 @@ func _validate_play_pages() -> bool:
 		return _fail("play overview cards missing expected mode entries %s" % String(snapshot.get("overview_cards_text", "")))
 	if not String(snapshot.get("overview_cards_text", "")).contains("hp"):
 		return _fail("play overview cards missing boss local status %s" % String(snapshot.get("overview_cards_text", "")))
+	if not _assert_page_authority_contract(snapshot, "play", "boss_server_settlement", "Boss display local"):
+		return false
 	if _contains_any(String(snapshot.get("quick_actions_text", "")), _text_keys(["screen.main.start_match", "screen.main.network_match", "screen.play.practice"])):
 		return _fail("play quick actions should only carry shell navigation %s" % String(snapshot.get("quick_actions_text", "")))
 	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 32)
@@ -137,6 +139,8 @@ func _validate_play_pages() -> bool:
 		return _fail("match overview cards invalid %s" % String(snapshot.get("overview_cards_text", "")))
 	if not _contains_all(String(snapshot.get("overview_cards_text", "")), _text_keys(["screen.match.local_settlement"])):
 		return _fail("match overview cards missing settlement loop %s" % String(snapshot.get("overview_cards_text", "")))
+	if not _assert_page_authority_contract(snapshot, "match", "boss_server_settlement", "Boss display local"):
+		return false
 	rows = main_node.call("_ui_screen_rows", 64)
 	if not _rows_have_ids(rows, ["matchmaking_boss", "match_world_boss_status", "match_instance_boss_status"]):
 		return _fail("match rows missing boss status rows")
@@ -442,6 +446,8 @@ func _validate_collection_page_contract() -> bool:
 	snapshot = await _open_snapshot("replay")
 	if not _assert_page_health(snapshot, "replay", 2, 4):
 		return false
+	if not _assert_page_authority_contract(snapshot, "replay", "local_practice_verification_only", "Replay hash local practice only"):
+		return false
 	var replay_rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 8)
 	if replay_rows.is_empty() or String(replay_rows[0].get("id", "")) != "replay_verification_summary":
 		return _fail("replay page missing verification summary row %s" % [replay_rows])
@@ -674,6 +680,18 @@ func _assert_boss_status_row(row: Dictionary, mode_id: String) -> bool:
 		return _fail("boss status row missing slot layout policy %s" % [row])
 	if typeof(row.get("slot_labels", [])) != TYPE_ARRAY:
 		return _fail("boss status row missing slot labels %s" % [row])
+	return true
+
+func _assert_page_authority_contract(snapshot: Dictionary, label: String, expected_scope: String, expected_text: String) -> bool:
+	var summary: Dictionary = snapshot.get("page_experience", {})
+	if String(summary.get("authority_scope", "")) != expected_scope:
+		return _fail("%s page authority scope mismatch %s" % [label, summary])
+	if not String(summary.get("authority_text", "")).contains(expected_text):
+		return _fail("%s page authority text missing %s in %s" % [label, expected_text, summary])
+	if bool(summary.get("authority_client_result_authoritative", true)):
+		return _fail("%s page authority must not be client-result authoritative %s" % [label, summary])
+	if not String(snapshot.get("page_experience_text", "")).contains(expected_text):
+		return _fail("%s page summary text missing authority contract %s" % [label, String(snapshot.get("page_experience_text", ""))])
 	return true
 
 func _text(key: String) -> String:
