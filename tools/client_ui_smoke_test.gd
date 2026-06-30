@@ -184,6 +184,10 @@ func _validate_play_pages() -> bool:
 	snapshot = main_node.call("_ui_overlay_snapshot")
 	if not String(snapshot.get("control_preview", "")).contains("ready_for_server_entry") or not String(snapshot.get("detail", "")).contains("server required"):
 		return _fail("world boss entry should expose ready server-confirmation context %s" % [snapshot])
+	if not _assert_boss_action_contract(_row_by_id(rows, "world_boss_entry"), "world_boss", true, true, "required"):
+		return false
+	if not _assert_boss_action_contract(_row_by_id(rows, "world_boss_display"), "world_boss", true, true, "required"):
+		return false
 	var instance_entry_index := _row_index_by_id(rows, "instance_boss_entry")
 	if instance_entry_index < 0:
 		return _fail("modes page missing instance boss entry row")
@@ -192,6 +196,10 @@ func _validate_play_pages() -> bool:
 	snapshot = main_node.call("_ui_overlay_snapshot")
 	if not String(snapshot.get("control_preview", "")).contains("blocked_local") or not String(snapshot.get("detail", "")).contains("entry_locked"):
 		return _fail("locked instance boss entry should expose local blocker context %s" % [snapshot])
+	if not _assert_boss_action_contract(_row_by_id(rows, "instance_boss_entry"), "instance_boss", false, true, "blocked_local"):
+		return false
+	if not _assert_boss_action_contract(_row_by_id(rows, "instance_boss_display"), "instance_boss", false, true, "blocked_local"):
+		return false
 	if not await _validate_boss_settlement_receipts():
 		return false
 	snapshot = await _open_snapshot("network_match")
@@ -268,9 +276,13 @@ func _validate_boss_settlement_receipts() -> bool:
 	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 64)
 	if not _assert_boss_result_receipt_row(_row_by_id(rows, "world_boss_result"), "world_boss", "world_receipt_ui", "world_hash_ui"):
 		return false
+	if not _assert_boss_outcome_projection(_row_by_id(rows, "world_boss_result"), "world_boss", "world_boss_persistent_hp_outcome", "applied"):
+		return false
 	if bool(_row_by_id(rows, "world_boss_result").get("result_rejected", true)):
 		return _fail("world boss server receipt did not clear rejected flag %s" % [_row_by_id(rows, "world_boss_result")])
 	if not _assert_boss_result_receipt_row(_row_by_id(rows, "instance_boss_result"), "instance_boss", "instance_receipt_ui", "instance_hash_ui"):
+		return false
+	if not _assert_boss_outcome_projection(_row_by_id(rows, "instance_boss_result"), "instance_boss", "instance_boss_clear_outcome", "cleared"):
 		return false
 	var world_result_index := _row_index_by_id(rows, "world_boss_result")
 	if world_result_index < 0:
@@ -1073,6 +1085,75 @@ func _assert_boss_result_receipt_row(row: Dictionary, mode_id: String, expected_
 	var receipt: Dictionary = projection.get("settlement_receipt", {})
 	if String(receipt.get("receipt_id", "")) != expected_receipt_id or String(receipt.get("result_hash", "")) != expected_hash:
 		return _fail("boss result projection receipt mismatch %s" % [projection])
+	return true
+
+func _assert_boss_outcome_projection(row: Dictionary, mode_id: String, expected_kind: String, expected_status: String) -> bool:
+	if row.is_empty():
+		return _fail("boss outcome row missing for %s" % mode_id)
+	if String(row.get("mode_id", "")) != mode_id or String(row.get("mode_category", "")) != "boss":
+		return _fail("boss outcome identity mismatch %s" % [row])
+	if String(row.get("outcome_kind", "")) != expected_kind or String(row.get("outcome_status", "")) != expected_status:
+		return _fail("boss outcome status mismatch %s expected=%s/%s" % [row, expected_kind, expected_status])
+	if String(row.get("damage_authority", "")) != "server" or String(row.get("reward_authority", "")) != "server" or String(row.get("settlement_authority", "")) != "server":
+		return _fail("boss outcome must keep server authority %s" % [row])
+	if bool(row.get("client_result_authoritative", true)):
+		return _fail("boss outcome row must not be client authoritative %s" % [row])
+	var projection: Dictionary = row.get("outcome_projection", {})
+	if String(projection.get("outcome_kind", "")) != expected_kind or String(projection.get("outcome_status", "")) != expected_status:
+		return _fail("boss nested outcome projection mismatch %s" % [projection])
+	if bool(projection.get("client_result_authoritative", true)) or String(projection.get("settlement_authority", "")) != "server":
+		return _fail("boss nested outcome projection authority mismatch %s" % [projection])
+	if mode_id == "world_boss":
+		if not bool(row.get("persistent_hp", false)) or String(row.get("announcement_status", "")) != "none" or bool(row.get("defeated", true)):
+			return _fail("world boss persistent outcome mismatch %s" % [row])
+		if not String(row.get("outcome_summary", "")).contains("persistent hp"):
+			return _fail("world boss outcome summary missing persistent hp %s" % [row])
+	else:
+		if bool(row.get("persistent_hp", true)) or not bool(row.get("cleared", false)) or int(row.get("stars", 0)) < 1:
+			return _fail("instance boss clear outcome mismatch %s" % [row])
+		if not String(row.get("outcome_summary", "")).contains("stars"):
+			return _fail("instance boss outcome summary missing stars %s" % [row])
+	var receipt_card: Dictionary = row.get("receipt_card", {})
+	if String(receipt_card.get("outcome_kind", "")) != expected_kind or String(receipt_card.get("outcome_status", "")) != expected_status:
+		return _fail("boss receipt card outcome mismatch %s" % [receipt_card])
+	return true
+
+func _assert_boss_action_contract(row: Dictionary, mode_id: String, expected_entry_enabled: bool, expected_transfer_enabled: bool, expected_confirmation: String) -> bool:
+	if row.is_empty():
+		return _fail("boss action contract row missing for %s" % mode_id)
+	if String(row.get("mode_id", "")) != mode_id or String(row.get("mode_category", "")) != "boss":
+		return _fail("boss action contract identity mismatch %s" % [row])
+	if String(row.get("availability_contract_kind", "")) != "boss_action_availability_projection":
+		return _fail("boss action contract kind missing %s" % [row])
+	if String(row.get("entry_request_scope", "")) != "intent_only" or String(row.get("transfer_request_scope", "")) != "intent_only":
+		return _fail("boss action scopes must stay intent-only %s" % [row])
+	var required_fields: Array = row.get("server_required_for", [])
+	for field in ["entry_confirmation", "card_transfer_confirmation", "damage", "reward_grants", "settlement", "result_receipt"]:
+		if not required_fields.has(field):
+			return _fail("boss action server-required field missing %s in %s" % [field, row])
+	if mode_id == "world_boss":
+		for field in ["persistent_hp", "daily_attempts", "defeated_at", "world_announcement"]:
+			if not required_fields.has(field):
+				return _fail("world boss server-required field missing %s in %s" % [field, row])
+	else:
+		for field in ["access_gate", "clear_status", "stars"]:
+			if not required_fields.has(field):
+				return _fail("instance boss server-required field missing %s in %s" % [field, row])
+	if String(row.get("intent_authority", "")) != "client_request_only" or bool(row.get("client_result_authoritative", true)):
+		return _fail("boss action authority flags invalid %s" % [row])
+	var contract: Dictionary = row.get("ui_action_contract", {})
+	if String(contract.get("contract_kind", "")) != "boss_ui_action_contract":
+		return _fail("boss ui action contract missing %s" % [row])
+	if bool(contract.get("entry_enabled", false)) != expected_entry_enabled or bool(contract.get("transfer_enabled", false)) != expected_transfer_enabled:
+		return _fail("boss ui action enablement mismatch %s" % [contract])
+	if String(contract.get("entry_request_scope", "")) != "intent_only" or String(contract.get("transfer_request_scope", "")) != "intent_only":
+		return _fail("boss ui action contract scopes invalid %s" % [contract])
+	if String(contract.get("server_confirmation_status", "")) != expected_confirmation or not bool(contract.get("server_authority_required", false)):
+		return _fail("boss ui action server confirmation invalid %s expected=%s" % [contract, expected_confirmation])
+	if String(contract.get("damage_authority", "")) != "server" or String(contract.get("reward_authority", "")) != "server" or String(contract.get("settlement_authority", "")) != "server":
+		return _fail("boss ui action server authority invalid %s" % [contract])
+	if bool(contract.get("client_result_authoritative", true)):
+		return _fail("boss ui action contract became client authoritative %s" % [contract])
 	return true
 
 func _assert_page_authority_contract(snapshot: Dictionary, label: String, expected_scope: String, expected_text: String) -> bool:
