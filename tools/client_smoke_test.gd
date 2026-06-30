@@ -3914,6 +3914,10 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay screen rows invalid")
 		quit(1)
 		return true
+	if String(ui_replay_rows[0].get("ui_control", "")) != "replay" or not String(ui_replay_rows[0].get("value", "")).contains("hash") or not String(ui_replay_rows[0].get("summary", "")).contains("local_practice_record"):
+		push_error("Smoke test failed: replay UI verification summary invalid %s" % [ui_replay_rows[0]])
+		quit(1)
+		return true
 	main_node.call("_select_replay_index", 0)
 	var selected_replay_summary := String(main_node.call("_selected_replay_summary"))
 	var replay_rows: Array[Dictionary] = main_node.call("_replay_list_rows", 4)

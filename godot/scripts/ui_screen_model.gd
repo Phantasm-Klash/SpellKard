@@ -888,6 +888,16 @@ func _replay_rows(limit: int) -> Array[Dictionary]:
 	for row in replay_list_model.row_models(limit):
 		var replay_row: Dictionary = row.duplicate(true)
 		replay_row["ui_action"] = "load_replay"
+		replay_row["ui_control"] = "replay"
+		replay_row["value"] = "%s hash %s" % [
+			String(replay_row.get("verification_status", "unchecked")),
+			String(replay_row.get("final_result_hash", "0")),
+		]
+		replay_row["summary"] = "%s tick %d %s" % [
+			String(replay_row.get("replay_authority_scope", "local_practice_record")),
+			int(replay_row.get("final_tick", 0)),
+			String(replay_row.get("metadata_status", "unchecked")),
+		]
 		rows.append(replay_row)
 	return rows
 
