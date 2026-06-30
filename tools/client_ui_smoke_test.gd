@@ -597,6 +597,8 @@ func _validate_collection_page_contract() -> bool:
 			await _settle_frames(2)
 			if not bool(load_control_result.get("ok", false)) or String(load_control_result.get("action", "")) != "accept_selected" or String(load_control_result.get("row_id", "")) != "replay_action_load":
 				return _fail("replay load context control invalid %s" % [load_control_result])
+	if not await _validate_server_replay_pending_guard():
+		return false
 	main_node.call("_ui_set_cursor", replay_filter_index)
 	var replay_filter_result: Dictionary = main_node.call("_ui_accept_selected")
 	await _settle_frames(2)
@@ -608,6 +610,113 @@ func _validate_collection_page_contract() -> bool:
 		if replay_entry.is_empty() or String(replay_entry.get("ui_action", "")) != "load_replay" or String(replay_entry.get("ui_control", "")) != "replay" or String(replay_entry.get("section", "")) != "replay_local_ready":
 			return _fail("replay entry row should stay loadable after filter %s" % [replay_rows])
 	return true
+
+func _validate_server_replay_pending_guard() -> bool:
+	stage = "replay_server_pending_guard"
+	var replay_model: RefCounted = main_node.get("replay_list_model")
+	var replay_store: RefCounted = main_node.get("replay_store")
+	if replay_model == null or replay_store == null:
+		return _fail("replay model missing")
+	var previous_entries: Array[Dictionary] = []
+	for entry in replay_store.call("load_index"):
+		if typeof(entry) == TYPE_DICTIONARY:
+			previous_entries.append((entry as Dictionary).duplicate(true))
+	var previous_cursor := int(replay_model.get("cursor"))
+	var previous_filter := String(replay_model.get("active_verification_filter"))
+	var base_entry: Dictionary = previous_entries[0] if not previous_entries.is_empty() else {}
+	var pending_path := _server_pending_replay_path(replay_store, base_entry)
+	if pending_path.is_empty():
+		return _fail("could not prepare server pending replay file")
+	var pending_entries: Array[Dictionary] = [_server_pending_replay_entry(base_entry, pending_path)]
+	if not bool(replay_store.call("save_index", pending_entries)):
+		return _fail("could not save server pending replay index")
+	replay_model.set("cursor", 0)
+	replay_model.call("set_verification_filter", "replay_server_pending")
+	if not main_node.call("_open_ui_screen", "replay"):
+		return _fail("replay page did not open for server pending guard")
+	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 12)
+	var load_index := _row_index_by_id(rows, "replay_action_load")
+	var load_row := _row_by_id(rows, "replay_action_load")
+	if load_index < 0 or load_row.is_empty():
+		return _fail("server pending replay load row missing %s" % [rows])
+	if bool(load_row.get("enabled", true)) \
+			or bool(load_row.get("can_play", true)) \
+			or String(load_row.get("local_load_policy", "")) != "blocked_server_audit" \
+			or not bool(load_row.get("requires_server_audit", false)):
+		return _fail("server pending replay load row should be blocked %s" % [load_row])
+	var guard: Dictionary = load_row.get("replay_action_guard", {})
+	if bool(guard.get("ok", true)) \
+			or String(guard.get("reason", "")) != "server_record_pending_audit" \
+			or bool(guard.get("client_result_authoritative", true)):
+		return _fail("server pending replay load guard invalid %s" % [guard])
+	main_node.call("_ui_set_cursor", load_index)
+	await _settle_frames(2)
+	var snapshot: Dictionary = main_node.call("_ui_overlay_snapshot")
+	var preview := String(snapshot.get("control_preview", ""))
+	if not preview.contains("guard_blocked") \
+			or not preview.contains("server_record_pending_audit") \
+			or not preview.contains("blocked_server_audit") \
+			or not preview.contains("server_audit_pending") \
+			or not preview.contains("settlement_server"):
+		return _fail("server pending replay guard preview missing %s" % [snapshot])
+	var load_control_result: Dictionary = main_node.call("_ui_press_visible_control", 0)
+	if bool(load_control_result.get("ok", false)):
+		return _fail("server pending replay load control should stay disabled %s" % [load_control_result])
+	replay_store.call("save_index", previous_entries)
+	replay_model.call("refresh")
+	replay_model.set("cursor", previous_cursor)
+	replay_model.call("set_verification_filter", previous_filter)
+	main_node.call("_open_ui_screen", "replay")
+	await _settle_frames(2)
+	return true
+
+func _server_pending_replay_path(replay_store: RefCounted, base_entry: Dictionary) -> String:
+	var existing_path := String(base_entry.get("path", ""))
+	if not existing_path.is_empty() and FileAccess.file_exists(existing_path):
+		return existing_path
+	var path := String(replay_store.call("latest_path"))
+	var snapshot := {
+		"ruleset_version": "ruleset-local-s0",
+		"match_seed": 12345,
+		"final_result_hash": 123456,
+		"input_stream": [{"tick": 10}, {"tick": 11}, {"tick": 12}],
+		"metadata": {
+			"replay_id": "server-ui-pending-file",
+			"mode": "pvp_duel",
+			"result": "server_record",
+			"final_tick": 12,
+			"saved_at": "2026-06-30T00:02:00Z",
+		},
+	}
+	if bool(replay_store.call("save_snapshot", snapshot, path)):
+		return path
+	return ""
+
+func _server_pending_replay_entry(base_entry: Dictionary, path: String) -> Dictionary:
+	var entry: Dictionary = base_entry.duplicate(true)
+	entry.merge({
+		"replay_id": "server-ui-pending",
+		"path": path,
+		"saved_at": "2026-06-30T00:02:00Z",
+		"opponent": "server",
+		"mode": "pvp_duel",
+		"result": "server_record",
+		"ruleset_version": "ruleset-local-s0",
+		"game_version": "ui-smoke",
+		"pattern_id": "server_pending",
+		"score": 1000,
+		"final_tick": 12,
+		"final_result_hash": 123456,
+		"input_count": 3,
+		"input_first_tick": 10,
+		"input_last_tick": 12,
+		"input_tick_span": 3,
+		"input_tick_monotonic": true,
+		"input_tick_contiguous": true,
+		"input_integrity_status": "valid",
+		"server_authoritative": true,
+	}, true)
+	return entry
 
 func _press_home_button(index: int, expected_screen: String) -> bool:
 	if not main_node.call("_open_ui_screen", "main_menu"):

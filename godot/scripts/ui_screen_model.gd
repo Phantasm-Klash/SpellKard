@@ -898,7 +898,7 @@ func _replay_rows(limit: int) -> Array[Dictionary]:
 		replay_row["ui_control"] = "replay"
 		replay_row["value"] = "%s hash %s input %s" % [
 			String(replay_row.get("verification_status", "unchecked")),
-			String(replay_row.get("final_result_hash", "0")),
+			str(replay_row.get("final_result_hash", "0")),
 			String(replay_row.get("input_integrity_status", "unchecked")),
 		]
 		replay_row["summary"] = "%s | %s tick %d %s" % [
