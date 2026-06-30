@@ -1089,8 +1089,29 @@ func _load_selected_replay_snapshot() -> bool:
 	var entry: Dictionary = replay_index_entries[replay_index_cursor]
 	if replay_list_model != null:
 		entry = replay_list_model.selected_entry()
+	if not _selected_replay_entry_can_load(entry):
+		return false
 	var loaded_snapshot: Dictionary = replay_store.load_snapshot_from_entry(entry)
 	return _load_replay_snapshot(loaded_snapshot, str(entry.get("path", replay_store.latest_path())))
+
+func _selected_replay_entry_can_load(entry: Dictionary) -> bool:
+	if entry.is_empty():
+		replay_file_status = "load_failed"
+		replay_index_action_status = "missing_entry"
+		return false
+	if replay_list_model != null and replay_list_model.has_method("local_load_guard_for_entry"):
+		var guard: Dictionary = replay_list_model.local_load_guard_for_entry(entry)
+		if not bool(guard.get("ok", false)):
+			replay_file_status = "load_failed"
+			replay_index_action_status = String(guard.get("reason", "load_rejected"))
+			return false
+	var path := str(entry.get("path", ""))
+	if path.is_empty() or not FileAccess.file_exists(path):
+		replay_file_status = "load_failed"
+		replay_index_action_status = "file_missing" if not path.is_empty() else "missing_path"
+		return false
+	replay_index_action_status = "load_ready"
+	return true
 
 func _load_replay_snapshot(loaded_snapshot: Dictionary, loaded_path: String) -> bool:
 	if loaded_snapshot.is_empty():

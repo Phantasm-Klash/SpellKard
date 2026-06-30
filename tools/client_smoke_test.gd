@@ -4243,8 +4243,12 @@ func _process(_delta: float) -> bool:
 	replay_list_model.cursor = 0
 	replay_list_model.set_verification_filter("replay_input_invalid")
 	var bad_input_rows: Array[Dictionary] = replay_list_model.row_models(4)
-	if bad_input_rows.is_empty() or String(bad_input_rows[0].get("section", "")) != "replay_input_invalid" or String(bad_input_rows[0].get("verification_status", "")) != "input_tick_gap" or String(bad_input_rows[0].get("verification_scope", "")) != "local_practice_input_integrity":
+	if bad_input_rows.is_empty() or String(bad_input_rows[0].get("section", "")) != "replay_input_invalid" or String(bad_input_rows[0].get("verification_status", "")) != "input_tick_gap" or String(bad_input_rows[0].get("verification_scope", "")) != "local_practice_input_integrity" or bool(bad_input_rows[0].get("can_play", true)) or bool(bad_input_rows[0].get("enabled", true)) or String(bad_input_rows[0].get("load_rejection_reason", "")) != "input_tick_gap":
 		push_error("Smoke test failed: replay input invalid filter rows invalid %s" % [bad_input_rows])
+		quit(1)
+		return true
+	if main_node.call("_load_selected_replay_snapshot") or String(main_node.get("replay_file_status")) != "load_failed" or String(main_node.get("replay_index_action_status")) != "input_tick_gap":
+		push_error("Smoke test failed: replay input invalid load was not blocked status=%s action=%s" % [main_node.get("replay_file_status"), main_node.get("replay_index_action_status")])
 		quit(1)
 		return true
 	replay_list_model.refresh()

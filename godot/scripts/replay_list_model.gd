@@ -248,6 +248,7 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 	var server_authoritative := bool(entry.get("server_authoritative", false))
 	var input_integrity_status := _entry_input_integrity_status(entry)
 	var verification_status := _entry_verification_status(entry, final_result_hash, metadata_valid)
+	var load_rejection_reason := _entry_local_load_rejection_reason(entry, verification_status, metadata_valid, server_authoritative)
 	var replay_authority_scope := "server_authoritative_record" if server_authoritative else "local_practice_record"
 	return {
 		"index": index + 1,
@@ -313,9 +314,11 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"metadata_failure_count": metadata_failures.size(),
 		"server_authoritative": server_authoritative,
 		"server_authority_claim_fields": server_claim_fields,
-		"can_play": not path.is_empty() and FileAccess.file_exists(path),
+		"can_play": load_rejection_reason.is_empty(),
+		"load_rejection_reason": load_rejection_reason,
 		"can_favorite": not str(entry.get("replay_id", "")).is_empty(),
 		"can_remove": not str(entry.get("replay_id", "")).is_empty(),
+		"enabled": load_rejection_reason.is_empty(),
 	}
 
 func _entry_metadata_valid(entry: Dictionary) -> bool:
@@ -430,12 +433,41 @@ func _verification_counts() -> Dictionary:
 			counts["rejected_server_claim"] = int(counts.get("rejected_server_claim", 0)) + 1
 	return counts
 
+func local_load_guard_for_entry(entry: Dictionary) -> Dictionary:
+	var metadata_valid := _entry_metadata_valid(entry)
+	var server_authoritative := bool(entry.get("server_authoritative", false))
+	var verification_status := _entry_verification_status(entry, int(entry.get("final_result_hash", 0)), metadata_valid)
+	var rejection_reason := _entry_local_load_rejection_reason(entry, verification_status, metadata_valid, server_authoritative)
+	return {
+		"ok": rejection_reason.is_empty(),
+		"reason": "loadable" if rejection_reason.is_empty() else rejection_reason,
+		"verification_status": verification_status,
+		"verification_section": _entry_verification_section(verification_status),
+		"input_integrity_status": _entry_input_integrity_status(entry),
+		"metadata_valid": metadata_valid,
+		"server_authoritative": server_authoritative,
+	}
+
 func _entry_matches_active_filter(entry: Dictionary) -> bool:
 	if active_verification_filter == VERIFICATION_FILTER_ALL:
 		return true
 	var metadata_valid := _entry_metadata_valid(entry)
 	var status_value := _entry_verification_status(entry, int(entry.get("final_result_hash", 0)), metadata_valid)
 	return _entry_verification_section(status_value) == active_verification_filter
+
+func _entry_local_load_rejection_reason(entry: Dictionary, verification_status: String, metadata_valid: bool, server_authoritative: bool) -> String:
+	var path := str(entry.get("path", ""))
+	if path.is_empty():
+		return "missing_path"
+	if not FileAccess.file_exists(path):
+		return "file_missing"
+	if server_authoritative:
+		return "server_record_pending_audit"
+	if not metadata_valid:
+		return verification_status
+	if _entry_verification_section(verification_status) == "replay_input_invalid":
+		return verification_status
+	return ""
 
 func _filtered_indices() -> Array[int]:
 	var indices: Array[int] = []
