@@ -188,6 +188,25 @@ func _validate_play_pages() -> bool:
 
 func _validate_boss_settlement_receipts() -> bool:
 	stage = "boss_settlement_receipts"
+	if main_node.call("_apply_world_boss_result", {
+		"client_result_authoritative": true,
+		"boss_hp_after_global": 0,
+		"team_damage": 999999,
+	}):
+		return _fail("client-authored world boss result accepted")
+	var rejected_snapshot: Dictionary = await _open_snapshot("modes")
+	var rejected_rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 64)
+	var rejected_world_result_index := _row_index_by_id(rejected_rows, "world_boss_result")
+	if rejected_world_result_index < 0:
+		return _fail("modes page missing rejected world boss result row")
+	var rejected_world_result := _row_by_id(rejected_rows, "world_boss_result")
+	if not bool(rejected_world_result.get("result_rejected", false)) or String(rejected_world_result.get("result_rejected_reason", "")) != "client_authoritative_world_boss_result":
+		return _fail("rejected world boss result reason missing %s" % [rejected_world_result])
+	main_node.call("_ui_set_cursor", rejected_world_result_index)
+	await _settle_frames(2)
+	rejected_snapshot = main_node.call("_ui_overlay_snapshot")
+	if not String(rejected_snapshot.get("detail", "")).contains("rejected client_authoritative_world_boss_result"):
+		return _fail("rejected world boss detail missing rejection reason %s" % [rejected_snapshot])
 	if not main_node.call("_apply_world_boss_result", {
 		"match_id": "world_match_ui",
 		"boss_instance_id": "world_boss_0",
@@ -234,6 +253,8 @@ func _validate_boss_settlement_receipts() -> bool:
 	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 64)
 	if not _assert_boss_result_receipt_row(_row_by_id(rows, "world_boss_result"), "world_boss", "world_receipt_ui", "world_hash_ui"):
 		return false
+	if bool(_row_by_id(rows, "world_boss_result").get("result_rejected", true)):
+		return _fail("world boss server receipt did not clear rejected flag %s" % [_row_by_id(rows, "world_boss_result")])
 	if not _assert_boss_result_receipt_row(_row_by_id(rows, "instance_boss_result"), "instance_boss", "instance_receipt_ui", "instance_hash_ui"):
 		return false
 	var world_result_index := _row_index_by_id(rows, "world_boss_result")
