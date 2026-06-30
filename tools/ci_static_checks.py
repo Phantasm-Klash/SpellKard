@@ -193,6 +193,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         '"preview_phase_count"',
         '"preview_phase_ids"',
         '"preview_phase_signature_digests"',
+        '"preview_bundle_max_emit_per_tick"',
+        '"preview_bundle_min_budget_headroom"',
+        '"preview_bundle_budget_status"',
         '"preview_authority_scope"',
         '"preview_fixture_id"',
         '"performance_budget_status"',
@@ -210,7 +213,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
 
     for replay_path in [replay_store, replay_list]:
         replay_text = replay_path.read_text(encoding="utf-8")
-        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_seed"', '"preview_export_schema_version"', '"preview_export_id"', '"preview_authority_scope"', '"preview_fixture_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_window_start_tick"', '"preview_sample_window_end_tick"', '"preview_sample_window_stride_ticks"', '"preview_sample_signature_digests"', '"preview_sample_emit_counts"', '"preview_sample_count"', '"preview_max_emit_per_tick"', '"preview_bullet_cap_per_tick"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"']:
+        for token in ['"catalog_id"', '"spellbook_id"', '"phase_id"', '"preview_seed"', '"preview_export_schema_version"', '"preview_export_id"', '"preview_authority_scope"', '"preview_fixture_id"', '"preview_signature_digest"', '"preview_sample_ticks"', '"preview_sample_window_start_tick"', '"preview_sample_window_end_tick"', '"preview_sample_window_stride_ticks"', '"preview_sample_signature_digests"', '"preview_sample_emit_counts"', '"preview_sample_count"', '"preview_max_emit_per_tick"', '"preview_bullet_cap_per_tick"', '"preview_budget_headroom"', '"performance_budget_status"', '"metadata_valid"', '"metadata_status"', '"server_authoritative"', '"preview_bundle_max_emit_per_tick"', '"preview_bundle_min_budget_headroom"', '"preview_bundle_budget_status"']:
             if token not in replay_text:
                 errors.append(f"{replay_path.relative_to(ROOT)}: missing spellbook replay metadata token {token}")
     if "validate_spellbook_preview_metadata" not in replay_store.read_text(encoding="utf-8"):
@@ -224,6 +227,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
     for token in [
         "_preview_sample_ticks_from_fields",
         "_expected_preview_bundle_signature_digest",
+        "_expected_preview_bundle_max_emit",
+        "_expected_preview_bundle_min_headroom",
+        "_expected_preview_bundle_budget_status",
         "SPELLBOOK_PREVIEW_GOLDEN_BUNDLE_FIXTURES",
         "_golden_preview_bundle_fixture_for_fields",
         "_expected_preview_bundle_fixture_id",
@@ -233,6 +239,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "preview_bundle_phase_count_mismatch",
         "preview_bundle_phase_ids_mismatch",
         "preview_bundle_phase_digest_mismatch",
+        "preview_bundle_max_emit_mismatch",
+        "preview_bundle_headroom_mismatch",
+        "preview_bundle_budget_status_mismatch",
         "_preview_sample_signature_digests_from_fields",
         "_preview_sample_emit_counts_from_fields",
         "_preview_sample_window_start_tick_from_signature",
@@ -277,6 +286,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         '"preview_signature_digest_mismatch"',
         '"preview_authority_scope_mismatch"',
         '"preview_seed_mismatch"',
+        '"preview_bundle_max_emit_mismatch"',
+        '"preview_bundle_headroom_mismatch"',
+        '"preview_bundle_budget_status_mismatch"',
     ]:
         if token not in replay_store_text:
             errors.append(f"godot/scripts/replay_store.gd: missing spellbook replay metadata status token {token}")
@@ -316,6 +328,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "fixture_stale_bundle_phase_digest_spellbook_preview",
         "fixture_missing_bundle_phase_ids_spellbook_preview",
         "fixture_missing_bundle_phase_digest_spellbook_preview",
+        "fixture_stale_bundle_max_emit_spellbook_preview",
+        "fixture_stale_bundle_headroom_spellbook_preview",
+        "fixture_stale_bundle_budget_status_spellbook_preview",
         "stale_seed_replay_accepted",
         "stale_bundle_id_replay_accepted",
         "stale_bundle_digest_replay_accepted",
@@ -325,6 +340,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "stale_bundle_phase_digest_replay_accepted",
         "missing_bundle_phase_ids_replay_accepted",
         "missing_bundle_phase_digest_replay_accepted",
+        "stale_bundle_max_emit_replay_accepted",
+        "stale_bundle_headroom_replay_accepted",
+        "stale_bundle_budget_status_replay_accepted",
         "stale_seed_preview_accepted",
         "preview_seed_mismatch",
         "fixture_stale_samples_spellbook_preview",
@@ -408,6 +426,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "pattern_lab_fixture_mismatch",
         "pattern_lab_bundle_phase_ids_mismatch",
         "pattern_lab_bundle_phase_digest_mismatch",
+        "pattern_lab_bundle_max_emit_mismatch",
+        "pattern_lab_bundle_headroom_mismatch",
+        "pattern_lab_bundle_budget_status_mismatch",
         "pattern_lab_sample_digest_mismatch",
         "pattern_lab_sample_window_start_mismatch",
         "preview_fixture_mismatch",
@@ -416,6 +437,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "pattern_row_digest_mismatch",
         "pattern_row_bundle_phase_ids_mismatch",
         "pattern_row_bundle_phase_digest_mismatch",
+        "pattern_row_bundle_max_emit_mismatch",
+        "pattern_row_bundle_headroom_mismatch",
+        "pattern_row_bundle_budget_status_mismatch",
         "pattern_row_fixture_mismatch",
         "pattern_row_sample_count_mismatch",
         "pattern_row_sample_digest_mismatch",
@@ -423,12 +447,21 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "missing_bundle_phase_ids_row_metadata",
         "missing_bundle_phase_digest_row_metadata",
         "missing_bundle_digest_row_metadata",
+        "stale_bundle_max_emit_row_metadata",
+        "stale_bundle_headroom_row_metadata",
+        "stale_bundle_budget_status_row_metadata",
         "preview_bundle_digest_missing",
         "preview_bundle_phase_ids_missing",
         "preview_bundle_phase_digest_missing",
+        "preview_bundle_max_emit_mismatch",
+        "preview_bundle_headroom_mismatch",
+        "preview_bundle_budget_status_mismatch",
         "stale_max_emit_row_metadata",
         "stale_bullet_cap_row_metadata",
         "valid_row_metadata_failures",
+        "valid_row_bundle_max_emit",
+        "valid_row_bundle_headroom",
+        "valid_row_bundle_budget_status",
         "invalid_row_metadata_failures",
         "bad_schema_row_metadata_failures",
         "_string_array_contains",

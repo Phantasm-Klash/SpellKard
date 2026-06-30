@@ -175,6 +175,15 @@ func validate_index_metadata(entries: Array[Dictionary] = []) -> Dictionary:
 					failures.append("preview_bundle_phase_digest_missing:%s" % replay_id)
 				elif not _arrays_equal_ints(preview_phase_signature_digests, _expected_preview_phase_signature_digests(entry)):
 					failures.append("preview_bundle_phase_digest_mismatch:%s" % replay_id)
+				if int(entry.get("preview_bundle_max_emit_per_tick", 0)) > 0 \
+						and int(entry.get("preview_bundle_max_emit_per_tick", 0)) != _expected_preview_bundle_max_emit(entry):
+					failures.append("preview_bundle_max_emit_mismatch:%s" % replay_id)
+				if int(entry.get("preview_bundle_min_budget_headroom", 0)) != 0 \
+						and int(entry.get("preview_bundle_min_budget_headroom", 0)) != _expected_preview_bundle_min_headroom(entry):
+					failures.append("preview_bundle_headroom_mismatch:%s" % replay_id)
+				if not str(entry.get("preview_bundle_budget_status", "")).is_empty() \
+						and str(entry.get("preview_bundle_budget_status", "")) != _expected_preview_bundle_budget_status(entry):
+					failures.append("preview_bundle_budget_status_mismatch:%s" % replay_id)
 			if int(entry.get("preview_export_schema_version", 0)) != SPELLBOOK_PREVIEW_EXPORT_SCHEMA_VERSION:
 				failures.append("bad_preview_schema:%s" % replay_id)
 			if int(entry.get("preview_signature_digest", 0)) <= 0:
@@ -268,6 +277,15 @@ func validate_spellbook_preview_metadata(entry: Dictionary, preview: Dictionary)
 			failures.append("preview_bundle_phase_ids_mismatch:%s" % str(entry.get("replay_id", "")))
 		if not _arrays_equal_ints(_preview_phase_signature_digests_from_fields(entry), _preview_phase_signature_digests_from_fields(preview)):
 			failures.append("preview_bundle_phase_digest_mismatch:%s" % str(entry.get("replay_id", "")))
+		if int(entry.get("preview_bundle_max_emit_per_tick", 0)) > 0 \
+				and int(entry.get("preview_bundle_max_emit_per_tick", 0)) != int(preview.get("preview_bundle_max_emit_per_tick", 0)):
+			failures.append("preview_bundle_max_emit_mismatch:%s" % str(entry.get("replay_id", "")))
+		if int(entry.get("preview_bundle_min_budget_headroom", 0)) != 0 \
+				and int(entry.get("preview_bundle_min_budget_headroom", 0)) != int(preview.get("preview_bundle_min_budget_headroom", 0)):
+			failures.append("preview_bundle_headroom_mismatch:%s" % str(entry.get("replay_id", "")))
+		if not String(entry.get("preview_bundle_budget_status", "")).is_empty() \
+				and String(entry.get("preview_bundle_budget_status", "")) != String(preview.get("preview_bundle_budget_status", "")):
+			failures.append("preview_bundle_budget_status_mismatch:%s" % str(entry.get("replay_id", "")))
 	if String(entry.get("preview_authority_scope", SPELLBOOK_PREVIEW_AUTHORITY_SCOPE)) != SPELLBOOK_PREVIEW_AUTHORITY_SCOPE \
 			or String(preview.get("preview_authority_scope", "")) != SPELLBOOK_PREVIEW_AUTHORITY_SCOPE:
 		failures.append("preview_authority_scope_mismatch:%s" % str(entry.get("replay_id", "")))
@@ -459,6 +477,12 @@ func _build_index_entry(snapshot: Dictionary, path: String) -> Dictionary:
 		"final_result_hash": final_hash,
 		"favorite": bool(metadata.get("favorite", false)),
 	}
+	if metadata.has("preview_bundle_max_emit_per_tick"):
+		entry["preview_bundle_max_emit_per_tick"] = int(metadata.get("preview_bundle_max_emit_per_tick", 0))
+	if metadata.has("preview_bundle_min_budget_headroom"):
+		entry["preview_bundle_min_budget_headroom"] = int(metadata.get("preview_bundle_min_budget_headroom", 0))
+	if metadata.has("preview_bundle_budget_status"):
+		entry["preview_bundle_budget_status"] = str(metadata.get("preview_bundle_budget_status", ""))
 	entry["metadata_valid"] = _metadata_valid(entry)
 	entry["metadata_status"] = _metadata_status(entry)
 	return entry
@@ -513,6 +537,15 @@ func _spellbook_metadata_status_from_fields(fields: Dictionary) -> String:
 			return "preview_bundle_phase_digest_missing"
 		if not _arrays_equal_ints(_preview_phase_signature_digests_from_fields(fields), _expected_preview_phase_signature_digests(fields)):
 			return "preview_bundle_phase_digest_mismatch"
+		if int(fields.get("preview_bundle_max_emit_per_tick", 0)) > 0 \
+				and int(fields.get("preview_bundle_max_emit_per_tick", 0)) != _expected_preview_bundle_max_emit(fields):
+			return "preview_bundle_max_emit_mismatch"
+		if int(fields.get("preview_bundle_min_budget_headroom", 0)) != 0 \
+				and int(fields.get("preview_bundle_min_budget_headroom", 0)) != _expected_preview_bundle_min_headroom(fields):
+			return "preview_bundle_headroom_mismatch"
+		if not str(fields.get("preview_bundle_budget_status", "")).is_empty() \
+				and str(fields.get("preview_bundle_budget_status", "")) != _expected_preview_bundle_budget_status(fields):
+			return "preview_bundle_budget_status_mismatch"
 	if str(fields.get("preview_authority_scope", SPELLBOOK_PREVIEW_AUTHORITY_SCOPE)) != SPELLBOOK_PREVIEW_AUTHORITY_SCOPE:
 		return "preview_authority_scope_mismatch"
 	if int(fields.get("preview_export_schema_version", 0)) != SPELLBOOK_PREVIEW_EXPORT_SCHEMA_VERSION:
@@ -671,6 +704,49 @@ func _expected_preview_bundle_signature_digest(fields: Dictionary) -> int:
 		])
 	return _stable_signature_digest("|".join(parts))
 
+func _expected_preview_bundle_max_emit(fields: Dictionary) -> int:
+	var bundle_fixture := _golden_preview_bundle_fixture_for_fields(fields)
+	if not bundle_fixture.is_empty():
+		return int(bundle_fixture.get("max_preview_emit_per_tick", 0))
+	var max_emit := 0
+	var spellbook_id := str(fields.get("spellbook_id", ""))
+	var seed := _preview_seed_from_fields(fields)
+	if spellbook_id.is_empty() or seed <= 0:
+		return 0
+	for phase_id in _expected_preview_phase_ids(fields):
+		var fixture_id := "%s:%s:%d" % [spellbook_id, phase_id, seed]
+		if not SPELLBOOK_PREVIEW_GOLDEN_FIXTURES.has(fixture_id):
+			return 0
+		max_emit = maxi(max_emit, int((SPELLBOOK_PREVIEW_GOLDEN_FIXTURES[fixture_id] as Dictionary).get("max_emit_per_tick", 0)))
+	return max_emit
+
+func _expected_preview_bundle_min_headroom(fields: Dictionary) -> int:
+	var bundle_fixture := _golden_preview_bundle_fixture_for_fields(fields)
+	if not bundle_fixture.is_empty():
+		return int(bundle_fixture.get("min_preview_budget_headroom", 0))
+	var spellbook_id := str(fields.get("spellbook_id", ""))
+	var seed := _preview_seed_from_fields(fields)
+	if spellbook_id.is_empty() or seed <= 0:
+		return 0
+	var min_headroom := 2147483647
+	for phase_id in _expected_preview_phase_ids(fields):
+		var fixture_id := "%s:%s:%d" % [spellbook_id, phase_id, seed]
+		if not SPELLBOOK_PREVIEW_GOLDEN_FIXTURES.has(fixture_id):
+			return 0
+		min_headroom = mini(min_headroom, int((SPELLBOOK_PREVIEW_GOLDEN_FIXTURES[fixture_id] as Dictionary).get("budget_headroom", 0)))
+	return min_headroom if min_headroom != 2147483647 else 0
+
+func _expected_preview_bundle_budget_status(fields: Dictionary) -> String:
+	var bundle_fixture := _golden_preview_bundle_fixture_for_fields(fields)
+	if not bundle_fixture.is_empty():
+		return str(bundle_fixture.get("performance_budget_status", ""))
+	for phase_id in _expected_preview_phase_ids(fields):
+		var fixture_id := "%s:%s:%d" % [str(fields.get("spellbook_id", "")), phase_id, _preview_seed_from_fields(fields)]
+		if SPELLBOOK_PREVIEW_GOLDEN_FIXTURES.has(fixture_id) \
+				and str((SPELLBOOK_PREVIEW_GOLDEN_FIXTURES[fixture_id] as Dictionary).get("performance_budget_status", "")) != "within_budget":
+			return str((SPELLBOOK_PREVIEW_GOLDEN_FIXTURES[fixture_id] as Dictionary).get("performance_budget_status", "over_budget"))
+	return "within_budget"
+
 func _expected_preview_bundle_fixture_id(fields: Dictionary) -> String:
 	var spellbook_id := str(fields.get("spellbook_id", ""))
 	var seed := _preview_seed_from_fields(fields)
@@ -683,7 +759,10 @@ func _has_preview_bundle_metadata(fields: Dictionary) -> bool:
 			or int(fields.get("preview_bundle_signature_digest", 0)) > 0 \
 			or int(fields.get("preview_phase_count", 0)) > 0 \
 			or not _normalized_string_array(fields.get("preview_phase_ids", [])).is_empty() \
-			or not _normalized_int_array(fields.get("preview_phase_signature_digests", [])).is_empty()
+			or not _normalized_int_array(fields.get("preview_phase_signature_digests", [])).is_empty() \
+			or int(fields.get("preview_bundle_max_emit_per_tick", 0)) > 0 \
+			or int(fields.get("preview_bundle_min_budget_headroom", 0)) != 0 \
+			or not str(fields.get("preview_bundle_budget_status", "")).is_empty()
 
 func _preview_seed_from_fields(fields: Dictionary) -> int:
 	return int(fields.get("preview_seed", fields.get("seed", fields.get("match_seed", 0))))
@@ -732,6 +811,12 @@ func _golden_fixture_status(fields: Dictionary, fixture: Dictionary) -> String:
 		return "preview_bundle_digest_mismatch"
 	if first_failure.begins_with("preview_bundle_phase_count_mismatch:"):
 		return "preview_bundle_phase_count_mismatch"
+	if first_failure.begins_with("preview_bundle_max_emit_mismatch:"):
+		return "preview_bundle_max_emit_mismatch"
+	if first_failure.begins_with("preview_bundle_headroom_mismatch:"):
+		return "preview_bundle_headroom_mismatch"
+	if first_failure.begins_with("preview_bundle_budget_status_mismatch:"):
+		return "preview_bundle_budget_status_mismatch"
 	return "preview_golden_fixture_mismatch"
 
 func _golden_fixture_failures(fields: Dictionary, fixture: Dictionary, replay_id: String) -> Array[String]:

@@ -77,6 +77,9 @@ func rows_for_spellbook_phase(catalog_id: String, phase_id: String, spellbook_id
 		row["preview_phase_count"] = int(export.get("preview_phase_count", 0))
 		row["preview_phase_ids"] = (export.get("preview_phase_ids", []) as Array).duplicate()
 		row["preview_phase_signature_digests"] = (export.get("preview_phase_signature_digests", []) as Array).duplicate()
+		row["preview_bundle_max_emit_per_tick"] = int(export.get("max_preview_emit_per_tick", 0))
+		row["preview_bundle_min_budget_headroom"] = int(export.get("min_preview_budget_headroom", 0))
+		row["preview_bundle_budget_status"] = String(export.get("performance_budget_status", ""))
 		row["preview_export_id"] = String(preview.get("export_id", ""))
 		row["preview_fixture_id"] = String(preview.get("preview_fixture_id", ""))
 		row["preview_authority_scope"] = String(preview.get("preview_authority_scope", ""))
@@ -179,6 +182,9 @@ func _spellbook_phase_coverage_row(catalog_id: String, spellbook_id: String, pha
 		"preview_phase_count": int(export.get("preview_phase_count", 0)),
 		"preview_phase_ids": (export.get("preview_phase_ids", []) as Array).duplicate(),
 		"preview_phase_signature_digests": (export.get("preview_phase_signature_digests", []) as Array).duplicate(),
+		"preview_bundle_max_emit_per_tick": int(export.get("max_preview_emit_per_tick", 0)),
+		"preview_bundle_min_budget_headroom": int(export.get("min_preview_budget_headroom", 0)),
+		"preview_bundle_budget_status": String(export.get("performance_budget_status", "")),
 		"preview_export_id": String(preview.get("export_id", "")),
 		"preview_fixture_id": String(preview.get("preview_fixture_id", "")),
 		"preview_authority_scope": String(preview.get("preview_authority_scope", "")),
