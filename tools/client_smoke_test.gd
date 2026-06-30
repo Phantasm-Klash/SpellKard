@@ -4750,13 +4750,15 @@ func _process(_delta: float) -> bool:
 		return true
 	var fallback_claim_summary: Dictionary = fallback_replay_list_model.boss_practice_verification_summary_row()
 	if int(fallback_claim_summary.get("boss_practice_rejected_server_claim_count", 0)) != 1 \
+			or int(fallback_claim_summary.get("boss_practice_rejected_server_claim_field_count", 0)) != 1 \
 			or String(fallback_claim_summary.get("recommended_filter", "")) != "rejected_server_claim" \
 			or String(fallback_claim_summary.get("recommended_filter_row_id", "")) != "replay_filter_rejected_server_claim" \
 			or String(fallback_claim_summary.get("selected_server_audit_status", "")) != "pending" \
 			or String(fallback_claim_summary.get("selected_local_playback_authority", "")) != "server_audit_required" \
 			or not bool(fallback_claim_summary.get("selected_requires_server_audit", false)) \
 			or bool(fallback_claim_summary.get("selected_can_play", true)) \
-			or (fallback_claim_summary.get("selected_server_authority_claim_fields", []) as Array).is_empty():
+			or not (fallback_claim_summary.get("boss_practice_rejected_server_claim_fields", []) as Array).has("damage_total") \
+			or not (fallback_claim_summary.get("selected_server_authority_claim_fields", []) as Array).has("damage_total"):
 		push_error("Smoke test failed: fallback server-claim replay summary invalid %s" % [fallback_claim_summary])
 		quit(1)
 		return true
@@ -4781,6 +4783,8 @@ func _process(_delta: float) -> bool:
 	if int(mixed_authority_summary.get("local_loadable_count", 0)) != 1 \
 			or int(mixed_authority_summary.get("server_audit_required_count", 0)) != 1 \
 			or int(mixed_authority_summary.get("rejected_server_claim_count", 0)) != 1 \
+			or int(mixed_authority_summary.get("rejected_server_claim_field_count", 0)) != 1 \
+			or not (mixed_authority_summary.get("rejected_server_claim_fields", []) as Array).has("damage_total") \
 			or String(mixed_authority_summary.get("damage_authority", "")) != "server" \
 			or bool(mixed_authority_summary.get("client_result_authoritative", true)):
 		push_error("Smoke test failed: mixed replay authority summary invalid %s" % [mixed_authority_summary])

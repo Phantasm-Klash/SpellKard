@@ -199,6 +199,7 @@ func replay_authority_summary_row() -> Dictionary:
 	var selected_source_index := _source_index_for_replay_id(str(selected.get("replay_id", "")))
 	var selected_row_model := _row_from_entry(selected, selected_source_index) if not selected.is_empty() and selected_source_index >= 0 else {}
 	var selected_guard := local_load_guard_for_entry(selected) if not selected.is_empty() else _replay_action_guard({})
+	var rejected_claim_fields := _rejected_server_authority_claim_fields()
 	return {
 		"id": "replay_authority_summary",
 		"label_key": "screen.results.audit",
@@ -214,12 +215,15 @@ func replay_authority_summary_row() -> Dictionary:
 		"server_audit_required_count": int(playability.get("server_audit_required_count", 0)),
 		"blocked_local_integrity_count": int(playability.get("blocked_local_integrity_count", 0)),
 		"rejected_server_claim_count": int(counts.get("rejected_server_claim", 0)),
+		"rejected_server_claim_field_count": rejected_claim_fields.size(),
+		"rejected_server_claim_fields": rejected_claim_fields,
 		"server_pending_audit_count": int(counts.get("replay_server_pending", 0)),
 		"boss_practice_count": int(counts.get("replay_boss_practice", 0)),
 		"selected_replay_id": str(selected.get("replay_id", "")),
 		"selected_local_load_policy": String(selected_row_model.get("local_load_policy", "none")),
 		"selected_server_audit_status": String(selected_row_model.get("server_audit_status", "not_required")),
 		"selected_requires_server_audit": bool(selected_row_model.get("requires_server_audit", false)),
+		"selected_server_authority_claim_fields": (selected_guard.get("server_authority_claim_fields", []) as Array).duplicate(),
 		"selected_guard": selected_guard,
 		"authority_contract_kind": "replay_local_display_server_audit_summary",
 		"server_authoritative": false,
@@ -304,6 +308,8 @@ func boss_practice_verification_summary_row() -> Dictionary:
 	var ready_count := 0
 	var invalid_count := 0
 	var server_claim_count := 0
+	var rejected_claim_fields: Array[String] = []
+	var rejected_claim_seen := {}
 	for row in boss_rows:
 		if bool(row.get("can_play", false)) and String(row.get("verification_scope", "")) == "local_practice_hash":
 			ready_count += 1
@@ -311,6 +317,13 @@ func boss_practice_verification_summary_row() -> Dictionary:
 			invalid_count += 1
 		if String(row.get("verification_scope", "")) == "rejected_server_claim":
 			server_claim_count += 1
+			for field in row.get("server_authority_claim_fields", []):
+				var field_id := String(field)
+				if field_id.is_empty() or rejected_claim_seen.has(field_id):
+					continue
+				rejected_claim_seen[field_id] = true
+				rejected_claim_fields.append(field_id)
+	rejected_claim_fields.sort()
 	var selected_boss_row := _selected_or_first_boss_practice_row(boss_rows)
 	var boss_context: Dictionary = selected_boss_row.get("boss_practice_verification", {}) if not selected_boss_row.is_empty() else {}
 	var selected_requires_server_audit := bool(selected_boss_row.get("requires_server_audit", false))
@@ -327,6 +340,7 @@ func boss_practice_verification_summary_row() -> Dictionary:
 		{"id": "ready", "label": "ready", "value": ready_count},
 		{"id": "invalid", "label": "invalid", "value": invalid_count},
 		{"id": "server_claims", "label": "server claims", "value": server_claim_count},
+		{"id": "server_claim_fields", "label": "server claim fields", "value": rejected_claim_fields.size()},
 		{"id": "digest", "label": "digest", "value": int(boss_context.get("preview_bundle_signature_digest", 0))},
 	]
 	return {
@@ -343,6 +357,8 @@ func boss_practice_verification_summary_row() -> Dictionary:
 		"boss_practice_ready_count": ready_count,
 		"boss_practice_invalid_count": invalid_count,
 		"boss_practice_rejected_server_claim_count": server_claim_count,
+		"boss_practice_rejected_server_claim_field_count": rejected_claim_fields.size(),
+		"boss_practice_rejected_server_claim_fields": rejected_claim_fields,
 		"selected_replay_id": String(selected_boss_row.get("replay_id", "")),
 		"selected_verification_status": String(selected_boss_row.get("verification_status", "none")),
 		"selected_local_load_policy": String(selected_boss_row.get("local_load_policy", "none")),
@@ -855,6 +871,22 @@ func _verification_counts() -> Dictionary:
 		if _entry_verification_scope(entry, bool(entry.get("server_authoritative", false)), metadata_valid, server_claim_fields) == "rejected_server_claim":
 			counts["rejected_server_claim"] = int(counts.get("rejected_server_claim", 0)) + 1
 	return counts
+
+func _rejected_server_authority_claim_fields() -> Array[String]:
+	var fields: Array[String] = []
+	var seen := {}
+	for entry in entries:
+		var claim_fields := _entry_server_authority_claim_fields(entry)
+		if claim_fields.is_empty():
+			continue
+		for field in claim_fields:
+			var field_id := String(field)
+			if field_id.is_empty() or seen.has(field_id):
+				continue
+			seen[field_id] = true
+			fields.append(field_id)
+	fields.sort()
+	return fields
 
 func _playability_counts() -> Dictionary:
 	var local_loadable_count := 0
