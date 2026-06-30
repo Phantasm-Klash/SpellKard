@@ -773,20 +773,10 @@ func _normalized_string_array(value: Variant) -> Array[String]:
 	return result
 
 func _preview_phase_ids_from_fields(fields: Dictionary) -> Array[String]:
-	var direct := _normalized_string_array(fields.get("preview_phase_ids", []))
-	if not direct.is_empty():
-		return direct
-	if _has_preview_bundle_metadata(fields):
-		return _expected_preview_phase_ids(fields)
-	return []
+	return _normalized_string_array(fields.get("preview_phase_ids", []))
 
 func _preview_phase_signature_digests_from_fields(fields: Dictionary) -> Array[int]:
-	var direct := _normalized_int_array(fields.get("preview_phase_signature_digests", []))
-	if not direct.is_empty():
-		return direct
-	if _has_preview_bundle_metadata(fields):
-		return _expected_preview_phase_signature_digests(fields)
-	return []
+	return _normalized_int_array(fields.get("preview_phase_signature_digests", []))
 
 func _preview_sample_ticks_from_fields(fields: Dictionary) -> Array[int]:
 	var direct := _normalized_int_array(fields.get("preview_sample_ticks", []))
