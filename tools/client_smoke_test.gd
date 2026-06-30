@@ -2009,6 +2009,10 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: world boss entry gate invalid %s" % [world_boss_entry])
 		quit(1)
 		return true
+	var world_entry_preview: Dictionary = game_mode_model.boss_entry_preview("world_boss")
+	if not _validate_boss_entry_preview(world_entry_preview, "world_boss", true, "none"):
+		quit(1)
+		return true
 	var transfer_preview: Dictionary = game_mode_model.boss_transfer_preview("world_boss", "p1", "p2", "focus_lens")
 	if not _validate_boss_transfer_preview(transfer_preview, "world_boss", true, "none"):
 		quit(1)
@@ -2233,6 +2237,10 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: locked instance entry failures invalid %s" % [locked_entry])
 		quit(1)
 		return true
+	var locked_entry_preview: Dictionary = game_mode_model.boss_entry_preview("instance_boss")
+	if not _validate_boss_entry_preview(locked_entry_preview, "instance_boss", false, "entry_locked"):
+		quit(1)
+		return true
 	var locked_entry_request: Dictionary = main_node.call("_request_boss_entry", "instance_boss")
 	if bool(locked_entry_request.get("ok", true)) or String(locked_entry_request.get("last_error_code", "")) != "entry_locked":
 		push_error("Smoke test failed: locked instance entry request invalid %s" % [locked_entry_request])
@@ -2262,8 +2270,11 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	var instance_entry_rules: Array = instance_entry_row.get("local_validation_rules", [])
-	if String(instance_entry_row.get("intent_authority", "")) != "client_request_only" or String(instance_entry_row.get("server_confirmation_status", "")) != "required" or String(instance_entry_row.get("settlement_authority", "")) != "server" or not instance_entry_rules.has("rating_requirement") or not instance_entry_rules.has("key_requirement"):
+	if String(instance_entry_row.get("intent_authority", "")) != "client_request_only" or String(instance_entry_row.get("server_confirmation_status", "")) != "required" or String(instance_entry_row.get("local_validation", "")) != "boss_entry_preflight" or String(instance_entry_row.get("settlement_authority", "")) != "server" or not instance_entry_rules.has("rating_requirement") or not instance_entry_rules.has("key_requirement"):
 		push_error("Smoke test failed: instance boss entry intent authority invalid %s" % [instance_entry_row])
+		quit(1)
+		return true
+	if not _validate_boss_entry_preview(instance_entry_row.get("entry_preflight", {}), "instance_boss", true, "none"):
 		quit(1)
 		return true
 	var instance_rules_row_after_access: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_rules")
@@ -4106,6 +4117,10 @@ func _process(_delta: float) -> bool:
 		return true
 	mode_ui_rows = main_node.call("_ui_screen_rows", 32)
 	var world_entry_cursor: int = _row_index_by_id(mode_ui_rows, "world_boss_entry")
+	var world_entry_ui_row: Dictionary = _find_row_by_id(mode_ui_rows, "world_boss_entry")
+	if not _validate_boss_entry_preview(world_entry_ui_row.get("entry_preflight", {}), "world_boss", true, "none"):
+		quit(1)
+		return true
 	main_node.call("_ui_set_cursor", world_entry_cursor)
 	var accept_world_entry: Dictionary = main_node.call("_ui_accept_selected")
 	if not bool(accept_world_entry.get("ok", false)) or String(accept_world_entry.get("action", "")) != "request_boss_entry" or String(accept_world_entry.get("request_type", "")) != "enter_world_boss" or bool(accept_world_entry.get("authoritative", true)):
@@ -4114,6 +4129,10 @@ func _process(_delta: float) -> bool:
 		return true
 	mode_ui_rows = main_node.call("_ui_screen_rows", 32)
 	var instance_entry_cursor: int = _row_index_by_id(mode_ui_rows, "instance_boss_entry")
+	var instance_entry_ui_row: Dictionary = _find_row_by_id(mode_ui_rows, "instance_boss_entry")
+	if not _validate_boss_entry_preview(instance_entry_ui_row.get("entry_preflight", {}), "instance_boss", true, "none"):
+		quit(1)
+		return true
 	main_node.call("_ui_set_cursor", instance_entry_cursor)
 	var accept_instance_entry: Dictionary = main_node.call("_ui_accept_selected")
 	if not bool(accept_instance_entry.get("ok", false)) or String(accept_instance_entry.get("action", "")) != "request_boss_entry" or String(accept_instance_entry.get("request_type", "")) != "enter_boss_instance" or bool(accept_instance_entry.get("authoritative", true)):
@@ -5112,6 +5131,38 @@ func _validate_boss_result_authority_row(row: Dictionary, mode_id: String, expec
 		return false
 	if not expect_server_projection and String(row.get("result_source", "")) == "server_settlement_projection":
 		push_error("Smoke test failed: boss rejected result carried server projection %s" % [row])
+		return false
+	return true
+
+func _validate_boss_entry_preview(preview: Dictionary, mode_id: String, expected_ok: bool, expected_reason: String) -> bool:
+	if preview.is_empty():
+		push_error("Smoke test failed: boss entry preview missing for %s" % mode_id)
+		return false
+	if String(preview.get("mode_id", "")) != mode_id or String(preview.get("mode_category", "")) != "boss":
+		push_error("Smoke test failed: boss entry preview identity invalid %s" % [preview])
+		return false
+	if bool(preview.get("ok", false)) != expected_ok or String(preview.get("reason", "")) != expected_reason:
+		push_error("Smoke test failed: boss entry preview result invalid %s expected ok=%s reason=%s" % [preview, expected_ok, expected_reason])
+		return false
+	if String(preview.get("local_validation", "")) != "boss_entry_preflight":
+		push_error("Smoke test failed: boss entry preview validation label invalid %s" % [preview])
+		return false
+	var rules: Array = preview.get("local_validation_rules", [])
+	if not rules.has("attempts_available") or not rules.has("party_size") or not rules.has("rating_requirement") or not rules.has("key_requirement"):
+		push_error("Smoke test failed: boss entry preview rules invalid %s" % [preview])
+		return false
+	if String(preview.get("intent_authority", "")) != "client_request_only" or not bool(preview.get("requires_server_confirmation", false)):
+		push_error("Smoke test failed: boss entry preview intent authority invalid %s" % [preview])
+		return false
+	if String(preview.get("damage_authority", "")) != "server" or String(preview.get("reward_authority", "")) != "server" or String(preview.get("settlement_authority", "")) != "server":
+		push_error("Smoke test failed: boss entry preview server authority invalid %s" % [preview])
+		return false
+	if bool(preview.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: boss entry preview became client authoritative %s" % [preview])
+		return false
+	var expected_confirmation := "required" if expected_ok else "blocked_local"
+	if String(preview.get("server_confirmation_status", "")) != expected_confirmation:
+		push_error("Smoke test failed: boss entry preview confirmation status invalid %s expected=%s" % [preview, expected_confirmation])
 		return false
 	return true
 

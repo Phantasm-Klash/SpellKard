@@ -1123,6 +1123,7 @@ func _decorate_game_mode_state_rows(source_rows: Array[Dictionary]) -> Array[Dic
 				row["enabled"] = bool(transfer_request.get("valid", false))
 			"world_boss_entry", "instance_boss_entry":
 				row["ui_action"] = "request_boss_entry"
+				row["entry_preflight"] = row.get("entry_preflight", {})
 				row["enabled"] = bool(row.get("entry_valid", false))
 		rows.append(row)
 	return rows
@@ -1498,7 +1499,7 @@ func _control_for_row(screen_id: String, row: Dictionary) -> String:
 				return "button"
 			"advance_queue", "queue_mode", "start_certification_queue", "ready_match", "begin_network_match", "cancel_queue":
 				return "queue"
-			"select_mode", "select_battle_royale_candidate", "request_boss_transfer":
+			"select_mode", "select_battle_royale_candidate", "request_boss_transfer", "request_boss_entry":
 				return "mode"
 			"open_social_link":
 				return "link"

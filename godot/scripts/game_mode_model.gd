@@ -291,8 +291,36 @@ func validate_boss_entry(mode_id: String) -> Dictionary:
 		"client_result_authoritative": false,
 	}
 
+func boss_entry_preview(mode_id: String) -> Dictionary:
+	var validation := validate_boss_entry(mode_id)
+	var failures := _string_array(validation.get("failures", []))
+	var reason := "none" if failures.is_empty() else failures[0]
+	return {
+		"ok": bool(validation.get("ok", false)),
+		"reason": reason,
+		"failures": failures,
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"entry_period": String(validation.get("entry_period", "")),
+		"attempts_left": int(validation.get("attempts_left", 0)),
+		"required_rating": String(validation.get("required_rating", "")),
+		"player_rating": String(validation.get("player_rating", "")),
+		"required_key_id": String(validation.get("required_key_id", "")),
+		"owned_key_count": int(validation.get("owned_key_count", 0)),
+		"local_validation": "boss_entry_preflight",
+		"local_validation_rules": ["attempts_available", "party_size", "rating_requirement", "key_requirement"],
+		"intent_authority": "client_request_only",
+		"server_confirmation_status": "required" if bool(validation.get("ok", false)) else "blocked_local",
+		"requires_server_confirmation": true,
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"server_authoritative": bool(validation.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
 func request_boss_entry(mode_id: String) -> Dictionary:
-	var entry := validate_boss_entry(mode_id)
+	var entry := boss_entry_preview(mode_id)
 	if not bool(entry.get("ok", false)):
 		last_action_status = "failed"
 		var failures: Array = entry.get("failures", [])
@@ -1138,7 +1166,7 @@ func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 	}
 
 func _boss_entry_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
-	var validation := validate_boss_entry(mode_id)
+	var validation := boss_entry_preview(mode_id)
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.boss.entry",
@@ -1157,10 +1185,13 @@ func _boss_entry_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 		"player_rating": String(validation.get("player_rating", "")),
 		"required_key_id": String(validation.get("required_key_id", "")),
 		"owned_key_count": int(validation.get("owned_key_count", 0)),
+		"entry_preflight": validation,
 		"intent_authority": "client_request_only",
-		"server_confirmation_status": "required",
-		"local_validation": "entry_gate",
+		"server_confirmation_status": String(validation.get("server_confirmation_status", "")),
+		"local_validation": "boss_entry_preflight",
 		"local_validation_rules": ["attempts_available", "party_size", "rating_requirement", "key_requirement"],
+		"damage_authority": "server",
+		"reward_authority": "server",
 		"settlement_authority": "server",
 		"requires_server_confirmation": true,
 		"server_authoritative": bool(state.get("server_authoritative", false)),
