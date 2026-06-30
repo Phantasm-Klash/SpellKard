@@ -4685,9 +4685,19 @@ func _process(_delta: float) -> bool:
 			or int(boss_practice_summary.get("preview_phase_count", 0)) != int(boss_export.get("preview_phase_count", 0)) \
 			or String(boss_practice_summary.get("replay_verification_scope", "")) != "local_practice_hash" \
 			or String(boss_practice_summary.get("damage_authority", "")) != "server" \
+			or String(boss_practice_summary.get("recommended_filter", "")) != "replay_boss_practice" \
+			or String(boss_practice_summary.get("recommended_filter_row_id", "")) != "replay_filter_replay_boss_practice" \
+			or String(boss_practice_summary.get("selected_local_playback_authority", "")) != "local_practice_hash" \
+			or String(boss_practice_summary.get("selected_replay_authority_scope", "")) != "local_practice_record" \
 			or bool(boss_practice_summary.get("selected_requires_server_audit", true)) \
+			or not bool(boss_practice_summary.get("selected_can_play", false)) \
 			or bool(boss_practice_summary.get("client_result_authoritative", true)):
 		push_error("Smoke test failed: boss practice verification summary invalid %s" % [boss_practice_summary])
+		quit(1)
+		return true
+	var boss_practice_summary_metrics: Array = boss_practice_summary.get("verification_card_metrics", [])
+	if boss_practice_summary_metrics.size() < 4:
+		push_error("Smoke test failed: boss practice verification summary metrics invalid %s" % [boss_practice_summary])
 		quit(1)
 		return true
 	var boss_practice_actions: Array[Dictionary] = replay_list_model.selected_action_rows()
@@ -4736,6 +4746,18 @@ func _process(_delta: float) -> bool:
 			or not bool(fallback_claim_guard.get("requires_server_audit", false)) \
 			or (fallback_claim_guard.get("server_authority_claim_fields", []) as Array).is_empty():
 		push_error("Smoke test failed: fallback server-claim replay guard invalid row=%s context=%s guard=%s" % [fallback_claim_row, fallback_claim_context, fallback_claim_guard])
+		quit(1)
+		return true
+	var fallback_claim_summary: Dictionary = fallback_replay_list_model.boss_practice_verification_summary_row()
+	if int(fallback_claim_summary.get("boss_practice_rejected_server_claim_count", 0)) != 1 \
+			or String(fallback_claim_summary.get("recommended_filter", "")) != "rejected_server_claim" \
+			or String(fallback_claim_summary.get("recommended_filter_row_id", "")) != "replay_filter_rejected_server_claim" \
+			or String(fallback_claim_summary.get("selected_server_audit_status", "")) != "pending" \
+			or String(fallback_claim_summary.get("selected_local_playback_authority", "")) != "server_audit_required" \
+			or not bool(fallback_claim_summary.get("selected_requires_server_audit", false)) \
+			or bool(fallback_claim_summary.get("selected_can_play", true)) \
+			or (fallback_claim_summary.get("selected_server_authority_claim_fields", []) as Array).is_empty():
+		push_error("Smoke test failed: fallback server-claim replay summary invalid %s" % [fallback_claim_summary])
 		quit(1)
 		return true
 	if not replay_list_model.set_verification_filter("replay_boss_practice") or String(replay_list_model.get("active_verification_filter")) != "replay_boss_practice":
