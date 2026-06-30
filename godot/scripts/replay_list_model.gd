@@ -313,6 +313,22 @@ func boss_practice_verification_summary_row() -> Dictionary:
 			server_claim_count += 1
 	var selected_boss_row := _selected_or_first_boss_practice_row(boss_rows)
 	var boss_context: Dictionary = selected_boss_row.get("boss_practice_verification", {}) if not selected_boss_row.is_empty() else {}
+	var selected_requires_server_audit := bool(selected_boss_row.get("requires_server_audit", false))
+	var selected_can_play := bool(selected_boss_row.get("can_play", false))
+	var selected_claim_fields: Array = selected_boss_row.get("server_authority_claim_fields", []) if not selected_boss_row.is_empty() else []
+	var recommended_filter := "all"
+	if server_claim_count > 0:
+		recommended_filter = "rejected_server_claim"
+	elif ready_count > 0:
+		recommended_filter = "replay_boss_practice"
+	elif invalid_count > 0:
+		recommended_filter = "replay_metadata_invalid"
+	var verification_card_metrics: Array[Dictionary] = [
+		{"id": "ready", "label": "ready", "value": ready_count},
+		{"id": "invalid", "label": "invalid", "value": invalid_count},
+		{"id": "server_claims", "label": "server claims", "value": server_claim_count},
+		{"id": "digest", "label": "digest", "value": int(boss_context.get("preview_bundle_signature_digest", 0))},
+	]
 	return {
 		"id": "replay_boss_practice_verification",
 		"label_key": "screen.settings.boss_spellbook",
@@ -330,8 +346,13 @@ func boss_practice_verification_summary_row() -> Dictionary:
 		"selected_replay_id": String(selected_boss_row.get("replay_id", "")),
 		"selected_verification_status": String(selected_boss_row.get("verification_status", "none")),
 		"selected_local_load_policy": String(selected_boss_row.get("local_load_policy", "none")),
-		"selected_can_play": bool(selected_boss_row.get("can_play", false)),
-		"selected_requires_server_audit": bool(selected_boss_row.get("requires_server_audit", false)),
+		"selected_can_play": selected_can_play,
+		"selected_requires_server_audit": selected_requires_server_audit,
+		"selected_server_audit_status": String(selected_boss_row.get("server_audit_status", "not_required")),
+		"selected_local_playback_authority": String(selected_boss_row.get("local_playback_authority", "none")),
+		"selected_replay_authority_scope": String(selected_boss_row.get("replay_authority_scope", "none")),
+		"selected_load_guard_reason": String(selected_boss_row.get("local_load_guard_reason", "")),
+		"selected_server_authority_claim_fields": selected_claim_fields.duplicate(),
 		"boss_practice_verification": boss_context,
 		"preview_bundle_id": String(boss_context.get("preview_bundle_id", "")),
 		"preview_bundle_signature_digest": int(boss_context.get("preview_bundle_signature_digest", 0)),
@@ -350,6 +371,9 @@ func boss_practice_verification_summary_row() -> Dictionary:
 		"boss_hp_authority": "server",
 		"overview_card_kind": "boss_practice_replay_verification",
 		"render_slot": "overview_cards",
+		"recommended_filter": recommended_filter,
+		"recommended_filter_row_id": "replay_filter_%s" % recommended_filter if recommended_filter != "all" else "replay_filter_all",
+		"verification_card_metrics": verification_card_metrics,
 		"verification_card_primary_metric": "ready %d/%d" % [ready_count, boss_rows.size()],
 		"verification_card_secondary_metric": "invalid %d claims %d digest %d" % [
 			invalid_count,

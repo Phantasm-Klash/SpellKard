@@ -635,6 +635,21 @@ func _validate_collection_page_contract() -> bool:
 			or String(boss_practice_summary.get("boss_hp_authority", "")) != "server" \
 			or bool(boss_practice_summary.get("client_result_authoritative", true)):
 		return _fail("replay page missing boss practice verification summary contract %s" % [replay_rows])
+	var boss_practice_metrics: Array = boss_practice_summary.get("verification_card_metrics", [])
+	if boss_practice_metrics.size() < 4:
+		return _fail("boss practice replay verification metrics missing %s" % [boss_practice_summary])
+	if int(boss_practice_summary.get("boss_practice_entry_count", 0)) > 0:
+		if String(boss_practice_summary.get("recommended_filter_row_id", "")) != "replay_filter_replay_boss_practice" \
+				or String(boss_practice_summary.get("selected_local_playback_authority", "")) != "local_practice_hash" \
+				or bool(boss_practice_summary.get("selected_requires_server_audit", true)) \
+				or not bool(boss_practice_summary.get("selected_can_play", false)):
+			return _fail("boss practice replay verification selected context invalid %s" % [boss_practice_summary])
+	else:
+		if String(boss_practice_summary.get("recommended_filter_row_id", "")) != "replay_filter_all" \
+				or String(boss_practice_summary.get("selected_local_playback_authority", "")) != "none" \
+				or bool(boss_practice_summary.get("selected_requires_server_audit", true)) \
+				or bool(boss_practice_summary.get("selected_can_play", true)):
+			return _fail("empty boss practice replay verification context invalid %s" % [boss_practice_summary])
 	var boss_practice_badges: Array = boss_practice_summary.get("verification_card_authority_badges", [])
 	if not boss_practice_badges.has("local_practice_verification_only") or not boss_practice_badges.has("online_replay_server_audit") or not boss_practice_badges.has("boss_hp_server") or not boss_practice_badges.has("settlement_server"):
 		return _fail("boss practice replay verification badges missing authority boundaries %s" % [boss_practice_summary])
