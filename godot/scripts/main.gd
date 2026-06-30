@@ -6021,6 +6021,9 @@ func _ui_control_preview_text(row: Dictionary) -> String:
 	var state := _row_control_state_text(row)
 	if state.is_empty():
 		state = _row_label_text(row)
+	var boss_action_context := _boss_action_context_text(row)
+	if not boss_action_context.is_empty():
+		state = "%s | %s" % [state, boss_action_context]
 	if row.has("curve_graph"):
 		state = "%s | %s" % [state, String(row.get("curve_graph", ""))]
 	if row.has("speed_preview"):
@@ -6054,6 +6057,9 @@ func _ui_detail_text(row: Dictionary) -> String:
 	var control_state := _row_control_state_text(row)
 	if not control_state.is_empty():
 		detail_parts.append(localization.text_for("ui.menu_detail_control_state", {"state": control_state}))
+	var boss_action_context := _boss_action_context_text(row)
+	if not boss_action_context.is_empty():
+		detail_parts.append(boss_action_context)
 	if row.has("summary"):
 		detail_parts.append(str(row.get("summary", "")))
 	if row.has("value"):
@@ -6070,6 +6076,30 @@ func _ui_detail_text(row: Dictionary) -> String:
 		"label": _row_label_text(row),
 		"detail": _trim_ui_card_text(" | ".join(detail_parts), 92),
 	})
+
+func _boss_action_context_text(row: Dictionary) -> String:
+	if row.is_empty() or String(row.get("mode_category", "")) != "boss":
+		return ""
+	var status := String(row.get("action_status", ""))
+	if status.is_empty() and typeof(row.get("action_availability", {})) == TYPE_DICTIONARY:
+		var action_availability: Dictionary = row.get("action_availability", {})
+		status = String(action_availability.get("action_status", ""))
+	if status.is_empty():
+		return ""
+	var blockers: Array[String] = _ui_string_array(row.get("local_blockers", []))
+	if blockers.is_empty() and typeof(row.get("action_availability", {})) == TYPE_DICTIONARY:
+		var action_context: Dictionary = row.get("action_availability", {})
+		blockers = _ui_string_array(action_context.get("local_blockers", []))
+	var confirmation := String(row.get("server_confirmation_status", ""))
+	if confirmation.is_empty() and typeof(row.get("action_availability", {})) == TYPE_DICTIONARY:
+		var action_projection: Dictionary = row.get("action_availability", {})
+		confirmation = String(action_projection.get("server_confirmation_status", ""))
+	var parts: Array[String] = [status]
+	if not confirmation.is_empty():
+		parts.append("server %s" % confirmation)
+	if not blockers.is_empty():
+		parts.append("blocked %s" % ",".join(blockers))
+	return "boss action %s" % " ".join(parts)
 
 func _ui_hint_text(screen_id: String, row: Dictionary, rows: Array[Dictionary]) -> String:
 	var action_hint: String = localization.text_for("ui.menu_hint_apply")

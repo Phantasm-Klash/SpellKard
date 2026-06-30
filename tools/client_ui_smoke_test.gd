@@ -148,6 +148,28 @@ func _validate_play_pages() -> bool:
 		return false
 	if not _assert_boss_status_row(_row_by_id(rows, "match_instance_boss_status"), "instance_boss"):
 		return false
+	if not main_node.call("_configure_boss_party", "world_boss", ["p1", "p2", "p3", "p4"]):
+		return _fail("world boss UI party setup failed")
+	if not main_node.call("_configure_boss_party", "instance_boss", ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]):
+		return _fail("instance boss UI party setup failed")
+	snapshot = await _open_snapshot("modes")
+	rows = main_node.call("_ui_screen_rows", 64)
+	var world_entry_index := _row_index_by_id(rows, "world_boss_entry")
+	if world_entry_index < 0:
+		return _fail("modes page missing world boss entry row")
+	main_node.call("_ui_set_cursor", world_entry_index)
+	await _settle_frames(2)
+	snapshot = main_node.call("_ui_overlay_snapshot")
+	if not String(snapshot.get("control_preview", "")).contains("ready_for_server_entry") or not String(snapshot.get("detail", "")).contains("server required"):
+		return _fail("world boss entry should expose ready server-confirmation context %s" % [snapshot])
+	var instance_entry_index := _row_index_by_id(rows, "instance_boss_entry")
+	if instance_entry_index < 0:
+		return _fail("modes page missing instance boss entry row")
+	main_node.call("_ui_set_cursor", instance_entry_index)
+	await _settle_frames(2)
+	snapshot = main_node.call("_ui_overlay_snapshot")
+	if not String(snapshot.get("control_preview", "")).contains("blocked_local") or not String(snapshot.get("detail", "")).contains("entry_locked"):
+		return _fail("locked instance boss entry should expose local blocker context %s" % [snapshot])
 	snapshot = await _open_snapshot("network_match")
 	if not _assert_page_health(snapshot, "network_match", 2, 4):
 		return false
