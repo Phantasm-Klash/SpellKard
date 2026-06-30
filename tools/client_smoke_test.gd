@@ -3939,6 +3939,22 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	mode_ui_rows = main_node.call("_ui_screen_rows", 32)
+	var world_entry_cursor: int = _row_index_by_id(mode_ui_rows, "world_boss_entry")
+	main_node.call("_ui_set_cursor", world_entry_cursor)
+	var accept_world_entry: Dictionary = main_node.call("_ui_accept_selected")
+	if not bool(accept_world_entry.get("ok", false)) or String(accept_world_entry.get("action", "")) != "request_boss_entry" or String(accept_world_entry.get("request_type", "")) != "enter_world_boss" or bool(accept_world_entry.get("authoritative", true)):
+		push_error("Smoke test failed: UI world boss entry accept invalid %s" % [accept_world_entry])
+		quit(1)
+		return true
+	mode_ui_rows = main_node.call("_ui_screen_rows", 32)
+	var instance_entry_cursor: int = _row_index_by_id(mode_ui_rows, "instance_boss_entry")
+	main_node.call("_ui_set_cursor", instance_entry_cursor)
+	var accept_instance_entry: Dictionary = main_node.call("_ui_accept_selected")
+	if not bool(accept_instance_entry.get("ok", false)) or String(accept_instance_entry.get("action", "")) != "request_boss_entry" or String(accept_instance_entry.get("request_type", "")) != "enter_boss_instance" or bool(accept_instance_entry.get("authoritative", true)):
+		push_error("Smoke test failed: UI instance boss entry accept invalid %s" % [accept_instance_entry])
+		quit(1)
+		return true
+	mode_ui_rows = main_node.call("_ui_screen_rows", 32)
 	var boss_transfer_cursor: int = _row_index_by_id(mode_ui_rows, "world_boss_transfer")
 	main_node.call("_ui_set_cursor", boss_transfer_cursor)
 	var accept_boss_transfer: Dictionary = main_node.call("_ui_accept_selected")
