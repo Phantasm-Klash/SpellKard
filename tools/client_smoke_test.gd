@@ -163,7 +163,7 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: play page spec invalid %s" % [play_page_spec])
 		quit(1)
 		return true
-	if String(modes_page_spec.get("kind", "")) != "mode_select" or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_rules") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_entry") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_formation") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_playfield") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_result") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_rules") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_entry") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_formation") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_playfield") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_result"):
+	if String(modes_page_spec.get("kind", "")) != "mode_select" or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_rules") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_entry") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_formation") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_playfield") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_hud") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("world_boss_result") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_rules") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_entry") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_formation") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_playfield") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_hud") or not (modes_page_spec.get("secondary_row_ids", []) as Array).has("instance_boss_result"):
 		push_error("Smoke test failed: modes page spec Boss rules/result rows invalid %s" % [modes_page_spec])
 		quit(1)
 		return true
@@ -719,7 +719,7 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	var game_mode_state_rows: Array[Dictionary] = game_mode_model.mode_rows()
-	if not _rows_have_ids(game_mode_state_rows, ["world_boss_hp", "world_boss_rules", "world_boss_party", "world_boss_formation", "world_boss_playfield", "world_boss_transfer", "world_boss_result", "instance_boss_hp", "instance_boss_rules", "instance_boss_party", "instance_boss_formation", "instance_boss_playfield", "instance_boss_transfer", "instance_boss_result"]):
+	if not _rows_have_ids(game_mode_state_rows, ["world_boss_hp", "world_boss_rules", "world_boss_party", "world_boss_formation", "world_boss_playfield", "world_boss_hud", "world_boss_transfer", "world_boss_result", "instance_boss_hp", "instance_boss_rules", "instance_boss_party", "instance_boss_formation", "instance_boss_playfield", "instance_boss_hud", "instance_boss_transfer", "instance_boss_result"]):
 		push_error("Smoke test failed: boss mode state rows incomplete")
 		quit(1)
 		return true
@@ -731,6 +731,8 @@ func _process(_delta: float) -> bool:
 	var instance_formation_row: Dictionary = _find_row_by_id(game_mode_state_rows, "instance_boss_formation")
 	var world_playfield_row: Dictionary = _find_row_by_id(game_mode_state_rows, "world_boss_playfield")
 	var instance_playfield_row: Dictionary = _find_row_by_id(game_mode_state_rows, "instance_boss_playfield")
+	var world_hud_row: Dictionary = _find_row_by_id(game_mode_state_rows, "world_boss_hud")
+	var instance_hud_row: Dictionary = _find_row_by_id(game_mode_state_rows, "instance_boss_hud")
 	if not bool(world_hp_row.get("persistent_hp", false)) or bool(instance_hp_row.get("persistent_hp", true)):
 		push_error("Smoke test failed: boss hp persistence flags invalid world=%s instance=%s" % [world_hp_row, instance_hp_row])
 		quit(1)
@@ -751,6 +753,12 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	if not _validate_boss_playfield_projection(instance_playfield_row, "instance_boss", 8, 1.0):
+		quit(1)
+		return true
+	if not _validate_boss_hud_projection(world_hud_row, "world_boss", 4, 1.0):
+		quit(1)
+		return true
+	if not _validate_boss_hud_projection(instance_hud_row, "instance_boss", 8, 1.0):
 		quit(1)
 		return true
 	if not _validate_row_label_keys(mode_rows, localization):
@@ -2054,6 +2062,10 @@ func _process(_delta: float) -> bool:
 	if not _validate_boss_playfield_projection(world_boss_playfield_after_snapshot, "world_boss", 4, 0.4):
 		quit(1)
 		return true
+	var world_boss_hud_after_snapshot: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "world_boss_hud")
+	if not _validate_boss_hud_projection(world_boss_hud_after_snapshot, "world_boss", 4, 0.4):
+		quit(1)
+		return true
 	if main_node.call("_apply_world_boss_result", {
 		"client_result_authoritative": true,
 		"boss_hp_after_global": 0,
@@ -2192,6 +2204,10 @@ func _process(_delta: float) -> bool:
 	if not _validate_boss_playfield_projection(instance_boss_playfield_after_access, "instance_boss", 8, 1.0):
 		quit(1)
 		return true
+	var instance_boss_hud_after_access: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_hud")
+	if not _validate_boss_hud_projection(instance_boss_hud_after_access, "instance_boss", 8, 1.0):
+		quit(1)
+		return true
 	var instance_entry_request: Dictionary = main_node.call("_request_boss_entry", "instance_boss")
 	if not bool(instance_entry_request.get("ok", false)) or String(instance_entry_request.get("request", {}).get("action_type", "")) != "enter_boss_instance" or bool(instance_entry_request.get("request", {}).get("client_result_authoritative", true)):
 		push_error("Smoke test failed: instance boss entry request invalid %s" % [instance_entry_request])
@@ -2249,7 +2265,7 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	var game_mode_rows: Array[Dictionary] = main_node.call("_game_mode_rows")
-	if not _rows_have_ids(game_mode_rows, ["cert_rating", "cert_rank", "cert_top30", "cert_stage", "br_players", "br_pool", "br_round", "br_candidates", "br_zero_order", "world_boss_hp", "world_boss_attempts", "world_boss_entry", "world_boss_party", "world_boss_playfield", "world_boss_transfer", "world_boss_result", "world_boss_announcement", "instance_boss_entry", "instance_boss_phase", "instance_boss_conditions", "instance_boss_stars", "instance_boss_party", "instance_boss_playfield", "instance_boss_transfer", "instance_boss_result", "mode_action_log"]):
+	if not _rows_have_ids(game_mode_rows, ["cert_rating", "cert_rank", "cert_top30", "cert_stage", "br_players", "br_pool", "br_round", "br_candidates", "br_zero_order", "world_boss_hp", "world_boss_attempts", "world_boss_entry", "world_boss_party", "world_boss_playfield", "world_boss_hud", "world_boss_transfer", "world_boss_result", "world_boss_announcement", "instance_boss_entry", "instance_boss_phase", "instance_boss_conditions", "instance_boss_stars", "instance_boss_party", "instance_boss_playfield", "instance_boss_hud", "instance_boss_transfer", "instance_boss_result", "mode_action_log"]):
 		push_error("Smoke test failed: game mode rows incomplete")
 		quit(1)
 		return true
@@ -4759,6 +4775,43 @@ func _validate_boss_playfield_projection(row: Dictionary, mode_id: String, expec
 		push_error("Smoke test failed: boss playfield row authority invalid %s" % [row])
 		return false
 	return true
+
+func _validate_boss_hud_projection(row: Dictionary, mode_id: String, expected_count: int, expected_hp_ratio: float) -> bool:
+	if row.is_empty():
+		push_error("Smoke test failed: boss HUD row missing for %s" % mode_id)
+		return false
+	var projection: Dictionary = row.get("hud_projection", row)
+	if projection.is_empty():
+		push_error("Smoke test failed: boss HUD projection missing %s" % [row])
+		return false
+	if String(projection.get("mode_id", "")) != mode_id or String(projection.get("mode_category", "")) != "boss" or String(projection.get("display_kind", "")) != "boss_hud_projection":
+		push_error("Smoke test failed: boss HUD identity invalid %s" % [projection])
+		return false
+	if String(projection.get("projection_scope", "")) != "local_display_only" or String(projection.get("damage_authority", "")) != "server" or String(projection.get("reward_authority", "")) != "server" or String(projection.get("settlement_authority", "")) != "server":
+		push_error("Smoke test failed: boss HUD authority labels invalid %s" % [projection])
+		return false
+	if bool(projection.get("client_result_authoritative", true)) or not bool(projection.get("requires_server_confirmation", false)):
+		push_error("Smoke test failed: boss HUD authority contract invalid %s" % [projection])
+		return false
+	if bool(projection.get("persistent_hp", false)) != (mode_id == "world_boss"):
+		push_error("Smoke test failed: boss HUD persistence invalid %s" % [projection])
+		return false
+	if int(projection.get("player_count", 0)) != expected_count or int(projection.get("min_players", 0)) != 4 or int(projection.get("max_players", 0)) != 8:
+		push_error("Smoke test failed: boss HUD party count invalid %s" % [projection])
+		return false
+	if absf(float(projection.get("hp_ratio", -1.0)) - expected_hp_ratio) > 0.001:
+		push_error("Smoke test failed: boss HUD hp ratio invalid %s expected %.3f" % [projection, expected_hp_ratio])
+		return false
+	if String(projection.get("hp_text", "")).is_empty() or not String(projection.get("hud_status_text", "")).contains("server") and String(projection.get("damage_authority", "")) != "server":
+		push_error("Smoke test failed: boss HUD text invalid %s" % [projection])
+		return false
+	if (projection.get("display_slots", []) as Array).size() != expected_count:
+		push_error("Smoke test failed: boss HUD display slots invalid %s" % [projection])
+		return false
+	if row.has("projection_scope") and (String(row.get("projection_scope", "")) != "local_display_only" or String(row.get("damage_authority", "")) != "server" or String(row.get("reward_authority", "")) != "server" or String(row.get("settlement_authority", "")) != "server" or bool(row.get("client_result_authoritative", true))):
+		push_error("Smoke test failed: boss HUD row authority invalid %s" % [row])
+		return false
+	return _validate_boss_playfield_projection({"playfield_projection": projection.get("playfield_projection", {})}, mode_id, expected_count, expected_hp_ratio)
 
 func _validate_boss_draw_snapshot(snapshot: Dictionary, mode_id: String, expected_count: int, expected_hp_ratio: float) -> bool:
 	if not bool(snapshot.get("enabled", false)) or not bool(snapshot.get("gameplay_visible", false)):

@@ -488,6 +488,73 @@ func boss_playfield_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2
 		"client_result_authoritative": false,
 	}
 
+func boss_hud_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO, Vector2.ONE)) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"display_kind": "boss_hud_projection",
+			"projection_scope": "local_display_only",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var state := _state_for_mode(mode_id)
+	var playfield_projection := boss_playfield_projection(mode_id, playfield)
+	var entry := validate_boss_entry(mode_id)
+	var formation := validate_boss_formation(mode_id)
+	var current_hp := float(playfield_projection.get("current_hp", state.get("current_hp", 0.0)))
+	var max_hp := float(playfield_projection.get("max_hp", state.get("max_hp", 0.0)))
+	var entry_failures := _string_array(entry.get("failures", []))
+	var formation_failures := _string_array(formation.get("failures", []))
+	var status_parts: Array[String] = [
+		"hp %.0f/%.0f" % [current_hp, max_hp],
+		"party %d/%d-%d" % [int(formation.get("player_count", 0)), BOSS_MIN_PLAYERS, BOSS_MAX_PLAYERS],
+		"entry %s" % ("ready" if bool(entry.get("ok", false)) else ",".join(entry_failures)),
+		"rules %s/%s" % [String(state.get("friendly_fire", "disabled")), String(state.get("arena_policy", "fixed_directions"))],
+	]
+	return {
+		"ok": true,
+		"reason": "none",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"display_kind": "boss_hud_projection",
+		"projection_scope": "local_display_only",
+		"persistent_hp": mode_id == MODE_WORLD_BOSS,
+		"boss_instance_id": String(state.get("boss_instance_id", "")),
+		"hp_text": "%.0f/%.0f" % [current_hp, max_hp],
+		"current_hp": current_hp,
+		"max_hp": max_hp,
+		"hp_ratio": float(playfield_projection.get("hp_ratio", 0.0)),
+		"attempts_left": int(entry.get("attempts_left", 0)),
+		"entry_valid": bool(entry.get("ok", false)),
+		"entry_failures": entry_failures,
+		"formation_valid": bool(formation.get("ok", false)),
+		"formation_failures": formation_failures,
+		"player_count": int(formation.get("player_count", 0)),
+		"min_players": BOSS_MIN_PLAYERS,
+		"max_players": BOSS_MAX_PLAYERS,
+		"slot_layout_policy": String(formation.get("slot_layout_policy", "")),
+		"slot_labels": formation.get("slot_labels", []),
+		"friendly_fire": String(state.get("friendly_fire", "disabled")),
+		"arena_policy": String(state.get("arena_policy", "fixed_directions")),
+		"friendly_fire_warning": String(state.get("friendly_fire_warning", "none")),
+		"rules_source": String(state.get("rules_source", "local_default")),
+		"result_status": String(state.get("last_result_status", "pending")),
+		"result_source": String(state.get("last_result_source", "")),
+		"world_announcement": String(state.get("world_announcement", "")),
+		"display_slots": playfield_projection.get("display_slots", []),
+		"playfield_projection": playfield_projection,
+		"hud_status_text": " | ".join(status_parts),
+		"requires_server_confirmation": true,
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
 func boss_local_status_row(row_id: String, mode_id: String) -> Dictionary:
 	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
 		return {
@@ -752,6 +819,7 @@ func _world_boss_rows() -> Array[Dictionary]:
 		_boss_party_row("world_boss_party", MODE_WORLD_BOSS, world_boss_state),
 		_boss_formation_row("world_boss_formation", MODE_WORLD_BOSS, world_boss_state),
 		_boss_playfield_row("world_boss_playfield", MODE_WORLD_BOSS),
+		_boss_hud_row("world_boss_hud", MODE_WORLD_BOSS),
 		_boss_transfer_row("world_boss_transfer", MODE_WORLD_BOSS, world_boss_state),
 		_world_boss_result_row(),
 		{"id": "world_boss_announcement", "label_key": "screen.mode.boss.announcement", "value": str(world_boss_state.get("world_announcement", "")), "mode_category": "boss", "server_authoritative": bool(world_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": not str(world_boss_state.get("defeated_at", "")).is_empty()},
@@ -768,6 +836,7 @@ func _instance_boss_rows() -> Array[Dictionary]:
 		_boss_party_row("instance_boss_party", MODE_INSTANCE_BOSS, instance_boss_state),
 		_boss_formation_row("instance_boss_formation", MODE_INSTANCE_BOSS, instance_boss_state),
 		_boss_playfield_row("instance_boss_playfield", MODE_INSTANCE_BOSS),
+		_boss_hud_row("instance_boss_hud", MODE_INSTANCE_BOSS),
 		_boss_transfer_row("instance_boss_transfer", MODE_INSTANCE_BOSS, instance_boss_state),
 		_instance_boss_result_row(),
 	]
@@ -1054,6 +1123,32 @@ func _boss_playfield_row(row_id: String, mode_id: String) -> Dictionary:
 		"settlement_authority": String(projection.get("settlement_authority", "server")),
 		"formation_valid": bool(projection.get("formation_valid", false)),
 		"entry_valid": bool(projection.get("entry_valid", false)),
+		"requires_server_confirmation": true,
+		"server_authoritative": bool(projection.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+		"enabled": bool(projection.get("ok", false)),
+	}
+
+func _boss_hud_row(row_id: String, mode_id: String) -> Dictionary:
+	var projection := boss_hud_projection(mode_id)
+	return {
+		"id": row_id,
+		"label_key": "screen.mode.boss.hud",
+		"value": String(projection.get("hud_status_text", "")),
+		"summary": "local HUD projection only; damage, rewards, and settlement stay server-authoritative",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"hud_projection": projection,
+		"playfield_projection": projection.get("playfield_projection", {}),
+		"display_slots": projection.get("display_slots", []),
+		"projection_scope": String(projection.get("projection_scope", "local_display_only")),
+		"damage_authority": String(projection.get("damage_authority", "server")),
+		"reward_authority": String(projection.get("reward_authority", "server")),
+		"settlement_authority": String(projection.get("settlement_authority", "server")),
+		"entry_valid": bool(projection.get("entry_valid", false)),
+		"formation_valid": bool(projection.get("formation_valid", false)),
+		"hp_ratio": float(projection.get("hp_ratio", 0.0)),
+		"player_count": int(projection.get("player_count", 0)),
 		"requires_server_confirmation": true,
 		"server_authoritative": bool(projection.get("server_authoritative", false)),
 		"client_result_authoritative": false,

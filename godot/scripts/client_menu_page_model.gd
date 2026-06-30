@@ -172,7 +172,7 @@ const PAGE_SPECS := {
 		"visual_treatment": "mode_selector",
 		"state_regions": ["mode_cards", "mode_rules", "mode_status"],
 		"primary_row_ids": ["mode_summary", "certification", "pvp_duel", "battle_royale", "world_boss", "instance_boss"],
-		"secondary_row_ids": ["br_candidates", "world_boss_rules", "world_boss_entry", "world_boss_party", "world_boss_formation", "world_boss_playfield", "world_boss_transfer", "world_boss_result", "instance_boss_rules", "instance_boss_entry", "instance_boss_party", "instance_boss_formation", "instance_boss_playfield", "instance_boss_transfer", "instance_boss_result"],
+		"secondary_row_ids": ["br_candidates", "world_boss_rules", "world_boss_entry", "world_boss_party", "world_boss_formation", "world_boss_playfield", "world_boss_hud", "world_boss_transfer", "world_boss_result", "instance_boss_rules", "instance_boss_entry", "instance_boss_party", "instance_boss_formation", "instance_boss_playfield", "instance_boss_hud", "instance_boss_transfer", "instance_boss_result"],
 		"setting_groups": [],
 		"social_groups": [],
 		"mode_groups": ["certification", "pvp", "boss"],

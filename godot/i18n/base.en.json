@@ -312,6 +312,7 @@
   "screen.mode.boss.entry": "Entry Gate",
   "screen.mode.boss.party": "Party",
   "screen.mode.boss.playfield": "Playfield Projection",
+  "screen.mode.boss.hud": "Boss HUD",
   "screen.mode.boss.transfer": "Card Transfer",
   "screen.mode.boss.result": "Boss Result",
   "screen.mode.boss.announcement": "World Notice",
