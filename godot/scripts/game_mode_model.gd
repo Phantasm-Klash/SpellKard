@@ -11,6 +11,7 @@ const BR_CANDIDATE_COUNT := 3
 const BR_POOL_CARDS_PER_PLAYER := 4
 const BOSS_MIN_PLAYERS := 4
 const BOSS_MAX_PLAYERS := 8
+const BOSS_CENTER := Vector2.ZERO
 
 var matchmaking_model: RefCounted = null
 var network_match_model: RefCounted = null
@@ -289,6 +290,9 @@ func configure_boss_party(mode_id: String, player_ids: Array) -> bool:
 	state["party_ids"] = ids
 	state["party_status"] = "ready" if valid_count else "waiting"
 	state["positions"] = _boss_positions(ids)
+	state["player_count"] = ids.size()
+	state["boss_center"] = BOSS_CENTER
+	state["aim_policy"] = "toward_center"
 	_set_state_for_mode(mode_id, state)
 	last_action_status = "boss_party"
 	last_error_code = "none" if valid_count else "boss_party_size"
@@ -398,20 +402,20 @@ func _battle_royale_rows() -> Array[Dictionary]:
 
 func _world_boss_rows() -> Array[Dictionary]:
 	return [
-		{"id": "world_boss_hp", "label_key": "screen.mode.boss.hp", "value": "%.0f/%.0f" % [float(world_boss_state.get("current_hp", 0.0)), float(world_boss_state.get("max_hp", 0.0))], "enabled": true},
-		{"id": "world_boss_attempts", "label_key": "screen.mode.boss.attempts", "value": int(world_boss_state.get("daily_attempts_left", 0)), "enabled": int(world_boss_state.get("daily_attempts_left", 0)) > 0},
-		{"id": "world_boss_party", "label_key": "screen.mode.boss.party", "value": "%d positions" % (world_boss_state.get("positions", []) as Array).size(), "items": world_boss_state.get("positions", []), "enabled": true},
-		{"id": "world_boss_transfer", "label_key": "screen.mode.boss.transfer", "value": "%d" % (world_boss_state.get("transfer_requests", []) as Array).size(), "items": world_boss_state.get("transfer_requests", []), "mode_id": MODE_WORLD_BOSS, "party_ids": world_boss_state.get("party_ids", []), "transferred_card_ids": world_boss_state.get("transferred_card_ids", []), "enabled": true},
-		{"id": "world_boss_announcement", "label_key": "screen.mode.boss.announcement", "value": str(world_boss_state.get("world_announcement", "")), "enabled": not str(world_boss_state.get("defeated_at", "")).is_empty()},
+		_boss_hp_row("world_boss_hp", world_boss_state, true),
+		{"id": "world_boss_attempts", "label_key": "screen.mode.boss.attempts", "value": int(world_boss_state.get("daily_attempts_left", 0)), "mode_category": "boss", "server_authoritative": bool(world_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": int(world_boss_state.get("daily_attempts_left", 0)) > 0},
+		_boss_party_row("world_boss_party", MODE_WORLD_BOSS, world_boss_state),
+		_boss_transfer_row("world_boss_transfer", MODE_WORLD_BOSS, world_boss_state),
+		{"id": "world_boss_announcement", "label_key": "screen.mode.boss.announcement", "value": str(world_boss_state.get("world_announcement", "")), "mode_category": "boss", "server_authoritative": bool(world_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": not str(world_boss_state.get("defeated_at", "")).is_empty()},
 	]
 
 func _instance_boss_rows() -> Array[Dictionary]:
 	return [
-		{"id": "instance_boss_phase", "label_key": "screen.mode.instance.phase", "value": str(instance_boss_state.get("boss_phase", "phase_1")), "enabled": true},
-		{"id": "instance_boss_conditions", "label_key": "screen.mode.instance.conditions", "value": "clear %s" % bool(instance_boss_state.get("cleared", false)), "items": instance_boss_state.get("clear_conditions", []), "enabled": true},
-		{"id": "instance_boss_stars", "label_key": "screen.mode.instance.stars", "value": int(instance_boss_state.get("stars", 0)), "enabled": bool(instance_boss_state.get("cleared", false))},
-		{"id": "instance_boss_party", "label_key": "screen.mode.boss.party", "value": str(instance_boss_state.get("party_status", "waiting")), "items": instance_boss_state.get("positions", []), "enabled": true},
-		{"id": "instance_boss_transfer", "label_key": "screen.mode.boss.transfer", "value": "%d" % (instance_boss_state.get("transfer_requests", []) as Array).size(), "items": instance_boss_state.get("transfer_requests", []), "mode_id": MODE_INSTANCE_BOSS, "party_ids": instance_boss_state.get("party_ids", []), "transferred_card_ids": instance_boss_state.get("transferred_card_ids", []), "enabled": true},
+		{"id": "instance_boss_phase", "label_key": "screen.mode.instance.phase", "value": str(instance_boss_state.get("boss_phase", "phase_1")), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": true},
+		{"id": "instance_boss_conditions", "label_key": "screen.mode.instance.conditions", "value": "clear %s" % bool(instance_boss_state.get("cleared", false)), "items": instance_boss_state.get("clear_conditions", []), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": true},
+		{"id": "instance_boss_stars", "label_key": "screen.mode.instance.stars", "value": int(instance_boss_state.get("stars", 0)), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": bool(instance_boss_state.get("cleared", false))},
+		_boss_party_row("instance_boss_party", MODE_INSTANCE_BOSS, instance_boss_state),
+		_boss_transfer_row("instance_boss_transfer", MODE_INSTANCE_BOSS, instance_boss_state),
 	]
 
 func _default_boss_state(is_world: bool) -> Dictionary:
@@ -425,6 +429,11 @@ func _default_boss_state(is_world: bool) -> Dictionary:
 		"party_ids": [],
 		"party_status": "waiting",
 		"positions": [],
+		"player_count": 0,
+		"min_players": BOSS_MIN_PLAYERS,
+		"max_players": BOSS_MAX_PLAYERS,
+		"boss_center": BOSS_CENTER,
+		"aim_policy": "toward_center",
 		"transfer_requests": [],
 		"transferred_card_ids": [],
 		"defeated_at": "",
@@ -433,6 +442,8 @@ func _default_boss_state(is_world: bool) -> Dictionary:
 		"clear_conditions": ["boss_hp_zero", "survivor_required", "no_failed_mechanic"],
 		"cleared": false,
 		"stars": 0,
+		"server_authoritative": false,
+		"client_result_authoritative": false,
 	}
 
 func _state_for_mode(mode_id: String) -> Dictionary:
@@ -486,13 +497,70 @@ func _boss_positions(player_ids: Array[String]) -> Array[Dictionary]:
 		return rows
 	for i in range(count):
 		var angle := -PI * 0.5 + (TAU * float(i) / float(count))
+		var spawn := Vector2(cos(angle), sin(angle))
+		var aim := BOSS_CENTER - spawn
 		rows.append({
 			"player_id": player_ids[i],
 			"angle": angle,
-			"spawn": Vector2(cos(angle), sin(angle)),
-			"aim": Vector2(-cos(angle), -sin(angle)),
+			"spawn": spawn,
+			"aim": aim.normalized(),
+			"aim_target": BOSS_CENTER,
+			"aim_to_center": true,
+			"slot_index": i,
+			"slot_count": count,
 		})
 	return rows
+
+func _boss_hp_row(row_id: String, state: Dictionary, persistent_hp: bool) -> Dictionary:
+	var current_hp := float(state.get("current_hp", 0.0))
+	var max_hp := float(state.get("max_hp", 0.0))
+	return {
+		"id": row_id,
+		"label_key": "screen.mode.boss.hp",
+		"value": "%.0f/%.0f" % [current_hp, max_hp],
+		"mode_category": "boss",
+		"persistent_hp": persistent_hp,
+		"hp_ratio": 0.0 if max_hp <= 0.0 else clampf(current_hp / max_hp, 0.0, 1.0),
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+		"enabled": true,
+	}
+
+func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
+	var positions: Array = state.get("positions", [])
+	return {
+		"id": row_id,
+		"label_key": "screen.mode.boss.party",
+		"value": "%d/%d-%d %s" % [positions.size(), BOSS_MIN_PLAYERS, BOSS_MAX_PLAYERS, str(state.get("party_status", "waiting"))],
+		"items": positions,
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"player_count": int(state.get("player_count", positions.size())),
+		"min_players": BOSS_MIN_PLAYERS,
+		"max_players": BOSS_MAX_PLAYERS,
+		"boss_center": state.get("boss_center", BOSS_CENTER),
+		"aim_policy": str(state.get("aim_policy", "toward_center")),
+		"friendly_fire": str(state.get("friendly_fire", "disabled")),
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+		"enabled": true,
+	}
+
+func _boss_transfer_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
+	return {
+		"id": row_id,
+		"label_key": "screen.mode.boss.transfer",
+		"value": "%d" % (state.get("transfer_requests", []) as Array).size(),
+		"items": state.get("transfer_requests", []),
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"party_ids": state.get("party_ids", []),
+		"transferred_card_ids": state.get("transferred_card_ids", []),
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+		"requires_server_confirmation": true,
+		"enabled": true,
+	}
 
 func _calculate_instance_stars(result: Dictionary, cleared: bool) -> int:
 	if not cleared:

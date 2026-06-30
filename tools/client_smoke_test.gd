@@ -1880,9 +1880,18 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: world boss positions invalid")
 		quit(1)
 		return true
+	var world_boss_party_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "world_boss_party")
+	if not _validate_boss_party_row_contract(world_boss_party_row, "world_boss", 4):
+		quit(1)
+		return true
 	var transfer_result: Dictionary = main_node.call("_request_boss_card_transfer", "world_boss", "p1", "p2", "focus_lens")
 	if not bool(transfer_result.get("ok", false)) or String(transfer_result.get("request", {}).get("action_type", "")) != "transfer_card" or bool(transfer_result.get("request", {}).get("client_result_authoritative", true)):
 		push_error("Smoke test failed: world boss transfer request invalid")
+		quit(1)
+		return true
+	var world_boss_transfer_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "world_boss_transfer")
+	if not bool(world_boss_transfer_row.get("requires_server_confirmation", false)) or bool(world_boss_transfer_row.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: world boss transfer authority contract invalid %s" % [world_boss_transfer_row])
 		quit(1)
 		return true
 	var duplicate_transfer: Dictionary = main_node.call("_request_boss_card_transfer", "world_boss", "p1", "p3", "focus_lens")
@@ -1902,6 +1911,11 @@ func _process(_delta: float) -> bool:
 	})
 	if not bool(server_world_boss_snapshot.get("ok", false)) or int(game_mode_model.world_boss_state.get("current_hp", 0)) != 40000 or int(game_mode_model.world_boss_state.get("daily_attempts_left", 0)) != 2:
 		push_error("Smoke test failed: server world boss snapshot invalid %s" % [game_mode_model.world_boss_state])
+		quit(1)
+		return true
+	var world_boss_hp_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "world_boss_hp")
+	if not bool(world_boss_hp_row.get("persistent_hp", false)) or not bool(world_boss_hp_row.get("server_authoritative", false)) or bool(world_boss_hp_row.get("client_result_authoritative", true)) or absf(float(world_boss_hp_row.get("hp_ratio", 0.0)) - 0.4) > 0.001:
+		push_error("Smoke test failed: world boss hp row authority contract invalid %s" % [world_boss_hp_row])
 		quit(1)
 		return true
 	if main_node.call("_apply_world_boss_result", {
@@ -1941,6 +1955,10 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: instance boss positions invalid")
 		quit(1)
 		return true
+	var instance_boss_party_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_party")
+	if not _validate_boss_party_row_contract(instance_boss_party_row, "instance_boss", 8):
+		quit(1)
+		return true
 	if main_node.call("_apply_instance_boss_result", {
 		"client_result_authoritative": true,
 		"boss_defeated": true,
@@ -1969,6 +1987,11 @@ func _process(_delta: float) -> bool:
 		return true
 	if not bool(game_mode_model.instance_boss_state.get("cleared", false)) or int(game_mode_model.instance_boss_state.get("stars", 0)) != 3:
 		push_error("Smoke test failed: instance boss clear/stars invalid")
+		quit(1)
+		return true
+	var instance_boss_stars_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_stars")
+	if not bool(instance_boss_stars_row.get("server_authoritative", false)) or bool(instance_boss_stars_row.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: instance boss star authority contract invalid %s" % [instance_boss_stars_row])
 		quit(1)
 		return true
 	var game_mode_rows: Array[Dictionary] = main_node.call("_game_mode_rows")
@@ -3904,6 +3927,10 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay list row invalid")
 		quit(1)
 		return true
+	if int(selected_row.get("final_result_hash", 0)) == 0 or not bool(selected_row.get("can_verify_final_hash", false)) or String(selected_row.get("verification_status", "")) != "local_final_hash_ready" or String(selected_row.get("replay_authority_scope", "")) != "local_practice_record":
+		push_error("Smoke test failed: replay verification row contract invalid %s" % [selected_row])
+		quit(1)
+		return true
 	var saved_snapshot: Dictionary = replay_store.load_snapshot()
 	if saved_snapshot.is_empty() or not saved_snapshot.has("input_stream") or not saved_snapshot.has("final_result_hash"):
 		push_error("Smoke test failed: saved replay snapshot invalid")
@@ -4287,6 +4314,32 @@ func _validate_row_label_keys(rows: Array[Dictionary], localization: RefCounted)
 			continue
 		if not localization.has_text(label_key):
 			push_error("Smoke test failed: missing screen label key %s" % label_key)
+			return false
+	return true
+
+func _validate_boss_party_row_contract(row: Dictionary, mode_id: String, expected_count: int) -> bool:
+	if row.is_empty():
+		push_error("Smoke test failed: boss party row missing for %s" % mode_id)
+		return false
+	var positions: Array = row.get("items", [])
+	if String(row.get("mode_id", "")) != mode_id or String(row.get("mode_category", "")) != "boss":
+		push_error("Smoke test failed: boss party row mode contract invalid %s" % [row])
+		return false
+	if int(row.get("player_count", 0)) != expected_count or positions.size() != expected_count or int(row.get("min_players", 0)) != 4 or int(row.get("max_players", 0)) != 8:
+		push_error("Smoke test failed: boss party row count contract invalid %s" % [row])
+		return false
+	if String(row.get("aim_policy", "")) != "toward_center" or String(row.get("friendly_fire", "")) != "disabled" or bool(row.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: boss party row authority/display contract invalid %s" % [row])
+		return false
+	for position in positions:
+		var entry: Dictionary = position
+		var spawn: Vector2 = entry.get("spawn", Vector2.ZERO)
+		var aim: Vector2 = entry.get("aim", Vector2.ZERO)
+		if not bool(entry.get("aim_to_center", false)) or entry.get("aim_target", Vector2.INF) != Vector2.ZERO:
+			push_error("Smoke test failed: boss position does not target center %s" % [entry])
+			return false
+		if spawn.length() < 0.99 or spawn.length() > 1.01 or aim.length() < 0.99 or aim.length() > 1.01 or spawn.dot(aim) > -0.99:
+			push_error("Smoke test failed: boss position vectors invalid %s" % [entry])
 			return false
 	return true
 

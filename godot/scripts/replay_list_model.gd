@@ -114,6 +114,8 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 	var metadata_valid := _entry_metadata_valid(entry)
 	var metadata_failures := _entry_metadata_failures(entry, metadata_valid)
 	var server_claim_fields := _entry_server_authority_claim_fields(entry)
+	var final_result_hash := int(entry.get("final_result_hash", 0))
+	var server_authoritative := bool(entry.get("server_authoritative", false))
 	return {
 		"index": index + 1,
 		"replay_id": str(entry.get("replay_id", "")),
@@ -126,6 +128,10 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"version": str(entry.get("ruleset_version", "")),
 		"game_version": str(entry.get("game_version", "")),
 		"final_tick": int(entry.get("final_tick", 0)),
+		"final_result_hash": final_result_hash,
+		"can_verify_final_hash": final_result_hash != 0 and int(entry.get("final_tick", 0)) >= 0,
+		"verification_status": _entry_verification_status(entry, final_result_hash, metadata_valid),
+		"replay_authority_scope": "server_authoritative_record" if server_authoritative else "local_practice_record",
 		"favorite": bool(entry.get("favorite", false)),
 		"pattern_id": str(entry.get("pattern_id", "")),
 		"catalog_id": str(entry.get("catalog_id", "")),
@@ -160,7 +166,7 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"metadata_status": _entry_metadata_status(entry, metadata_valid),
 		"metadata_failures": metadata_failures,
 		"metadata_failure_count": metadata_failures.size(),
-		"server_authoritative": bool(entry.get("server_authoritative", false)),
+		"server_authoritative": server_authoritative,
 		"server_authority_claim_fields": server_claim_fields,
 		"can_play": not path.is_empty() and FileAccess.file_exists(path),
 		"can_favorite": not str(entry.get("replay_id", "")).is_empty(),
@@ -173,6 +179,15 @@ func _entry_metadata_valid(entry: Dictionary) -> bool:
 		var result: Dictionary = replay_store.validate_index_metadata(entries_to_validate)
 		return bool(result.get("ok", false))
 	return true
+
+func _entry_verification_status(entry: Dictionary, final_result_hash: int, metadata_valid: bool) -> String:
+	if not metadata_valid:
+		return _entry_metadata_status(entry, false)
+	if final_result_hash == 0:
+		return "missing_final_hash"
+	if bool(entry.get("server_authoritative", false)):
+		return "server_record_pending_audit"
+	return "local_final_hash_ready"
 
 func _entry_metadata_status(entry: Dictionary, metadata_valid: bool) -> String:
 	if metadata_valid:
