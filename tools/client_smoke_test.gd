@@ -2007,6 +2007,10 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: world boss transfer authority contract invalid %s" % [world_boss_transfer_row])
 		quit(1)
 		return true
+	if String(world_boss_transfer_row.get("intent_authority", "")) != "client_request_only" or String(world_boss_transfer_row.get("server_confirmation_status", "")) != "pending" or String(world_boss_transfer_row.get("settlement_authority", "")) != "server":
+		push_error("Smoke test failed: world boss transfer intent authority invalid %s" % [world_boss_transfer_row])
+		quit(1)
+		return true
 	var latest_transfer_request: Dictionary = world_boss_transfer_row.get("latest_transfer_request", {})
 	if int(world_boss_transfer_row.get("transfer_request_count", 0)) != 1 or int(world_boss_transfer_row.get("pending_server_confirmation_count", 0)) != 1 or String(world_boss_transfer_row.get("transfer_policy", "")) != "once_per_card_per_match":
 		push_error("Smoke test failed: world boss transfer summary counts invalid %s" % [world_boss_transfer_row])
@@ -2203,6 +2207,11 @@ func _process(_delta: float) -> bool:
 	var instance_entry_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_entry")
 	if not bool(instance_entry_row.get("entry_valid", false)) or not bool(instance_entry_row.get("server_authoritative", false)) or bool(instance_entry_row.get("client_result_authoritative", true)) or int(instance_entry_row.get("owned_key_count", 0)) != 2 or String(instance_entry_row.get("required_rating", "")) != "C":
 		push_error("Smoke test failed: instance boss entry row invalid %s" % [instance_entry_row])
+		quit(1)
+		return true
+	var instance_entry_rules: Array = instance_entry_row.get("local_validation_rules", [])
+	if String(instance_entry_row.get("intent_authority", "")) != "client_request_only" or String(instance_entry_row.get("server_confirmation_status", "")) != "required" or String(instance_entry_row.get("settlement_authority", "")) != "server" or not instance_entry_rules.has("rating_requirement") or not instance_entry_rules.has("key_requirement"):
+		push_error("Smoke test failed: instance boss entry intent authority invalid %s" % [instance_entry_row])
 		quit(1)
 		return true
 	var instance_rules_row_after_access: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_rules")
