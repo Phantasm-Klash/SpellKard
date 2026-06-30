@@ -22,6 +22,9 @@ const SPELLBOOK_PREVIEW_GOLDEN_FIXTURES: Dictionary = {
 	"original_boss_archive:spell_summoner_split:20260625": {"export_schema_version": 1, "export_id": "boss_spellbook_preview_original_boss_archive_spell_summoner_split_20260625", "preview_fixture_id": "original_boss_archive:spell_summoner_split:20260625", "preview_authority_scope": "local_practice_preview_only", "signature_digest": 471609142, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [368982465, 0, 0, 0, 0, 742323659], "sample_emit_counts": [4, 0, 0, 0, 0, 12], "sample_count": 6, "max_emit_per_tick": 12, "bullet_cap_per_tick": 192, "budget_headroom": 180, "performance_budget_status": "within_budget"},
 	"original_boss_archive:last_spell_morph_bounce:20260625": {"export_schema_version": 1, "export_id": "boss_spellbook_preview_original_boss_archive_last_spell_morph_bounce_20260625", "preview_fixture_id": "original_boss_archive:last_spell_morph_bounce:20260625", "preview_authority_scope": "local_practice_preview_only", "signature_digest": 979716623, "sample_ticks": [0, 28, 56, 84, 112, 140], "sample_window_start_tick": 0, "sample_window_end_tick": 140, "sample_window_stride_ticks": 28, "sample_signature_digests": [769410047, 0, 0, 0, 0, 0], "sample_emit_counts": [30, 0, 0, 0, 0, 0], "sample_count": 6, "max_emit_per_tick": 30, "bullet_cap_per_tick": 192, "budget_headroom": 162, "performance_budget_status": "within_budget"},
 }
+const SPELLBOOK_PREVIEW_GOLDEN_BUNDLE_FIXTURES: Dictionary = {
+	"original_boss_archive:20260625": {"export_schema_version": 1, "preview_bundle_id": "boss_spellbook_preview_bundle_original_boss_archive_20260625", "preview_bundle_fixture_id": "original_boss_archive:20260625", "preview_authority_scope": "local_practice_preview_only", "preview_bundle_signature_digest": 988994968, "preview_phase_count": 4, "preview_phase_ids": ["nonspell_radial_entry", "spell_laser_field", "spell_summoner_split", "last_spell_morph_bounce"], "preview_phase_signature_digests": [905452029, 187927263, 471609142, 979716623], "max_preview_emit_per_tick": 42, "min_preview_budget_headroom": 150, "performance_budget_status": "within_budget"},
+}
 const SPELLBOOK_PREVIEW_SERVER_AUTHORITY_FIELDS: Array[String] = [
 	"boss_instance_id",
 	"boss_max_hp",
@@ -593,17 +596,20 @@ func _expected_preview_export_id(fields: Dictionary) -> String:
 	]
 
 func _expected_preview_bundle_id(fields: Dictionary) -> String:
-	var spellbook_id := str(fields.get("spellbook_id", ""))
-	var seed := _preview_seed_from_fields(fields)
-	if spellbook_id.is_empty() or seed <= 0:
+	var bundle_fixture := _golden_preview_bundle_fixture_for_fields(fields)
+	if not bundle_fixture.is_empty():
+		return String(bundle_fixture.get("preview_bundle_id", ""))
+	var fixture_id := _expected_preview_bundle_fixture_id(fields)
+	if fixture_id.is_empty():
 		return ""
-	return "%s_%s_%d" % [SPELLBOOK_PREVIEW_BUNDLE_PREFIX, spellbook_id, seed]
+	return "%s_%s_%d" % [SPELLBOOK_PREVIEW_BUNDLE_PREFIX, str(fields.get("spellbook_id", "")), _preview_seed_from_fields(fields)]
 
 func _expected_preview_phase_count(fields: Dictionary) -> int:
+	var bundle_fixture := _golden_preview_bundle_fixture_for_fields(fields)
+	if not bundle_fixture.is_empty():
+		return int(bundle_fixture.get("preview_phase_count", 0))
 	var spellbook_id := str(fields.get("spellbook_id", ""))
 	var seed := _preview_seed_from_fields(fields)
-	if spellbook_id.is_empty() or seed <= 0:
-		return 0
 	var count := 0
 	for fixture_id in SPELLBOOK_PREVIEW_GOLDEN_FIXTURES.keys():
 		var parts := String(fixture_id).split(":")
@@ -612,6 +618,9 @@ func _expected_preview_phase_count(fields: Dictionary) -> int:
 	return count
 
 func _expected_preview_phase_ids(fields: Dictionary) -> Array[String]:
+	var bundle_fixture := _golden_preview_bundle_fixture_for_fields(fields)
+	if not bundle_fixture.is_empty():
+		return _normalized_string_array(bundle_fixture.get("preview_phase_ids", []))
 	var spellbook_id := str(fields.get("spellbook_id", ""))
 	if spellbook_id.is_empty() or not SPELLBOOK_PREVIEW_PHASE_ORDER.has(spellbook_id):
 		return []
@@ -621,6 +630,9 @@ func _expected_preview_phase_ids(fields: Dictionary) -> Array[String]:
 	return result
 
 func _expected_preview_phase_signature_digests(fields: Dictionary) -> Array[int]:
+	var bundle_fixture := _golden_preview_bundle_fixture_for_fields(fields)
+	if not bundle_fixture.is_empty():
+		return _normalized_int_array(bundle_fixture.get("preview_phase_signature_digests", []))
 	var spellbook_id := str(fields.get("spellbook_id", ""))
 	var seed := _preview_seed_from_fields(fields)
 	if spellbook_id.is_empty() or seed <= 0:
@@ -634,6 +646,9 @@ func _expected_preview_phase_signature_digests(fields: Dictionary) -> Array[int]
 	return result
 
 func _expected_preview_bundle_signature_digest(fields: Dictionary) -> int:
+	var bundle_fixture := _golden_preview_bundle_fixture_for_fields(fields)
+	if not bundle_fixture.is_empty():
+		return int(bundle_fixture.get("preview_bundle_signature_digest", 0))
 	var spellbook_id := str(fields.get("spellbook_id", ""))
 	var seed := _preview_seed_from_fields(fields)
 	if spellbook_id.is_empty() or seed <= 0 or not SPELLBOOK_PREVIEW_PHASE_ORDER.has(spellbook_id):
@@ -656,6 +671,13 @@ func _expected_preview_bundle_signature_digest(fields: Dictionary) -> int:
 		])
 	return _stable_signature_digest("|".join(parts))
 
+func _expected_preview_bundle_fixture_id(fields: Dictionary) -> String:
+	var spellbook_id := str(fields.get("spellbook_id", ""))
+	var seed := _preview_seed_from_fields(fields)
+	if spellbook_id.is_empty() or seed <= 0:
+		return ""
+	return "%s:%d" % [spellbook_id, seed]
+
 func _has_preview_bundle_metadata(fields: Dictionary) -> bool:
 	return not str(fields.get("preview_bundle_id", "")).is_empty() \
 			or int(fields.get("preview_bundle_signature_digest", 0)) > 0 \
@@ -671,6 +693,12 @@ func _golden_preview_fixture_for_fields(fields: Dictionary) -> Dictionary:
 	if fixture_id.is_empty() or not SPELLBOOK_PREVIEW_GOLDEN_FIXTURES.has(fixture_id):
 		return {}
 	return (SPELLBOOK_PREVIEW_GOLDEN_FIXTURES[fixture_id] as Dictionary).duplicate(true)
+
+func _golden_preview_bundle_fixture_for_fields(fields: Dictionary) -> Dictionary:
+	var fixture_id := _expected_preview_bundle_fixture_id(fields)
+	if fixture_id.is_empty() or not SPELLBOOK_PREVIEW_GOLDEN_BUNDLE_FIXTURES.has(fixture_id):
+		return {}
+	return (SPELLBOOK_PREVIEW_GOLDEN_BUNDLE_FIXTURES[fixture_id] as Dictionary).duplicate(true)
 
 func _golden_fixture_status(fields: Dictionary, fixture: Dictionary) -> String:
 	var replay_id := str(fields.get("replay_id", ""))

@@ -56,6 +56,9 @@ class StaleGoldenFixtureIdentityModel:
 		fixtures[fixture_id] = stale
 		return fixtures
 
+	func golden_preview_bundle_fixtures() -> Dictionary:
+		return base.golden_preview_bundle_fixtures()
+
 func _initialize() -> void:
 	var stage_model: RefCounted = StageSelectModel.new()
 	var coverage: Dictionary = BossPatternCatalog.validate_stage_patterns(stage_model)
@@ -119,7 +122,7 @@ func _initialize() -> void:
 		push_error("Boss spellbook phase budget regression failed: %s" % [phase_budget_regression])
 		quit(1)
 		return
-	print("boss_pattern_catalog_check ok: families=%d recipes=%d adapters=%d requirements=%d official_types=%d types=%d emitted=%d behavior_spawns=%d spellbooks=%d phases=%d previews=%d golden_previews=%d golden_identity_regressions=%d replay_metadata=%d max_emit=%d max_behavior_spawn=%d max_spellbook_emit=%d" % [
+	print("boss_pattern_catalog_check ok: families=%d recipes=%d adapters=%d requirements=%d official_types=%d types=%d emitted=%d behavior_spawns=%d spellbooks=%d phases=%d previews=%d golden_previews=%d golden_bundles=%d golden_identity_regressions=%d replay_metadata=%d max_emit=%d max_behavior_spawn=%d max_spellbook_emit=%d" % [
 		BossPatternCatalog.family_rows().size(),
 		int(recipes.get("recipe_count", 0)),
 		int(recipes.get("adapter_count", 0)),
@@ -132,6 +135,7 @@ func _initialize() -> void:
 		int(spellbooks.get("phase_count", 0)),
 		int(preview_exports.get("preview_count", 0)),
 		int(preview_exports.get("golden_preview_count", 0)),
+		int(preview_exports.get("golden_bundle_count", 0)),
 		int(golden_identity_regression.get("checked", 0)),
 		int(replay_metadata.get("checked", 0)),
 		int(budgets.get("max_initial_emit", 0)),

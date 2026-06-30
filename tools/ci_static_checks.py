@@ -114,6 +114,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "validate_performance_budgets",
         "validate_official_boss_type_coverage",
         "validate_spellbook_preview_exports",
+        "golden_preview_bundle_fixtures",
+        "golden_preview_bundle_digest",
+        "orphan_golden_preview_bundle",
         "_spellbook_phase_bullet_cap",
         "spellbook_phase_emit_budget",
     ]:
@@ -127,8 +130,10 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "DEFAULT_PREVIEW_SEED",
         "PREVIEW_SAMPLE_TICKS",
         "GOLDEN_PREVIEW_FIXTURES",
+        "GOLDEN_PREVIEW_BUNDLE_FIXTURES",
         "deterministic_phase_preview",
         "golden_preview_fixtures",
+        "golden_preview_bundle_fixtures",
         "phase_script_config",
         "phase_export_data",
         "validate_phase_preview_exports",
@@ -167,6 +172,8 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "PREVIEW_AUTHORITY_SCOPE",
         "preview_authority_scope",
         "golden_preview_authority_scope",
+        "golden_preview_bundle_digest",
+        "golden_preview_bundle_phase_ids",
     ]:
         if token not in spellbook_text:
             errors.append(f"godot/scripts/boss_spellbook_model.gd: missing timeout/enrage token {token}")
@@ -217,6 +224,9 @@ def check_boss_pattern_catalog_contract() -> list[str]:
     for token in [
         "_preview_sample_ticks_from_fields",
         "_expected_preview_bundle_signature_digest",
+        "SPELLBOOK_PREVIEW_GOLDEN_BUNDLE_FIXTURES",
+        "_golden_preview_bundle_fixture_for_fields",
+        "_expected_preview_bundle_fixture_id",
         "SPELLBOOK_PREVIEW_PHASE_ORDER",
         "preview_bundle_id_mismatch",
         "preview_bundle_digest_mismatch",
@@ -281,6 +291,8 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "ReplayStore",
         "preview_count",
         "golden_preview_count",
+        "golden_bundle_count",
+        "golden_bundles",
         "replay_metadata",
         "max_spellbook_emit",
         "fixture_authoritative_spellbook_preview",
@@ -437,6 +449,7 @@ def check_boss_pattern_catalog_contract() -> list[str]:
         "_phase_order_from_fixtures",
         "_extract_phase_order",
         "SPELLBOOK_PREVIEW_PHASE_ORDER differs",
+        "SPELLBOOK_PREVIEW_GOLDEN_BUNDLE_FIXTURES differs",
         "spellbook golden fixture",
     ]:
         if token not in this_text:
@@ -676,14 +689,22 @@ def _extract_phase_order(text: str) -> dict[str, list[str]]:
 def _check_spellbook_fixture_parity(spellbook_text: str, replay_store_text: str) -> list[str]:
     errors: list[str] = []
     spellbook_dict = _extract_const_dict(spellbook_text, "GOLDEN_PREVIEW_FIXTURES")
+    spellbook_bundle_dict = _extract_const_dict(spellbook_text, "GOLDEN_PREVIEW_BUNDLE_FIXTURES")
     replay_dict = _extract_const_dict(replay_store_text, "SPELLBOOK_PREVIEW_GOLDEN_FIXTURES")
+    replay_bundle_dict = _extract_const_dict(replay_store_text, "SPELLBOOK_PREVIEW_GOLDEN_BUNDLE_FIXTURES")
     if spellbook_dict is None:
         return ["godot/scripts/boss_spellbook_model.gd: missing GOLDEN_PREVIEW_FIXTURES dictionary"]
+    if spellbook_bundle_dict is None:
+        return ["godot/scripts/boss_spellbook_model.gd: missing GOLDEN_PREVIEW_BUNDLE_FIXTURES dictionary"]
     if replay_dict is None:
         return ["godot/scripts/replay_store.gd: missing SPELLBOOK_PREVIEW_GOLDEN_FIXTURES dictionary"]
+    if replay_bundle_dict is None:
+        return ["godot/scripts/replay_store.gd: missing SPELLBOOK_PREVIEW_GOLDEN_BUNDLE_FIXTURES dictionary"]
 
     spellbook_fixtures = _extract_fixture_blocks(spellbook_dict)
     replay_fixtures = _extract_fixture_blocks(replay_dict)
+    spellbook_bundle_fixtures = _extract_fixture_blocks(spellbook_bundle_dict)
+    replay_bundle_fixtures = _extract_fixture_blocks(replay_bundle_dict)
     missing_in_replay = sorted(set(spellbook_fixtures) - set(replay_fixtures))
     missing_in_spellbook = sorted(set(replay_fixtures) - set(spellbook_fixtures))
     if missing_in_replay:
@@ -702,6 +723,11 @@ def _check_spellbook_fixture_parity(spellbook_text: str, replay_store_text: str)
         errors.append(
             "godot/scripts/replay_store.gd: SPELLBOOK_PREVIEW_PHASE_ORDER differs from golden fixtures "
             f"expected={expected_phase_order} actual={replay_phase_order}"
+        )
+    if set(spellbook_bundle_fixtures) != set(replay_bundle_fixtures):
+        errors.append(
+            "godot/scripts/replay_store.gd: SPELLBOOK_PREVIEW_GOLDEN_BUNDLE_FIXTURES differs from spellbook "
+            f"expected={sorted(spellbook_bundle_fixtures)} actual={sorted(replay_bundle_fixtures)}"
         )
 
     string_fields = ["export_id", "preview_fixture_id", "preview_authority_scope", "performance_budget_status"]
@@ -729,6 +755,31 @@ def _check_spellbook_fixture_parity(spellbook_text: str, replay_store_text: str)
         for field in array_fields:
             if _extract_int_array_values(spellbook_block, field) != _extract_int_array_values(replay_block, field):
                 errors.append(f"spellbook golden fixture {fixture_id}: {field} differs between spellbook and replay store")
+    bundle_string_fields = ["preview_bundle_id", "preview_bundle_fixture_id", "preview_authority_scope", "performance_budget_status"]
+    bundle_number_fields = [
+        "export_schema_version",
+        "preview_bundle_signature_digest",
+        "preview_phase_count",
+        "max_preview_emit_per_tick",
+        "min_preview_budget_headroom",
+    ]
+    bundle_string_array_fields = ["preview_phase_ids"]
+    bundle_int_array_fields = ["preview_phase_signature_digests"]
+    for fixture_id in sorted(set(spellbook_bundle_fixtures) & set(replay_bundle_fixtures)):
+        spellbook_block = spellbook_bundle_fixtures[fixture_id]
+        replay_block = replay_bundle_fixtures[fixture_id]
+        for field in bundle_string_fields:
+            if _extract_string_value(spellbook_block, field) != _extract_string_value(replay_block, field):
+                errors.append(f"spellbook golden bundle fixture {fixture_id}: {field} differs between spellbook and replay store")
+        for field in bundle_number_fields:
+            if _extract_number_value(spellbook_block, field) != _extract_number_value(replay_block, field):
+                errors.append(f"spellbook golden bundle fixture {fixture_id}: {field} differs between spellbook and replay store")
+        for field in bundle_string_array_fields:
+            if _extract_array_values(spellbook_block, field) != _extract_array_values(replay_block, field):
+                errors.append(f"spellbook golden bundle fixture {fixture_id}: {field} differs between spellbook and replay store")
+        for field in bundle_int_array_fields:
+            if _extract_int_array_values(spellbook_block, field) != _extract_int_array_values(replay_block, field):
+                errors.append(f"spellbook golden bundle fixture {fixture_id}: {field} differs between spellbook and replay store")
     return errors
 
 

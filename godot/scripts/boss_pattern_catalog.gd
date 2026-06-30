@@ -468,7 +468,7 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 	var failures: Array[String] = []
 	if spellbook_model == null:
 		return {"ok": false, "failures": ["missing_spellbook_model"], "preview_count": 0}
-	for method_name in ["spellbook_ids", "timeline_rows", "deterministic_phase_preview", "phase_export_data", "validate_phase_preview_exports", "golden_preview_fixtures"]:
+	for method_name in ["spellbook_ids", "timeline_rows", "deterministic_phase_preview", "phase_export_data", "validate_phase_preview_exports", "golden_preview_fixtures", "golden_preview_bundle_fixtures"]:
 		if not spellbook_model.has_method(method_name):
 			return {"ok": false, "failures": ["missing_method:%s" % method_name], "preview_count": 0}
 	var model_export_validation: Dictionary = spellbook_model.validate_phase_preview_exports(seed)
@@ -477,8 +477,11 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 			failures.append("spellbook_model_%s" % String(failure))
 	var preview_count := 0
 	var golden_preview_count := 0
+	var golden_bundle_count := 0
 	var golden_fixtures: Dictionary = spellbook_model.golden_preview_fixtures()
+	var golden_bundle_fixtures: Dictionary = spellbook_model.golden_preview_bundle_fixtures()
 	var seen_fixture_ids: Array[String] = []
+	var seen_bundle_fixture_ids: Array[String] = []
 	for spellbook_id in spellbook_model.spellbook_ids():
 		var export: Dictionary = spellbook_model.phase_export_data(String(spellbook_id), seed)
 		if String(export.get("license", "")).is_empty() or String(export.get("provenance", "")).is_empty():
@@ -486,6 +489,33 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 		var expected_bundle_id := "boss_spellbook_preview_bundle_%s_%d" % [String(spellbook_id), seed]
 		if String(export.get("preview_bundle_id", "")) != expected_bundle_id:
 			failures.append("preview_bundle_id_mismatch:%s" % String(spellbook_id))
+		var bundle_fixture_id := "%s:%d" % [String(spellbook_id), seed]
+		if not golden_bundle_fixtures.has(bundle_fixture_id):
+			failures.append("missing_golden_preview_bundle:%s" % bundle_fixture_id)
+		else:
+			var bundle_fixture: Dictionary = golden_bundle_fixtures[bundle_fixture_id]
+			golden_bundle_count += 1
+			seen_bundle_fixture_ids.append(bundle_fixture_id)
+			if String(bundle_fixture.get("preview_bundle_id", "")) != String(export.get("preview_bundle_id", "")):
+				failures.append("golden_preview_bundle_id:%s" % String(spellbook_id))
+			if String(bundle_fixture.get("preview_bundle_fixture_id", "")) != bundle_fixture_id:
+				failures.append("golden_preview_bundle_fixture_id:%s" % String(spellbook_id))
+			if String(bundle_fixture.get("preview_authority_scope", "")) != "local_practice_preview_only":
+				failures.append("golden_preview_bundle_authority_scope:%s" % String(spellbook_id))
+			if int(bundle_fixture.get("preview_bundle_signature_digest", 0)) != int(export.get("preview_bundle_signature_digest", 0)):
+				failures.append("golden_preview_bundle_digest:%s" % String(spellbook_id))
+			if int(bundle_fixture.get("preview_phase_count", 0)) != int(export.get("preview_phase_count", 0)):
+				failures.append("golden_preview_bundle_phase_count:%s" % String(spellbook_id))
+			if not _arrays_equal_strings(bundle_fixture.get("preview_phase_ids", []), export.get("preview_phase_ids", [])):
+				failures.append("golden_preview_bundle_phase_ids:%s" % String(spellbook_id))
+			if not _arrays_equal_ints(bundle_fixture.get("preview_phase_signature_digests", []), export.get("preview_phase_signature_digests", [])):
+				failures.append("golden_preview_bundle_phase_digests:%s" % String(spellbook_id))
+			if int(bundle_fixture.get("max_preview_emit_per_tick", 0)) != int(export.get("max_preview_emit_per_tick", 0)):
+				failures.append("golden_preview_bundle_max_emit:%s" % String(spellbook_id))
+			if int(bundle_fixture.get("min_preview_budget_headroom", 0)) != int(export.get("min_preview_budget_headroom", 0)):
+				failures.append("golden_preview_bundle_headroom:%s" % String(spellbook_id))
+			if String(bundle_fixture.get("performance_budget_status", "")) != String(export.get("performance_budget_status", "")):
+				failures.append("golden_preview_bundle_budget_status:%s" % String(spellbook_id))
 		var export_phases: Array = export.get("phases", [])
 		if int(export.get("preview_phase_count", 0)) != export_phases.size():
 			failures.append("preview_bundle_phase_count_mismatch:%s" % String(spellbook_id))
@@ -597,11 +627,15 @@ static func validate_spellbook_preview_exports(spellbook_model: RefCounted, patt
 	for fixture_id in golden_fixtures.keys():
 		if String(fixture_id).ends_with(":%d" % seed) and not seen_fixture_ids.has(String(fixture_id)):
 			failures.append("orphan_golden_preview:%s" % String(fixture_id))
+	for fixture_id in golden_bundle_fixtures.keys():
+		if String(fixture_id).ends_with(":%d" % seed) and not seen_bundle_fixture_ids.has(String(fixture_id)):
+			failures.append("orphan_golden_preview_bundle:%s" % String(fixture_id))
 	return {
 		"ok": failures.is_empty(),
 		"failures": failures,
 		"preview_count": preview_count,
 		"golden_preview_count": golden_preview_count,
+		"golden_bundle_count": golden_bundle_count,
 	}
 
 static func validate_open_source_recipes() -> Dictionary:
