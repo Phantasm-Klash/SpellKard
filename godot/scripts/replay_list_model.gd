@@ -155,14 +155,29 @@ func verification_filter_rows() -> Array[Dictionary]:
 	for filter_id in VERIFICATION_FILTERS:
 		var is_all := filter_id == VERIFICATION_FILTER_ALL
 		var count := entries.size() if is_all else int(counts.get(filter_id, 0))
+		var active := filter_id == active_verification_filter
+		var filter_card_metrics: Array[Dictionary] = [
+			{"id": "entries", "label": "entries", "value": count},
+			{"id": "active", "label": "active", "value": active},
+			{"id": "visible", "label": "visible", "value": _filtered_indices().size() if active else count},
+		]
 		rows.append({
 			"id": "replay_filter_%s" % filter_id,
 			"label_key": _verification_filter_label_key(filter_id),
-			"value": "%s %d" % ["active" if filter_id == active_verification_filter else "show", count],
+			"value": "%s %d" % ["active" if active else "show", count],
 			"summary": "local replay display filter only; server audit authority unchanged",
 			"verification_filter": filter_id,
-			"active": filter_id == active_verification_filter,
+			"active": active,
 			"entry_count": count,
+			"filter_card_kind": "replay_verification_filter",
+			"filter_card_title_key": _verification_filter_label_key(filter_id),
+			"filter_card_primary_metric": "entries %d" % count,
+			"filter_card_secondary_metric": "active %s visible %d" % ["yes" if active else "no", _filtered_indices().size() if active else count],
+			"filter_card_metrics": filter_card_metrics,
+			"filter_card_authority_badges": ["local_practice_verification_only", "server_audit_required_for_online", "damage_server", "reward_server", "settlement_server"],
+			"filter_card_action_hint": "apply local replay list filter only",
+			"overview_card_kind": "replay_verification_filter",
+			"render_slot": "filter_tabs",
 			"server_authoritative": false,
 			"local_hash_authority": "local_practice_verification_only",
 			"damage_authority": "server",

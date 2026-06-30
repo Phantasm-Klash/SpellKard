@@ -602,6 +602,8 @@ func _validate_collection_page_contract() -> bool:
 		return _fail("replay page missing boss-practice filter action %s" % [replay_rows])
 	if not _assert_replay_ui_authority_row(replay_rows[boss_filter_index]):
 		return false
+	if not _assert_replay_filter_card_row(replay_rows[boss_filter_index], "replay_boss_practice"):
+		return false
 	var load_action := _row_by_id(replay_rows, "replay_action_load")
 	var favorite_action := _row_by_id(replay_rows, "replay_action_favorite")
 	var remove_action := _row_by_id(replay_rows, "replay_action_remove")
@@ -1046,6 +1048,25 @@ func _assert_page_authority_contract(snapshot: Dictionary, label: String, expect
 	if not String(snapshot.get("page_experience_text", "")).contains(expected_text):
 		return _fail("%s page summary text missing authority contract %s" % [label, String(snapshot.get("page_experience_text", ""))])
 	return true
+
+func _assert_replay_filter_card_row(row: Dictionary, filter_id: String) -> bool:
+	if row.is_empty():
+		return _fail("replay filter card row missing for %s" % filter_id)
+	if String(row.get("verification_filter", "")) != filter_id:
+		return _fail("replay filter card id mismatch %s expected=%s" % [row, filter_id])
+	if String(row.get("filter_card_kind", "")) != "replay_verification_filter" or String(row.get("overview_card_kind", "")) != "replay_verification_filter":
+		return _fail("replay filter card metadata mismatch %s" % [row])
+	if String(row.get("render_slot", "")) != "filter_tabs":
+		return _fail("replay filter card render slot mismatch %s" % [row])
+	if not String(row.get("filter_card_primary_metric", "")).contains("entries") or not String(row.get("filter_card_secondary_metric", "")).contains("active"):
+		return _fail("replay filter card metric text mismatch %s" % [row])
+	var metrics: Array = row.get("filter_card_metrics", [])
+	var badges: Array = row.get("filter_card_authority_badges", [])
+	if metrics.size() < 3 or not badges.has("local_practice_verification_only") or not badges.has("server_audit_required_for_online") or not badges.has("damage_server") or not badges.has("settlement_server"):
+		return _fail("replay filter card metrics/badges mismatch %s" % [row])
+	if String(row.get("ui_action", "")) != "set_replay_filter" or String(row.get("ui_control", "")) != "button":
+		return _fail("replay filter card action/control mismatch %s" % [row])
+	return _assert_replay_ui_authority_row(row)
 
 func _assert_replay_ui_authority_row(row: Dictionary) -> bool:
 	if row.is_empty():
