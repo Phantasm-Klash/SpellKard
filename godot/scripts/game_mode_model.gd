@@ -524,12 +524,7 @@ func request_boss_entry(mode_id: String) -> Dictionary:
 		var failures: Array = entry.get("failures", [])
 		last_error_code = "entry_locked" if failures.is_empty() else String(failures[0])
 		return _action_result(false, {})
-	var request := _record_mode_action(mode_id, "enter_boss_instance" if mode_id == MODE_INSTANCE_BOSS else "enter_world_boss", {
-		"entry_period": String(entry.get("entry_period", "")),
-		"attempts_left": int(entry.get("attempts_left", 0)),
-		"required_rating": String(entry.get("required_rating", "")),
-		"required_key_id": String(entry.get("required_key_id", "")),
-	})
+	var request := _record_mode_action(mode_id, "enter_boss_instance" if mode_id == MODE_INSTANCE_BOSS else "enter_world_boss", _boss_entry_request_payload(mode_id, entry))
 	last_action_status = "boss_entry_request"
 	last_error_code = "none"
 	return _action_result(true, request)
@@ -1538,6 +1533,34 @@ func _record_mode_action(mode_id: String, action_type: String, payload: Dictiona
 	if mode_action_requests.size() > 32:
 		mode_action_requests.pop_front()
 	return request
+
+func _boss_entry_request_payload(mode_id: String, entry: Dictionary) -> Dictionary:
+	var action_projection := boss_action_availability_projection(mode_id)
+	return {
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"entry_period": String(entry.get("entry_period", "")),
+		"attempts_left": int(entry.get("attempts_left", 0)),
+		"required_rating": String(entry.get("required_rating", "")),
+		"player_rating": String(entry.get("player_rating", "")),
+		"required_key_id": String(entry.get("required_key_id", "")),
+		"owned_key_count": int(entry.get("owned_key_count", 0)),
+		"entry_preflight": entry.duplicate(true),
+		"action_availability": action_projection,
+		"local_validation": "boss_entry_preflight",
+		"local_validation_rules": ["attempts_available", "party_size", "rating_requirement", "key_requirement"],
+		"request_scope": "intent_only",
+		"entry_request_scope": "intent_only",
+		"intent_authority": "client_request_only",
+		"server_confirmation_status": String(entry.get("server_confirmation_status", "required")),
+		"requires_server_confirmation": true,
+		"server_required_for": _boss_server_required_fields(mode_id),
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"server_authoritative": false,
+		"client_result_authoritative": false,
+	}
 
 func _action_result(ok: bool, request: Dictionary) -> Dictionary:
 	return {

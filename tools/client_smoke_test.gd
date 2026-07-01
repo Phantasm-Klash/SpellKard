@@ -2407,6 +2407,26 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: instance boss entry request invalid %s" % [instance_entry_request])
 		quit(1)
 		return true
+	var instance_entry_payload: Dictionary = instance_entry_request.get("request", {}).get("payload", {})
+	if String(instance_entry_payload.get("request_scope", "")) != "intent_only" \
+			or String(instance_entry_payload.get("entry_request_scope", "")) != "intent_only" \
+			or String(instance_entry_payload.get("intent_authority", "")) != "client_request_only" \
+			or String(instance_entry_payload.get("server_confirmation_status", "")) != "required" \
+			or not bool(instance_entry_payload.get("requires_server_confirmation", false)) \
+			or String(instance_entry_payload.get("damage_authority", "")) != "server" \
+			or String(instance_entry_payload.get("reward_authority", "")) != "server" \
+			or String(instance_entry_payload.get("settlement_authority", "")) != "server" \
+			or bool(instance_entry_payload.get("server_authoritative", true)) \
+			or bool(instance_entry_payload.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: instance boss entry request payload authority invalid %s" % [instance_entry_payload])
+		quit(1)
+		return true
+	if not _validate_boss_entry_preview(instance_entry_payload.get("entry_preflight", {}), "instance_boss", true, "none"):
+		quit(1)
+		return true
+	if not _validate_boss_action_availability(instance_entry_payload.get("action_availability", {}), "instance_boss", true, "none", 8):
+		quit(1)
+		return true
 	if main_node.call("_apply_instance_boss_result", {
 		"client_result_authoritative": true,
 		"boss_defeated": true,
@@ -4320,7 +4340,13 @@ func _process(_delta: float) -> bool:
 		return true
 	main_node.call("_ui_set_cursor", world_entry_cursor)
 	var accept_world_entry: Dictionary = main_node.call("_ui_accept_selected")
-	if not bool(accept_world_entry.get("ok", false)) or String(accept_world_entry.get("action", "")) != "request_boss_entry" or String(accept_world_entry.get("request_type", "")) != "enter_world_boss" or bool(accept_world_entry.get("authoritative", true)):
+	if not bool(accept_world_entry.get("ok", false)) \
+			or String(accept_world_entry.get("action", "")) != "request_boss_entry" \
+			or String(accept_world_entry.get("request_type", "")) != "enter_world_boss" \
+			or String(accept_world_entry.get("request_scope", "")) != "intent_only" \
+			or String(accept_world_entry.get("server_confirmation_status", "")) != "required" \
+			or bool(accept_world_entry.get("authoritative", true)) \
+			or bool(accept_world_entry.get("client_result_authoritative", true)):
 		push_error("Smoke test failed: UI world boss entry accept invalid %s" % [accept_world_entry])
 		quit(1)
 		return true
@@ -4332,7 +4358,13 @@ func _process(_delta: float) -> bool:
 		return true
 	main_node.call("_ui_set_cursor", instance_entry_cursor)
 	var accept_instance_entry: Dictionary = main_node.call("_ui_accept_selected")
-	if not bool(accept_instance_entry.get("ok", false)) or String(accept_instance_entry.get("action", "")) != "request_boss_entry" or String(accept_instance_entry.get("request_type", "")) != "enter_boss_instance" or bool(accept_instance_entry.get("authoritative", true)):
+	if not bool(accept_instance_entry.get("ok", false)) \
+			or String(accept_instance_entry.get("action", "")) != "request_boss_entry" \
+			or String(accept_instance_entry.get("request_type", "")) != "enter_boss_instance" \
+			or String(accept_instance_entry.get("request_scope", "")) != "intent_only" \
+			or String(accept_instance_entry.get("server_confirmation_status", "")) != "required" \
+			or bool(accept_instance_entry.get("authoritative", true)) \
+			or bool(accept_instance_entry.get("client_result_authoritative", true)):
 		push_error("Smoke test failed: UI instance boss entry accept invalid %s" % [accept_instance_entry])
 		quit(1)
 		return true

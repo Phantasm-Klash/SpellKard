@@ -2746,10 +2746,14 @@ func _dispatch_ui_action(row: Dictionary) -> Dictionary:
 			var entry_mode_id := String(row.get("mode_id", ""))
 			var entry_result: Dictionary = _request_boss_entry(entry_mode_id)
 			var entry_request: Dictionary = entry_result.get("request", {})
+			var entry_payload: Dictionary = entry_request.get("payload", {})
 			return _set_ui_action_result(bool(entry_result.get("ok", false)), action, {
 				"mode_id": entry_mode_id,
 				"request_type": String(entry_request.get("action_type", "")),
 				"authoritative": bool(entry_request.get("server_authoritative", false)),
+				"request_scope": String(entry_payload.get("request_scope", "")),
+				"server_confirmation_status": String(entry_payload.get("server_confirmation_status", "")),
+				"client_result_authoritative": bool(entry_request.get("client_result_authoritative", true)) or bool(entry_payload.get("client_result_authoritative", true)),
 				"last_error_code": String(entry_result.get("last_error_code", "")),
 			})
 		"request_activity_claim":
