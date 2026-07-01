@@ -186,9 +186,15 @@ func _validate_play_pages() -> bool:
 		return false
 	if not _assert_boss_practice_preview_row(_row_by_id(rows, "instance_boss_practice_preview"), "instance_boss"):
 		return false
+	if not _assert_boss_practice_validation_row(_row_by_id(rows, "world_boss_practice_validation"), "world_boss", 4):
+		return false
+	if not _assert_boss_practice_validation_row(_row_by_id(rows, "instance_boss_practice_validation"), "instance_boss", 8):
+		return false
 	var modes_overview_text := String(snapshot.get("overview_cards_text", ""))
 	if not modes_overview_text.contains(_text("screen.settings.boss_spellbook")) or not modes_overview_text.contains("phases") or not modes_overview_text.contains("digest"):
 		return _fail("modes overview cards missing boss practice preview card metrics %s" % modes_overview_text)
+	if not modes_overview_text.contains("practice validation"):
+		return _fail("modes overview cards missing boss practice validation metrics %s" % modes_overview_text)
 	if not await _assert_boss_practice_preview_launch("world_boss_practice_preview", "world_boss"):
 		return false
 	if not await _assert_boss_practice_preview_launch("instance_boss_practice_preview", "instance_boss"):
@@ -1309,6 +1315,55 @@ func _assert_boss_practice_preview_row(row: Dictionary, mode_id: String) -> bool
 		return _fail("boss practice preview missing deterministic digest %s" % [row])
 	if String(row.get("performance_budget_status", "")) != "within_budget":
 		return _fail("boss practice preview budget status invalid %s" % [row])
+	return true
+
+func _assert_boss_practice_validation_row(row: Dictionary, mode_id: String, expected_count: int) -> bool:
+	if row.is_empty():
+		return _fail("boss practice validation row missing for %s" % mode_id)
+	if String(row.get("mode_id", "")) != mode_id or String(row.get("mode_category", "")) != "boss":
+		return _fail("boss practice validation identity mismatch %s" % [row])
+	if String(row.get("validation_kind", "")) != "boss_practice_validation_projection":
+		return _fail("boss practice validation kind missing %s" % [row])
+	if String(row.get("projection_scope", "")) != "local_practice_preview_only" \
+			or String(row.get("result_scope", "")) != "local_practice_validation_only" \
+			or String(row.get("practice_mode", "")) != "boss_spellbook_practice":
+		return _fail("boss practice validation scope mismatch %s" % [row])
+	if bool(row.get("client_result_authoritative", true)) or bool(row.get("server_authoritative", true)):
+		return _fail("boss practice validation must not claim result/server authority %s" % [row])
+	if bool(row.get("requires_server_confirmation", true)):
+		return _fail("boss practice validation should not require server confirmation %s" % [row])
+	if String(row.get("damage_authority", "")) != "server" \
+			or String(row.get("reward_authority", "")) != "server" \
+			or String(row.get("settlement_authority", "")) != "server" \
+			or String(row.get("boss_hp_authority", "")) != "server":
+		return _fail("boss practice validation must keep online authority on server %s" % [row])
+	if not bool(row.get("practice_preview_ready", false)) \
+			or not bool(row.get("replay_metadata_ready", false)) \
+			or not bool(row.get("formation_valid", false)) \
+			or not bool(row.get("center_aim_valid", false)) \
+			or not bool(row.get("all_slots_face_center", false)):
+		return _fail("boss practice validation readiness flags invalid %s" % [row])
+	if int(row.get("player_count", 0)) != expected_count:
+		return _fail("boss practice validation player count mismatch %s expected=%d" % [row, expected_count])
+	if int(row.get("preview_bundle_signature_digest", 0)) <= 0 \
+			or int(row.get("formation_display_signature", 0)) <= 0 \
+			or int(row.get("preview_phase_count", 0)) < 3:
+		return _fail("boss practice validation missing deterministic signatures %s" % [row])
+	if String(row.get("replay_verification_scope", "")) != "local_practice_hash" \
+			or String(row.get("local_hash_authority", "")) != "local_practice_verification_only" \
+			or String(row.get("online_replay_authority", "")) != "server_audit_required":
+		return _fail("boss practice validation replay authority mismatch %s" % [row])
+	if String(row.get("performance_budget_status", "")) != "within_budget":
+		return _fail("boss practice validation budget status invalid %s" % [row])
+	if String(row.get("ui_control", "")) != "card" \
+			or String(row.get("overview_card_kind", "")) != "boss_practice_validation" \
+			or String(row.get("render_slot", "")) != "mode_cards":
+		return _fail("boss practice validation card placement mismatch %s" % [row])
+	var metrics: Array = row.get("validation_metrics", [])
+	if metrics.size() < 5 or not String(row.get("validation_summary", "")).contains("replay local_practice_hash"):
+		return _fail("boss practice validation metrics invalid %s" % [row])
+	if not _assert_boss_display_summary_fields(row, mode_id, expected_count):
+		return false
 	return true
 
 func _assert_boss_practice_preview_launch(row_id: String, mode_id: String) -> bool:
