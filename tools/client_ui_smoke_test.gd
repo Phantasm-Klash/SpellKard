@@ -199,6 +199,10 @@ func _validate_play_pages() -> bool:
 		return false
 	if not await _assert_boss_practice_preview_launch("instance_boss_practice_preview", "instance_boss"):
 		return false
+	if not await _assert_boss_practice_preview_launch("world_boss_practice_validation", "world_boss"):
+		return false
+	if not await _assert_boss_practice_preview_launch("instance_boss_practice_validation", "instance_boss"):
+		return false
 	snapshot = await _open_snapshot("modes")
 	rows = main_node.call("_ui_screen_rows", 64)
 	if not String(snapshot.get("page_focus_action_ids", "")).contains("world_boss_authority") or not String(snapshot.get("page_focus_action_ids", "")).contains("instance_boss_authority"):
@@ -1358,9 +1362,14 @@ func _assert_boss_practice_validation_row(row: Dictionary, mode_id: String, expe
 	if String(row.get("performance_budget_status", "")) != "within_budget":
 		return _fail("boss practice validation budget status invalid %s" % [row])
 	if String(row.get("ui_control", "")) != "card" \
+			or String(row.get("ui_action", "")) != "start_boss_practice_preview" \
 			or String(row.get("overview_card_kind", "")) != "boss_practice_validation" \
 			or String(row.get("render_slot", "")) != "mode_cards":
 		return _fail("boss practice validation card placement mismatch %s" % [row])
+	if String(row.get("local_practice_action", "")) != "start_boss_spellbook_run" \
+			or String(row.get("local_practice_target_screen", "")) != "practice" \
+			or String(row.get("online_result_authority", "")) != "server_settlement_required":
+		return _fail("boss practice validation action contract mismatch %s" % [row])
 	var metrics: Array = row.get("validation_metrics", [])
 	if metrics.size() < 5 or not String(row.get("validation_summary", "")).contains("replay local_practice_hash"):
 		return _fail("boss practice validation metrics invalid %s" % [row])
