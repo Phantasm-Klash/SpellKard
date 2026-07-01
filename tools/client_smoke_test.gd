@@ -2102,6 +2102,10 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: world boss transfer request invalid")
 		quit(1)
 		return true
+	var transfer_request_payload: Dictionary = transfer_result.get("request", {}).get("payload", {})
+	if not _validate_boss_transfer_confirmation_contract(transfer_request_payload.get("transfer_confirmation_contract", {}), "world_boss", true, "none"):
+		quit(1)
+		return true
 	var world_boss_transfer_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "world_boss_transfer")
 	if not bool(world_boss_transfer_row.get("requires_server_confirmation", false)) or bool(world_boss_transfer_row.get("client_result_authoritative", true)):
 		push_error("Smoke test failed: world boss transfer authority contract invalid %s" % [world_boss_transfer_row])
@@ -2109,6 +2113,9 @@ func _process(_delta: float) -> bool:
 		return true
 	if String(world_boss_transfer_row.get("intent_authority", "")) != "client_request_only" or String(world_boss_transfer_row.get("server_confirmation_status", "")) != "pending" or String(world_boss_transfer_row.get("settlement_authority", "")) != "server":
 		push_error("Smoke test failed: world boss transfer intent authority invalid %s" % [world_boss_transfer_row])
+		quit(1)
+		return true
+	if not _validate_boss_transfer_confirmation_contract(world_boss_transfer_row.get("transfer_confirmation_contract", {}), "world_boss", true, "none"):
 		quit(1)
 		return true
 	var latest_transfer_request: Dictionary = world_boss_transfer_row.get("latest_transfer_request", {})
@@ -6706,6 +6713,8 @@ func _validate_boss_ui_action_cards(cards: Array, mode_id: String, expected_entr
 			if String(card.get("action_status", "")) != "ready_for_server_confirmation" or String(card.get("server_confirmation_status", "")) != "required":
 				push_error("Smoke test failed: boss transfer action card status invalid %s" % [card])
 				return false
+			if not _validate_boss_transfer_confirmation_contract(card.get("transfer_confirmation_contract", {}), mode_id, expected_transfer_enabled, "none" if expected_transfer_enabled else expected_entry_reason):
+				return false
 	return true
 
 func _validate_boss_transfer_preview(preview: Dictionary, mode_id: String, expected_ok: bool, expected_reason: String) -> bool:
@@ -6737,6 +6746,58 @@ func _validate_boss_transfer_preview(preview: Dictionary, mode_id: String, expec
 	var expected_confirmation := "required" if expected_ok else "blocked_local"
 	if String(preview.get("server_confirmation_status", "")) != expected_confirmation:
 		push_error("Smoke test failed: boss transfer preview confirmation status invalid %s expected=%s" % [preview, expected_confirmation])
+		return false
+	if String(preview.get("request_scope", "")) != "intent_only" or String(preview.get("transfer_request_scope", "")) != "intent_only":
+		push_error("Smoke test failed: boss transfer preview request scope invalid %s" % [preview])
+		return false
+	if not _validate_boss_transfer_confirmation_contract(preview.get("transfer_confirmation_contract", {}), mode_id, expected_ok, expected_reason):
+		return false
+	return true
+
+func _validate_boss_transfer_confirmation_contract(contract: Dictionary, mode_id: String, expected_valid: bool, expected_reason: String) -> bool:
+	if contract.is_empty():
+		push_error("Smoke test failed: boss transfer confirmation contract missing for %s" % mode_id)
+		return false
+	if String(contract.get("contract_kind", "")) != "boss_card_transfer_confirmation_contract" or int(contract.get("contract_version", 0)) != 1:
+		push_error("Smoke test failed: boss transfer confirmation contract kind invalid %s" % [contract])
+		return false
+	if String(contract.get("mode_id", "")) != mode_id or String(contract.get("mode_category", "")) != "boss":
+		push_error("Smoke test failed: boss transfer confirmation contract identity invalid %s" % [contract])
+		return false
+	if String(contract.get("local_preflight_status", "")) != ("valid" if expected_valid else "blocked_local") or String(contract.get("local_preflight_reason", "")) != expected_reason:
+		push_error("Smoke test failed: boss transfer confirmation contract preflight invalid %s expected=%s/%s" % [contract, expected_valid, expected_reason])
+		return false
+	if String(contract.get("transfer_request_scope", "")) != "intent_only" or String(contract.get("intent_authority", "")) != "client_request_only":
+		push_error("Smoke test failed: boss transfer confirmation contract scope invalid %s" % [contract])
+		return false
+	if not bool(contract.get("requires_server_confirmation", false)) or bool(contract.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: boss transfer confirmation contract flags invalid %s" % [contract])
+		return false
+	if String(contract.get("damage_authority", "")) != "server" or String(contract.get("reward_authority", "")) != "server" or String(contract.get("settlement_authority", "")) != "server":
+		push_error("Smoke test failed: boss transfer confirmation contract authority invalid %s" % [contract])
+		return false
+	var allowed: Array = contract.get("transfer_intent_allowed_fields", [])
+	for expected_field in ["mode_id", "boss_instance_id", "from_player_id", "to_player_id", "card_id", "client_action_seq", "requested_at_tick"]:
+		if not allowed.has(expected_field):
+			push_error("Smoke test failed: boss transfer confirmation contract allowed fields invalid %s" % [contract])
+			return false
+	var forbidden: Array = contract.get("client_forbidden_transfer_fields", [])
+	for forbidden_field in ["damage", "boss_hp_after", "reward_grants", "settlement_result", "confirmed_card_owner", "receiver_hand", "receiver_energy"]:
+		if not forbidden.has(forbidden_field):
+			push_error("Smoke test failed: boss transfer confirmation contract forbidden fields invalid %s" % [contract])
+			return false
+	var server_validates: Array = contract.get("server_validates", [])
+	for expected_validation in ["card_ownership", "mode_banlist", "cost", "cooldown", "once_per_card_per_match"]:
+		if not server_validates.has(expected_validation):
+			push_error("Smoke test failed: boss transfer confirmation contract server validation invalid %s" % [contract])
+			return false
+	var server_required: Array = contract.get("server_required_for", [])
+	if not server_required.has("card_transfer_confirmation") or not server_required.has("settlement") or not server_required.has("result_receipt"):
+		push_error("Smoke test failed: boss transfer confirmation contract server required fields invalid %s" % [contract])
+		return false
+	var expected_confirmation := "required" if expected_valid else "blocked_local"
+	if String(contract.get("server_confirmation_status", "")) != expected_confirmation:
+		push_error("Smoke test failed: boss transfer confirmation contract confirmation invalid %s expected=%s" % [contract, expected_confirmation])
 		return false
 	return true
 
