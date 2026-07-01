@@ -313,8 +313,9 @@ func boss_entry_preview(mode_id: String) -> Dictionary:
 	var validation := validate_boss_entry(mode_id)
 	var failures := _string_array(validation.get("failures", []))
 	var reason := "none" if failures.is_empty() else failures[0]
+	var entry_ok := bool(validation.get("ok", false))
 	return {
-		"ok": bool(validation.get("ok", false)),
+		"ok": entry_ok,
 		"reason": reason,
 		"failures": failures,
 		"mode_id": mode_id,
@@ -325,10 +326,16 @@ func boss_entry_preview(mode_id: String) -> Dictionary:
 		"player_rating": String(validation.get("player_rating", "")),
 		"required_key_id": String(validation.get("required_key_id", "")),
 		"owned_key_count": int(validation.get("owned_key_count", 0)),
+		"entry_contract_kind": "boss_entry_verification_contract",
+		"entry_contract_version": 1,
 		"local_validation": "boss_entry_preflight",
 		"local_validation_rules": ["attempts_available", "party_size", "rating_requirement", "key_requirement"],
+		"entry_intent_allowed_fields": _boss_entry_intent_allowed_fields(mode_id),
+		"client_forbidden_entry_fields": _boss_client_forbidden_entry_fields(mode_id),
+		"entry_confirmation_contract": _boss_entry_confirmation_contract(mode_id, entry_ok, reason),
+		"server_required_for": _boss_server_required_fields(mode_id),
 		"intent_authority": "client_request_only",
-		"server_confirmation_status": "required" if bool(validation.get("ok", false)) else "blocked_local",
+		"server_confirmation_status": "required" if entry_ok else "blocked_local",
 		"requires_server_confirmation": true,
 		"damage_authority": "server",
 		"reward_authority": "server",
@@ -1189,6 +1196,11 @@ func boss_display_contract_row(row_id: String, mode_id: String) -> Dictionary:
 			"entry_request_scope": String(action_projection.get("entry_request_scope", "intent_only")),
 			"transfer_request_scope": String(action_projection.get("transfer_request_scope", "intent_only")),
 			"server_required_for": action_projection.get("server_required_for", []),
+			"entry_contract_kind": String(entry_preview.get("entry_contract_kind", "")),
+			"entry_contract_version": int(entry_preview.get("entry_contract_version", 0)),
+			"entry_intent_allowed_fields": entry_preview.get("entry_intent_allowed_fields", []),
+			"client_forbidden_entry_fields": entry_preview.get("client_forbidden_entry_fields", []),
+			"entry_confirmation_contract": entry_preview.get("entry_confirmation_contract", {}),
 			"ui_action_contract": action_projection.get("ui_action_contract", {}),
 			"ui_action_cards": action_projection.get("ui_action_cards", []),
 			"formation_valid": bool(playfield_projection.get("formation_valid", false)),
@@ -1788,8 +1800,13 @@ func _boss_entry_request_payload(mode_id: String, entry: Dictionary) -> Dictiona
 		"entry_preflight": entry.duplicate(true),
 		"action_availability": action_projection,
 		"entry_action_panel": _boss_entry_action_panel_from_projection(mode_id, action_projection),
+		"entry_contract_kind": String(entry.get("entry_contract_kind", "boss_entry_verification_contract")),
+		"entry_contract_version": int(entry.get("entry_contract_version", 1)),
 		"local_validation": "boss_entry_preflight",
 		"local_validation_rules": ["attempts_available", "party_size", "rating_requirement", "key_requirement"],
+		"entry_intent_allowed_fields": entry.get("entry_intent_allowed_fields", _boss_entry_intent_allowed_fields(mode_id)),
+		"client_forbidden_entry_fields": entry.get("client_forbidden_entry_fields", _boss_client_forbidden_entry_fields(mode_id)),
+		"entry_confirmation_contract": entry.get("entry_confirmation_contract", _boss_entry_confirmation_contract(mode_id, bool(entry.get("ok", false)), String(entry.get("reason", "none")))),
 		"request_scope": "intent_only",
 		"entry_request_scope": "intent_only",
 		"intent_authority": "client_request_only",
@@ -2035,6 +2052,8 @@ func _boss_entry_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 		"entry_preflight": validation,
 		"action_availability": action_projection,
 		"entry_action_panel": entry_action_panel,
+			"entry_contract_kind": String(validation.get("entry_contract_kind", "")),
+			"entry_contract_version": int(validation.get("entry_contract_version", 0)),
 			"action_status": String(action_projection.get("action_status", "")),
 			"local_blockers": action_projection.get("local_blockers", []),
 			"can_request_entry": bool(action_projection.get("can_request_entry", false)),
@@ -2044,6 +2063,9 @@ func _boss_entry_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 			"entry_request_scope": String(action_projection.get("entry_request_scope", "intent_only")),
 			"transfer_request_scope": String(action_projection.get("transfer_request_scope", "intent_only")),
 			"server_required_for": action_projection.get("server_required_for", []),
+			"entry_intent_allowed_fields": validation.get("entry_intent_allowed_fields", []),
+			"client_forbidden_entry_fields": validation.get("client_forbidden_entry_fields", []),
+			"entry_confirmation_contract": validation.get("entry_confirmation_contract", {}),
 			"ui_action_contract": action_projection.get("ui_action_contract", {}),
 			"ui_action_cards": action_projection.get("ui_action_cards", []),
 			"intent_authority": "client_request_only",
@@ -2077,6 +2099,14 @@ func _boss_entry_action_panel_from_projection(mode_id: String, projection: Dicti
 			"enabled": bool(card.get("enabled", false)),
 			"blocked_reason": String(card.get("blocked_reason", "none")),
 			"request_scope": String(card.get("request_scope", "intent_only")),
+			"entry_request_scope": String(card.get("entry_request_scope", "")),
+			"transfer_request_scope": String(card.get("transfer_request_scope", "")),
+			"entry_contract_kind": String(card.get("entry_contract_kind", "")),
+			"entry_contract_version": int(card.get("entry_contract_version", 0)),
+			"entry_intent_allowed_fields": card.get("entry_intent_allowed_fields", []),
+			"client_forbidden_entry_fields": card.get("client_forbidden_entry_fields", []),
+			"entry_confirmation_contract": card.get("entry_confirmation_contract", {}),
+			"server_required_for": card.get("server_required_for", []),
 			"server_confirmation_status": String(card.get("server_confirmation_status", "")),
 			"requires_server_confirmation": bool(card.get("requires_server_confirmation", true)),
 			"damage_authority": "server",
@@ -2413,6 +2443,65 @@ func _boss_server_required_fields(mode_id: String) -> Array[String]:
 		fields.append_array(["access_gate", "clear_status", "stars"])
 	return fields
 
+func _boss_entry_intent_allowed_fields(mode_id: String) -> Array[String]:
+	var fields: Array[String] = [
+		"mode_id",
+		"boss_instance_id",
+		"party_ids",
+		"selected_deck_id",
+		"deck_snapshot_hash",
+		"client_action_seq",
+		"requested_at_tick",
+	]
+	if mode_id == MODE_INSTANCE_BOSS:
+		fields.append_array(["required_key_id", "entry_period"])
+	elif mode_id == MODE_WORLD_BOSS:
+		fields.append("season_id")
+	return fields
+
+func _boss_client_forbidden_entry_fields(mode_id: String) -> Array[String]:
+	var fields: Array[String] = [
+		"damage",
+		"damage_this_match",
+		"team_damage",
+		"total_damage",
+		"boss_hp_after",
+		"boss_hp_after_global",
+		"reward_grants",
+		"reward_summary",
+		"settlement_result",
+		"settlement_receipt",
+		"result_receipt",
+		"server_result_hash",
+	]
+	if mode_id == MODE_WORLD_BOSS:
+		fields.append_array(["current_hp", "daily_attempts_left", "defeated_at", "world_announcement"])
+	elif mode_id == MODE_INSTANCE_BOSS:
+		fields.append_array(["entry_attempts_left", "entry_unlocked", "clear_status", "stars", "star_rewards"])
+	return fields
+
+func _boss_entry_confirmation_contract(mode_id: String, entry_valid: bool, reason: String) -> Dictionary:
+	return {
+		"contract_kind": "boss_entry_confirmation_contract",
+		"contract_version": 1,
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"local_preflight_status": "valid" if entry_valid else "blocked_local",
+		"local_preflight_reason": reason,
+		"entry_request_scope": "intent_only",
+		"entry_intent_allowed_fields": _boss_entry_intent_allowed_fields(mode_id),
+		"client_forbidden_entry_fields": _boss_client_forbidden_entry_fields(mode_id),
+		"server_required_for": _boss_server_required_fields(mode_id),
+		"server_confirmation_status": "required" if entry_valid else "blocked_local",
+		"requires_server_confirmation": true,
+		"intent_authority": "client_request_only",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"server_authoritative": false,
+		"client_result_authoritative": false,
+	}
+
 func _boss_ui_action_contract(can_request_entry: bool, can_request_transfer: bool) -> Dictionary:
 	return {
 		"contract_kind": "boss_ui_action_contract",
@@ -2452,6 +2541,12 @@ func _boss_ui_action_cards(mode_id: String, can_request_entry: bool, can_request
 			"local_blockers": local_blockers,
 			"request_scope": "intent_only",
 			"entry_request_scope": "intent_only",
+			"entry_contract_kind": "boss_entry_verification_contract",
+			"entry_contract_version": 1,
+			"entry_intent_allowed_fields": _boss_entry_intent_allowed_fields(mode_id),
+			"client_forbidden_entry_fields": _boss_client_forbidden_entry_fields(mode_id),
+			"entry_confirmation_contract": _boss_entry_confirmation_contract(mode_id, can_request_entry, entry_blocker),
+			"server_required_for": _boss_server_required_fields(mode_id),
 			"server_confirmation_status": confirmation_status,
 			"requires_server_confirmation": true,
 			"damage_authority": "server",

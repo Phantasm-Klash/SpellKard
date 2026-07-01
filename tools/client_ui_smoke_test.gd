@@ -1343,6 +1343,16 @@ func _assert_boss_action_contract(row: Dictionary, mode_id: String, expected_ent
 		return _fail("boss action contract kind missing %s" % [row])
 	if String(row.get("entry_request_scope", "")) != "intent_only" or String(row.get("transfer_request_scope", "")) != "intent_only":
 		return _fail("boss action scopes must stay intent-only %s" % [row])
+	if String(row.get("entry_contract_kind", "")) != "boss_entry_verification_contract" or int(row.get("entry_contract_version", 0)) != 1:
+		return _fail("boss entry verification contract missing %s" % [row])
+	var allowed_fields: Array = row.get("entry_intent_allowed_fields", [])
+	for field in ["mode_id", "boss_instance_id", "party_ids", "selected_deck_id", "deck_snapshot_hash", "client_action_seq", "requested_at_tick"]:
+		if not allowed_fields.has(field):
+			return _fail("boss entry allowed intent field missing %s in %s" % [field, row])
+	var forbidden_fields: Array = row.get("client_forbidden_entry_fields", [])
+	for field in ["damage", "damage_this_match", "team_damage", "boss_hp_after", "reward_grants", "settlement_result", "settlement_receipt", "server_result_hash"]:
+		if not forbidden_fields.has(field):
+			return _fail("boss entry forbidden authority field missing %s in %s" % [field, row])
 	var required_fields: Array = row.get("server_required_for", [])
 	for field in ["entry_confirmation", "card_transfer_confirmation", "damage", "reward_grants", "settlement", "result_receipt"]:
 		if not required_fields.has(field):
@@ -1351,12 +1361,38 @@ func _assert_boss_action_contract(row: Dictionary, mode_id: String, expected_ent
 		for field in ["persistent_hp", "daily_attempts", "defeated_at", "world_announcement"]:
 			if not required_fields.has(field):
 				return _fail("world boss server-required field missing %s in %s" % [field, row])
+		for field in ["season_id"]:
+			if not allowed_fields.has(field):
+				return _fail("world boss allowed intent field missing %s in %s" % [field, row])
+		for field in ["current_hp", "daily_attempts_left", "defeated_at", "world_announcement"]:
+			if not forbidden_fields.has(field):
+				return _fail("world boss forbidden entry field missing %s in %s" % [field, row])
 	else:
 		for field in ["access_gate", "clear_status", "stars"]:
 			if not required_fields.has(field):
 				return _fail("instance boss server-required field missing %s in %s" % [field, row])
+		for field in ["required_key_id", "entry_period"]:
+			if not allowed_fields.has(field):
+				return _fail("instance boss allowed intent field missing %s in %s" % [field, row])
+		for field in ["entry_attempts_left", "entry_unlocked", "clear_status", "stars"]:
+			if not forbidden_fields.has(field):
+				return _fail("instance boss forbidden entry field missing %s in %s" % [field, row])
 	if String(row.get("intent_authority", "")) != "client_request_only" or bool(row.get("client_result_authoritative", true)):
 		return _fail("boss action authority flags invalid %s" % [row])
+	var entry_confirmation: Dictionary = row.get("entry_confirmation_contract", {})
+	if String(entry_confirmation.get("contract_kind", "")) != "boss_entry_confirmation_contract" \
+			or String(entry_confirmation.get("entry_request_scope", "")) != "intent_only" \
+			or String(entry_confirmation.get("server_confirmation_status", "")) != expected_confirmation \
+			or String(entry_confirmation.get("intent_authority", "")) != "client_request_only" \
+			or String(entry_confirmation.get("damage_authority", "")) != "server" \
+			or String(entry_confirmation.get("reward_authority", "")) != "server" \
+			or String(entry_confirmation.get("settlement_authority", "")) != "server" \
+			or bool(entry_confirmation.get("client_result_authoritative", true)):
+		return _fail("boss entry confirmation contract invalid %s" % [entry_confirmation])
+	var confirmation_required: Array = entry_confirmation.get("server_required_for", [])
+	for field in required_fields:
+		if not confirmation_required.has(field):
+			return _fail("boss entry confirmation missing server field %s in %s" % [field, entry_confirmation])
 	var contract: Dictionary = row.get("ui_action_contract", {})
 	if String(contract.get("contract_kind", "")) != "boss_ui_action_contract":
 		return _fail("boss ui action contract missing %s" % [row])
@@ -1370,6 +1406,25 @@ func _assert_boss_action_contract(row: Dictionary, mode_id: String, expected_ent
 		return _fail("boss ui action server authority invalid %s" % [contract])
 	if bool(contract.get("client_result_authoritative", true)):
 		return _fail("boss ui action contract became client authoritative %s" % [contract])
+	var action_cards: Array = row.get("ui_action_cards", [])
+	var saw_entry_card := false
+	for raw_card in action_cards:
+		if typeof(raw_card) != TYPE_DICTIONARY:
+			continue
+		var card: Dictionary = raw_card
+		if String(card.get("action_card_kind", "")) != "boss_entry_intent":
+			continue
+		saw_entry_card = true
+		if String(card.get("entry_contract_kind", "")) != "boss_entry_verification_contract" \
+				or String(card.get("entry_request_scope", "")) != "intent_only" \
+				or bool(card.get("client_result_authoritative", true)):
+			return _fail("boss entry action card contract invalid %s" % [card])
+		var card_forbidden: Array = card.get("client_forbidden_entry_fields", [])
+		for field in forbidden_fields:
+			if not card_forbidden.has(field):
+				return _fail("boss entry action card missing forbidden field %s in %s" % [field, card])
+	if not saw_entry_card:
+		return _fail("boss entry action card missing %s" % [row])
 	return true
 
 func _assert_page_authority_contract(snapshot: Dictionary, label: String, expected_scope: String, expected_text: String) -> bool:
