@@ -1099,6 +1099,15 @@ func _assert_boss_practice_preview_launch(row_id: String, mode_id: String) -> bo
 			or String(preview_action.get("action", "")) != "start_boss_practice_preview" \
 			or String(preview_action.get("screen", "")) != "practice" \
 			or String(preview_action.get("mode_id", "")) != mode_id \
+			or String(preview_action.get("spellbook_id", "")) != String(rows[preview_index].get("spellbook_id", "")) \
+			or int(preview_action.get("preview_seed", 0)) != int(rows[preview_index].get("preview_seed", -1)) \
+			or String(preview_action.get("preview_bundle_id", "")) != String(rows[preview_index].get("preview_bundle_id", "")) \
+			or int(preview_action.get("preview_bundle_signature_digest", 0)) != int(rows[preview_index].get("preview_bundle_signature_digest", -1)) \
+			or int(preview_action.get("preview_phase_count", 0)) != int(rows[preview_index].get("preview_phase_count", -1)) \
+			or String(preview_action.get("preview_authority_scope", "")) != "local_practice_preview_only" \
+			or String(preview_action.get("projection_scope", "")) != "local_practice_preview_only" \
+			or String(preview_action.get("replay_verification_scope", "")) != "local_practice_hash" \
+			or String(preview_action.get("performance_budget_status", "")) != "within_budget" \
 			or String(preview_action.get("local_hash_authority", "")) != "local_practice_verification_only" \
 			or String(preview_action.get("online_result_authority", "")) != "server_settlement_required" \
 			or bool(preview_action.get("client_result_authoritative", true)):
