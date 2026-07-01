@@ -4712,6 +4712,36 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay input invalid load was not blocked status=%s action=%s" % [main_node.get("replay_file_status"), main_node.get("replay_index_action_status")])
 		quit(1)
 		return true
+	var missing_hash_replay := latest_replay.duplicate(true)
+	missing_hash_replay["replay_id"] = "missing-hash-smoke"
+	missing_hash_replay["final_result_hash"] = 0
+	replay_list_model.entries = [missing_hash_replay]
+	replay_list_model.cursor = 0
+	replay_list_model.set_verification_filter("replay_missing_hash")
+	var missing_hash_rows: Array[Dictionary] = replay_list_model.row_models(4)
+	if missing_hash_rows.is_empty() \
+			or String(missing_hash_rows[0].get("section", "")) != "replay_missing_hash" \
+			or bool(missing_hash_rows[0].get("can_play", true)) \
+			or bool((missing_hash_rows[0].get("practice_validation", {}) as Dictionary).get("final_hash_ready", true)):
+		push_error("Smoke test failed: missing-hash replay row invalid %s" % [missing_hash_rows])
+		quit(1)
+		return true
+	var missing_hash_guard: Dictionary = replay_list_model.local_load_guard_for_entry(missing_hash_replay)
+	if bool(missing_hash_guard.get("ok", true)) \
+			or String(missing_hash_guard.get("reason", "")) != "missing_final_hash" \
+			or bool(missing_hash_guard.get("final_hash_ready", true)):
+		push_error("Smoke test failed: missing-hash replay guard invalid %s" % [missing_hash_guard])
+		quit(1)
+		return true
+	var missing_hash_load_request: Dictionary = replay_list_model.request_selected_local_load()
+	if bool(missing_hash_load_request.get("ok", true)) \
+			or String(missing_hash_load_request.get("reason", "")) != "missing_final_hash" \
+			or String(missing_hash_load_request.get("action_status", "")) != "load_blocked" \
+			or bool(missing_hash_load_request.get("final_hash_ready", true)) \
+			or String(missing_hash_load_request.get("snapshot_source", "")) != "blocked":
+		push_error("Smoke test failed: missing-hash replay load request invalid %s" % [missing_hash_load_request])
+		quit(1)
+		return true
 	var server_replay := latest_replay.duplicate(true)
 	server_replay["replay_id"] = "server-audit-smoke"
 	server_replay["mode"] = "pvp_duel"
@@ -4745,7 +4775,11 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	var server_replay_guard: Dictionary = replay_list_model.local_load_guard_for_entry(server_replay)
-	if bool(server_replay_guard.get("ok", true)) or String(server_replay_guard.get("reason", "")) != "server_record_pending_audit" or String(server_replay_guard.get("verification_section", "")) != "replay_server_pending":
+	if bool(server_replay_guard.get("ok", true)) \
+			or String(server_replay_guard.get("reason", "")) != "server_record_pending_audit" \
+			or String(server_replay_guard.get("verification_section", "")) != "replay_server_pending" \
+			or bool(server_replay_guard.get("final_hash_ready", true)) \
+			or bool((server_replay_guard.get("practice_validation", {}) as Dictionary).get("final_hash_ready", true)):
 		push_error("Smoke test failed: server replay local load guard invalid %s" % [server_replay_guard])
 		quit(1)
 		return true
