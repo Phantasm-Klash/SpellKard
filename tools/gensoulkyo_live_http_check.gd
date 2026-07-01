@@ -9,6 +9,7 @@ var frame_count := 0
 var started := false
 var failed := false
 var stage := "init"
+var seen_business_envelopes: Dictionary = {}
 
 func _initialize() -> void:
 	var packed_scene := load(MAIN_SCENE)
@@ -122,13 +123,16 @@ func _run_live_check() -> void:
 	var second_token := String(api_model.session_token)
 	stage = "ready_second"
 	var second_ready: Dictionary = await main_node.call("_gensoulkyo_ready", match_id)
+	if not _record_business_envelope(api_model, "second_ready"):
+		return
 	if not bool(second_ready.get("ok", false)):
 		_fail("second ready failed %s" % [second_ready])
 		return
 	stage = "ready_first"
-	api_model.session_token = first_token
-	api_model.user_id = first_user
+	api_model.use_session(first_token, first_user)
 	var first_ready: Dictionary = await main_node.call("_gensoulkyo_ready", match_id)
+	if not _record_business_envelope(api_model, "first_ready"):
+		return
 	if not bool(first_ready.get("ok", false)) or String(network_match_model.authority_state) != "running":
 		_fail("first ready/match_start failed %s authority %s" % [first_ready, String(network_match_model.authority_state)])
 		return
@@ -249,15 +253,13 @@ func _run_live_check() -> void:
 		_fail("replay loadout stage missing %s" % [network_match_model.replay_metadata])
 		return
 	stage = "rematch_waiting"
-	api_model.session_token = first_token
-	api_model.user_id = first_user
+	api_model.use_session(first_token, first_user)
 	var rematch_waiting: Dictionary = await main_node.call("_gensoulkyo_rematch", match_id)
 	if not bool(rematch_waiting.get("ok", false)) or String(network_match_model.rematch_status) != "waiting" or int(network_match_model.rematch_accepted_count) != 1:
 		_fail("rematch waiting failed %s state=%s accepted=%d" % [rematch_waiting, String(network_match_model.rematch_status), int(network_match_model.rematch_accepted_count)])
 		return
 	stage = "rematch_found"
-	api_model.session_token = second_token
-	api_model.user_id = second_user
+	api_model.use_session(second_token, second_user)
 	var rematch_found: Dictionary = await main_node.call("_gensoulkyo_rematch", match_id)
 	var rematch_match_id := String(rematch_found.get("new_match_id", network_match_model.match_id))
 	if not bool(rematch_found.get("ok", false)) or String(network_match_model.rematch_status) != "found" or rematch_match_id.is_empty() or rematch_match_id == match_id or String(network_match_model.authority_state) != "loading":
@@ -269,8 +271,7 @@ func _run_live_check() -> void:
 		_fail("rematch second ready failed %s" % [rematch_second_ready])
 		return
 	stage = "rematch_ready_first"
-	api_model.session_token = first_token
-	api_model.user_id = first_user
+	api_model.use_session(first_token, first_user)
 	var rematch_first_ready: Dictionary = await main_node.call("_gensoulkyo_ready", rematch_match_id)
 	if not bool(rematch_first_ready.get("ok", false)) or String(network_match_model.authority_state) != "running" or String(network_match_model.match_id) != rematch_match_id:
 		_fail("rematch first ready failed %s authority=%s match=%s" % [rematch_first_ready, String(network_match_model.authority_state), String(network_match_model.match_id)])
@@ -334,7 +335,7 @@ func _run_live_check() -> void:
 		_fail("room UI guest ready failed %s" % [room_guest_ready])
 		return
 	stage = "room_ui_host_ticket"
-	api_model.session_token = room_host_token
+	api_model.use_session(room_host_token)
 	api_model.current_ticket_id = room_ticket
 	var host_ticket: Dictionary = await _accept_ui_row("gensoulkyo_poll_ticket")
 	if not bool(host_ticket.get("ok", false)) or String(matchmaking_model.active_match_id) != room_match_id:
@@ -367,14 +368,12 @@ func _run_live_check() -> void:
 		_fail("boss match missing")
 		return
 	for i in range(boss_tokens.size()):
-		api_model.session_token = boss_tokens[i]
-		api_model.user_id = boss_users[i]
+		api_model.use_session(boss_tokens[i], boss_users[i])
 		var boss_ready: Dictionary = await main_node.call("_gensoulkyo_ready", boss_match_id)
 		if not bool(boss_ready.get("ok", false)):
 			_fail("boss ready failed %s" % [boss_ready])
 			return
-	api_model.session_token = boss_tokens[0]
-	api_model.user_id = boss_users[0]
+	api_model.use_session(boss_tokens[0], boss_users[0])
 	network_match_model.begin_from_queue({"match_id": boss_match_id, "mode_id": "world_boss"})
 	game_mode_model.configure_boss_party("world_boss", boss_users)
 	var transfer_result: Dictionary = await main_node.call("_submit_boss_card_transfer_to_server", "world_boss", boss_users[0], boss_users[1], "focus_lens")
@@ -404,6 +403,29 @@ func _accept_ui_row(row_id: String) -> Dictionary:
 			main_node.call("_ui_set_cursor", i)
 			return await main_node.call("_ui_accept_selected_async")
 	return {"ok": false, "last_error_code": "row_missing", "row_id": row_id}
+
+func _record_business_envelope(api_model: RefCounted, label: String) -> bool:
+	var envelope: Dictionary = api_model.get("last_business_envelope")
+	if envelope.is_empty():
+		_fail("%s missing business envelope" % label)
+		return false
+	var session_id := String(envelope.get("session_id", ""))
+	var seq := int(envelope.get("seq", 0))
+	var nonce := String(envelope.get("nonce", ""))
+	if session_id.is_empty() or seq <= 0 or nonce.is_empty():
+		_fail("%s invalid business envelope %s" % [label, envelope])
+		return false
+	var seq_key := "%s:%d" % [session_id, seq]
+	var nonce_key := "nonce:%s" % nonce
+	if seen_business_envelopes.has(seq_key):
+		_fail("%s duplicate business envelope seq %s previous=%s" % [label, seq_key, String(seen_business_envelopes.get(seq_key, ""))])
+		return false
+	if seen_business_envelopes.has(nonce_key):
+		_fail("%s duplicate business envelope nonce %s previous=%s" % [label, nonce, String(seen_business_envelopes.get(nonce_key, ""))])
+		return false
+	seen_business_envelopes[seq_key] = label
+	seen_business_envelopes[nonce_key] = label
+	return true
 
 func _fail(message: String) -> void:
 	push_error("Gensoulkyo live check failed at %s: %s" % [stage, message])
