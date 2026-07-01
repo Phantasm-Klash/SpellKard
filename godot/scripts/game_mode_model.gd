@@ -341,9 +341,11 @@ func validate_boss_entry(mode_id: String) -> Dictionary:
 
 func boss_entry_preview(mode_id: String) -> Dictionary:
 	var validation := validate_boss_entry(mode_id)
+	var formation := validate_boss_formation(mode_id)
 	var failures := _string_array(validation.get("failures", []))
 	var reason := "none" if failures.is_empty() else failures[0]
 	var entry_ok := bool(validation.get("ok", false))
+	var checklist := _boss_entry_preflight_checklist(mode_id, validation, formation)
 	return {
 		"ok": entry_ok,
 		"reason": reason,
@@ -360,6 +362,10 @@ func boss_entry_preview(mode_id: String) -> Dictionary:
 		"entry_contract_version": 1,
 		"local_validation": "boss_entry_preflight",
 		"local_validation_rules": ["attempts_available", "party_size", "rating_requirement", "key_requirement"],
+		"entry_preflight_checklist": checklist,
+		"entry_preflight_summary": _boss_entry_preflight_summary(checklist),
+		"entry_preflight_checklist_kind": "boss_entry_preflight_checklist",
+		"entry_preflight_checklist_version": 1,
 		"entry_intent_allowed_fields": _boss_entry_intent_allowed_fields(mode_id),
 		"client_forbidden_entry_fields": _boss_client_forbidden_entry_fields(mode_id),
 		"entry_confirmation_contract": _boss_entry_confirmation_contract(mode_id, entry_ok, reason),
@@ -1435,6 +1441,10 @@ func boss_display_contract_row(row_id: String, mode_id: String) -> Dictionary:
 			"entry_intent_allowed_fields": entry_preview.get("entry_intent_allowed_fields", []),
 			"client_forbidden_entry_fields": entry_preview.get("client_forbidden_entry_fields", []),
 			"entry_confirmation_contract": entry_preview.get("entry_confirmation_contract", {}),
+			"entry_preflight_checklist": entry_preview.get("entry_preflight_checklist", []),
+			"entry_preflight_summary": String(entry_preview.get("entry_preflight_summary", "")),
+			"entry_preflight_checklist_kind": String(entry_preview.get("entry_preflight_checklist_kind", "boss_entry_preflight_checklist")),
+			"entry_preflight_checklist_version": int(entry_preview.get("entry_preflight_checklist_version", 1)),
 			"ui_action_contract": action_projection.get("ui_action_contract", {}),
 			"ui_action_cards": action_projection.get("ui_action_cards", []),
 			"formation_valid": bool(playfield_projection.get("formation_valid", false)),
@@ -2299,6 +2309,10 @@ func _boss_entry_request_payload(mode_id: String, entry: Dictionary) -> Dictiona
 		"required_key_id": String(entry.get("required_key_id", "")),
 		"owned_key_count": int(entry.get("owned_key_count", 0)),
 		"entry_preflight": entry.duplicate(true),
+		"entry_preflight_checklist": entry.get("entry_preflight_checklist", []),
+		"entry_preflight_summary": String(entry.get("entry_preflight_summary", "")),
+		"entry_preflight_checklist_kind": String(entry.get("entry_preflight_checklist_kind", "boss_entry_preflight_checklist")),
+		"entry_preflight_checklist_version": int(entry.get("entry_preflight_checklist_version", 1)),
 		"action_availability": action_projection,
 		"entry_action_panel": _boss_entry_action_panel_from_projection(mode_id, action_projection),
 		"entry_contract_kind": String(entry.get("entry_contract_kind", "boss_entry_verification_contract")),
@@ -2571,6 +2585,7 @@ func _boss_entry_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 	var validation := boss_entry_preview(mode_id)
 	var action_projection := boss_action_availability_projection(mode_id)
 	var entry_action_panel: Dictionary = action_projection.get("entry_action_panel", _boss_entry_action_panel_from_projection(mode_id, action_projection))
+	var preflight_checklist: Array = validation.get("entry_preflight_checklist", [])
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.boss.entry",
@@ -2590,6 +2605,10 @@ func _boss_entry_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 		"required_key_id": String(validation.get("required_key_id", "")),
 		"owned_key_count": int(validation.get("owned_key_count", 0)),
 		"entry_preflight": validation,
+		"entry_preflight_checklist": preflight_checklist,
+		"entry_preflight_summary": String(validation.get("entry_preflight_summary", "")),
+		"entry_preflight_checklist_kind": String(validation.get("entry_preflight_checklist_kind", "boss_entry_preflight_checklist")),
+		"entry_preflight_checklist_version": int(validation.get("entry_preflight_checklist_version", 1)),
 		"action_availability": action_projection,
 		"entry_action_panel": entry_action_panel,
 			"entry_contract_kind": String(validation.get("entry_contract_kind", "")),
@@ -2626,6 +2645,8 @@ func _boss_entry_action_panel_from_projection(mode_id: String, projection: Dicti
 	var action_buttons: Array[Dictionary] = []
 	var entry_button: Dictionary = {}
 	var transfer_button: Dictionary = {}
+	var entry_preflight: Dictionary = projection.get("entry_preflight", {}) if typeof(projection.get("entry_preflight", {})) == TYPE_DICTIONARY else {}
+	var preflight_checklist: Array = entry_preflight.get("entry_preflight_checklist", [])
 	for raw_card in cards:
 		if typeof(raw_card) != TYPE_DICTIONARY:
 			continue
@@ -2689,7 +2710,11 @@ func _boss_entry_action_panel_from_projection(mode_id: String, projection: Dicti
 		"action_buttons": action_buttons,
 		"entry_button": entry_button,
 		"transfer_button": transfer_button,
-		"entry_preflight": projection.get("entry_preflight", {}),
+		"entry_preflight": entry_preflight,
+		"entry_preflight_checklist": preflight_checklist,
+		"entry_preflight_summary": String(entry_preflight.get("entry_preflight_summary", "")),
+		"entry_preflight_checklist_kind": String(entry_preflight.get("entry_preflight_checklist_kind", "boss_entry_preflight_checklist")),
+		"entry_preflight_checklist_version": int(entry_preflight.get("entry_preflight_checklist_version", 1)),
 		"player_count": int(projection.get("player_count", 0)),
 		"slot_layout_policy": String(projection.get("slot_layout_policy", "")),
 		"slot_labels": projection.get("slot_labels", []),
@@ -3035,6 +3060,87 @@ func _boss_entry_intent_allowed_fields(mode_id: String) -> Array[String]:
 	elif mode_id == MODE_WORLD_BOSS:
 		fields.append("season_id")
 	return fields
+
+func _boss_entry_preflight_checklist(mode_id: String, validation: Dictionary, formation: Dictionary) -> Array[Dictionary]:
+	var failures := _string_array(validation.get("failures", []))
+	var player_count := int(formation.get("player_count", 0))
+	var attempts_left := int(validation.get("attempts_left", 0))
+	var entry_valid := bool(validation.get("ok", false))
+	var rating_required := not String(validation.get("required_rating", "")).is_empty()
+	var key_required := mode_id == MODE_INSTANCE_BOSS and not String(validation.get("required_key_id", "")).is_empty()
+	var checklist: Array[Dictionary] = []
+	checklist.append(_boss_entry_preflight_item(
+		"attempts_available",
+		"blocked" if failures.has("attempts_exhausted") else "passed",
+		"attempts %d" % attempts_left,
+		"server",
+		mode_id
+	))
+	checklist.append(_boss_entry_preflight_item(
+		"party_size",
+		"blocked" if failures.has("party_required") else "passed",
+		"party %d/%d-%d" % [player_count, BOSS_MIN_PLAYERS, BOSS_MAX_PLAYERS],
+		"client_preview_server_roster_lock",
+		mode_id
+	))
+	checklist.append(_boss_entry_preflight_item(
+		"fixed_direction_slots",
+		"passed" if bool(formation.get("ok", false)) and (player_count == 4 or player_count == 8) else "blocked",
+		String(formation.get("slot_layout_policy", _boss_slot_layout_policy(player_count))),
+		"client_preview_server_roster_lock",
+		mode_id
+	))
+	checklist.append(_boss_entry_preflight_item(
+		"center_aim",
+		"passed" if bool(formation.get("ok", false)) and String(formation.get("aim_policy", "")) == "toward_center" else "blocked",
+		String(formation.get("aim_policy", "toward_center")),
+		"client_preview_server_roster_lock",
+		mode_id
+	))
+	checklist.append(_boss_entry_preflight_item(
+		"rating_requirement",
+		"not_applicable" if not rating_required else ("blocked" if failures.has("rating_required") else "passed"),
+		"%s/%s" % [String(validation.get("player_rating", "")), String(validation.get("required_rating", ""))],
+		"server",
+		mode_id
+	))
+	checklist.append(_boss_entry_preflight_item(
+		"key_requirement",
+		"not_applicable" if not key_required else ("blocked" if failures.has("key_required") else "passed"),
+		"%s x%d" % [String(validation.get("required_key_id", "")), int(validation.get("owned_key_count", 0))],
+		"server",
+		mode_id
+	))
+	checklist.append(_boss_entry_preflight_item(
+		"server_confirmation_required",
+		"pending_server" if entry_valid else "blocked_local",
+		"entry intent only",
+		"server",
+		mode_id
+	))
+	return checklist
+
+func _boss_entry_preflight_item(check_id: String, status: String, detail: String, authority: String, mode_id: String) -> Dictionary:
+	return {
+		"id": check_id,
+		"status": status,
+		"detail": detail,
+		"authority": authority,
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"projection_scope": "local_display_only",
+		"intent_authority": "client_request_only",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"client_result_authoritative": false,
+	}
+
+func _boss_entry_preflight_summary(checklist: Array[Dictionary]) -> String:
+	var parts: Array[String] = []
+	for item in checklist:
+		parts.append("%s=%s" % [String(item.get("id", "")), String(item.get("status", ""))])
+	return " ".join(parts)
 
 func _boss_client_forbidden_entry_fields(mode_id: String) -> Array[String]:
 	var fields: Array[String] = [
