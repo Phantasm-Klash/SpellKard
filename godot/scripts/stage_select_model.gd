@@ -472,7 +472,7 @@ func _rebuild_index() -> void:
 		stage_by_id[str(stage.get("id", ""))] = stage
 
 func _build_stages() -> Array[Dictionary]:
-	return [
+	var rows: Array[Dictionary] = [
 		{
 			"id": "starlit_lanes",
 			"name_key": "stage.starlit_lanes.name",
@@ -1322,3 +1322,146 @@ func _build_stages() -> Array[Dictionary]:
 			],
 		},
 	]
+	rows.append_array(_build_single_player_stage_slice())
+	return rows
+
+func _build_single_player_stage_slice() -> Array[Dictionary]:
+	return [
+		{
+			"id": "scarlet_rondo",
+			"name_key": "stage.scarlet_rondo.name",
+			"difficulty": 2,
+			"tempo": "rondo",
+			"recommended_character": "wide",
+			"patterns": [
+				_stage_pattern("scarlet_spiral_ring", "pattern.spiral_ring.name", "ring", {"interval_ticks": 15, "count": 20, "speed": 132.0, "spin_per_tick": 0.041, "color": "red"}),
+				_stage_pattern("scarlet_sine_stream", "pattern.sine_stream.name", "sine_stream", {"interval_ticks": 11, "count": 4, "speed": 142.0, "spread": deg_to_rad(36.0), "wave_amplitude": 36.0, "wave_period_ticks": 68, "color": "cyan"}),
+				_stage_pattern("scarlet_split_fan", "pattern.split_fan.name", "split_chain", {"interval_ticks": 54, "count": 5, "speed": 116.0, "spread": deg_to_rad(44.0), "split_delay_ticks": 46, "split_count": 8, "split_speed": 96.0, "color": "white", "split_color": "violet"}),
+			],
+		},
+		{
+			"id": "nether_drift",
+			"name_key": "stage.nether_drift.name",
+			"difficulty": 3,
+			"tempo": "drifting",
+			"recommended_character": "precision",
+			"patterns": [
+				_stage_pattern("nether_petal_weave", "pattern.petal_weave.name", "flower", {"interval_ticks": 19, "petals": 7, "layers": 2, "speed": 122.0, "speed_step": 16.0, "spin_per_tick": 0.034, "color": "green"}),
+				_stage_pattern("nether_curved_homing", "pattern.curved_homing.name", "homing", {"interval_ticks": 32, "count": 5, "speed": 98.0, "spread": deg_to_rad(76.0), "turn_rate": deg_to_rad(1.8), "lifetime_ticks": 138, "color": "violet"}),
+				_stage_pattern("nether_slow_blossom", "pattern.slow_blossom.name", "blossom", {"interval_ticks": 70, "count": 26, "speed": 86.0, "blossom_delay_ticks": 54, "blossom_speed": 124.0, "spin_per_tick": 0.026, "color": "green", "blossom_color": "gold"}),
+			],
+		},
+		{
+			"id": "crystal_tributary",
+			"name_key": "stage.crystal_tributary.name",
+			"difficulty": 3,
+			"tempo": "flowing",
+			"recommended_character": "balanced",
+			"patterns": [
+				_stage_pattern("crystal_seeded_arc", "pattern.seeded_arc.name", "random_arc", {"interval_ticks": 17, "count": 10, "speed": 132.0, "speed_jitter": 38.0, "spread": deg_to_rad(118.0), "color": "gold"}),
+				_stage_pattern("crystal_curtain_wall", "pattern.curtain_wall.name", "curtain", {"interval_ticks": 25, "count": 14, "speed": 126.0, "width": 540.0, "sway": 30.0, "color": "cyan"}),
+				_stage_pattern("crystal_orbital_lattice", "pattern.orbital_lattice.name", "orbital", {"interval_ticks": 17, "count": 12, "speed": 116.0, "orbit_radius": 62.0, "orbit_spin": 0.084, "color": "violet"}),
+			],
+		},
+		{
+			"id": "bamboo_parallax",
+			"name_key": "stage.bamboo_parallax.name",
+			"difficulty": 4,
+			"tempo": "parallax",
+			"recommended_character": "spell_power",
+			"patterns": [
+				_stage_pattern("bamboo_snake_stream", "pattern.snake_stream.name", "snake_stream", {"interval_ticks": 16, "count": 5, "speed": 126.0, "spread": deg_to_rad(34.0), "snake_amplitude": deg_to_rad(18.0), "wave_period_ticks": 72, "spawn_wave_per_tick": 0.085, "color": "green"}),
+				_stage_pattern("bamboo_knife_burst", "pattern.knife_burst.name", "burst", {"interval_ticks": 42, "count": 20, "speed": 160.0, "speed_step": 5.0, "spread": deg_to_rad(30.0), "color": "white"}),
+				_stage_pattern("bamboo_laser_curtain", "pattern.laser_curtain.name", "laser_curtain", {"interval_ticks": 92, "count": 7, "speed": 154.0, "spread": deg_to_rad(102.0), "warning_ticks": 34, "lane_spacing": 32.0, "color": "white"}),
+			],
+		},
+		{
+			"id": "garden_afterimage",
+			"name_key": "stage.garden_afterimage.name",
+			"difficulty": 4,
+			"tempo": "afterimage",
+			"recommended_character": "precision",
+			"patterns": [
+				_stage_pattern("garden_gap_ring", "pattern.archive_gap_ring.name", "gap_ring", {"interval_ticks": 32, "count": 32, "speed": 116.0, "gap_width": deg_to_rad(50.0), "gap_count": 2, "gap_spin_per_tick": 0.014, "spin_per_tick": 0.019, "color": "gold"}),
+				_stage_pattern("garden_curve_fan", "pattern.archive_curve_fan.name", "curve_fan", {"interval_ticks": 32, "count": 9, "speed": 122.0, "spread": deg_to_rad(64.0), "angular_velocity": deg_to_rad(0.43), "curve_step": deg_to_rad(0.03), "color": "green"}),
+				_stage_pattern("garden_grid_rain", "pattern.archive_grid_rain.name", "grid_rain", {"interval_ticks": 27, "count": 12, "rows": 2, "speed": 130.0, "width": 560.0, "stagger": 15.0, "angle_jitter": deg_to_rad(4.0), "color": "white"}),
+			],
+		},
+		{
+			"id": "river_mirage",
+			"name_key": "stage.river_mirage.name",
+			"difficulty": 5,
+			"tempo": "mirage",
+			"recommended_character": "balanced",
+			"patterns": [
+				_stage_pattern("river_edge_spawn", "pattern.archive_edge_spawn.name", "edge_spawn", {"interval_ticks": 35, "count": 16, "speed": 124.0, "edge": "all", "spawn_bounds": Rect2(Vector2(160, 60), Vector2(640, 600)), "edge_margin": 18.0, "aim_mode": "inward", "lane_jitter": 9.0, "angle_jitter": deg_to_rad(3.0), "color": "white"}),
+				_stage_pattern("river_sweep_laser", "pattern.archive_sweep_laser.name", "sweep_laser", {"interval_ticks": 100, "count": 5, "speed": 120.0, "spread": deg_to_rad(74.0), "warning_ticks": 34, "graze_cooldown_ticks": 18, "color": "violet"}),
+				_stage_pattern("river_exploding_star", "pattern.archive_exploding_star.name", "exploding_star", {"interval_ticks": 76, "speed": 84.0, "split_delay_ticks": 50, "split_count": 14, "split_speed": 128.0, "color": "violet", "split_color": "gold"}),
+			],
+		},
+		{
+			"id": "thunder_library",
+			"name_key": "stage.thunder_library.name",
+			"difficulty": 5,
+			"tempo": "charged",
+			"recommended_character": "spell_power",
+			"patterns": [
+				_stage_pattern("thunder_telegraph_burst", "pattern.archive_telegraph_burst.name", "telegraph_burst", {"origin": Vector2(480, 230), "interval_ticks": 88, "count": 20, "speed": 128.0, "warning_radius": 11.0, "trigger_tick": 40, "burst_mode": "ring", "spin_per_tick": 0.021, "warning_color": "violet", "color": "gold"}),
+				_stage_pattern("thunder_charge_burst", "pattern.archive_charge_burst.name", "charge_burst", {"origin": Vector2(480, 210), "interval_ticks": 114, "count": 22, "speed": 128.0, "charge_radius": 8.0, "charge_grow": 0.22, "max_charge_radius": 18.0, "trigger_tick": 48, "burst_mode": "ring", "burst_spin_per_tick": 0.019, "charge_color": "violet", "color": "gold"}),
+				_stage_pattern("thunder_beam_sweep", "pattern.archive_beam_sweep.name", "beam_sweep", {"interval_ticks": 116, "count": 3, "length": 720.0, "spread": deg_to_rad(46.0), "warning_ticks": 42, "graze_cooldown_ticks": 12, "spin_per_tick": 0.006, "color": "white"}),
+			],
+		},
+		{
+			"id": "sunken_clocktower",
+			"name_key": "stage.sunken_clocktower.name",
+			"difficulty": 6,
+			"tempo": "mechanical",
+			"recommended_character": "precision",
+			"patterns": [
+				_stage_pattern("sunken_rotating_laser", "pattern.archive_rotating_laser.name", "rotating_laser", {"interval_ticks": 146, "count": 2, "length": 700.0, "spread": PI, "warning_ticks": 40, "angular_velocity": deg_to_rad(0.78), "graze_cooldown_ticks": 12, "lifetime_ticks": 180, "color": "white"}),
+				_stage_pattern("sunken_cross_laser", "pattern.archive_cross_laser.name", "cross_laser", {"interval_ticks": 154, "arms": 4, "length": 700.0, "warning_ticks": 40, "angular_velocity": deg_to_rad(0.34), "graze_cooldown_ticks": 12, "lifetime_ticks": 184, "spin_per_tick": 0.004, "color": "white"}),
+				_stage_pattern("sunken_morph_ring", "pattern.archive_morph_ring.name", "morph_ring", {"interval_ticks": 70, "count": 22, "speed": 104.0, "morph_tick": 52, "morph_speed": 150.0, "spin_per_tick": 0.020, "color": "cyan"}),
+			],
+		},
+		{
+			"id": "skyline_waltz",
+			"name_key": "stage.skyline_waltz.name",
+			"difficulty": 6,
+			"tempo": "waltz",
+			"recommended_character": "wide",
+			"patterns": [
+				_stage_pattern("skyline_path_emitters", "pattern.archive_path_emitters.name", "path_emitters", {"interval_ticks": 26, "count": 5, "speed": 118.0, "path_radius": 132.0, "path_period_ticks": 220, "emit_count": 4, "emit_spread": deg_to_rad(36.0), "color": "gold"}),
+				_stage_pattern("skyline_converge_cloud", "pattern.archive_converge_cloud.name", "converge_cloud", {"interval_ticks": 84, "count": 18, "speed": 64.0, "converge_tick": 64, "release_speed": 142.0, "spawn_radius": 230.0, "color": "violet"}),
+				_stage_pattern("skyline_boomerang_ring", "pattern.archive_boomerang_ring.name", "boomerang_ring", {"interval_ticks": 66, "count": 20, "speed": 132.0, "return_tick": 78, "return_speed": 118.0, "spin_per_tick": 0.021, "color": "green"}),
+			],
+		},
+		{
+			"id": "phantom_terminal",
+			"name_key": "stage.phantom_terminal.name",
+			"difficulty": 7,
+			"tempo": "terminal",
+			"recommended_character": "spell_power",
+			"patterns": [
+				_stage_pattern("phantom_phase_shift_ring", "pattern.archive_phase_shift_ring.name", "phase_shift_ring", {"interval_ticks": 58, "count": 24, "speed": 116.0, "phase_shift_tick": 48, "shift_angle": deg_to_rad(18.0), "spin_per_tick": 0.022, "color": "cyan"}),
+				_stage_pattern("phantom_delayed_aim_ring", "pattern.archive_delayed_aim_ring.name", "delayed_aim_ring", {"interval_ticks": 72, "count": 18, "speed": 96.0, "release_speed": 154.0, "hold_tick": 16, "aim_tick": 46, "aim_mode": "player", "drift_multiplier": 0.16, "spin_per_tick": 0.023, "color": "white"}),
+				_stage_pattern("phantom_gate_lanes", "pattern.archive_gate_lanes.name", "gate_lanes", {"interval_ticks": 23, "count": 17, "speed": 130.0, "width": 600.0, "gate_width": 112.0, "gate_period_ticks": 184, "speed_wave": 20.0, "color": "cyan"}),
+			],
+		},
+	]
+
+func _stage_pattern(pattern_id: String, name_key: String, pattern_type: String, overrides: Dictionary) -> Dictionary:
+	var pattern := {
+		"id": pattern_id,
+		"name": pattern_id.capitalize(),
+		"name_key": name_key,
+		"type": pattern_type,
+		"origin": Vector2(480, 112),
+		"interval_ticks": 30,
+		"count": 8,
+		"speed": 120.0,
+		"radius": 4.6,
+		"spread": deg_to_rad(60.0),
+		"color": "white",
+	}
+	pattern.merge(overrides, true)
+	return pattern

@@ -380,7 +380,7 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	var stage_rows: Array[Dictionary] = main_node.call("_stage_rows")
-	if stage_rows.size() < 4 or not _rows_have_ids(stage_rows, ["stage_starlit_lanes", "stage_misty_crossfire", "stage_clockwork_bloom", "stage_lunar_maze"]):
+	if stage_rows.size() < 15 or not _rows_have_ids(stage_rows, ["stage_starlit_lanes", "stage_misty_crossfire", "stage_clockwork_bloom", "stage_lunar_maze", "stage_boss_pattern_archive", "stage_scarlet_rondo", "stage_nether_drift", "stage_crystal_tributary", "stage_bamboo_parallax", "stage_garden_afterimage", "stage_river_mirage", "stage_thunder_library", "stage_sunken_clocktower", "stage_skyline_waltz", "stage_phantom_terminal"]):
 		push_error("Smoke test failed: stage rows invalid")
 		quit(1)
 		return true

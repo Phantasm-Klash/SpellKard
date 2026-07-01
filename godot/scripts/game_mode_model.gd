@@ -52,6 +52,15 @@ func configure_boss_spellbook(spellbook_model: RefCounted) -> void:
 	boss_spellbook_model = spellbook_model
 	boss_preview_cache.clear()
 
+func _clear_boss_projection_cache() -> void:
+	var keys_to_remove: Array[String] = []
+	for key in boss_preview_cache.keys():
+		var cache_key := String(key)
+		if cache_key.ends_with(":validation_projection"):
+			keys_to_remove.append(cache_key)
+	for cache_key in keys_to_remove:
+		boss_preview_cache.erase(cache_key)
+
 func reset_local_state() -> void:
 	certification_state = {
 		"rating_code": "D",
@@ -1646,6 +1655,9 @@ func _boss_display_health_row(row_id: String, mode_id: String) -> Dictionary:
 	}
 
 func boss_practice_preview_projection(mode_id: String) -> Dictionary:
+	var cache_key := "%s:%s:%d:practice_projection" % [mode_id, BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, BOSS_LOCAL_PREVIEW_SEED]
+	if boss_preview_cache.has(cache_key):
+		return boss_preview_cache.get(cache_key, {}) as Dictionary
 	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
 		return {
 			"ok": false,
@@ -1657,7 +1669,7 @@ func boss_practice_preview_projection(mode_id: String) -> Dictionary:
 			"client_result_authoritative": false,
 		}
 	if boss_spellbook_model == null or not boss_spellbook_model.has_method("phase_export_data"):
-		return {
+		var unavailable_result := {
 			"ok": false,
 			"reason": "boss_spellbook_unavailable",
 			"mode_id": mode_id,
@@ -1670,9 +1682,11 @@ func boss_practice_preview_projection(mode_id: String) -> Dictionary:
 			"server_authoritative": false,
 			"client_result_authoritative": false,
 		}
+		boss_preview_cache[cache_key] = unavailable_result
+		return unavailable_result
 	var export_data: Dictionary = _cached_boss_preview_export_data()
 	if export_data.is_empty():
-		return {
+		var missing_result := {
 			"ok": false,
 			"reason": "boss_spellbook_preview_missing",
 			"mode_id": mode_id,
@@ -1687,9 +1701,11 @@ func boss_practice_preview_projection(mode_id: String) -> Dictionary:
 			"server_authoritative": false,
 			"client_result_authoritative": false,
 		}
+		boss_preview_cache[cache_key] = missing_result
+		return missing_result
 	var phase_ids := _string_array(export_data.get("preview_phase_ids", []))
 	var phase_digests := _int_array(export_data.get("preview_phase_signature_digests", []))
-	return {
+	var result := {
 		"ok": String(export_data.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)) == BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
 		"reason": "none" if String(export_data.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)) == BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE else "preview_authority_scope_mismatch",
 		"mode_id": mode_id,
@@ -1716,8 +1732,13 @@ func boss_practice_preview_projection(mode_id: String) -> Dictionary:
 		"server_authoritative": false,
 		"client_result_authoritative": false,
 	}
+	boss_preview_cache[cache_key] = result
+	return result
 
 func boss_practice_replay_metadata(mode_id: String, phase_id: String = "nonspell_radial_entry") -> Dictionary:
+	var cache_key := "%s:%s:%s:%d:replay_metadata" % [mode_id, phase_id, BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, BOSS_LOCAL_PREVIEW_SEED]
+	if boss_preview_cache.has(cache_key):
+		return boss_preview_cache.get(cache_key, {}) as Dictionary
 	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
 		return {
 			"ok": false,
@@ -1731,7 +1752,7 @@ func boss_practice_replay_metadata(mode_id: String, phase_id: String = "nonspell
 	if boss_spellbook_model == null \
 			or not boss_spellbook_model.has_method("deterministic_phase_preview") \
 			or not boss_spellbook_model.has_method("phase_export_data"):
-		return {
+		var unavailable_result := {
 			"ok": false,
 			"reason": "boss_spellbook_unavailable",
 			"mode_id": mode_id,
@@ -1741,6 +1762,8 @@ func boss_practice_replay_metadata(mode_id: String, phase_id: String = "nonspell
 			"server_authoritative": false,
 			"client_result_authoritative": false,
 		}
+		boss_preview_cache[cache_key] = unavailable_result
+		return unavailable_result
 	var export_data: Dictionary = _cached_boss_preview_export_data()
 	var phase_ids := _string_array(export_data.get("preview_phase_ids", []))
 	var selected_phase_id := phase_id
@@ -1748,7 +1771,7 @@ func boss_practice_replay_metadata(mode_id: String, phase_id: String = "nonspell
 		selected_phase_id = phase_ids[0]
 	var preview: Dictionary = _cached_boss_phase_preview(selected_phase_id)
 	if preview.is_empty() or export_data.is_empty():
-		return {
+		var missing_result := {
 			"ok": false,
 			"reason": "boss_spellbook_preview_missing",
 			"mode_id": mode_id,
@@ -1761,8 +1784,10 @@ func boss_practice_replay_metadata(mode_id: String, phase_id: String = "nonspell
 			"server_authoritative": false,
 			"client_result_authoritative": false,
 		}
+		boss_preview_cache[cache_key] = missing_result
+		return missing_result
 	var preview_scope := String(preview.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE))
-	return {
+	var result := {
 		"ok": preview_scope == BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
 		"reason": "none" if preview_scope == BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE else "preview_authority_scope_mismatch",
 		"metadata_contract_kind": "boss_practice_replay_metadata",
@@ -1822,8 +1847,13 @@ func boss_practice_replay_metadata(mode_id: String, phase_id: String = "nonspell
 		"server_authoritative": false,
 		"client_result_authoritative": false,
 	}
+	boss_preview_cache[cache_key] = result
+	return result
 
 func boss_practice_validation_projection(mode_id: String) -> Dictionary:
+	var cache_key := "%s:%s:%d:validation_projection" % [mode_id, BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, BOSS_LOCAL_PREVIEW_SEED]
+	if boss_preview_cache.has(cache_key):
+		return boss_preview_cache.get(cache_key, {}) as Dictionary
 	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
 		return {
 			"ok": false,
@@ -1843,6 +1873,7 @@ func boss_practice_validation_projection(mode_id: String) -> Dictionary:
 	var replay_phase_rows := _boss_practice_replay_phase_validation_rows(practice)
 	var replay_phase_ready := not replay_phase_rows.is_empty()
 	var phase_cards := _boss_practice_phase_validation_cards(replay_phase_rows)
+	var authority_checklist := _boss_practice_authority_checklist(practice, replay_metadata, replay_phase_rows)
 	var blockers: Array[String] = []
 	if not bool(practice.get("ok", false)):
 		blockers.append(String(practice.get("reason", "practice_preview_failed")))
@@ -1870,7 +1901,7 @@ func boss_practice_validation_projection(mode_id: String) -> Dictionary:
 		"ok" if bool(formation_display.get("center_aim_valid", false)) else "blocked",
 		String(replay_metadata.get("replay_verification_scope", "local_practice_hash")),
 	]
-	return {
+	var result := {
 		"ok": ready,
 		"reason": "none" if blockers.is_empty() else blockers[0],
 		"mode_id": mode_id,
@@ -1885,6 +1916,9 @@ func boss_practice_validation_projection(mode_id: String) -> Dictionary:
 		"replay_phase_validation_rows": replay_phase_rows,
 		"replay_phase_validation_count": replay_phase_rows.size(),
 		"replay_phase_validation_scope": "local_practice_hash",
+		"authority_checklist_kind": "boss_practice_authority_checklist",
+		"authority_checklist": authority_checklist,
+		"authority_checklist_count": authority_checklist.size(),
 		"phase_validation_card_kind": "boss_practice_phase_validation_summary",
 		"phase_validation_cards": phase_cards,
 		"phase_validation_card_count": phase_cards.size(),
@@ -1924,6 +1958,47 @@ func boss_practice_validation_projection(mode_id: String) -> Dictionary:
 		"server_authoritative": false,
 		"client_result_authoritative": false,
 	}
+	boss_preview_cache[cache_key] = result
+	return result
+
+func _boss_practice_authority_checklist(practice: Dictionary, replay_metadata: Dictionary, replay_phase_rows: Array[Dictionary]) -> Array[Dictionary]:
+	return [
+		{
+			"id": "local_preview_scope",
+			"label": "local preview",
+			"ok": String(practice.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)) == BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+			"status": String(practice.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)),
+			"authority": "client_local_display_only",
+		},
+		{
+			"id": "replay_hash_scope",
+			"label": "replay hash",
+			"ok": String(replay_metadata.get("replay_verification_scope", "local_practice_hash")) == "local_practice_hash",
+			"status": String(replay_metadata.get("replay_verification_scope", "local_practice_hash")),
+			"authority": "local_practice_verification_only",
+		},
+		{
+			"id": "online_replay_audit",
+			"label": "online replay",
+			"ok": String(replay_metadata.get("online_replay_authority", "server_audit_required")) == "server_audit_required",
+			"status": String(replay_metadata.get("online_replay_authority", "server_audit_required")),
+			"authority": "server_audit_required",
+		},
+		{
+			"id": "phase_digest_rows",
+			"label": "phase digests",
+			"ok": not replay_phase_rows.is_empty(),
+			"status": "%d rows" % replay_phase_rows.size(),
+			"authority": "deterministic_local_fixture",
+		},
+		{
+			"id": "online_result_boundary",
+			"label": "online result",
+			"ok": true,
+			"status": "damage_reward_settlement_server",
+			"authority": "server_settlement_required",
+		},
+	]
 
 func _boss_practice_replay_phase_validation_rows(practice: Dictionary) -> Array[Dictionary]:
 	var rows: Array[Dictionary] = []
@@ -2045,24 +2120,24 @@ func _boss_practice_phase_validation_summary_text(phase_cards: Array[Dictionary]
 func _cached_boss_preview_export_data() -> Dictionary:
 	var cache_key := "%s:%d:export" % [BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, BOSS_LOCAL_PREVIEW_SEED]
 	if boss_preview_cache.has(cache_key):
-		return (boss_preview_cache.get(cache_key, {}) as Dictionary).duplicate(true)
+		return boss_preview_cache.get(cache_key, {}) as Dictionary
 	if boss_spellbook_model == null or not boss_spellbook_model.has_method("phase_export_data"):
 		return {}
 	var export_data: Dictionary = boss_spellbook_model.phase_export_data(BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, BOSS_LOCAL_PREVIEW_SEED)
-	boss_preview_cache[cache_key] = export_data.duplicate(true)
-	return export_data.duplicate(true)
+	boss_preview_cache[cache_key] = export_data
+	return export_data
 
 func _cached_boss_phase_preview(phase_id: String) -> Dictionary:
 	if phase_id.is_empty():
 		return {}
 	var cache_key := "%s:%s:%d:phase" % [BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, phase_id, BOSS_LOCAL_PREVIEW_SEED]
 	if boss_preview_cache.has(cache_key):
-		return (boss_preview_cache.get(cache_key, {}) as Dictionary).duplicate(true)
+		return boss_preview_cache.get(cache_key, {}) as Dictionary
 	if boss_spellbook_model == null or not boss_spellbook_model.has_method("deterministic_phase_preview"):
 		return {}
 	var preview: Dictionary = boss_spellbook_model.deterministic_phase_preview(BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, phase_id, BOSS_LOCAL_PREVIEW_SEED)
-	boss_preview_cache[cache_key] = preview.duplicate(true)
-	return preview.duplicate(true)
+	boss_preview_cache[cache_key] = preview
+	return preview
 
 func validate_boss_formation(mode_id: String) -> Dictionary:
 	var failures: Array[String] = []
@@ -2297,12 +2372,14 @@ func apply_world_boss_result(result: Dictionary) -> bool:
 		last_error_code = "client_authoritative_world_boss_result"
 		world_boss_state["last_result_rejected_reason"] = last_error_code
 		world_boss_state["last_result_rejected_client_authoritative"] = true
+		_clear_boss_projection_cache()
 		return false
 	if not _has_explicit_server_authority(result):
 		last_action_status = "failed"
 		last_error_code = "server_authoritative_world_boss_result_required"
 		world_boss_state["last_result_rejected_reason"] = last_error_code
 		world_boss_state["last_result_rejected_client_authoritative"] = false
+		_clear_boss_projection_cache()
 		return false
 	world_boss_state["boss_instance_id"] = str(result.get("boss_instance_id", world_boss_state.get("boss_instance_id", "")))
 	var hp_after: Variant = result.get("boss_hp_after_global", result.get("current_hp", world_boss_state.get("current_hp", 0.0)))
@@ -2328,6 +2405,7 @@ func apply_world_boss_result(result: Dictionary) -> bool:
 	world_boss_state["defeat_timestamp_pending_server"] = float(world_boss_state.get("current_hp", 0.0)) <= 0.0 and str(world_boss_state.get("defeated_at", "")).strip_edges().is_empty()
 	last_action_status = "world_boss_result"
 	last_error_code = "none"
+	_clear_boss_projection_cache()
 	return true
 
 func apply_instance_boss_result(result: Dictionary) -> bool:
@@ -2336,12 +2414,14 @@ func apply_instance_boss_result(result: Dictionary) -> bool:
 		last_error_code = "client_authoritative_instance_boss_result"
 		instance_boss_state["last_result_rejected_reason"] = last_error_code
 		instance_boss_state["last_result_rejected_client_authoritative"] = true
+		_clear_boss_projection_cache()
 		return false
 	if not _has_explicit_server_authority(result):
 		last_action_status = "failed"
 		last_error_code = "server_authoritative_instance_boss_result_required"
 		instance_boss_state["last_result_rejected_reason"] = last_error_code
 		instance_boss_state["last_result_rejected_client_authoritative"] = false
+		_clear_boss_projection_cache()
 		return false
 	var boss_defeated := bool(result.get("boss_defeated", result.get("instance_cleared", false)))
 	var survivors := int(result.get("survivors", 0))
@@ -2378,6 +2458,7 @@ func apply_instance_boss_result(result: Dictionary) -> bool:
 	_apply_boss_settlement_receipt(instance_boss_state, result)
 	last_action_status = "instance_boss_result"
 	last_error_code = "none"
+	_clear_boss_projection_cache()
 	return true
 
 func summary() -> String:
@@ -2539,8 +2620,10 @@ func _set_state_for_mode(mode_id: String, state: Dictionary) -> void:
 			battle_royale_state = state
 		MODE_WORLD_BOSS:
 			world_boss_state = state
+			_clear_boss_projection_cache()
 		MODE_INSTANCE_BOSS:
 			instance_boss_state = state
+			_clear_boss_projection_cache()
 
 func _record_mode_action(mode_id: String, action_type: String, payload: Dictionary) -> Dictionary:
 	var request := {
@@ -3177,7 +3260,6 @@ func _boss_practice_preview_row(row_id: String, mode_id: String) -> Dictionary:
 		"online_result_authority": "server_settlement_required",
 		"overview_card_kind": "boss_practice_preview",
 		"render_slot": "mode_cards",
-		"preview_projection": projection,
 		"spellbook_id": String(projection.get("spellbook_id", BOSS_LOCAL_PREVIEW_SPELLBOOK_ID)),
 		"preview_seed": int(projection.get("preview_seed", BOSS_LOCAL_PREVIEW_SEED)),
 		"preview_bundle_id": String(projection.get("preview_bundle_id", "")),
@@ -3238,7 +3320,6 @@ func _boss_practice_validation_row(row_id: String, mode_id: String) -> Dictionar
 		"local_practice_target_screen": "practice",
 		"overview_card_kind": "boss_practice_validation",
 		"render_slot": "mode_cards",
-		"validation_projection": projection,
 		"validation_kind": String(projection.get("validation_kind", "boss_practice_validation_projection")),
 		"validation_status": String(projection.get("validation_status", "")),
 		"validation_summary": String(projection.get("validation_summary", "")),
@@ -3252,6 +3333,9 @@ func _boss_practice_validation_row(row_id: String, mode_id: String) -> Dictionar
 		"replay_phase_validation_rows": projection.get("replay_phase_validation_rows", []),
 		"replay_phase_validation_count": int(projection.get("replay_phase_validation_count", 0)),
 		"replay_phase_validation_scope": String(projection.get("replay_phase_validation_scope", "local_practice_hash")),
+		"authority_checklist_kind": String(projection.get("authority_checklist_kind", "boss_practice_authority_checklist")),
+		"authority_checklist": projection.get("authority_checklist", []),
+		"authority_checklist_count": int(projection.get("authority_checklist_count", 0)),
 		"phase_validation_card_kind": String(projection.get("phase_validation_card_kind", "boss_practice_phase_validation_summary")),
 		"phase_validation_cards": projection.get("phase_validation_cards", []),
 		"phase_validation_card_count": int(projection.get("phase_validation_card_count", 0)),

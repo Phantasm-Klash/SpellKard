@@ -1671,14 +1671,16 @@ func _configure_boss_party(mode_id: String, player_ids: Array) -> bool:
 	if game_mode_model == null:
 		return false
 	var ok: bool = game_mode_model.configure_boss_party(mode_id, player_ids)
-	_update_ui_overlay()
+	if _ui_current_owner_screen() in ["modes", "play", "match"]:
+		_update_ui_overlay()
 	return ok
 
 func _request_boss_card_transfer(mode_id: String, from_player_id: String, to_player_id: String, card_id: String) -> Dictionary:
 	if game_mode_model == null:
 		return {"ok": false, "last_error_code": "missing"}
 	var result: Dictionary = game_mode_model.request_boss_card_transfer(mode_id, from_player_id, to_player_id, card_id)
-	_update_ui_overlay()
+	if _ui_current_owner_screen() in ["modes", "play", "match"]:
+		_update_ui_overlay()
 	return result
 
 func _apply_server_instance_boss_access(snapshot: Dictionary) -> Dictionary:
@@ -1711,14 +1713,16 @@ func _apply_world_boss_result(result: Dictionary) -> bool:
 	if game_mode_model == null:
 		return false
 	var ok: bool = game_mode_model.apply_world_boss_result(result)
-	_update_ui_overlay()
+	if _ui_current_owner_screen() in ["modes", "play", "match"]:
+		_update_ui_overlay()
 	return ok
 
 func _apply_instance_boss_result(result: Dictionary) -> bool:
 	if game_mode_model == null:
 		return false
 	var ok: bool = game_mode_model.apply_instance_boss_result(result)
-	_update_ui_overlay()
+	if _ui_current_owner_screen() in ["modes", "play", "match"]:
+		_update_ui_overlay()
 	return ok
 
 func _apply_server_match_result(result: Dictionary) -> Dictionary:
@@ -2293,6 +2297,11 @@ func _open_ui_screen(screen_id: String, target_row_id: String = "") -> bool:
 		_ui_select_row_by_id(target_row_id, false)
 	_update_ui_overlay()
 	return opened
+
+func _open_ui_screen_for_rows(screen_id: String) -> bool:
+	if ui_screen_model == null:
+		return false
+	return ui_screen_model.open(screen_id)
 
 func _ui_select_row_by_id(row_id: String, refresh: bool = true) -> bool:
 	if ui_screen_model == null or row_id.is_empty():
@@ -2999,7 +3008,7 @@ func _ui_screen_rows(limit: int = 12) -> Array[Dictionary]:
 func _decorate_client_experience_rows(rows: Array[Dictionary]) -> Array[Dictionary]:
 	var decorated: Array[Dictionary] = []
 	for source_row in rows:
-		var row := source_row.duplicate(true)
+		var row := source_row.duplicate(false)
 		_decorate_gamepad_speed_preview(row)
 		decorated.append(row)
 	return decorated
@@ -3053,7 +3062,11 @@ func _open_chest(pool_id: String = "local_basic", count: int = 1) -> Dictionary:
 	return result
 
 func _set_test_viewport_size(size: Vector2) -> Dictionary:
-	get_window().size = Vector2i(int(size.x), int(size.y))
+	var target_size := Vector2i(int(size.x), int(size.y))
+	var size_changed := get_window().size != target_size
+	if not size_changed:
+		return {"ok": true, "viewport_size": get_viewport_rect().size, "size_changed": false}
+	get_window().size = target_size
 	_update_ui_overlay()
 	return _ui_overlay_snapshot()
 
@@ -3061,7 +3074,7 @@ func _ui_overlay_snapshot() -> Dictionary:
 	var rows: Array[Dictionary] = []
 	if ui_screen_model != null:
 		rows = _decorate_client_experience_rows(ui_screen_model.screen_rows(64))
-	var selected: Dictionary = _decorated_ui_selected_row()
+	var selected: Dictionary = rows[clampi(ui_screen_model.cursor, 0, rows.size() - 1)] if not rows.is_empty() and ui_screen_model != null else {}
 	var page_layout := _ui_page_layout()
 	var overlap_check := _ui_visible_control_overlap_check()
 	var focus_check := _ui_visible_focus_health_check()
@@ -4996,7 +5009,7 @@ func _update_ui_overlay() -> void:
 	if all_rows.size() > ui_row_labels.size():
 		row_window_start = clampi(ui_screen_model.cursor - int(ui_row_labels.size() / 2), 0, all_rows.size() - ui_row_labels.size())
 	var rows: Array[Dictionary] = all_rows.slice(row_window_start, min(all_rows.size(), row_window_start + ui_row_labels.size()))
-	var selected: Dictionary = _decorated_ui_selected_row()
+	var selected: Dictionary = all_rows[clampi(ui_screen_model.cursor, 0, all_rows.size() - 1)] if not all_rows.is_empty() else {}
 	ui_title_label.text = _screen_title(ui_screen_model.current_screen)
 	ui_nav_label.text = _ui_nav_text(ui_screen_model.current_screen)
 	ui_shell_label.text = _ui_shell_status_text()
