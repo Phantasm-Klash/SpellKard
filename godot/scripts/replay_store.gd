@@ -46,12 +46,23 @@ const SPELLBOOK_PREVIEW_SERVER_AUTHORITY_FIELDS: Array[String] = [
 	"damage_summary",
 	"daily_attempts_left",
 	"daily_attempts_used",
+	"entry_attempt_limit",
+	"entry_attempts_left",
+	"entry_attempts_used",
+	"entry_unlocked",
+	"required_rating",
+	"required_key_id",
+	"owned_key_count",
 	"defeated_at",
+	"defeated_by_match_id",
+	"defeated_by_user_id",
 	"reward_grants",
 	"reward_summary",
 	"reward_receipts",
 	"participation_rewards",
 	"drop_rewards",
+	"first_clear_reward",
+	"star_rewards",
 	"settlement_receipt",
 	"settlement_result",
 	"settlement_summary",
@@ -59,8 +70,15 @@ const SPELLBOOK_PREVIEW_SERVER_AUTHORITY_FIELDS: Array[String] = [
 	"world_announcement",
 	"world_boss_defeated",
 	"instance_boss_clear",
+	"access_gate",
 	"clear_status",
 	"clear_stars",
+	"stars",
+	"star_summary",
+	"clear_time_seconds",
+	"deaths",
+	"bombs_used",
+	"mechanic_complete",
 	"server_result_hash",
 ]
 const SPELLBOOK_PREVIEW_SERVER_AUTHORITY_NESTED_FIELDS: Array[String] = [
@@ -69,6 +87,10 @@ const SPELLBOOK_PREVIEW_SERVER_AUTHORITY_NESTED_FIELDS: Array[String] = [
 	"boss_result",
 	"boss_result_summary",
 	"damage_summary",
+	"access_gate",
+	"entry_gate",
+	"instance_access",
+	"star_summary",
 	"settlement",
 	"settlement_result",
 	"settlement_summary",
@@ -983,18 +1005,17 @@ func _server_authority_claim_fields(fields: Dictionary) -> Array[String]:
 	if typeof(fields.get("server_authority_claim_fields", [])) == TYPE_ARRAY:
 		for field in fields.get("server_authority_claim_fields", []):
 			var field_name := String(field)
-			if not field_name.is_empty() and not claims.has(field_name):
-				claims.append(field_name)
+			_append_claim(claims, field_name)
 	for field_name in SPELLBOOK_PREVIEW_SERVER_AUTHORITY_FIELDS:
-		if fields.has(field_name) and not claims.has(field_name):
-			claims.append(field_name)
+		if fields.has(field_name):
+			_append_claim(claims, field_name)
 	for container_name in SPELLBOOK_PREVIEW_SERVER_AUTHORITY_NESTED_FIELDS:
 		if not fields.has(container_name):
 			continue
+		_append_claim(claims, container_name)
 		var nested_claims := _server_authority_nested_claim_fields(fields.get(container_name), container_name)
 		for nested_claim in nested_claims:
-			if not claims.has(nested_claim):
-				claims.append(nested_claim)
+			_append_claim(claims, nested_claim)
 	return claims
 
 func _server_authority_claim_fields_from_sources(primary_fields: Dictionary, secondary_fields: Dictionary = {}) -> Array[String]:
@@ -1009,9 +1030,11 @@ func _server_authority_nested_claim_fields(value: Variant, container_name: Strin
 	match typeof(value):
 		TYPE_DICTIONARY:
 			var nested: Dictionary = value
+			if SPELLBOOK_PREVIEW_SERVER_AUTHORITY_NESTED_FIELDS.has(container_name):
+				_append_claim(claims, container_name)
 			for field_name in SPELLBOOK_PREVIEW_SERVER_AUTHORITY_FIELDS:
-				if nested.has(field_name) and not claims.has(field_name):
-					claims.append(field_name)
+				if nested.has(field_name):
+					_append_claim(claims, field_name)
 			for child_key in nested.keys():
 				var child_name := String(child_key)
 				var child_value: Variant = nested[child_key]
@@ -1019,20 +1042,22 @@ func _server_authority_nested_claim_fields(value: Variant, container_name: Strin
 				if not should_scan:
 					continue
 				for nested_claim in _server_authority_nested_claim_fields(child_value, child_name):
-					if not claims.has(nested_claim):
-						claims.append(nested_claim)
+					_append_claim(claims, nested_claim)
 		TYPE_ARRAY:
 			var nested_array: Array = value
-			if not nested_array.is_empty() and not claims.has(container_name):
-				claims.append(container_name)
+			if not nested_array.is_empty():
+				_append_claim(claims, container_name)
 			for item in nested_array:
 				for nested_claim in _server_authority_nested_claim_fields(item, container_name):
-					if not claims.has(nested_claim):
-						claims.append(nested_claim)
+					_append_claim(claims, nested_claim)
 		_:
-			if not claims.has(container_name):
-				claims.append(container_name)
+			_append_claim(claims, container_name)
 	return claims
+
+func _append_claim(claims: Array[String], field_name: String) -> void:
+	if field_name.is_empty() or claims.has(field_name):
+		return
+	claims.append(field_name)
 
 func _normalized_int_array(value: Variant) -> Array[int]:
 	var result: Array[int] = []

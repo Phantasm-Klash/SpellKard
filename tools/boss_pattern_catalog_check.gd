@@ -319,9 +319,14 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 	server_claim_entry["boss_hp_after_global"] = 408000
 	server_claim_entry["damage_summary"] = {"damage_this_match": 12000, "team_damage": 12000, "total_damage": 12000}
 	server_claim_entry["daily_attempts_left"] = 2
+	server_claim_entry["entry_attempts_left"] = 1
+	server_claim_entry["entry_unlocked"] = true
+	server_claim_entry["required_key_id"] = "instance_key_server_only"
+	server_claim_entry["owned_key_count"] = 1
 	server_claim_entry["defeated_at"] = "2026-06-29T00:00:00Z"
+	server_claim_entry["defeated_by_match_id"] = "match_server_only"
 	server_claim_entry["reward_grants"] = [{"currency": "spirit", "amount": 25}]
-	server_claim_entry["reward_summary"] = {"reward_receipts": [{"receipt_id": "server-only-reward"}], "drop_rewards": [{"item_id": "spirit_fragment", "amount": 1}]}
+	server_claim_entry["reward_summary"] = {"reward_receipts": [{"receipt_id": "server-only-reward"}], "drop_rewards": [{"item_id": "spirit_fragment", "amount": 1}], "first_clear_reward": {"currency": "spirit", "amount": 100}}
 	server_claim_entry["settlement_result"] = {"settlement_status": "cleared", "clear_status": "cleared"}
 	server_claim_entry["settlement_status"] = "cleared"
 	server_claim_entry["world_announcement"] = "world_boss_defeated"
@@ -336,11 +341,13 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		},
 		"boss_result_summary": {
 			"damage_summary": {"team_damage": 12000, "total_damage": 12000},
+			"access_gate": {"entry_unlocked": true, "owned_key_count": 1},
+			"star_summary": {"stars": 3, "clear_time_seconds": 144, "bombs_used": 1},
 		},
 	}
 	nested_server_claim_entry["settlement"] = {
 		"settlement_receipt": {"receipt_id": "server-only-nested"},
-		"reward_summary": {"reward_receipts": [{"receipt_id": "server-only-nested-reward"}]},
+		"reward_summary": {"reward_receipts": [{"receipt_id": "server-only-nested-reward"}], "star_rewards": [{"currency": "spirit", "amount": 10}]},
 		"reward_grants": [{"currency": "spirit", "amount": 30}],
 		"server_result_hash": "nested-server-hash-only",
 	}
@@ -348,9 +355,12 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 	snapshot_server_claim_entry["boss_result"] = {
 		"result_summary": {
 			"damage_summary": {"damage_this_match": 12000},
+			"entry_gate": {"required_key_id": "instance_key_server_only", "entry_attempts_left": 1},
 			"settlement_summary": {"settlement_status": "cleared"},
+			"star_summary": {"stars": 2, "deaths": 1, "mechanic_complete": true},
 		}
 	}
+	snapshot_server_claim_entry["result_summary"] = snapshot_server_claim_entry["boss_result"]["result_summary"]
 	var wrong_authority_scope_entry := valid_entries[0].duplicate(true)
 	wrong_authority_scope_entry["replay_id"] = "fixture_wrong_authority_scope_spellbook_preview"
 	wrong_authority_scope_entry["preview_authority_scope"] = "server_settlement_authoritative"
@@ -697,36 +707,36 @@ func _validate_replay_metadata(spellbook_model: RefCounted, pattern_lab_model: R
 		var authoritative_row: Dictionary = replay_list._row_from_entry(authoritative_entry, rows.size() + 1)
 		if bool(authoritative_row.get("metadata_valid", true)) or String(authoritative_row.get("metadata_status", "")) != "local_preview_marked_authoritative":
 			failures.append("authoritative_row_metadata:%s" % [authoritative_row])
-		var server_claim_row: Dictionary = replay_list._row_from_entry(server_claim_entry, rows.size() + 2)
-		if bool(server_claim_row.get("metadata_valid", true)) or String(server_claim_row.get("metadata_status", "")) != "local_preview_server_claim":
-			failures.append("server_claim_row_metadata:%s" % [server_claim_row])
-		if String(server_claim_row.get("verification_scope", "")) != "rejected_server_claim" or not String(server_claim_row.get("verification_summary", "")).contains("rejected server-authority claims"):
-			failures.append("server_claim_row_verification_summary:%s" % [server_claim_row])
-		if String(server_claim_row.get("local_load_policy", "")) != "blocked_server_audit" or not bool(server_claim_row.get("requires_server_audit", false)) or String(server_claim_row.get("server_audit_status", "")) != "pending":
-			failures.append("server_claim_row_audit_guard:%s" % [server_claim_row])
-			for expected_claim in ["boss_instance_id", "boss_current_hp", "boss_hp_after_global", "boss_hp_remaining", "damage_summary", "daily_attempts_left", "defeated_at", "reward_grants", "reward_summary", "settlement_result", "world_announcement"]:
-				if not _string_array_contains(server_claim_row.get("server_authority_claim_fields", []), expected_claim):
-					failures.append("server_claim_row_missing_field:%s:%s" % [expected_claim, server_claim_row])
-		var nested_server_claim_row: Dictionary = replay_list._row_from_entry(nested_server_claim_entry, rows.size() + 31)
-		if bool(nested_server_claim_row.get("metadata_valid", true)) or String(nested_server_claim_row.get("metadata_status", "")) != "local_preview_server_claim":
-			failures.append("nested_server_claim_row_metadata:%s" % [nested_server_claim_row])
-		if String(nested_server_claim_row.get("verification_scope", "")) != "rejected_server_claim" or not String(nested_server_claim_row.get("verification_summary", "")).contains("rejected server-authority claims"):
-			failures.append("nested_server_claim_row_verification_summary:%s" % [nested_server_claim_row])
-		if String(nested_server_claim_row.get("local_load_policy", "")) != "blocked_server_audit" or not bool(nested_server_claim_row.get("requires_server_audit", false)) or String(nested_server_claim_row.get("server_audit_status", "")) != "pending":
-			failures.append("nested_server_claim_row_audit_guard:%s" % [nested_server_claim_row])
-			for expected_claim in ["boss_instance_id", "boss_current_hp", "boss_hp_after_global", "boss_remaining_hp", "boss_result_summary", "settlement_receipt", "reward_grants", "reward_summary", "server_result_hash"]:
-				if not _string_array_contains(nested_server_claim_row.get("server_authority_claim_fields", []), expected_claim):
-					failures.append("nested_server_claim_row_missing_field:%s:%s" % [expected_claim, nested_server_claim_row])
-		var snapshot_server_claim_row: Dictionary = replay_list._row_from_entry(snapshot_server_claim_entry, rows.size() + 24)
-		if bool(snapshot_server_claim_row.get("metadata_valid", true)) or String(snapshot_server_claim_row.get("metadata_status", "")) != "local_preview_server_claim":
-			failures.append("snapshot_server_claim_row_metadata:%s" % [snapshot_server_claim_row])
-		if String(snapshot_server_claim_row.get("verification_scope", "")) != "rejected_server_claim" or not String(snapshot_server_claim_row.get("verification_summary", "")).contains("rejected server-authority claims"):
-			failures.append("snapshot_server_claim_row_verification_summary:%s" % [snapshot_server_claim_row])
-		if String(snapshot_server_claim_row.get("local_load_policy", "")) != "blocked_server_audit" or not bool(snapshot_server_claim_row.get("requires_server_audit", false)) or String(snapshot_server_claim_row.get("server_audit_status", "")) != "pending":
-			failures.append("snapshot_server_claim_row_audit_guard:%s" % [snapshot_server_claim_row])
-			for expected_claim in ["boss_instance_id", "boss_hp_after_global", "boss_remaining_hp", "result_summary", "settlement_receipt", "reward_grants", "reward_summary", "server_result_hash"]:
-				if not _string_array_contains(snapshot_server_claim_row.get("server_authority_claim_fields", []), expected_claim):
-					failures.append("snapshot_server_claim_row_missing_field:%s:%s" % [expected_claim, snapshot_server_claim_row])
+	var server_claim_row: Dictionary = replay_list._row_from_entry(server_claim_entry, rows.size() + 2)
+	if bool(server_claim_row.get("metadata_valid", true)) or String(server_claim_row.get("metadata_status", "")) != "local_preview_server_claim":
+		failures.append("server_claim_row_metadata:%s" % [server_claim_row])
+	if String(server_claim_row.get("verification_scope", "")) != "rejected_server_claim" or not String(server_claim_row.get("verification_summary", "")).contains("rejected server-authority claims"):
+		failures.append("server_claim_row_verification_summary:%s" % [server_claim_row])
+	if String(server_claim_row.get("local_load_policy", "")) != "blocked_server_audit" or not bool(server_claim_row.get("requires_server_audit", false)) or String(server_claim_row.get("server_audit_status", "")) != "pending":
+		failures.append("server_claim_row_audit_guard:%s" % [server_claim_row])
+		for expected_claim in ["boss_instance_id", "boss_current_hp", "boss_hp_after_global", "boss_hp_remaining", "damage_summary", "daily_attempts_left", "entry_attempts_left", "entry_unlocked", "required_key_id", "owned_key_count", "defeated_at", "defeated_by_match_id", "reward_grants", "reward_summary", "settlement_result", "world_announcement"]:
+			if not _string_array_contains(server_claim_row.get("server_authority_claim_fields", []), expected_claim):
+				failures.append("server_claim_row_missing_field:%s:%s" % [expected_claim, server_claim_row])
+	var nested_server_claim_row: Dictionary = replay_list._row_from_entry(nested_server_claim_entry, rows.size() + 31)
+	if bool(nested_server_claim_row.get("metadata_valid", true)) or String(nested_server_claim_row.get("metadata_status", "")) != "local_preview_server_claim":
+		failures.append("nested_server_claim_row_metadata:%s" % [nested_server_claim_row])
+	if String(nested_server_claim_row.get("verification_scope", "")) != "rejected_server_claim" or not String(nested_server_claim_row.get("verification_summary", "")).contains("rejected server-authority claims"):
+		failures.append("nested_server_claim_row_verification_summary:%s" % [nested_server_claim_row])
+	if String(nested_server_claim_row.get("local_load_policy", "")) != "blocked_server_audit" or not bool(nested_server_claim_row.get("requires_server_audit", false)) or String(nested_server_claim_row.get("server_audit_status", "")) != "pending":
+		failures.append("nested_server_claim_row_audit_guard:%s" % [nested_server_claim_row])
+		for expected_claim in ["boss_instance_id", "boss_current_hp", "boss_hp_after_global", "boss_remaining_hp", "boss_result_summary", "access_gate", "star_summary", "settlement_receipt", "reward_grants", "reward_summary", "server_result_hash"]:
+			if not _string_array_contains(nested_server_claim_row.get("server_authority_claim_fields", []), expected_claim):
+				failures.append("nested_server_claim_row_missing_field:%s:%s" % [expected_claim, nested_server_claim_row])
+	var snapshot_server_claim_row: Dictionary = replay_list._row_from_entry(snapshot_server_claim_entry, rows.size() + 24)
+	if bool(snapshot_server_claim_row.get("metadata_valid", true)) or String(snapshot_server_claim_row.get("metadata_status", "")) != "local_preview_server_claim":
+		failures.append("snapshot_server_claim_row_metadata:%s" % [snapshot_server_claim_row])
+	if String(snapshot_server_claim_row.get("verification_scope", "")) != "rejected_server_claim" or not String(snapshot_server_claim_row.get("verification_summary", "")).contains("rejected server-authority claims"):
+		failures.append("snapshot_server_claim_row_verification_summary:%s" % [snapshot_server_claim_row])
+	if String(snapshot_server_claim_row.get("local_load_policy", "")) != "blocked_server_audit" or not bool(snapshot_server_claim_row.get("requires_server_audit", false)) or String(snapshot_server_claim_row.get("server_audit_status", "")) != "pending":
+		failures.append("snapshot_server_claim_row_audit_guard:%s" % [snapshot_server_claim_row])
+		for expected_claim in ["boss_instance_id", "boss_hp_after_global", "boss_remaining_hp", "result_summary", "entry_gate", "star_summary", "settlement_receipt", "reward_grants", "reward_summary", "server_result_hash"]:
+			if not _string_array_contains(snapshot_server_claim_row.get("server_authority_claim_fields", []), expected_claim):
+				failures.append("snapshot_server_claim_row_missing_field:%s:%s" % [expected_claim, snapshot_server_claim_row])
 		var filter_rows: Array[Dictionary] = replay_list.verification_filter_rows()
 		var rejected_filter_row: Dictionary = _find_row_by_id(filter_rows, "replay_filter_rejected_server_claim")
 		if String(rejected_filter_row.get("verification_filter", "")) != "rejected_server_claim" \
@@ -1003,6 +1013,7 @@ func _snapshot_server_claim_replay_entry_for_preview(store: RefCounted, spellboo
 		"final_result_hash": int(preview.get("signature_digest", 0)),
 		"input_stream": [],
 		"boss_instance_id": "world_boss_snapshot_claim",
+		"boss_remaining_hp": 400000,
 		"boss_hp_after_global": 412000,
 		"settlement_receipt": {"receipt_id": "server-only"},
 		"reward_grants": [{"currency": "spirit", "amount": 99}],
