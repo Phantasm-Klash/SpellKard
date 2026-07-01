@@ -1398,6 +1398,19 @@ func _assert_boss_practice_validation_row(row: Dictionary, mode_id: String, expe
 	var metrics: Array = row.get("validation_metrics", [])
 	if metrics.size() < 5 or not String(row.get("validation_summary", "")).contains("replay local_practice_hash"):
 		return _fail("boss practice validation metrics invalid %s" % [row])
+	var authority_checklist: Array = row.get("authority_checklist", [])
+	if String(row.get("authority_checklist_kind", "")) != "boss_practice_authority_checklist" \
+			or int(row.get("authority_checklist_count", -1)) != authority_checklist.size() \
+			or authority_checklist.size() != 5:
+		return _fail("boss practice validation authority checklist invalid %s" % [row])
+	if not _assert_boss_practice_authority_check(authority_checklist, "local_preview_scope", "client_local_display_only", "local_practice_preview_only"):
+		return false
+	if not _assert_boss_practice_authority_check(authority_checklist, "replay_hash_scope", "local_practice_verification_only", "local_practice_hash"):
+		return false
+	if not _assert_boss_practice_authority_check(authority_checklist, "online_replay_audit", "server_audit_required", "server_audit_required"):
+		return false
+	if not _assert_boss_practice_authority_check(authority_checklist, "online_result_boundary", "server_settlement_required", "damage_reward_settlement_server"):
+		return false
 	var phase_rows: Array = row.get("replay_phase_validation_rows", [])
 	if int(row.get("replay_phase_validation_count", 0)) != int(row.get("preview_phase_count", 0)) \
 			or phase_rows.size() != int(row.get("preview_phase_count", 0)):
@@ -1423,6 +1436,24 @@ func _assert_boss_practice_validation_row(row: Dictionary, mode_id: String, expe
 	if not _assert_boss_display_summary_fields(row, mode_id, expected_count):
 		return false
 	return true
+
+func _assert_boss_practice_authority_check(checklist: Array, check_id: String, expected_authority: String, expected_status: String) -> bool:
+	var check := _checklist_item_by_id(checklist, check_id)
+	if check.is_empty() \
+			or not bool(check.get("ok", false)) \
+			or String(check.get("authority", "")) != expected_authority \
+			or String(check.get("status", "")) != expected_status:
+		return _fail("boss practice authority check invalid id=%s check=%s" % [check_id, check])
+	return true
+
+func _checklist_item_by_id(checklist: Array, check_id: String) -> Dictionary:
+	for raw_item in checklist:
+		if typeof(raw_item) != TYPE_DICTIONARY:
+			continue
+		var item: Dictionary = raw_item
+		if String(item.get("id", "")) == check_id:
+			return item
+	return {}
 
 func _assert_boss_practice_preview_launch(row_id: String, mode_id: String, rows: Array[Dictionary] = []) -> bool:
 	if String(main_node.get("ui_screen_model").current_screen) != "modes":

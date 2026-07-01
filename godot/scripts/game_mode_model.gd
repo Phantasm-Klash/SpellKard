@@ -1873,6 +1873,7 @@ func boss_practice_validation_projection(mode_id: String) -> Dictionary:
 	var replay_phase_rows := _boss_practice_replay_phase_validation_rows(practice)
 	var replay_phase_ready := not replay_phase_rows.is_empty()
 	var phase_cards := _boss_practice_phase_validation_cards(replay_phase_rows)
+	var authority_checklist := _boss_practice_authority_checklist(practice, replay_metadata, replay_phase_rows)
 	var blockers: Array[String] = []
 	if not bool(practice.get("ok", false)):
 		blockers.append(String(practice.get("reason", "practice_preview_failed")))
@@ -1915,6 +1916,9 @@ func boss_practice_validation_projection(mode_id: String) -> Dictionary:
 		"replay_phase_validation_rows": replay_phase_rows,
 		"replay_phase_validation_count": replay_phase_rows.size(),
 		"replay_phase_validation_scope": "local_practice_hash",
+		"authority_checklist_kind": "boss_practice_authority_checklist",
+		"authority_checklist": authority_checklist,
+		"authority_checklist_count": authority_checklist.size(),
 		"phase_validation_card_kind": "boss_practice_phase_validation_summary",
 		"phase_validation_cards": phase_cards,
 		"phase_validation_card_count": phase_cards.size(),
@@ -1956,6 +1960,45 @@ func boss_practice_validation_projection(mode_id: String) -> Dictionary:
 	}
 	boss_preview_cache[cache_key] = result
 	return result
+
+func _boss_practice_authority_checklist(practice: Dictionary, replay_metadata: Dictionary, replay_phase_rows: Array[Dictionary]) -> Array[Dictionary]:
+	return [
+		{
+			"id": "local_preview_scope",
+			"label": "local preview",
+			"ok": String(practice.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)) == BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+			"status": String(practice.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)),
+			"authority": "client_local_display_only",
+		},
+		{
+			"id": "replay_hash_scope",
+			"label": "replay hash",
+			"ok": String(replay_metadata.get("replay_verification_scope", "local_practice_hash")) == "local_practice_hash",
+			"status": String(replay_metadata.get("replay_verification_scope", "local_practice_hash")),
+			"authority": "local_practice_verification_only",
+		},
+		{
+			"id": "online_replay_audit",
+			"label": "online replay",
+			"ok": String(replay_metadata.get("online_replay_authority", "server_audit_required")) == "server_audit_required",
+			"status": String(replay_metadata.get("online_replay_authority", "server_audit_required")),
+			"authority": "server_audit_required",
+		},
+		{
+			"id": "phase_digest_rows",
+			"label": "phase digests",
+			"ok": not replay_phase_rows.is_empty(),
+			"status": "%d rows" % replay_phase_rows.size(),
+			"authority": "deterministic_local_fixture",
+		},
+		{
+			"id": "online_result_boundary",
+			"label": "online result",
+			"ok": true,
+			"status": "damage_reward_settlement_server",
+			"authority": "server_settlement_required",
+		},
+	]
 
 func _boss_practice_replay_phase_validation_rows(practice: Dictionary) -> Array[Dictionary]:
 	var rows: Array[Dictionary] = []
@@ -3290,6 +3333,9 @@ func _boss_practice_validation_row(row_id: String, mode_id: String) -> Dictionar
 		"replay_phase_validation_rows": projection.get("replay_phase_validation_rows", []),
 		"replay_phase_validation_count": int(projection.get("replay_phase_validation_count", 0)),
 		"replay_phase_validation_scope": String(projection.get("replay_phase_validation_scope", "local_practice_hash")),
+		"authority_checklist_kind": String(projection.get("authority_checklist_kind", "boss_practice_authority_checklist")),
+		"authority_checklist": projection.get("authority_checklist", []),
+		"authority_checklist_count": int(projection.get("authority_checklist_count", 0)),
 		"phase_validation_card_kind": String(projection.get("phase_validation_card_kind", "boss_practice_phase_validation_summary")),
 		"phase_validation_cards": projection.get("phase_validation_cards", []),
 		"phase_validation_card_count": int(projection.get("phase_validation_card_count", 0)),
