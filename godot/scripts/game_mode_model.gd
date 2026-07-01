@@ -1286,6 +1286,112 @@ func boss_practice_preview_projection(mode_id: String) -> Dictionary:
 		"client_result_authoritative": false,
 	}
 
+func boss_practice_replay_metadata(mode_id: String, phase_id: String = "nonspell_radial_entry") -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"metadata_contract_kind": "boss_practice_replay_metadata",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	if boss_spellbook_model == null \
+			or not boss_spellbook_model.has_method("deterministic_phase_preview") \
+			or not boss_spellbook_model.has_method("phase_export_data"):
+		return {
+			"ok": false,
+			"reason": "boss_spellbook_unavailable",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"metadata_contract_kind": "boss_practice_replay_metadata",
+			"preview_authority_scope": BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var export_data: Dictionary = boss_spellbook_model.phase_export_data(BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, BOSS_LOCAL_PREVIEW_SEED)
+	var phase_ids := _string_array(export_data.get("preview_phase_ids", []))
+	var selected_phase_id := phase_id
+	if selected_phase_id.is_empty() and not phase_ids.is_empty():
+		selected_phase_id = phase_ids[0]
+	var preview: Dictionary = boss_spellbook_model.deterministic_phase_preview(BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, selected_phase_id, BOSS_LOCAL_PREVIEW_SEED)
+	if preview.is_empty() or export_data.is_empty():
+		return {
+			"ok": false,
+			"reason": "boss_spellbook_preview_missing",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"metadata_contract_kind": "boss_practice_replay_metadata",
+			"spellbook_id": BOSS_LOCAL_PREVIEW_SPELLBOOK_ID,
+			"phase_id": selected_phase_id,
+			"preview_seed": BOSS_LOCAL_PREVIEW_SEED,
+			"preview_authority_scope": BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var preview_scope := String(preview.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE))
+	return {
+		"ok": preview_scope == BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+		"reason": "none" if preview_scope == BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE else "preview_authority_scope_mismatch",
+		"metadata_contract_kind": "boss_practice_replay_metadata",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"mode": "boss_spellbook_practice",
+		"result": "practice",
+		"opponent": selected_phase_id,
+		"catalog_id": "boss_spellbook",
+		"spellbook_id": BOSS_LOCAL_PREVIEW_SPELLBOOK_ID,
+		"phase_id": selected_phase_id,
+		"match_seed": BOSS_LOCAL_PREVIEW_SEED,
+		"preview_seed": BOSS_LOCAL_PREVIEW_SEED,
+		"input_integrity_status": "preview_input_not_recorded",
+		"input_count": 0,
+		"input_first_tick": -1,
+		"input_last_tick": -1,
+		"input_tick_span": 0,
+		"input_tick_monotonic": false,
+		"input_tick_contiguous": false,
+		"final_tick": int(preview.get("sample_window_end_tick", 0)),
+		"final_result_hash": int(preview.get("signature_digest", 0)),
+		"preview_export_schema_version": int(preview.get("export_schema_version", 1)),
+		"preview_export_id": String(preview.get("export_id", "")),
+		"preview_fixture_id": String(preview.get("preview_fixture_id", "")),
+		"preview_authority_scope": preview_scope,
+		"preview_signature": String(preview.get("signature", "")),
+		"preview_signature_digest": int(preview.get("signature_digest", 0)),
+		"preview_sample_ticks": preview.get("sample_ticks", []),
+		"preview_sample_window_start_tick": int(preview.get("sample_window_start_tick", 0)),
+		"preview_sample_window_end_tick": int(preview.get("sample_window_end_tick", 0)),
+		"preview_sample_window_stride_ticks": int(preview.get("sample_window_stride_ticks", 0)),
+		"preview_sample_signature_digests": preview.get("sample_signature_digests", []),
+		"preview_sample_emit_counts": preview.get("sample_emit_counts", []),
+		"preview_sample_count": int(preview.get("sample_count", (preview.get("samples", []) as Array).size())),
+		"preview_max_emit_per_tick": int(preview.get("max_emit_per_tick", 0)),
+		"preview_bullet_cap_per_tick": int(preview.get("bullet_cap_per_tick", 0)),
+		"preview_budget_headroom": int(preview.get("budget_headroom", 0)),
+		"performance_budget_status": String(preview.get("performance_budget_status", "")),
+		"preview_bundle_id": String(export_data.get("preview_bundle_id", "")),
+		"preview_bundle_signature_digest": int(export_data.get("preview_bundle_signature_digest", 0)),
+		"preview_phase_count": int(export_data.get("preview_phase_count", 0)),
+		"preview_phase_ids": phase_ids,
+		"preview_phase_signature_digests": _int_array(export_data.get("preview_phase_signature_digests", [])),
+		"preview_bundle_max_emit_per_tick": int(export_data.get("max_preview_emit_per_tick", 0)),
+		"preview_bundle_min_budget_headroom": int(export_data.get("min_preview_budget_headroom", 0)),
+		"preview_bundle_budget_status": String(export_data.get("performance_budget_status", "")),
+		"local_hash_authority": "local_practice_verification_only",
+		"replay_verification_scope": "local_practice_hash",
+		"replay_authority_scope": "local_practice_record",
+		"online_replay_authority": "server_audit_required",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"boss_hp_authority": "server",
+		"server_authority_claim_fields": [],
+		"server_authoritative": false,
+		"client_result_authoritative": false,
+	}
+
 func validate_boss_formation(mode_id: String) -> Dictionary:
 	var failures: Array[String] = []
 	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
@@ -2130,6 +2236,7 @@ func _boss_hud_row(row_id: String, mode_id: String) -> Dictionary:
 
 func _boss_practice_preview_row(row_id: String, mode_id: String) -> Dictionary:
 	var projection := boss_practice_preview_projection(mode_id)
+	var replay_metadata := boss_practice_replay_metadata(mode_id)
 	var phase_count := int(projection.get("preview_phase_count", 0))
 	var digest := int(projection.get("preview_bundle_signature_digest", 0))
 	var max_emit := int(projection.get("preview_max_emit_per_tick", 0))
@@ -2178,6 +2285,9 @@ func _boss_practice_preview_row(row_id: String, mode_id: String) -> Dictionary:
 		"preview_card_action_hint": "start local practice preview; Replay verification only",
 		"local_practice_action": "start_boss_spellbook_run",
 		"local_practice_target_screen": "practice",
+		"replay_metadata_contract": replay_metadata,
+		"replay_metadata_ready": bool(replay_metadata.get("ok", false)),
+		"replay_metadata_contract_kind": String(replay_metadata.get("metadata_contract_kind", "")),
 		"local_hash_authority": "local_practice_verification_only",
 		"online_result_authority": "server_settlement_required",
 		"overview_card_kind": "boss_practice_preview",

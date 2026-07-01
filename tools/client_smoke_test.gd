@@ -4763,49 +4763,27 @@ func _process(_delta: float) -> bool:
 		return true
 	var boss_preview: Dictionary = boss_spellbook_model.deterministic_phase_preview("original_boss_archive", "nonspell_radial_entry", 20260625)
 	var boss_export: Dictionary = boss_spellbook_model.phase_export_data("original_boss_archive", 20260625)
+	var boss_replay_metadata: Dictionary = game_mode_model.boss_practice_replay_metadata("world_boss", "nonspell_radial_entry")
+	if not bool(boss_replay_metadata.get("ok", false)) \
+			or String(boss_replay_metadata.get("metadata_contract_kind", "")) != "boss_practice_replay_metadata" \
+			or String(boss_replay_metadata.get("mode", "")) != "boss_spellbook_practice" \
+			or String(boss_replay_metadata.get("catalog_id", "")) != "boss_spellbook" \
+			or String(boss_replay_metadata.get("preview_authority_scope", "")) != "local_practice_preview_only" \
+			or String(boss_replay_metadata.get("replay_verification_scope", "")) != "local_practice_hash" \
+			or int(boss_replay_metadata.get("preview_bundle_signature_digest", 0)) != int(boss_export.get("preview_bundle_signature_digest", 0)) \
+			or int(boss_replay_metadata.get("final_result_hash", 0)) != int(boss_preview.get("signature_digest", 0)) \
+			or bool(boss_replay_metadata.get("server_authoritative", true)) \
+			or bool(boss_replay_metadata.get("client_result_authoritative", true)) \
+			or not (boss_replay_metadata.get("server_authority_claim_fields", []) as Array).is_empty():
+		push_error("Smoke test failed: boss practice replay metadata contract invalid %s" % [boss_replay_metadata])
+		quit(1)
+		return true
 	var boss_practice_replay := latest_replay.duplicate(true)
 	boss_practice_replay["replay_id"] = "boss-practice-replay-smoke"
-	boss_practice_replay["mode"] = "boss_spellbook_practice"
-	boss_practice_replay["catalog_id"] = "boss_spellbook"
-	boss_practice_replay["spellbook_id"] = "original_boss_archive"
-	boss_practice_replay["phase_id"] = "nonspell_radial_entry"
-	boss_practice_replay["match_seed"] = 20260625
-	boss_practice_replay["preview_seed"] = 20260625
-	boss_practice_replay["input_integrity_status"] = "preview_input_not_recorded"
-	boss_practice_replay["input_count"] = 0
-	boss_practice_replay["input_first_tick"] = -1
-	boss_practice_replay["input_last_tick"] = -1
-	boss_practice_replay["input_tick_span"] = 0
-	boss_practice_replay["input_tick_monotonic"] = false
-	boss_practice_replay["input_tick_contiguous"] = false
-	boss_practice_replay["final_result_hash"] = int(boss_preview.get("signature_digest", 0))
-	boss_practice_replay["final_tick"] = int(boss_preview.get("sample_window_end_tick", 140))
-	boss_practice_replay["preview_export_schema_version"] = int(boss_preview.get("export_schema_version", 1))
-	boss_practice_replay["preview_export_id"] = String(boss_preview.get("export_id", ""))
-	boss_practice_replay["preview_fixture_id"] = String(boss_preview.get("preview_fixture_id", ""))
-	boss_practice_replay["preview_authority_scope"] = String(boss_preview.get("preview_authority_scope", ""))
-	boss_practice_replay["preview_signature"] = String(boss_preview.get("signature", ""))
-	boss_practice_replay["preview_signature_digest"] = int(boss_preview.get("signature_digest", 0))
-	boss_practice_replay["preview_sample_ticks"] = boss_preview.get("sample_ticks", [])
-	boss_practice_replay["preview_sample_window_start_tick"] = int(boss_preview.get("sample_window_start_tick", 0))
-	boss_practice_replay["preview_sample_window_end_tick"] = int(boss_preview.get("sample_window_end_tick", 0))
-	boss_practice_replay["preview_sample_window_stride_ticks"] = int(boss_preview.get("sample_window_stride_ticks", 0))
-	boss_practice_replay["preview_sample_signature_digests"] = boss_preview.get("sample_signature_digests", [])
-	boss_practice_replay["preview_sample_emit_counts"] = boss_preview.get("sample_emit_counts", [])
-	boss_practice_replay["preview_sample_count"] = (boss_preview.get("samples", []) as Array).size()
-	boss_practice_replay["preview_max_emit_per_tick"] = int(boss_preview.get("max_emit_per_tick", 0))
-	boss_practice_replay["preview_bullet_cap_per_tick"] = int(boss_preview.get("bullet_cap_per_tick", 0))
-	boss_practice_replay["preview_budget_headroom"] = int(boss_preview.get("budget_headroom", 0))
-	boss_practice_replay["performance_budget_status"] = String(boss_preview.get("performance_budget_status", ""))
-	boss_practice_replay["preview_bundle_id"] = String(boss_export.get("preview_bundle_id", ""))
-	boss_practice_replay["preview_bundle_signature_digest"] = int(boss_export.get("preview_bundle_signature_digest", 0))
-	boss_practice_replay["preview_phase_count"] = int(boss_export.get("preview_phase_count", 0))
-	boss_practice_replay["preview_phase_ids"] = boss_export.get("preview_phase_ids", [])
-	boss_practice_replay["preview_phase_signature_digests"] = boss_export.get("preview_phase_signature_digests", [])
-	boss_practice_replay["preview_bundle_max_emit_per_tick"] = int(boss_export.get("max_preview_emit_per_tick", 0))
-	boss_practice_replay["preview_bundle_min_budget_headroom"] = int(boss_export.get("min_preview_budget_headroom", 0))
-	boss_practice_replay["preview_bundle_budget_status"] = String(boss_export.get("performance_budget_status", ""))
-	boss_practice_replay["server_authoritative"] = false
+	for metadata_key in boss_replay_metadata.keys():
+		if metadata_key == "ok" or metadata_key == "reason" or metadata_key == "metadata_contract_kind":
+			continue
+		boss_practice_replay[metadata_key] = boss_replay_metadata[metadata_key]
 	var boss_practice_validation: Dictionary = replay_store.validate_index_metadata([boss_practice_replay])
 	if not bool(boss_practice_validation.get("ok", false)) or int(boss_practice_validation.get("spellbook_entries", 0)) != 1:
 		push_error("Smoke test failed: boss practice replay metadata invalid %s" % [boss_practice_validation])
@@ -5984,6 +5962,19 @@ func _validate_boss_practice_preview_card_row(row: Dictionary, mode_id: String) 
 		return false
 	if String(row.get("replay_verification_scope", "")) != "local_practice_hash" or bool(row.get("requires_server_confirmation", true)):
 		push_error("Smoke test failed: boss practice preview replay/confirmation invalid %s" % [row])
+		return false
+	var replay_metadata: Dictionary = row.get("replay_metadata_contract", {})
+	if not bool(row.get("replay_metadata_ready", false)) \
+			or String(row.get("replay_metadata_contract_kind", "")) != "boss_practice_replay_metadata" \
+			or String(replay_metadata.get("metadata_contract_kind", "")) != "boss_practice_replay_metadata" \
+			or String(replay_metadata.get("mode", "")) != "boss_spellbook_practice" \
+			or String(replay_metadata.get("catalog_id", "")) != "boss_spellbook" \
+			or String(replay_metadata.get("replay_verification_scope", "")) != "local_practice_hash" \
+			or int(replay_metadata.get("preview_bundle_signature_digest", 0)) != int(row.get("preview_bundle_signature_digest", 0)) \
+			or bool(replay_metadata.get("server_authoritative", true)) \
+			or bool(replay_metadata.get("client_result_authoritative", true)) \
+			or not (replay_metadata.get("server_authority_claim_fields", []) as Array).is_empty():
+		push_error("Smoke test failed: boss practice preview replay metadata invalid %s" % [row])
 		return false
 	if String(row.get("damage_authority", "")) != "server" or String(row.get("reward_authority", "")) != "server" or String(row.get("settlement_authority", "")) != "server":
 		push_error("Smoke test failed: boss practice preview online authority invalid %s" % [row])
