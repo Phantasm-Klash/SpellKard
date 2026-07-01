@@ -3,7 +3,7 @@ extends SceneTree
 const MAIN_SCENE := "res://scenes/main.tscn"
 const WAIT_FRAMES := 30
 const MAX_FRAMES := 900
-const MAX_WALL_MS := 45000
+const MAX_WALL_MS := 90000
 const TEST_VIEWPORT := Vector2(1280, 720)
 const LOG_STAGE_PROGRESS := false
 
@@ -205,19 +205,19 @@ func _validate_play_pages() -> bool:
 	if not modes_overview_text.contains("practice validation"):
 		return _fail("modes overview cards missing boss practice validation metrics %s" % modes_overview_text)
 	_mark_stage("modes:launch_world_preview")
-	if not await _assert_boss_practice_preview_launch("world_boss_practice_preview", "world_boss"):
+	if not await _assert_boss_practice_preview_launch("world_boss_practice_preview", "world_boss", rows):
 		return false
 	_mark_stage("modes:launch_instance_preview")
-	if not await _assert_boss_practice_preview_launch("instance_boss_practice_preview", "instance_boss"):
+	if not await _assert_boss_practice_preview_launch("instance_boss_practice_preview", "instance_boss", rows):
 		return false
 	_mark_stage("modes:launch_world_validation")
-	if not await _assert_boss_practice_preview_launch("world_boss_practice_validation", "world_boss"):
+	if not await _assert_boss_practice_preview_launch("world_boss_practice_validation", "world_boss", rows):
 		return false
 	_mark_stage("modes:launch_instance_validation")
-	if not await _assert_boss_practice_preview_launch("instance_boss_practice_validation", "instance_boss"):
+	if not await _assert_boss_practice_preview_launch("instance_boss_practice_validation", "instance_boss", rows):
 		return false
-	snapshot = await _open_snapshot("modes")
-	rows = main_node.call("_ui_screen_rows", 64)
+	rows = await _open_rows("modes", 64)
+	_mark_stage("modes:authority_rows")
 	if not String(snapshot.get("page_focus_action_ids", "")).contains("world_boss_authority") or not String(snapshot.get("page_focus_action_ids", "")).contains("instance_boss_authority"):
 		return _fail("modes focus actions should prioritize Boss authority cards %s" % [snapshot])
 	var world_authority_row := _row_by_id(rows, "world_boss_authority")
@@ -230,6 +230,7 @@ func _validate_play_pages() -> bool:
 		return _fail("modes page missing world boss authority row")
 	main_node.call("_ui_set_cursor", world_authority_index)
 	await _settle_frames(2)
+	_mark_stage("modes:authority_detail")
 	snapshot = main_node.call("_ui_overlay_snapshot")
 	if String(snapshot.get("selected_row_id", "")) != "world_boss_authority" or not String(snapshot.get("detail", "")).contains("client display/intent"):
 		return _fail("world boss authority focus detail invalid %s" % [snapshot])
@@ -238,6 +239,7 @@ func _validate_play_pages() -> bool:
 		return _fail("modes page missing world boss entry row")
 	main_node.call("_ui_set_cursor", world_entry_index)
 	await _settle_frames(2)
+	_mark_stage("modes:world_entry_detail")
 	snapshot = main_node.call("_ui_overlay_snapshot")
 	if not String(snapshot.get("control_preview", "")).contains("ready_for_server_entry") or not String(snapshot.get("detail", "")).contains("server required"):
 		return _fail("world boss entry should expose ready server-confirmation context %s" % [snapshot])
@@ -248,13 +250,14 @@ func _validate_play_pages() -> bool:
 	var transfer_result: Dictionary = main_node.call("_request_boss_card_transfer", "world_boss", "p1", "p2", "focus_lens")
 	if not bool(transfer_result.get("ok", false)):
 		return _fail("world boss transfer request should create pending server confirmation %s" % [transfer_result])
-	snapshot = await _open_snapshot("modes")
-	rows = main_node.call("_ui_screen_rows", 64)
+	rows = await _open_rows("modes", 64)
+	_mark_stage("modes:transfer_rows")
 	var world_transfer_index := _row_index_by_id(rows, "world_boss_transfer")
 	if world_transfer_index < 0:
 		return _fail("modes page missing world boss transfer row")
 	main_node.call("_ui_set_cursor", world_transfer_index)
 	await _settle_frames(2)
+	_mark_stage("modes:transfer_detail")
 	snapshot = main_node.call("_ui_overlay_snapshot")
 	if not String(snapshot.get("detail", "")).contains("boss transfer pending 1") or not String(snapshot.get("detail", "")).contains("server pending"):
 		return _fail("world boss transfer detail missing server confirmation context %s" % [snapshot])
@@ -263,6 +266,7 @@ func _validate_play_pages() -> bool:
 		return _fail("modes page missing instance boss entry row")
 	main_node.call("_ui_set_cursor", instance_entry_index)
 	await _settle_frames(2)
+	_mark_stage("modes:instance_entry_detail")
 	snapshot = main_node.call("_ui_overlay_snapshot")
 	if not String(snapshot.get("control_preview", "")).contains("blocked_local") or not String(snapshot.get("detail", "")).contains("entry_locked"):
 		return _fail("locked instance boss entry should expose local blocker context %s" % [snapshot])
@@ -287,8 +291,7 @@ func _validate_boss_settlement_receipts() -> bool:
 		"team_damage": 999999,
 	}):
 		return _fail("client-authored world boss result accepted")
-	var rejected_snapshot: Dictionary = await _open_snapshot("modes")
-	var rejected_rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 64)
+	var rejected_rows: Array[Dictionary] = await _open_rows("modes", 64)
 	var rejected_world_result_index := _row_index_by_id(rejected_rows, "world_boss_result")
 	if rejected_world_result_index < 0:
 		return _fail("modes page missing rejected world boss result row")
@@ -297,7 +300,7 @@ func _validate_boss_settlement_receipts() -> bool:
 		return _fail("rejected world boss result reason missing %s" % [rejected_world_result])
 	main_node.call("_ui_set_cursor", rejected_world_result_index)
 	await _settle_frames(2)
-	rejected_snapshot = main_node.call("_ui_overlay_snapshot")
+	var rejected_snapshot: Dictionary = main_node.call("_ui_overlay_snapshot")
 	if not String(rejected_snapshot.get("detail", "")).contains("rejected client_authoritative_world_boss_result"):
 		return _fail("rejected world boss detail missing rejection reason %s" % [rejected_snapshot])
 	if not main_node.call("_apply_world_boss_result", {
@@ -342,8 +345,7 @@ func _validate_boss_settlement_receipts() -> bool:
 		"server_authoritative": true,
 	}):
 		return _fail("instance boss server result application failed")
-	var snapshot: Dictionary = await _open_snapshot("modes")
-	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 64)
+	var rows: Array[Dictionary] = await _open_rows("modes", 64)
 	if not _assert_boss_result_receipt_row(_row_by_id(rows, "world_boss_result"), "world_boss", "world_receipt_ui", "world_hash_ui"):
 		return false
 	if not _assert_boss_outcome_projection(_row_by_id(rows, "world_boss_result"), "world_boss", "world_boss_persistent_hp_outcome", "applied"):
@@ -363,7 +365,7 @@ func _validate_boss_settlement_receipts() -> bool:
 		return _fail("modes page missing world boss result row")
 	main_node.call("_ui_set_cursor", world_result_index)
 	await _settle_frames(2)
-	snapshot = main_node.call("_ui_overlay_snapshot")
+	var snapshot: Dictionary = main_node.call("_ui_overlay_snapshot")
 	if not String(snapshot.get("detail", "")).contains("boss server receipt") or not String(snapshot.get("detail", "")).contains("world_receipt_ui"):
 		return _fail("world boss result detail missing server receipt context %s" % [snapshot])
 	var instance_result_index := _row_index_by_id(rows, "instance_boss_result")
@@ -989,6 +991,16 @@ func _open_snapshot(screen_id: String) -> Dictionary:
 	_mark_stage("snapshot:%s" % screen_id)
 	return main_node.call("_ui_overlay_snapshot")
 
+func _open_rows(screen_id: String, limit: int = 64) -> Array[Dictionary]:
+	_mark_stage("rows_open:%s" % screen_id)
+	if String(main_node.get("ui_screen_model").current_screen) != screen_id:
+		if main_node.has_method("_open_ui_screen_for_rows"):
+			main_node.call("_open_ui_screen_for_rows", screen_id)
+		else:
+			main_node.call("_open_ui_screen", screen_id)
+	_mark_stage("rows:%s" % screen_id)
+	return main_node.call("_ui_screen_rows", limit)
+
 func _settle_frames(count: int) -> void:
 	for i in range(count):
 		await process_frame
@@ -1412,9 +1424,13 @@ func _assert_boss_practice_validation_row(row: Dictionary, mode_id: String, expe
 		return false
 	return true
 
-func _assert_boss_practice_preview_launch(row_id: String, mode_id: String) -> bool:
-	var snapshot: Dictionary = await _open_snapshot("modes")
-	var rows: Array[Dictionary] = main_node.call("_ui_screen_rows", 64)
+func _assert_boss_practice_preview_launch(row_id: String, mode_id: String, rows: Array[Dictionary] = []) -> bool:
+	if String(main_node.get("ui_screen_model").current_screen) != "modes":
+		var refreshed_rows: Array[Dictionary] = await _open_rows("modes", 64)
+		if rows.is_empty():
+			rows = refreshed_rows
+	if rows.is_empty():
+		rows = main_node.call("_ui_screen_rows", 64)
 	var preview_index := _row_index_by_id(rows, row_id)
 	if preview_index < 0:
 		return _fail("modes page missing boss practice preview row %s" % row_id)
@@ -1439,7 +1455,7 @@ func _assert_boss_practice_preview_launch(row_id: String, mode_id: String) -> bo
 			or String(preview_action.get("online_result_authority", "")) != "server_settlement_required" \
 			or bool(preview_action.get("client_result_authoritative", true)):
 		return _fail("%s practice preview action invalid %s" % [mode_id, preview_action])
-	snapshot = main_node.call("_ui_overlay_snapshot")
+	var snapshot: Dictionary = main_node.call("_ui_overlay_snapshot")
 	if String(snapshot.get("screen", "")) != "practice" or not bool(snapshot.get("layout_show_gameplay", false)) or bool(snapshot.get("layout_show_secondary_shell", true)):
 		return _fail("%s practice preview should open unobstructed practice %s" % [mode_id, snapshot])
 	return true

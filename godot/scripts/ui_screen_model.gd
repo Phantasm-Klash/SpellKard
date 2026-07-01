@@ -1107,7 +1107,7 @@ func _local_settlement_preview_row() -> Dictionary:
 func _decorate_mode_rows(source_rows: Array[Dictionary]) -> Array[Dictionary]:
 	var rows: Array[Dictionary] = []
 	for i in range(source_rows.size()):
-		var row: Dictionary = source_rows[i].duplicate(true)
+		var row: Dictionary = source_rows[i].duplicate(false)
 		row["ui_action"] = "select_mode"
 		row["mode_id"] = String(row.get("id", ""))
 		rows.append(row)
@@ -1116,7 +1116,7 @@ func _decorate_mode_rows(source_rows: Array[Dictionary]) -> Array[Dictionary]:
 func _decorate_game_mode_state_rows(source_rows: Array[Dictionary]) -> Array[Dictionary]:
 	var rows: Array[Dictionary] = []
 	for i in range(source_rows.size()):
-		var row: Dictionary = source_rows[i].duplicate(true)
+		var row: Dictionary = source_rows[i].duplicate(false)
 		var row_id := String(row.get("id", ""))
 		match row_id:
 			"br_candidates":
@@ -1292,7 +1292,7 @@ func _audio_action_rows() -> Array[Dictionary]:
 func _sectioned_rows(screen_id: String, source_rows: Array[Dictionary]) -> Array[Dictionary]:
 	var rows: Array[Dictionary] = []
 	for source_row in source_rows:
-		var row: Dictionary = source_row.duplicate(true)
+		var row: Dictionary = source_row.duplicate(false)
 		if not row.has("section"):
 			var section := _section_for_row(screen_id, row)
 			if not section.is_empty():
