@@ -1079,10 +1079,15 @@ func boss_local_status_row(row_id: String, mode_id: String) -> Dictionary:
 	var result_status := String(state.get("last_result_status", "pending"))
 	var slot_layout_policy := String(formation.get("slot_layout_policy", _boss_slot_layout_policy(player_count)))
 	var contract := boss_formation_contract(mode_id)
+	var action_projection := boss_action_availability_projection(mode_id)
+	var display_projection := boss_playfield_projection(mode_id)
+	var practice_preview := boss_practice_preview_projection(mode_id)
+	var receipt_projection := boss_settlement_receipt_projection(mode_id)
+	var entry_preflight: Dictionary = action_projection.get("entry_preflight", {}) if typeof(action_projection.get("entry_preflight", {})) == TYPE_DICTIONARY else {}
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.world_boss" if mode_id == MODE_WORLD_BOSS else "screen.mode.instance_boss",
-		"value": "hp %.0f/%.0f attempts %d party %d/%d-%d layout %s entry %s" % [
+		"value": "hp %.0f/%.0f attempts %d party %d/%d-%d layout %s entry %s action %s" % [
 			current_hp,
 			max_hp,
 			attempts_left,
@@ -1091,15 +1096,22 @@ func boss_local_status_row(row_id: String, mode_id: String) -> Dictionary:
 			BOSS_MAX_PLAYERS,
 			slot_layout_policy,
 			entry_status,
+			String(action_projection.get("action_status", "")),
 		],
-		"summary": "hp %.0f/%.0f attempts %d; server settlement %s; client can only request entry or transfer" % [
+		"summary": "hp %.0f/%.0f attempts %d; server settlement %s; client can only request entry or transfer; display %s practice %s receipt %s" % [
 			current_hp,
 			max_hp,
 			attempts_left,
 			result_status,
+			String(display_projection.get("display_kind", "boss_playfield_projection")),
+			String(practice_preview.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)),
+			String(receipt_projection.get("receipt_status", "pending_server_receipt")),
 		],
 		"mode_id": mode_id,
 		"mode_category": "boss",
+		"status_contract_kind": "boss_local_status_projection",
+		"status_contract_version": 1,
+		"projection_scope": "local_display_only",
 		"persistent_hp": mode_id == MODE_WORLD_BOSS,
 		"hp_ratio": 0.0 if max_hp <= 0.0 else clampf(current_hp / max_hp, 0.0, 1.0),
 		"friendly_fire": String(state.get("friendly_fire", "disabled")),
@@ -1114,9 +1126,39 @@ func boss_local_status_row(row_id: String, mode_id: String) -> Dictionary:
 		"slot_layout_policy": slot_layout_policy,
 		"slot_labels": formation.get("slot_labels", _boss_slot_labels(player_count)),
 		"formation_contract": contract,
+		"action_availability": action_projection,
+		"action_status": String(action_projection.get("action_status", "")),
+		"can_request_entry": bool(action_projection.get("can_request_entry", false)),
+		"can_request_transfer": bool(action_projection.get("can_request_transfer", false)),
+		"availability_contract_kind": String(action_projection.get("availability_contract_kind", "")),
+		"entry_request_scope": String(action_projection.get("entry_request_scope", "intent_only")),
+		"transfer_request_scope": String(action_projection.get("transfer_request_scope", "intent_only")),
+		"entry_contract_kind": String(entry_preflight.get("entry_contract_kind", "")),
+		"entry_contract_version": int(entry_preflight.get("entry_contract_version", 0)),
+		"entry_intent_allowed_fields": _boss_entry_intent_allowed_fields(mode_id),
+		"client_forbidden_entry_fields": _boss_client_forbidden_entry_fields(mode_id),
+		"entry_confirmation_contract": entry_preflight.get("entry_confirmation_contract", {}),
+		"ui_action_contract": action_projection.get("ui_action_contract", {}),
+		"ui_action_cards": action_projection.get("ui_action_cards", []),
+		"server_required_for": _boss_server_required_fields(mode_id),
+		"entry_action_panel": action_projection.get("entry_action_panel", {}),
+		"playfield_projection": display_projection,
+		"display_scope": String(display_projection.get("projection_scope", "local_display_only")),
+		"display_ready": bool(display_projection.get("formation_valid", false)),
+		"display_kind": String(display_projection.get("display_kind", "")),
+		"formation_display_signature": int(display_projection.get("formation_display_signature", 0)),
+		"practice_preview": practice_preview,
+		"practice_preview_scope": String(practice_preview.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)),
+		"practice_preview_bundle_signature_digest": int(practice_preview.get("preview_bundle_signature_digest", 0)),
+		"settlement_receipt_projection": receipt_projection,
+		"receipt_status": String(receipt_projection.get("receipt_status", "pending_server_receipt")),
+		"result_source": String(receipt_projection.get("result_source", "")),
 		"min_players": BOSS_MIN_PLAYERS,
 		"max_players": BOSS_MAX_PLAYERS,
 		"requires_server_confirmation": true,
+		"intent_authority": "client_request_only",
+		"damage_authority": "server",
+		"reward_authority": "server",
 		"settlement_authority": "server",
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
