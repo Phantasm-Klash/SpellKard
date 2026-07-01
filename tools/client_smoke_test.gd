@@ -2161,6 +2161,34 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: boss transfer local validation row missing %s" % [transfer_guard_row])
 		quit(1)
 		return true
+	var transfer_confirmation: Dictionary = game_mode_model.apply_server_boss_card_transfer_confirmation({
+		"accepted": true,
+		"action_id": "server-transfer-confirm-1",
+		"action_type": "transfer_card",
+		"mode_id": "world_boss",
+		"payload": {
+			"from_player_id": "p1",
+			"to_player_id": "p2",
+			"card_id": "focus_lens",
+		},
+		"reason": "none",
+		"server_authoritative": true,
+		"client_result_authoritative": false,
+	})
+	if not bool(transfer_confirmation.get("ok", false)) or String(transfer_confirmation.get("server_confirmation_status", "")) != "server_confirmed" or bool(transfer_confirmation.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: boss transfer server confirmation apply invalid %s" % [transfer_confirmation])
+		quit(1)
+		return true
+	var confirmed_transfer_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "world_boss_transfer")
+	var confirmed_latest_request: Dictionary = confirmed_transfer_row.get("latest_transfer_request", {})
+	if int(confirmed_transfer_row.get("pending_server_confirmation_count", -1)) != 0 or int(confirmed_transfer_row.get("server_confirmed_transfer_count", 0)) != 1 or int(confirmed_transfer_row.get("server_rejected_transfer_count", -1)) != 0:
+		push_error("Smoke test failed: boss transfer server confirmation counts invalid %s" % [confirmed_transfer_row])
+		quit(1)
+		return true
+	if String(confirmed_transfer_row.get("server_confirmation_status", "")) != "server_confirmed" or String(confirmed_transfer_row.get("latest_transfer_confirmation_status", "")) != "server_confirmed" or String(confirmed_latest_request.get("server_action_id", "")) != "server-transfer-confirm-1":
+		push_error("Smoke test failed: boss transfer server confirmation row invalid %s" % [confirmed_transfer_row])
+		quit(1)
+		return true
 	var rejected_world_boss_snapshot_missing_authority: Dictionary = game_mode_model.apply_server_world_boss_snapshot({
 		"boss_instance_id": "world_boss_client_claim",
 		"max_hp": 100000,
