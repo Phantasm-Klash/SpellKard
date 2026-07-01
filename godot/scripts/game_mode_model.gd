@@ -1362,6 +1362,145 @@ func boss_display_contract_row(row_id: String, mode_id: String) -> Dictionary:
 		"enabled": display_ready,
 	}
 
+func boss_display_health_projection(mode_id: String) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"health_kind": "boss_display_health_projection",
+			"projection_scope": "local_display_only",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var state := _state_for_mode(mode_id)
+	var entry := boss_entry_preview(mode_id)
+	var formation := validate_boss_formation(mode_id)
+	var action := boss_action_availability_projection(mode_id)
+	var display := boss_display_contract_row("%s_display_health_source" % mode_id, mode_id)
+	var playfield := boss_playfield_projection(mode_id)
+	var hud := boss_hud_projection(mode_id)
+	var practice := boss_practice_preview_projection(mode_id)
+	var receipt := boss_settlement_receipt_projection(mode_id)
+	var blockers: Array[String] = []
+	if not bool(entry.get("ok", false)):
+		for failure in _string_array(entry.get("failures", [])):
+			if not blockers.has(failure):
+				blockers.append(failure)
+	if not bool(formation.get("ok", false)):
+		for failure in _string_array(formation.get("failures", [])):
+			if not blockers.has(failure):
+				blockers.append(failure)
+	if not bool(display.get("display_ready", false)):
+		for failure in _string_array(display.get("display_blockers", [])):
+			if not blockers.has(failure):
+				blockers.append(failure)
+	if not bool(playfield.get("ok", false)) and not blockers.has(String(playfield.get("reason", "playfield_projection_failed"))):
+		blockers.append(String(playfield.get("reason", "playfield_projection_failed")))
+	if not bool(hud.get("ok", false)) and not blockers.has(String(hud.get("reason", "hud_projection_failed"))):
+		blockers.append(String(hud.get("reason", "hud_projection_failed")))
+	if not bool(practice.get("ok", false)) and not blockers.has(String(practice.get("reason", "practice_preview_failed"))):
+		blockers.append(String(practice.get("reason", "practice_preview_failed")))
+	var display_ready := blockers.is_empty()
+	var health_status := "ready_for_local_display" if display_ready else "blocked_local:%s" % blockers[0]
+	var check_rows: Array[Dictionary] = [
+		{"id": "entry", "ok": bool(entry.get("ok", false)), "status": String(entry.get("server_confirmation_status", "")), "reason": String(entry.get("reason", "none"))},
+		{"id": "formation", "ok": bool(formation.get("ok", false)), "status": String(formation.get("slot_layout_policy", "")), "reason": "none" if bool(formation.get("ok", false)) else ",".join(_string_array(formation.get("failures", [])))},
+		{"id": "display", "ok": bool(display.get("display_ready", false)), "status": String(display.get("display_status", "")), "reason": "none" if bool(display.get("display_ready", false)) else ",".join(_string_array(display.get("display_blockers", [])))},
+		{"id": "playfield", "ok": bool(playfield.get("ok", false)), "status": String(playfield.get("display_kind", "")), "reason": String(playfield.get("reason", "none"))},
+		{"id": "hud", "ok": bool(hud.get("ok", false)), "status": String(hud.get("display_kind", "")), "reason": String(hud.get("reason", "none"))},
+		{"id": "practice_preview", "ok": bool(practice.get("ok", false)), "status": String(practice.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)), "reason": String(practice.get("reason", "none"))},
+		{"id": "receipt", "ok": String(receipt.get("receipt_status", "")) == "server_receipt_ready" or String(receipt.get("receipt_status", "")) == "pending_server_receipt", "status": String(receipt.get("receipt_status", "")), "reason": String(receipt.get("reason", "none"))},
+	]
+	return {
+		"ok": display_ready,
+		"reason": "none" if blockers.is_empty() else blockers[0],
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"health_kind": "boss_display_health_projection",
+		"health_status": health_status,
+		"health_checks": check_rows,
+		"local_blockers": blockers,
+		"display_ready": bool(display.get("display_ready", false)),
+		"entry_valid": bool(entry.get("ok", false)),
+		"formation_valid": bool(formation.get("ok", false)),
+		"playfield_ready": bool(playfield.get("ok", false)),
+		"hud_ready": bool(hud.get("ok", false)),
+		"practice_preview_ready": bool(practice.get("ok", false)),
+		"receipt_status": String(receipt.get("receipt_status", "pending_server_receipt")),
+		"action_status": String(action.get("action_status", "")),
+		"can_request_entry": bool(action.get("can_request_entry", false)),
+		"can_request_transfer": bool(action.get("can_request_transfer", false)),
+		"player_count": int(formation.get("player_count", 0)),
+		"slot_layout_policy": String(formation.get("slot_layout_policy", "")),
+		"slot_labels": formation.get("slot_labels", []),
+		"formation_display_signature": int(playfield.get("formation_display_signature", 0)),
+		"hp_ratio": float(playfield.get("hp_ratio", 0.0)),
+		"persistent_hp": mode_id == MODE_WORLD_BOSS,
+		"rules_source": String(state.get("rules_source", "local_default")),
+		"result_status": String(state.get("last_result_status", "pending")),
+		"server_required_for": _boss_server_required_fields(mode_id),
+		"projection_scope": "local_display_only",
+		"intent_authority": "client_request_only",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"boss_hp_authority": "server",
+		"requires_server_confirmation": true,
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
+func _boss_display_health_row(row_id: String, mode_id: String) -> Dictionary:
+	var projection := boss_display_health_projection(mode_id)
+	return {
+		"id": row_id,
+		"label_key": "screen.mode.boss.playfield",
+		"value": "%s checks %d party %d hp %.0f%%" % [
+			String(projection.get("health_status", "")),
+			(projection.get("health_checks", []) as Array).size(),
+			int(projection.get("player_count", 0)),
+			float(projection.get("hp_ratio", 0.0)) * 100.0,
+		],
+		"summary": "local Boss display health only; entry confirmation, Boss HP, damage, rewards, and settlement remain server-authoritative",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"ui_control": "status",
+		"health_kind": String(projection.get("health_kind", "boss_display_health_projection")),
+		"health_projection": projection,
+		"health_status": String(projection.get("health_status", "")),
+		"health_checks": projection.get("health_checks", []),
+		"local_blockers": projection.get("local_blockers", []),
+		"display_ready": bool(projection.get("display_ready", false)),
+		"entry_valid": bool(projection.get("entry_valid", false)),
+		"formation_valid": bool(projection.get("formation_valid", false)),
+		"playfield_ready": bool(projection.get("playfield_ready", false)),
+		"hud_ready": bool(projection.get("hud_ready", false)),
+		"practice_preview_ready": bool(projection.get("practice_preview_ready", false)),
+		"receipt_status": String(projection.get("receipt_status", "pending_server_receipt")),
+		"action_status": String(projection.get("action_status", "")),
+		"can_request_entry": bool(projection.get("can_request_entry", false)),
+		"can_request_transfer": bool(projection.get("can_request_transfer", false)),
+		"player_count": int(projection.get("player_count", 0)),
+		"slot_layout_policy": String(projection.get("slot_layout_policy", "")),
+		"slot_labels": projection.get("slot_labels", []),
+		"formation_display_signature": int(projection.get("formation_display_signature", 0)),
+		"hp_ratio": float(projection.get("hp_ratio", 0.0)),
+		"persistent_hp": bool(projection.get("persistent_hp", false)),
+		"server_required_for": projection.get("server_required_for", _boss_server_required_fields(mode_id)),
+		"projection_scope": "local_display_only",
+		"intent_authority": "client_request_only",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"boss_hp_authority": "server",
+		"requires_server_confirmation": true,
+		"server_authoritative": bool(projection.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+		"enabled": true,
+	}
+
 func boss_practice_preview_projection(mode_id: String) -> Dictionary:
 	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
 		return {
@@ -1802,6 +1941,7 @@ func _world_boss_rows() -> Array[Dictionary]:
 		_boss_party_row("world_boss_party", MODE_WORLD_BOSS, world_boss_state),
 		_boss_formation_row("world_boss_formation", MODE_WORLD_BOSS, world_boss_state),
 		boss_display_contract_row("world_boss_display", MODE_WORLD_BOSS),
+		_boss_display_health_row("world_boss_display_health", MODE_WORLD_BOSS),
 		_boss_playfield_row("world_boss_playfield", MODE_WORLD_BOSS),
 		_boss_hud_row("world_boss_hud", MODE_WORLD_BOSS),
 		_boss_practice_preview_row("world_boss_practice_preview", MODE_WORLD_BOSS),
@@ -1822,6 +1962,7 @@ func _instance_boss_rows() -> Array[Dictionary]:
 		_boss_party_row("instance_boss_party", MODE_INSTANCE_BOSS, instance_boss_state),
 		_boss_formation_row("instance_boss_formation", MODE_INSTANCE_BOSS, instance_boss_state),
 		boss_display_contract_row("instance_boss_display", MODE_INSTANCE_BOSS),
+		_boss_display_health_row("instance_boss_display_health", MODE_INSTANCE_BOSS),
 		_boss_playfield_row("instance_boss_playfield", MODE_INSTANCE_BOSS),
 		_boss_hud_row("instance_boss_hud", MODE_INSTANCE_BOSS),
 		_boss_practice_preview_row("instance_boss_practice_preview", MODE_INSTANCE_BOSS),
