@@ -4432,6 +4432,8 @@ func _sync_secondary_scene_host() -> void:
 		_set_ui_root_interactive(root, should_show)
 		if should_show:
 			ui_root_box = root as HBoxContainer
+	if not show_shell:
+		return
 	var fallback_box := _active_bound_container("ContentPanel", ui_content_box)
 	if fallback_box is VBoxContainer:
 		ui_content_box = fallback_box as VBoxContainer
@@ -6834,6 +6836,7 @@ func _boss_playfield_draw_snapshot() -> Dictionary:
 		}
 	var projection: Dictionary = game_mode_model.boss_playfield_projection(mode_id, PLAYFIELD)
 	var hud_projection: Dictionary = game_mode_model.boss_hud_projection(mode_id, PLAYFIELD) if game_mode_model.has_method("boss_hud_projection") else {}
+	var rule_safety: Dictionary = projection.get("rule_safety_projection", {})
 	var slots: Array = projection.get("display_slots", [])
 	return {
 		"enabled": bool(projection.get("ok", false)) and slots.size() > 0,
@@ -6846,6 +6849,10 @@ func _boss_playfield_draw_snapshot() -> Dictionary:
 		"reward_authority": String(hud_projection.get("reward_authority", "server")),
 		"settlement_authority": String(projection.get("settlement_authority", "")),
 		"friendly_fire_warning": String(projection.get("friendly_fire_warning", "none")),
+		"friendly_fire_risk_level": String(projection.get("friendly_fire_risk_level", "none")),
+		"rule_safety_projection": rule_safety,
+		"safety_badges": rule_safety.get("safety_badges", []),
+		"rules_display_only": bool(projection.get("rules_display_only", true)),
 		"roster_authority_contract": projection.get("roster_authority_contract", {}),
 		"roster_projection_scope": String(projection.get("roster_projection_scope", "local_display_only")),
 		"roster_lock_authority": String(projection.get("roster_lock_authority", "server")),
