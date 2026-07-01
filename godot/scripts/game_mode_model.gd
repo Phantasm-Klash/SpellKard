@@ -3085,7 +3085,7 @@ func _boss_entry_preflight_checklist(mode_id: String, validation: Dictionary, fo
 	))
 	checklist.append(_boss_entry_preflight_item(
 		"fixed_direction_slots",
-		"passed" if bool(formation.get("ok", false)) and (player_count == 4 or player_count == 8) else "blocked",
+		"passed" if bool(formation.get("ok", false)) else "blocked",
 		String(formation.get("slot_layout_policy", _boss_slot_layout_policy(player_count))),
 		"client_preview_server_roster_lock",
 		mode_id

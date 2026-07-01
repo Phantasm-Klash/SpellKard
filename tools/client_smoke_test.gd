@@ -740,6 +740,15 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: world boss formation angles invalid %s" % [world_angles])
 		quit(1)
 		return true
+	if not game_mode_model.configure_boss_party("world_boss", ["p1", "p2", "p3", "p4", "p5"]):
+		push_error("Smoke test failed: world boss five-player party rejected")
+		quit(1)
+		return true
+	var world_five_preview: Dictionary = game_mode_model.boss_entry_preview("world_boss")
+	if not bool(world_five_preview.get("ok", false)) or not _validate_boss_entry_preflight_checklist(world_five_preview, "world_boss", true):
+		push_error("Smoke test failed: world boss five-player entry preflight invalid %s" % [world_five_preview])
+		quit(1)
+		return true
 	if not game_mode_model.configure_boss_party("instance_boss", ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]):
 		push_error("Smoke test failed: instance boss eight-player party rejected")
 		quit(1)
