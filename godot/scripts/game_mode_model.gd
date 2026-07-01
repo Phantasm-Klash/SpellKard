@@ -619,6 +619,67 @@ func boss_formation_summary(mode_id: String) -> String:
 		String(validation.get("aim_policy", "toward_center")),
 	]
 
+func boss_party_status_summary(mode_id: String) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"party_status_kind": "boss_party_status_summary",
+			"projection_scope": "local_display_only",
+			"requires_server_confirmation": true,
+			"server_required_for": _boss_server_required_fields(mode_id),
+			"damage_authority": "server",
+			"reward_authority": "server",
+			"settlement_authority": "server",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var state := _state_for_mode(mode_id)
+	var formation := validate_boss_formation(mode_id)
+	var formation_failures := _string_array(formation.get("failures", []))
+	var party_ids := _string_array(state.get("party_ids", []))
+	var player_count := int(formation.get("player_count", party_ids.size()))
+	var entry := boss_entry_preview(mode_id)
+	var transfer_available := bool(formation.get("ok", false)) and party_ids.size() >= 2
+	var fixed_direction_ready := bool(formation.get("ok", false)) and (player_count == 4 or player_count == 8)
+	return {
+		"ok": bool(formation.get("ok", false)),
+		"reason": "none" if bool(formation.get("ok", false)) else ",".join(formation_failures),
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"party_status_kind": "boss_party_status_summary",
+		"party_status": String(state.get("party_status", "waiting")),
+		"party_ids": party_ids,
+		"player_count": player_count,
+		"min_players": BOSS_MIN_PLAYERS,
+		"max_players": BOSS_MAX_PLAYERS,
+		"slot_layout_policy": String(formation.get("slot_layout_policy", _boss_slot_layout_policy(player_count))),
+		"slot_labels": formation.get("slot_labels", _boss_slot_labels(player_count)),
+		"formation_valid": bool(formation.get("ok", false)),
+		"formation_failures": formation_failures,
+		"fixed_direction_ready": fixed_direction_ready,
+		"center_aim_valid": bool(formation.get("ok", false)) and String(formation.get("aim_policy", "")) == "toward_center",
+		"all_slots_face_center": bool(formation.get("ok", false)),
+		"entry_valid": bool(entry.get("ok", false)),
+		"entry_failures": entry.get("failures", []),
+		"transfer_available": transfer_available,
+		"can_request_transfer": transfer_available,
+		"server_confirmation_status": String(entry.get("server_confirmation_status", "required" if bool(entry.get("ok", false)) else "blocked_local")),
+		"display_status": "ready" if bool(formation.get("ok", false)) else "blocked",
+		"display_scope": "local_display_only",
+		"projection_scope": "local_display_only",
+		"intent_authority": "client_request_only",
+		"server_required_for": _boss_server_required_fields(mode_id),
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"requires_server_confirmation": true,
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
 func boss_formation_display_summary(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO, Vector2.ONE)) -> Dictionary:
 	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
 		return {
@@ -1721,18 +1782,43 @@ func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 	var positions: Array = state.get("positions", [])
 	var display_slots := boss_display_slots(mode_id)
 	var contract := boss_formation_contract(mode_id)
+	var party_status_summary := boss_party_status_summary(mode_id)
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.boss.party",
-		"value": "%d/%d-%d %s" % [positions.size(), BOSS_MIN_PLAYERS, BOSS_MAX_PLAYERS, str(state.get("party_status", "waiting"))],
+		"value": "%d/%d-%d %s layout %s display %s" % [
+			int(party_status_summary.get("player_count", positions.size())),
+			BOSS_MIN_PLAYERS,
+			BOSS_MAX_PLAYERS,
+			String(party_status_summary.get("party_status", state.get("party_status", "waiting"))),
+			String(party_status_summary.get("slot_layout_policy", _boss_slot_layout_policy(positions.size()))),
+			String(party_status_summary.get("display_status", "blocked")),
+		],
+		"summary": "local party formation display only; entry, card transfer, damage, rewards, and settlement require server confirmation",
 		"items": positions,
 		"display_slots": display_slots,
 		"mode_id": mode_id,
 		"mode_category": "boss",
+		"party_status_summary": party_status_summary,
+		"party_status_kind": String(party_status_summary.get("party_status_kind", "boss_party_status_summary")),
+		"party_status": String(party_status_summary.get("party_status", state.get("party_status", "waiting"))),
 		"player_count": int(state.get("player_count", positions.size())),
-		"slot_layout_policy": _boss_slot_layout_policy(positions.size()),
-		"slot_labels": _boss_slot_labels(positions.size()),
+		"slot_layout_policy": String(party_status_summary.get("slot_layout_policy", _boss_slot_layout_policy(positions.size()))),
+		"slot_labels": party_status_summary.get("slot_labels", _boss_slot_labels(positions.size())),
 		"formation_contract": contract,
+		"formation_valid": bool(party_status_summary.get("formation_valid", false)),
+		"formation_failures": party_status_summary.get("formation_failures", []),
+		"fixed_direction_ready": bool(party_status_summary.get("fixed_direction_ready", false)),
+		"center_aim_valid": bool(party_status_summary.get("center_aim_valid", false)),
+		"all_slots_face_center": bool(party_status_summary.get("all_slots_face_center", false)),
+		"entry_valid": bool(party_status_summary.get("entry_valid", false)),
+		"entry_failures": party_status_summary.get("entry_failures", []),
+		"can_request_transfer": bool(party_status_summary.get("can_request_transfer", false)),
+		"server_confirmation_status": String(party_status_summary.get("server_confirmation_status", "required")),
+		"display_scope": String(party_status_summary.get("display_scope", "local_display_only")),
+		"projection_scope": String(party_status_summary.get("projection_scope", "local_display_only")),
+		"intent_authority": "client_request_only",
+		"server_required_for": party_status_summary.get("server_required_for", _boss_server_required_fields(mode_id)),
 		"min_players": BOSS_MIN_PLAYERS,
 		"max_players": BOSS_MAX_PLAYERS,
 		"boss_center": state.get("boss_center", BOSS_CENTER),
@@ -1740,6 +1826,10 @@ func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 		"friendly_fire": str(state.get("friendly_fire", "disabled")),
 		"arena_policy": str(state.get("arena_policy", "fixed_directions")),
 		"friendly_fire_warning": str(state.get("friendly_fire_warning", "none")),
+		"requires_server_confirmation": true,
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 		"enabled": true,

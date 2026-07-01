@@ -158,6 +158,10 @@ func _validate_play_pages() -> bool:
 		return _fail("instance boss duplicate party ids should be rejected")
 	snapshot = await _open_snapshot("modes")
 	rows = main_node.call("_ui_screen_rows", 64)
+	if not _assert_boss_party_status_row(_row_by_id(rows, "world_boss_party"), "world_boss", 4, "cardinal_4"):
+		return false
+	if not _assert_boss_party_status_row(_row_by_id(rows, "instance_boss_party"), "instance_boss", 8, "eight_direction_8"):
+		return false
 	if not _assert_boss_formation_row(_row_by_id(rows, "world_boss_formation"), "world_boss", 4, "cardinal_4"):
 		return false
 	if not _assert_boss_formation_row(_row_by_id(rows, "instance_boss_formation"), "instance_boss", 8, "eight_direction_8"):
@@ -1058,6 +1062,33 @@ func _assert_boss_status_row(row: Dictionary, mode_id: String) -> bool:
 		return _fail("boss status row missing slot layout policy %s" % [row])
 	if typeof(row.get("slot_labels", [])) != TYPE_ARRAY:
 		return _fail("boss status row missing slot labels %s" % [row])
+	return true
+
+func _assert_boss_party_status_row(row: Dictionary, mode_id: String, expected_count: int, expected_layout: String) -> bool:
+	if row.is_empty():
+		return _fail("boss party status row missing for %s" % mode_id)
+	if String(row.get("mode_id", "")) != mode_id or String(row.get("mode_category", "")) != "boss":
+		return _fail("boss party status identity mismatch %s" % [row])
+	if String(row.get("party_status_kind", "")) != "boss_party_status_summary":
+		return _fail("boss party status summary kind missing %s" % [row])
+	if bool(row.get("client_result_authoritative", true)):
+		return _fail("boss party status must not be client authoritative %s" % [row])
+	if String(row.get("projection_scope", "")) != "local_display_only" or String(row.get("intent_authority", "")) != "client_request_only":
+		return _fail("boss party status scope/intent invalid %s" % [row])
+	if String(row.get("damage_authority", "")) != "server" or String(row.get("reward_authority", "")) != "server" or String(row.get("settlement_authority", "")) != "server":
+		return _fail("boss party status must keep server outcome authority %s" % [row])
+	if not bool(row.get("requires_server_confirmation", false)):
+		return _fail("boss party status must require server confirmation %s" % [row])
+	if int(row.get("player_count", 0)) != expected_count or String(row.get("slot_layout_policy", "")) != expected_layout:
+		return _fail("boss party status count/layout mismatch %s" % [row])
+	if not bool(row.get("formation_valid", false)) or not bool(row.get("fixed_direction_ready", false)) or not bool(row.get("all_slots_face_center", false)):
+		return _fail("boss party status formation flags invalid %s" % [row])
+	var summary: Dictionary = row.get("party_status_summary", {})
+	if summary.is_empty() or String(summary.get("party_status_kind", "")) != "boss_party_status_summary":
+		return _fail("boss party status nested summary invalid %s" % [row])
+	var server_required: Array = row.get("server_required_for", [])
+	if not server_required.has("damage") or not server_required.has("settlement"):
+		return _fail("boss party status missing server-required outcome fields %s" % [row])
 	return true
 
 func _assert_boss_formation_row(row: Dictionary, mode_id: String, expected_count: int, expected_layout: String) -> bool:
