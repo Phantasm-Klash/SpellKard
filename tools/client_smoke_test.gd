@@ -6440,12 +6440,24 @@ func _validate_boss_practice_validation_card_row(row: Dictionary, mode_id: Strin
 	if phase_rows.size() != int(row.get("preview_phase_count", 0)) or phase_rows.size() < 3:
 		push_error("Smoke test failed: boss practice validation phase rows count invalid %s" % [row])
 		return false
+	var phase_cards: Array = row.get("phase_validation_cards", [])
+	if String(row.get("phase_validation_card_kind", "")) != "boss_practice_phase_validation_summary" \
+			or String(row.get("phase_validation_render_slot", "")) != "mode_cards" \
+			or int(row.get("phase_validation_card_count", 0)) != phase_rows.size() \
+			or phase_cards.size() != phase_rows.size() \
+			or not String(row.get("phase_validation_summary_text", "")).contains("phases ready"):
+		push_error("Smoke test failed: boss practice validation phase cards invalid %s" % [row])
+		return false
 	var phase_ids: Array = row.get("preview_phase_ids", [])
 	for i in range(phase_rows.size()):
 		if typeof(phase_rows[i]) != TYPE_DICTIONARY:
 			push_error("Smoke test failed: boss practice validation phase row type invalid %s" % [row])
 			return false
 		var phase_row: Dictionary = phase_rows[i]
+		if typeof(phase_cards[i]) != TYPE_DICTIONARY:
+			push_error("Smoke test failed: boss practice validation phase card type invalid %s" % [row])
+			return false
+		var phase_card: Dictionary = phase_cards[i]
 		if String(phase_row.get("phase_id", "")) != String(phase_ids[i]) \
 				or String(phase_row.get("validation_status", "")) != "ready" \
 				or String(phase_row.get("replay_verification_scope", "")) != "local_practice_hash" \
@@ -6455,6 +6467,19 @@ func _validate_boss_practice_validation_card_row(row: Dictionary, mode_id: Strin
 				or bool(phase_row.get("server_authoritative", true)) \
 				or bool(phase_row.get("client_result_authoritative", true)):
 			push_error("Smoke test failed: boss practice validation phase row invalid %s" % [phase_row])
+			return false
+		if String(phase_card.get("phase_id", "")) != String(phase_row.get("phase_id", "")) \
+				or String(phase_card.get("phase_validation_card_kind", "")) != "boss_practice_phase_validation_summary" \
+				or String(phase_card.get("overview_card_kind", "")) != "boss_practice_phase_validation" \
+				or String(phase_card.get("render_slot", "")) != "mode_cards" \
+				or String(phase_card.get("replay_verification_scope", "")) != "local_practice_hash" \
+				or String(phase_card.get("local_hash_authority", "")) != "local_practice_verification_only" \
+				or String(phase_card.get("damage_authority", "")) != "server" \
+				or String(phase_card.get("boss_hp_authority", "")) != "server" \
+				or bool(phase_card.get("server_authoritative", true)) \
+				or bool(phase_card.get("client_result_authoritative", true)) \
+				or bool(phase_card.get("requires_server_confirmation", true)):
+			push_error("Smoke test failed: boss practice validation phase card invalid %s" % [phase_card])
 			return false
 	return true
 
