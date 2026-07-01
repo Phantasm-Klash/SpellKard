@@ -251,6 +251,7 @@
   "screen.main.promotions": "Promotions",
   "screen.main.replay": "Replay",
   "screen.replay.load": "Load Replay",
+  "screen.replay.practice_validation": "Practice Validation Checklist",
   "screen.replay.favorite": "Favorite Replay",
   "screen.replay.remove": "Remove From Index",
   "screen.main.player_settings": "Player Settings",
