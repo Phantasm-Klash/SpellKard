@@ -170,6 +170,18 @@ func _validate_play_pages() -> bool:
 		return false
 	if not _assert_boss_formation_row(_row_by_id(rows, "instance_boss_formation"), "instance_boss", 8, "eight_direction_8"):
 		return false
+	if not _assert_boss_display_summary_fields(_row_by_id(rows, "world_boss_display"), "world_boss", 4):
+		return false
+	if not _assert_boss_display_summary_fields(_row_by_id(rows, "instance_boss_display"), "instance_boss", 8):
+		return false
+	if not _assert_boss_display_summary_fields(_row_by_id(rows, "world_boss_display_health"), "world_boss", 4):
+		return false
+	if not _assert_boss_display_summary_fields(_row_by_id(rows, "instance_boss_display_health"), "instance_boss", 8):
+		return false
+	if not _assert_boss_display_summary_fields(_row_by_id(rows, "world_boss_hud"), "world_boss", 4):
+		return false
+	if not _assert_boss_display_summary_fields(_row_by_id(rows, "instance_boss_hud"), "instance_boss", 8):
+		return false
 	if not _assert_boss_practice_preview_row(_row_by_id(rows, "world_boss_practice_preview"), "world_boss"):
 		return false
 	if not _assert_boss_practice_preview_row(_row_by_id(rows, "instance_boss_practice_preview"), "instance_boss"):
@@ -1183,6 +1195,8 @@ func _assert_boss_status_row(row: Dictionary, mode_id: String) -> bool:
 		return _fail("boss status row missing slot layout policy %s" % [row])
 	if typeof(row.get("slot_labels", [])) != TYPE_ARRAY:
 		return _fail("boss status row missing slot labels %s" % [row])
+	if not _assert_boss_display_summary_fields(row, mode_id, int(row.get("player_count", 0))):
+		return false
 	return true
 
 func _assert_boss_party_status_row(row: Dictionary, mode_id: String, expected_count: int, expected_layout: String) -> bool:
@@ -1229,10 +1243,35 @@ func _assert_boss_formation_row(row: Dictionary, mode_id: String, expected_count
 		return _fail("boss formation slots/labels mismatch %s" % [row])
 	if int(row.get("formation_display_signature", 0)) <= 0:
 		return _fail("boss formation missing stable display signature %s" % [row])
+	if not _assert_boss_display_summary_fields(row, mode_id, expected_count):
+		return false
 	for raw_slot in slots:
 		var slot: Dictionary = raw_slot
 		if not bool(slot.get("aim_to_center", false)) or bool(slot.get("client_result_authoritative", true)):
 			return _fail("boss formation slot authority/aim mismatch %s" % [slot])
+	return true
+
+func _assert_boss_display_summary_fields(row: Dictionary, mode_id: String, expected_count: int) -> bool:
+	var expected_policy := "persistent_global_hp" if mode_id == "world_boss" else "per_instance_hp"
+	if row.has("hp_persistence_policy") and String(row.get("hp_persistence_policy", "")) != expected_policy:
+		return _fail("boss display hp persistence policy mismatch %s expected=%s" % [row, expected_policy])
+	var points: Array = row.get("slot_display_points", [])
+	if expected_count > 0 and points.size() != expected_count:
+		return _fail("boss display summary point count mismatch %s expected=%d" % [row, expected_count])
+	if expected_count > 0 and String(row.get("slot_summary_text", "")).is_empty():
+		return _fail("boss display summary text missing %s" % [row])
+	if expected_count > 0 and row.has("center_aim_valid") and not bool(row.get("center_aim_valid", false)):
+		return _fail("boss display summary center aim invalid %s" % [row])
+	if expected_count > 0 and row.has("all_slots_face_center") and not bool(row.get("all_slots_face_center", false)):
+		return _fail("boss display summary face center invalid %s" % [row])
+	for raw_point in points:
+		if typeof(raw_point) != TYPE_DICTIONARY:
+			return _fail("boss display summary point invalid %s" % [points])
+		var point: Dictionary = raw_point
+		if bool(point.get("client_result_authoritative", true)) or not bool(point.get("aim_to_center", false)):
+			return _fail("boss display point authority/aim mismatch %s" % [point])
+		if String(point.get("roster_lock_authority", "")) != "server":
+			return _fail("boss display point roster authority mismatch %s" % [point])
 	return true
 
 func _assert_boss_practice_preview_row(row: Dictionary, mode_id: String) -> bool:
