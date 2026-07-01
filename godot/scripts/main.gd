@@ -1119,7 +1119,15 @@ func _load_selected_replay_snapshot() -> bool:
 	replay_index_cursor = clampi(replay_index_cursor, 0, replay_index_entries.size() - 1)
 	var entry: Dictionary = replay_index_entries[replay_index_cursor]
 	if replay_list_model != null:
-		entry = replay_list_model.selected_entry()
+		if replay_list_model.has_method("request_selected_local_load"):
+			var request: Dictionary = replay_list_model.request_selected_local_load()
+			if not bool(request.get("ok", false)):
+				replay_file_status = "load_failed"
+				replay_index_action_status = String(request.get("reason", "load_rejected"))
+				return false
+			entry = replay_list_model.selected_entry()
+		else:
+			entry = replay_list_model.selected_entry()
 	if not _selected_replay_entry_can_load(entry):
 		return false
 	var loaded_snapshot: Dictionary = replay_store.load_snapshot_from_entry(entry)

@@ -4538,6 +4538,19 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: replay playability summary invalid %s" % [replay_playability_summary])
 		quit(1)
 		return true
+	var local_replay_load_request: Dictionary = replay_list_model.request_selected_local_load()
+	if not bool(local_replay_load_request.get("ok", false)) \
+			or String(local_replay_load_request.get("load_request_kind", "")) != "selected_local_replay_load" \
+			or String(local_replay_load_request.get("action_status", "")) != "load_ready" \
+			or String(local_replay_load_request.get("snapshot_source", "")) != "local_file" \
+			or String(local_replay_load_request.get("local_load_policy", "")) != "loadable_local_practice" \
+			or String(local_replay_load_request.get("local_playback_authority", "")) != "local_practice_hash" \
+			or bool(local_replay_load_request.get("requires_server_audit", true)) \
+			or String(local_replay_load_request.get("damage_authority", "")) != "server" \
+			or bool(local_replay_load_request.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: local replay load request invalid %s" % [local_replay_load_request])
+		quit(1)
+		return true
 	var replay_filter_rows: Array[Dictionary] = replay_list_model.verification_filter_rows()
 	if replay_filter_rows.size() < 5 or String(replay_filter_rows[0].get("verification_filter", "")) != "all" or not bool(replay_filter_rows[0].get("active", false)) or bool(replay_filter_rows[0].get("client_result_authoritative", true)):
 		push_error("Smoke test failed: replay verification filter rows invalid %s" % [replay_filter_rows])
@@ -4656,6 +4669,18 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: server replay action guard invalid %s" % [server_replay_action_guard])
 		quit(1)
 		return true
+	var server_replay_load_request: Dictionary = replay_list_model.request_selected_local_load()
+	if bool(server_replay_load_request.get("ok", true)) \
+			or String(server_replay_load_request.get("reason", "")) != "server_record_pending_audit" \
+			or String(server_replay_load_request.get("action_status", "")) != "load_blocked" \
+			or String(server_replay_load_request.get("snapshot_source", "")) != "blocked" \
+			or String(server_replay_load_request.get("local_load_policy", "")) != "blocked_server_audit" \
+			or String(server_replay_load_request.get("server_audit_status", "")) != "pending" \
+			or not bool(server_replay_load_request.get("requires_server_audit", false)) \
+			or bool(server_replay_load_request.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: server replay load request invalid %s" % [server_replay_load_request])
+		quit(1)
+		return true
 	if main_node.call("_load_selected_replay_snapshot") or String(main_node.get("replay_file_status")) != "load_failed" or String(main_node.get("replay_index_action_status")) != "server_record_pending_audit":
 		push_error("Smoke test failed: server replay local load was not blocked status=%s action=%s" % [main_node.get("replay_file_status"), main_node.get("replay_index_action_status")])
 		quit(1)
@@ -4769,6 +4794,17 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: boss practice load action context invalid %s" % [boss_practice_load_action])
 		quit(1)
 		return true
+	var boss_practice_load_request: Dictionary = replay_list_model.request_selected_local_load()
+	if not bool(boss_practice_load_request.get("ok", false)) \
+			or String(boss_practice_load_request.get("local_load_policy", "")) != "loadable_local_practice" \
+			or String(boss_practice_load_request.get("local_playback_authority", "")) != "local_practice_hash" \
+			or (boss_practice_load_request.get("boss_practice_verification", {}) as Dictionary).is_empty() \
+			or bool(boss_practice_load_request.get("requires_server_audit", true)) \
+			or String(boss_practice_load_request.get("boss_hp_authority", "")) != "server" \
+			or bool(boss_practice_load_request.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: boss practice load request invalid %s" % [boss_practice_load_request])
+		quit(1)
+		return true
 	var fallback_claim_replay := boss_practice_replay.duplicate(true)
 	fallback_claim_replay["replay_id"] = "boss-practice-claim-fallback"
 	fallback_claim_replay["server_authority_claim_fields"] = ["damage_total"]
@@ -4819,6 +4855,17 @@ func _process(_delta: float) -> bool:
 			or not (fallback_claim_summary.get("boss_practice_rejected_server_claim_fields", []) as Array).has("damage_total") \
 			or not (fallback_claim_summary.get("selected_server_authority_claim_fields", []) as Array).has("damage_total"):
 		push_error("Smoke test failed: fallback server-claim replay summary invalid %s" % [fallback_claim_summary])
+		quit(1)
+		return true
+	var fallback_claim_load_request: Dictionary = fallback_replay_list_model.request_selected_local_load()
+	if bool(fallback_claim_load_request.get("ok", true)) \
+			or String(fallback_claim_load_request.get("reason", "")) != "server_authority_claim_rejected" \
+			or String(fallback_claim_load_request.get("local_load_policy", "")) != "blocked_server_audit" \
+			or String(fallback_claim_load_request.get("snapshot_source", "")) != "blocked" \
+			or not bool(fallback_claim_load_request.get("requires_server_audit", false)) \
+			or String(fallback_claim_load_request.get("boss_hp_authority", "")) != "server" \
+			or bool(fallback_claim_load_request.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: fallback server-claim replay load request invalid %s" % [fallback_claim_load_request])
 		quit(1)
 		return true
 	var fallback_claim_status_cards: Array = fallback_claim_summary.get("boss_practice_status_cards", [])
