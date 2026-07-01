@@ -762,6 +762,10 @@ func _practice_validation_context(row: Dictionary) -> Dictionary:
 			"verification_status": "none",
 			"verification_scope": "none",
 			"local_load_policy": "none",
+			"final_hash_required": true,
+			"final_hash_ready": false,
+			"practice_validation_gates": [],
+			"practice_validation_gate_count": 0,
 			"can_play": false,
 			"requires_server_audit": false,
 			"local_playback_authority": "none",
@@ -773,7 +777,14 @@ func _practice_validation_context(row: Dictionary) -> Dictionary:
 			"client_result_authoritative": false,
 		}
 	var requires_server_audit := bool(row.get("requires_server_audit", false))
-	var can_play := bool(row.get("can_play", false)) and not requires_server_audit
+	var final_hash_ready := bool(row.get("can_verify_final_hash", false)) and int(row.get("final_result_hash", 0)) != 0
+	var can_play := bool(row.get("can_play", false)) and not requires_server_audit and final_hash_ready
+	var gates: Array[String] = [
+		"metadata_valid",
+		"input_integrity_valid_or_preview",
+		"final_hash_present",
+		"server_audit_not_required",
+	]
 	return {
 		"contract_kind": "replay_practice_validation",
 		"ok": can_play,
@@ -785,6 +796,10 @@ func _practice_validation_context(row: Dictionary) -> Dictionary:
 		"final_tick": int(row.get("final_tick", 0)),
 		"final_result_hash": int(row.get("final_result_hash", 0)),
 		"can_verify_final_hash": bool(row.get("can_verify_final_hash", false)),
+		"final_hash_required": true,
+		"final_hash_ready": final_hash_ready,
+		"practice_validation_gates": gates,
+		"practice_validation_gate_count": gates.size(),
 		"input_integrity_status": String(row.get("input_integrity_status", "")),
 		"input_count": int(row.get("input_count", 0)),
 		"input_tick_span": int(row.get("input_tick_span", 0)),
@@ -900,6 +915,8 @@ func _replay_action_guard(row: Dictionary) -> Dictionary:
 		return {
 			"ok": false,
 			"reason": "no_replay_selected",
+			"final_hash_required": true,
+			"final_hash_ready": false,
 			"local_load_policy": "none",
 			"requires_server_audit": false,
 			"server_audit_status": "not_required",
@@ -918,6 +935,9 @@ func _replay_action_guard(row: Dictionary) -> Dictionary:
 		"replay_id": String(row.get("replay_id", "")),
 		"verification_status": String(row.get("verification_status", "")),
 		"verification_section": String(row.get("section", "")),
+		"final_hash_required": true,
+		"final_hash_ready": bool(row.get("can_verify_final_hash", false)) and int(row.get("final_result_hash", 0)) != 0,
+		"final_result_hash": int(row.get("final_result_hash", 0)),
 		"local_load_policy": String(row.get("local_load_policy", "none")),
 		"requires_server_audit": bool(row.get("requires_server_audit", false)),
 		"server_audit_status": String(row.get("server_audit_status", "")),
@@ -953,6 +973,9 @@ func _local_load_request_result(entry: Dictionary, row: Dictionary, guard: Dicti
 		"replay_authority_scope": String(safe_row.get("replay_authority_scope", "none")),
 		"local_playback_authority": String(safe_guard.get("local_playback_authority", safe_row.get("local_playback_authority", "none"))),
 		"local_hash_authority": "local_practice_verification_only",
+		"final_hash_required": true,
+		"final_hash_ready": bool(safe_guard.get("final_hash_ready", safe_row.get("can_verify_final_hash", false))) and int(safe_row.get("final_result_hash", safe_guard.get("final_result_hash", 0))) != 0,
+		"final_result_hash": int(safe_row.get("final_result_hash", safe_guard.get("final_result_hash", 0))),
 		"snapshot_source": "local_file" if ok else "blocked",
 		"can_play": ok,
 		"practice_validation": (safe_row.get("practice_validation", {}) as Dictionary).duplicate(true) if typeof(safe_row.get("practice_validation", {})) == TYPE_DICTIONARY else _practice_validation_context(safe_row),
@@ -1214,6 +1237,8 @@ func _entry_local_load_rejection_reason(entry: Dictionary, verification_status: 
 	if not server_claim_fields.is_empty():
 		return "server_authority_claim_rejected"
 	if not metadata_valid:
+		return verification_status
+	if _entry_verification_section(verification_status) == "replay_missing_hash":
 		return verification_status
 	if _entry_verification_section(verification_status) == "replay_input_invalid":
 		return verification_status

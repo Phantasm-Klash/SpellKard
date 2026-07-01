@@ -4555,6 +4555,10 @@ func _process(_delta: float) -> bool:
 	if String(local_practice_validation.get("contract_kind", "")) != "replay_practice_validation" \
 			or not bool(local_practice_validation.get("ok", false)) \
 			or String(local_practice_validation.get("reason", "")) != "local_practice_hash_ready" \
+			or not bool(local_practice_validation.get("final_hash_required", false)) \
+			or not bool(local_practice_validation.get("final_hash_ready", false)) \
+			or int(local_practice_validation.get("practice_validation_gate_count", 0)) < 4 \
+			or not (local_practice_validation.get("practice_validation_gates", []) as Array).has("final_hash_present") \
 			or String(local_practice_validation.get("online_replay_authority", "")) != "server_audit_required" \
 			or String(local_practice_validation.get("damage_authority", "")) != "server" \
 			or String(local_practice_validation.get("settlement_authority", "")) != "server" \
@@ -4696,6 +4700,9 @@ func _process(_delta: float) -> bool:
 	if String(server_practice_validation.get("contract_kind", "")) != "replay_practice_validation" \
 			or bool(server_practice_validation.get("ok", true)) \
 			or String(server_practice_validation.get("reason", "")) != "server_record_pending_audit" \
+			or not bool(server_practice_validation.get("final_hash_required", false)) \
+			or not bool(server_practice_validation.get("final_hash_ready", false)) \
+			or int(server_practice_validation.get("practice_validation_gate_count", 0)) < 4 \
 			or not bool(server_practice_validation.get("requires_server_audit", false)) \
 			or String(server_practice_validation.get("local_playback_authority", "")) != "server_audit_required" \
 			or String(server_practice_validation.get("online_replay_authority", "")) != "server_audit_required" \
@@ -4812,6 +4819,8 @@ func _process(_delta: float) -> bool:
 	if String(boss_practice_load_action.get("selected_boss_practice_verification_status", "")) != "local_final_hash_ready" \
 			or (boss_practice_load_action.get("selected_boss_practice_verification", {}) as Dictionary).is_empty() \
 			or not bool((boss_practice_load_action.get("selected_boss_practice_verification", {}) as Dictionary).get("ok", false)) \
+			or not bool((boss_practice_load_action.get("replay_action_guard", {}) as Dictionary).get("final_hash_required", false)) \
+			or not bool((boss_practice_load_action.get("replay_action_guard", {}) as Dictionary).get("final_hash_ready", false)) \
 			or not bool(boss_practice_load_action.get("can_play", false)) \
 			or bool(boss_practice_load_action.get("requires_server_audit", true)):
 		push_error("Smoke test failed: boss practice load action context invalid %s" % [boss_practice_load_action])
@@ -4821,6 +4830,8 @@ func _process(_delta: float) -> bool:
 	if not bool(boss_practice_load_request.get("ok", false)) \
 			or String(boss_practice_load_request.get("local_load_policy", "")) != "loadable_local_practice" \
 			or String(boss_practice_load_request.get("local_playback_authority", "")) != "local_practice_hash" \
+			or not bool(boss_practice_load_request.get("final_hash_required", false)) \
+			or not bool(boss_practice_load_request.get("final_hash_ready", false)) \
 			or (boss_practice_load_request.get("boss_practice_verification", {}) as Dictionary).is_empty() \
 			or bool(boss_practice_load_request.get("requires_server_audit", true)) \
 			or String(boss_practice_load_request.get("boss_hp_authority", "")) != "server" \
