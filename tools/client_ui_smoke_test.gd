@@ -1113,9 +1113,46 @@ func _assert_boss_status_row(row: Dictionary, mode_id: String) -> bool:
 		return _fail("boss status row must require server confirmation %s" % [row])
 	if String(row.get("projection_scope", row.get("display_scope", "local_display_only"))) != "local_display_only":
 		return _fail("boss status row must stay local display scoped %s" % [row])
+	if String(row.get("status_contract_kind", "")) != "boss_local_status_projection" or int(row.get("status_contract_version", 0)) != 1:
+		return _fail("boss status row missing status projection contract %s" % [row])
+	if String(row.get("availability_contract_kind", "")) != "boss_action_availability_projection":
+		return _fail("boss status row missing action availability contract %s" % [row])
+	if String(row.get("entry_request_scope", "")) != "intent_only" or String(row.get("transfer_request_scope", "")) != "intent_only":
+		return _fail("boss status row action scopes must stay intent-only %s" % [row])
+	if String(row.get("entry_contract_kind", "")) != "boss_entry_verification_contract" or int(row.get("entry_contract_version", 0)) != 1:
+		return _fail("boss status row missing entry verification contract %s" % [row])
+	if String(row.get("intent_authority", "")) != "client_request_only":
+		return _fail("boss status row intent authority invalid %s" % [row])
+	if String(row.get("damage_authority", "")) != "server" or String(row.get("reward_authority", "")) != "server":
+		return _fail("boss status row must keep server damage/reward authority %s" % [row])
+	var required_fields: Array = row.get("server_required_for", [])
+	for field in ["entry_confirmation", "card_transfer_confirmation", "damage", "reward_grants", "settlement", "result_receipt"]:
+		if not required_fields.has(field):
+			return _fail("boss status row missing server-required field %s in %s" % [field, row])
+	if mode_id == "world_boss":
+		for field in ["persistent_hp", "daily_attempts", "defeated_at", "world_announcement"]:
+			if not required_fields.has(field):
+				return _fail("world boss status row missing server-required field %s in %s" % [field, row])
+	else:
+		for field in ["access_gate", "clear_status", "stars"]:
+			if not required_fields.has(field):
+				return _fail("instance boss status row missing server-required field %s in %s" % [field, row])
+	var allowed_fields: Array = row.get("entry_intent_allowed_fields", [])
+	if not allowed_fields.has("party_ids") or not allowed_fields.has("client_action_seq"):
+		return _fail("boss status row missing entry intent fields %s" % [row])
+	var forbidden_fields: Array = row.get("client_forbidden_entry_fields", [])
+	for field in ["damage", "reward_grants", "settlement_receipt", "server_result_hash"]:
+		if not forbidden_fields.has(field):
+			return _fail("boss status row missing forbidden authority field %s in %s" % [field, row])
+	if String(row.get("practice_preview_scope", "")) != "local_practice_preview_only":
+		return _fail("boss status row practice preview must stay local-only %s" % [row])
+	if String(row.get("receipt_status", "")) != "pending_server_receipt" and String(row.get("settlement_receipt_projection", {}).get("projection_scope", "")) != "server_settlement_receipt_projection":
+		return _fail("boss status row receipt projection invalid %s" % [row])
 	var value := String(row.get("value", ""))
-	if not value.contains("hp") or not value.contains("attempts") or not value.contains("layout"):
+	if not value.contains("hp") or not value.contains("attempts") or not value.contains("layout") or not value.contains("action"):
 		return _fail("boss status row value should include hp and attempts %s" % [row])
+	if not String(row.get("summary", "")).contains("client can only request entry or transfer"):
+		return _fail("boss status row summary missing intent-only copy %s" % [row])
 	if String(row.get("slot_layout_policy", "")).is_empty():
 		return _fail("boss status row missing slot layout policy %s" % [row])
 	if typeof(row.get("slot_labels", [])) != TYPE_ARRAY:
