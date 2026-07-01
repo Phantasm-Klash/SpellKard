@@ -502,6 +502,7 @@ func selected_action_rows() -> Array[Dictionary]:
 	var source_index := _source_index_for_replay_id(replay_id)
 	var selected_row_model := _row_from_entry(entry, source_index) if has_replay and source_index >= 0 else {}
 	var action_context := _selected_action_context(selected_row_model)
+	var practice_validation := _practice_validation_context(selected_row_model)
 	return [
 		{
 			"id": "replay_action_load",
@@ -517,6 +518,7 @@ func selected_action_rows() -> Array[Dictionary]:
 			"local_load_guard_reason": String(selected_row_model.get("local_load_guard_reason", "")),
 			"requires_server_audit": bool(selected_row_model.get("requires_server_audit", false)),
 			"can_play": bool(selected_row_model.get("can_play", false)),
+			"practice_validation": practice_validation,
 			"server_authoritative": false,
 			"local_hash_authority": "local_practice_verification_only",
 			"damage_authority": "server",
@@ -536,6 +538,7 @@ func selected_action_rows() -> Array[Dictionary]:
 			"summary": "toggle local replay index favorite marker",
 			"replay_id": replay_id,
 			"source_index": source_index,
+			"practice_validation": practice_validation,
 			"server_authoritative": false,
 			"local_hash_authority": "local_practice_verification_only",
 			"damage_authority": "server",
@@ -555,6 +558,7 @@ func selected_action_rows() -> Array[Dictionary]:
 			"summary": "remove selected replay from local index; replay file remains untouched",
 			"replay_id": replay_id,
 			"source_index": source_index,
+			"practice_validation": practice_validation,
 			"server_authoritative": false,
 			"local_hash_authority": "local_practice_verification_only",
 			"damage_authority": "server",
@@ -659,7 +663,7 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 	var local_load_policy := "blocked_server_audit" if requires_server_audit else ("blocked_local_integrity" if not load_rejection_reason.is_empty() else "loadable_local_practice")
 	var filtered_indices := _filtered_indices()
 	var filtered_index := filtered_indices.find(index)
-	return {
+	var row := {
 		"index": index + 1,
 		"source_index": index,
 		"filtered_index": filtered_index + 1 if filtered_index >= 0 else 0,
@@ -744,6 +748,59 @@ func _row_from_entry(entry: Dictionary, index: int) -> Dictionary:
 		"can_favorite": not str(entry.get("replay_id", "")).is_empty(),
 		"can_remove": not str(entry.get("replay_id", "")).is_empty(),
 		"enabled": load_rejection_reason.is_empty(),
+	}
+	row["practice_validation"] = _practice_validation_context(row)
+	return row
+
+func _practice_validation_context(row: Dictionary) -> Dictionary:
+	if row.is_empty():
+		return {
+			"contract_kind": "replay_practice_validation",
+			"ok": false,
+			"reason": "no_replay_selected",
+			"replay_id": "",
+			"verification_status": "none",
+			"verification_scope": "none",
+			"local_load_policy": "none",
+			"can_play": false,
+			"requires_server_audit": false,
+			"local_playback_authority": "none",
+			"online_replay_authority": "server_audit_required",
+			"damage_authority": "server",
+			"settlement_authority": "server",
+			"reward_authority": "server",
+			"boss_hp_authority": "server",
+			"client_result_authoritative": false,
+		}
+	var requires_server_audit := bool(row.get("requires_server_audit", false))
+	var can_play := bool(row.get("can_play", false)) and not requires_server_audit
+	return {
+		"contract_kind": "replay_practice_validation",
+		"ok": can_play,
+		"reason": "local_practice_hash_ready" if can_play else String(row.get("local_load_guard_reason", row.get("load_rejection_reason", "blocked"))),
+		"replay_id": String(row.get("replay_id", "")),
+		"verification_status": String(row.get("verification_status", "")),
+		"verification_scope": String(row.get("verification_scope", "")),
+		"verification_section": String(row.get("section", "")),
+		"final_tick": int(row.get("final_tick", 0)),
+		"final_result_hash": int(row.get("final_result_hash", 0)),
+		"can_verify_final_hash": bool(row.get("can_verify_final_hash", false)),
+		"input_integrity_status": String(row.get("input_integrity_status", "")),
+		"input_count": int(row.get("input_count", 0)),
+		"input_tick_span": int(row.get("input_tick_span", 0)),
+		"metadata_status": String(row.get("metadata_status", "")),
+		"local_load_policy": String(row.get("local_load_policy", "none")),
+		"can_play": can_play,
+		"requires_server_audit": requires_server_audit,
+		"server_audit_status": String(row.get("server_audit_status", "not_required")),
+		"local_playback_authority": String(row.get("local_playback_authority", "none")),
+		"local_hash_authority": "local_practice_verification_only",
+		"online_replay_authority": "server_audit_required",
+		"damage_authority": "server",
+		"settlement_authority": "server",
+		"reward_authority": "server",
+		"boss_hp_authority": "server",
+		"client_result_authoritative": false,
 	}
 
 func _entry_metadata_valid(entry: Dictionary) -> bool:
@@ -832,6 +889,7 @@ func _selected_action_context(row: Dictionary) -> Dictionary:
 		"selected_local_playback_authority": String(row.get("local_playback_authority", "")),
 		"selected_boss_practice_verification_status": String((row.get("boss_practice_verification", {}) as Dictionary).get("verification_status", "none")) if typeof(row.get("boss_practice_verification", {})) == TYPE_DICTIONARY else "none",
 		"selected_boss_practice_verification": (row.get("boss_practice_verification", {}) as Dictionary).duplicate(true) if typeof(row.get("boss_practice_verification", {})) == TYPE_DICTIONARY else {},
+		"selected_practice_validation": (row.get("practice_validation", {}) as Dictionary).duplicate(true) if typeof(row.get("practice_validation", {})) == TYPE_DICTIONARY else _practice_validation_context(row),
 		"selected_filtered_index": int(row.get("filtered_index", 0)),
 		"selected_filtered_count": int(row.get("filtered_count", 0)),
 		"replay_action_guard": _replay_action_guard(row),
@@ -897,6 +955,7 @@ func _local_load_request_result(entry: Dictionary, row: Dictionary, guard: Dicti
 		"local_hash_authority": "local_practice_verification_only",
 		"snapshot_source": "local_file" if ok else "blocked",
 		"can_play": ok,
+		"practice_validation": (safe_row.get("practice_validation", {}) as Dictionary).duplicate(true) if typeof(safe_row.get("practice_validation", {})) == TYPE_DICTIONARY else _practice_validation_context(safe_row),
 		"filter_navigation_label": String(safe_row.get("filter_navigation_label", "0/0")),
 		"selected_filtered_index": int(safe_row.get("filtered_index", 0)),
 		"selected_filtered_count": int(safe_row.get("filtered_count", 0)),
@@ -1093,7 +1152,7 @@ func local_load_guard_for_entry(entry: Dictionary) -> Dictionary:
 	var rejection_reason := _entry_local_load_rejection_reason(entry, verification_status, metadata_valid, server_authoritative, server_claim_fields)
 	var requires_server_audit := server_authoritative or not server_claim_fields.is_empty() or _entry_verification_section(verification_status) == "replay_server_pending"
 	var local_load_policy := "blocked_server_audit" if requires_server_audit else ("blocked_local_integrity" if not rejection_reason.is_empty() else "loadable_local_practice")
-	return {
+	var guard := {
 		"ok": rejection_reason.is_empty(),
 		"reason": "loadable" if rejection_reason.is_empty() else rejection_reason,
 		"verification_status": verification_status,
@@ -1112,6 +1171,25 @@ func local_load_guard_for_entry(entry: Dictionary) -> Dictionary:
 		"reward_authority": "server",
 		"client_result_authoritative": false,
 	}
+	guard["practice_validation"] = _practice_validation_context({
+		"replay_id": String(entry.get("replay_id", "")),
+		"verification_status": verification_status,
+		"verification_scope": _entry_verification_scope(entry, server_authoritative, metadata_valid, server_claim_fields),
+		"section": _entry_verification_section(verification_status),
+		"final_tick": int(entry.get("final_tick", 0)),
+		"final_result_hash": int(entry.get("final_result_hash", 0)),
+		"can_verify_final_hash": int(entry.get("final_result_hash", 0)) != 0 and int(entry.get("final_tick", 0)) >= 0,
+		"input_integrity_status": _entry_input_integrity_status(entry),
+		"input_count": int(entry.get("input_count", 0)),
+		"input_tick_span": int(entry.get("input_tick_span", 0)),
+		"metadata_status": _entry_metadata_status(entry, metadata_valid),
+		"local_load_policy": local_load_policy,
+		"can_play": rejection_reason.is_empty(),
+		"requires_server_audit": requires_server_audit,
+		"server_audit_status": "pending" if requires_server_audit else "not_required",
+		"local_playback_authority": "server_audit_required" if requires_server_audit else "local_practice_hash",
+	})
+	return guard
 
 func _entry_matches_active_filter(entry: Dictionary) -> bool:
 	if active_verification_filter == VERIFICATION_FILTER_ALL:
