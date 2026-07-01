@@ -364,7 +364,7 @@ func boss_action_availability_projection(mode_id: String) -> Dictionary:
 			"entry_request_scope": "intent_only",
 			"transfer_request_scope": "intent_only",
 			"server_required_for": _boss_server_required_fields(mode_id),
-			"ui_action_contract": _boss_ui_action_contract(false, false),
+			"ui_action_contract": _boss_ui_action_contract(false, false, mode_id),
 			"ui_action_cards": _boss_ui_action_cards(mode_id, false, false, ["boss_mode_invalid"], "blocked_local"),
 			"entry_action_panel": _boss_entry_action_panel_from_projection(mode_id, {
 				"mode_id": mode_id,
@@ -382,7 +382,7 @@ func boss_action_availability_projection(mode_id: String) -> Dictionary:
 				"entry_request_scope": "intent_only",
 				"transfer_request_scope": "intent_only",
 				"server_required_for": _boss_server_required_fields(mode_id),
-				"ui_action_contract": _boss_ui_action_contract(false, false),
+				"ui_action_contract": _boss_ui_action_contract(false, false, mode_id),
 				"ui_action_cards": _boss_ui_action_cards(mode_id, false, false, ["boss_mode_invalid"], "blocked_local"),
 				"damage_authority": "server",
 				"reward_authority": "server",
@@ -447,7 +447,7 @@ func boss_action_availability_projection(mode_id: String) -> Dictionary:
 			"entry_request_scope": "intent_only",
 			"transfer_request_scope": "intent_only",
 			"server_required_for": _boss_server_required_fields(mode_id),
-			"ui_action_contract": _boss_ui_action_contract(can_request_entry, can_request_transfer),
+			"ui_action_contract": _boss_ui_action_contract(can_request_entry, can_request_transfer, mode_id),
 			"ui_action_cards": _boss_ui_action_cards(mode_id, can_request_entry, can_request_transfer, local_blockers, String(entry.get("server_confirmation_status", "required" if can_request_entry else "blocked_local"))),
 			"entry_action_panel": _boss_entry_action_panel_from_projection(mode_id, {
 				"mode_id": mode_id,
@@ -470,7 +470,7 @@ func boss_action_availability_projection(mode_id: String) -> Dictionary:
 				"entry_request_scope": "intent_only",
 				"transfer_request_scope": "intent_only",
 				"server_required_for": _boss_server_required_fields(mode_id),
-				"ui_action_contract": _boss_ui_action_contract(can_request_entry, can_request_transfer),
+				"ui_action_contract": _boss_ui_action_contract(can_request_entry, can_request_transfer, mode_id),
 				"ui_action_cards": _boss_ui_action_cards(mode_id, can_request_entry, can_request_transfer, local_blockers, String(entry.get("server_confirmation_status", "required" if can_request_entry else "blocked_local"))),
 				"player_count": int(formation.get("player_count", 0)),
 				"slot_layout_policy": String(formation.get("slot_layout_policy", "")),
@@ -1844,9 +1844,17 @@ func boss_transfer_preview(mode_id: String, from_player_id: String, to_player_id
 		"transfer_policy": "once_per_card_per_match",
 		"local_validation": "boss_transfer_preflight",
 		"local_validation_rules": ["party_members_only", "no_self_transfer", "card_id_required", "once_per_card_per_match"],
+		"transfer_contract_kind": "boss_card_transfer_confirmation_contract",
+		"transfer_contract_version": 1,
+		"transfer_intent_allowed_fields": _boss_transfer_intent_allowed_fields(mode_id),
+		"client_forbidden_transfer_fields": _boss_client_forbidden_transfer_fields(mode_id),
+		"transfer_confirmation_contract": _boss_transfer_confirmation_contract(mode_id, failures.is_empty(), reason),
 		"intent_authority": "client_request_only",
+		"request_scope": "intent_only",
+		"transfer_request_scope": "intent_only",
 		"server_confirmation_status": "required" if failures.is_empty() else "blocked_local",
 		"requires_server_confirmation": true,
+		"server_required_for": _boss_server_required_fields(mode_id),
 		"damage_authority": "server",
 		"reward_authority": "server",
 		"settlement_authority": "server",
@@ -1873,6 +1881,21 @@ func request_boss_card_transfer(mode_id: String, from_player_id: String, to_play
 		"to_player_id": clean_to_player_id,
 		"card_id": clean_card_id,
 		"status": "requested",
+		"request_scope": "intent_only",
+		"transfer_request_scope": "intent_only",
+		"transfer_contract_kind": String(preview.get("transfer_contract_kind", "boss_card_transfer_confirmation_contract")),
+		"transfer_contract_version": int(preview.get("transfer_contract_version", 1)),
+		"transfer_intent_allowed_fields": preview.get("transfer_intent_allowed_fields", _boss_transfer_intent_allowed_fields(mode_id)),
+		"client_forbidden_transfer_fields": preview.get("client_forbidden_transfer_fields", _boss_client_forbidden_transfer_fields(mode_id)),
+		"transfer_confirmation_contract": preview.get("transfer_confirmation_contract", _boss_transfer_confirmation_contract(mode_id, true, "none")),
+		"server_required_for": _boss_server_required_fields(mode_id),
+		"intent_authority": "client_request_only",
+		"server_confirmation_status": "required",
+		"requires_server_confirmation": true,
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"client_result_authoritative": false,
 		"preflight": preview,
 	}
 	requests.append(transfer)
@@ -2503,6 +2526,11 @@ func _boss_entry_action_panel_from_projection(mode_id: String, projection: Dicti
 			"entry_intent_allowed_fields": card.get("entry_intent_allowed_fields", []),
 			"client_forbidden_entry_fields": card.get("client_forbidden_entry_fields", []),
 			"entry_confirmation_contract": card.get("entry_confirmation_contract", {}),
+			"transfer_contract_kind": String(card.get("transfer_contract_kind", "")),
+			"transfer_contract_version": int(card.get("transfer_contract_version", 0)),
+			"transfer_intent_allowed_fields": card.get("transfer_intent_allowed_fields", []),
+			"client_forbidden_transfer_fields": card.get("client_forbidden_transfer_fields", []),
+			"transfer_confirmation_contract": card.get("transfer_confirmation_contract", {}),
 			"server_required_for": card.get("server_required_for", []),
 			"server_confirmation_status": String(card.get("server_confirmation_status", "")),
 			"requires_server_confirmation": bool(card.get("requires_server_confirmation", true)),
@@ -2810,6 +2838,11 @@ func _boss_transfer_row(row_id: String, mode_id: String, state: Dictionary) -> D
 			"ui_action_contract": action_projection.get("ui_action_contract", {}),
 			"ui_action_cards": action_projection.get("ui_action_cards", []),
 			"transfer_policy": "once_per_card_per_match",
+			"transfer_contract_kind": "boss_card_transfer_confirmation_contract",
+			"transfer_contract_version": 1,
+			"transfer_intent_allowed_fields": _boss_transfer_intent_allowed_fields(mode_id),
+			"client_forbidden_transfer_fields": _boss_client_forbidden_transfer_fields(mode_id),
+			"transfer_confirmation_contract": _boss_transfer_confirmation_contract(mode_id, bool(action_projection.get("can_request_transfer", false)), "none" if bool(action_projection.get("can_request_transfer", false)) else String(action_projection.get("reason", "blocked_local"))),
 			"local_validation_rules": ["party_members_only", "no_self_transfer", "card_id_required", "once_per_card_per_match"],
 		"preflight_available": true,
 		"intent_authority": "client_request_only",
@@ -2916,7 +2949,67 @@ func _boss_entry_confirmation_contract(mode_id: String, entry_valid: bool, reaso
 		"client_result_authoritative": false,
 	}
 
-func _boss_ui_action_contract(can_request_entry: bool, can_request_transfer: bool) -> Dictionary:
+func _boss_transfer_intent_allowed_fields(mode_id: String) -> Array[String]:
+	var fields: Array[String] = [
+		"mode_id",
+		"boss_instance_id",
+		"from_player_id",
+		"to_player_id",
+		"card_id",
+		"client_action_seq",
+		"requested_at_tick",
+	]
+	if mode_id == MODE_WORLD_BOSS:
+		fields.append("season_id")
+	elif mode_id == MODE_INSTANCE_BOSS:
+		fields.append("instance_id")
+	return fields
+
+func _boss_client_forbidden_transfer_fields(mode_id: String) -> Array[String]:
+	var fields: Array[String] = [
+		"damage",
+		"damage_this_match",
+		"team_damage",
+		"boss_hp_after",
+		"reward_grants",
+		"settlement_result",
+		"settlement_receipt",
+		"server_result_hash",
+		"confirmed_card_owner",
+		"receiver_hand",
+		"receiver_energy",
+		"cooldown_override",
+	]
+	if mode_id == MODE_WORLD_BOSS:
+		fields.append_array(["current_hp", "defeated_at", "world_announcement"])
+	elif mode_id == MODE_INSTANCE_BOSS:
+		fields.append_array(["clear_status", "stars", "star_rewards"])
+	return fields
+
+func _boss_transfer_confirmation_contract(mode_id: String, transfer_valid: bool, reason: String) -> Dictionary:
+	return {
+		"contract_kind": "boss_card_transfer_confirmation_contract",
+		"contract_version": 1,
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"local_preflight_status": "valid" if transfer_valid else "blocked_local",
+		"local_preflight_reason": reason,
+		"transfer_request_scope": "intent_only",
+		"transfer_intent_allowed_fields": _boss_transfer_intent_allowed_fields(mode_id),
+		"client_forbidden_transfer_fields": _boss_client_forbidden_transfer_fields(mode_id),
+		"server_validates": ["card_ownership", "mode_banlist", "cost", "cooldown", "once_per_card_per_match"],
+		"server_required_for": _boss_server_required_fields(mode_id),
+		"server_confirmation_status": "required" if transfer_valid else "blocked_local",
+		"requires_server_confirmation": true,
+		"intent_authority": "client_request_only",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"server_authoritative": false,
+		"client_result_authoritative": false,
+	}
+
+func _boss_ui_action_contract(can_request_entry: bool, can_request_transfer: bool, mode_id: String) -> Dictionary:
 	return {
 		"contract_kind": "boss_ui_action_contract",
 		"entry_action": "request_boss_entry",
@@ -2925,6 +3018,11 @@ func _boss_ui_action_contract(can_request_entry: bool, can_request_transfer: boo
 		"transfer_enabled": can_request_transfer,
 		"entry_request_scope": "intent_only",
 		"transfer_request_scope": "intent_only",
+		"transfer_contract_kind": "boss_card_transfer_confirmation_contract",
+		"transfer_contract_version": 1,
+		"transfer_intent_allowed_fields": _boss_transfer_intent_allowed_fields(mode_id),
+		"client_forbidden_transfer_fields": _boss_client_forbidden_transfer_fields(mode_id),
+		"transfer_confirmation_contract": _boss_transfer_confirmation_contract(mode_id, can_request_transfer, "none" if can_request_transfer else "blocked_local"),
 		"server_confirmation_status": "required" if can_request_entry else "blocked_local",
 		"server_authority_required": true,
 		"damage_authority": "server",
@@ -2984,6 +3082,12 @@ func _boss_ui_action_cards(mode_id: String, can_request_entry: bool, can_request
 			"local_blockers": local_blockers,
 			"request_scope": "intent_only",
 			"transfer_request_scope": "intent_only",
+			"transfer_contract_kind": "boss_card_transfer_confirmation_contract",
+			"transfer_contract_version": 1,
+			"transfer_intent_allowed_fields": _boss_transfer_intent_allowed_fields(mode_id),
+			"client_forbidden_transfer_fields": _boss_client_forbidden_transfer_fields(mode_id),
+			"transfer_confirmation_contract": _boss_transfer_confirmation_contract(mode_id, can_request_transfer, "none" if can_request_transfer else entry_blocker),
+			"server_required_for": _boss_server_required_fields(mode_id),
 			"server_confirmation_status": "required" if can_request_transfer else "blocked_local",
 			"requires_server_confirmation": true,
 			"damage_authority": "server",
