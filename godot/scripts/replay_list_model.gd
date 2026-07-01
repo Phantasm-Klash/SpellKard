@@ -369,11 +369,23 @@ func boss_practice_verification_summary_row() -> Dictionary:
 	var ready_count := 0
 	var invalid_count := 0
 	var server_claim_count := 0
+	var local_loadable_count := 0
+	var blocked_local_integrity_count := 0
+	var first_loadable_replay_id := ""
+	var first_blocked_integrity_replay_id := ""
 	var rejected_claim_fields: Array[String] = []
 	var rejected_claim_seen := {}
 	for row in boss_rows:
 		if bool(row.get("can_play", false)) and String(row.get("verification_scope", "")) == "local_practice_hash":
 			ready_count += 1
+		if String(row.get("local_load_policy", "")) == "loadable_local_practice":
+			local_loadable_count += 1
+			if first_loadable_replay_id.is_empty():
+				first_loadable_replay_id = String(row.get("replay_id", ""))
+		elif String(row.get("local_load_policy", "")) == "blocked_local_integrity":
+			blocked_local_integrity_count += 1
+			if first_blocked_integrity_replay_id.is_empty():
+				first_blocked_integrity_replay_id = String(row.get("replay_id", ""))
 		if String(row.get("section", "")) == "replay_metadata_invalid":
 			invalid_count += 1
 		if String(row.get("verification_scope", "")) == "rejected_server_claim":
@@ -400,6 +412,8 @@ func boss_practice_verification_summary_row() -> Dictionary:
 	var verification_card_metrics: Array[Dictionary] = [
 		{"id": "ready", "label": "ready", "value": ready_count},
 		{"id": "invalid", "label": "invalid", "value": invalid_count},
+		{"id": "local_loadable", "label": "local loadable", "value": local_loadable_count},
+		{"id": "local_blocked", "label": "local blocked", "value": blocked_local_integrity_count},
 		{"id": "server_claims", "label": "server claims", "value": server_claim_count},
 		{"id": "server_claim_fields", "label": "server claim fields", "value": rejected_claim_fields.size()},
 		{"id": "digest", "label": "digest", "value": int(boss_context.get("preview_bundle_signature_digest", 0))},
@@ -407,6 +421,8 @@ func boss_practice_verification_summary_row() -> Dictionary:
 	var status_cards := _boss_practice_status_cards(
 		ready_count,
 		invalid_count,
+		local_loadable_count,
+		blocked_local_integrity_count,
 		server_claim_count,
 		rejected_claim_fields,
 		selected_boss_row,
@@ -425,6 +441,10 @@ func boss_practice_verification_summary_row() -> Dictionary:
 		"boss_practice_entry_count": boss_rows.size(),
 		"boss_practice_ready_count": ready_count,
 		"boss_practice_invalid_count": invalid_count,
+		"boss_practice_local_loadable_count": local_loadable_count,
+		"boss_practice_blocked_local_integrity_count": blocked_local_integrity_count,
+		"boss_practice_first_loadable_replay_id": first_loadable_replay_id,
+		"boss_practice_first_blocked_integrity_replay_id": first_blocked_integrity_replay_id,
 		"boss_practice_rejected_server_claim_count": server_claim_count,
 		"boss_practice_rejected_server_claim_field_count": rejected_claim_fields.size(),
 		"boss_practice_rejected_server_claim_fields": rejected_claim_fields,
@@ -461,8 +481,9 @@ func boss_practice_verification_summary_row() -> Dictionary:
 		"boss_practice_status_cards": status_cards,
 		"verification_card_metrics": verification_card_metrics,
 		"verification_card_primary_metric": "ready %d/%d" % [ready_count, boss_rows.size()],
-		"verification_card_secondary_metric": "invalid %d claims %d digest %d" % [
+		"verification_card_secondary_metric": "invalid %d local-blocked %d claims %d digest %d" % [
 			invalid_count,
+			blocked_local_integrity_count,
 			server_claim_count,
 			int(boss_context.get("preview_bundle_signature_digest", 0)),
 		],
@@ -480,7 +501,7 @@ func boss_practice_verification_summary_row() -> Dictionary:
 		"enabled": true,
 	}
 
-func _boss_practice_status_cards(ready_count: int, invalid_count: int, server_claim_count: int, rejected_claim_fields: Array[String], selected_boss_row: Dictionary, boss_context: Dictionary) -> Array[Dictionary]:
+func _boss_practice_status_cards(ready_count: int, invalid_count: int, local_loadable_count: int, blocked_local_integrity_count: int, server_claim_count: int, rejected_claim_fields: Array[String], selected_boss_row: Dictionary, boss_context: Dictionary) -> Array[Dictionary]:
 	var selected_replay_id := String(selected_boss_row.get("replay_id", ""))
 	var selected_guard_reason := String(selected_boss_row.get("local_load_guard_reason", ""))
 	return [
@@ -493,6 +514,7 @@ func _boss_practice_status_cards(ready_count: int, invalid_count: int, server_cl
 			"verification_filter": "replay_boss_practice",
 			"recommended_filter_row_id": "replay_filter_replay_boss_practice",
 			"entry_count": ready_count,
+			"local_loadable_count": local_loadable_count,
 			"selected_replay_id": selected_replay_id,
 			"selected_can_play": bool(selected_boss_row.get("can_play", false)),
 			"selected_local_playback_authority": String(selected_boss_row.get("local_playback_authority", "none")),
@@ -507,6 +529,28 @@ func _boss_practice_status_cards(ready_count: int, invalid_count: int, server_cl
 			"settlement_authority": "server",
 			"client_result_authoritative": false,
 			"enabled": ready_count > 0,
+		},
+		{
+			"id": "boss_practice_status_local_blocked",
+			"label_key": "ui.menu_section_replay_local_blocked",
+			"value": "blocked %d" % blocked_local_integrity_count,
+			"summary": "Boss practice Replays with missing local files, hashes, inputs, or metadata stay blocked before playback",
+			"status_card_kind": "boss_practice_replay_status",
+			"verification_filter": "replay_metadata_invalid",
+			"recommended_filter_row_id": "replay_filter_replay_metadata_invalid",
+			"entry_count": blocked_local_integrity_count,
+			"selected_replay_id": selected_replay_id,
+			"selected_load_guard_reason": selected_guard_reason,
+			"ui_control": "card",
+			"ui_action": "set_replay_filter",
+			"render_slot": "overview_cards",
+			"server_authoritative": false,
+			"local_hash_authority": "local_practice_verification_only",
+			"damage_authority": "server",
+			"reward_authority": "server",
+			"settlement_authority": "server",
+			"client_result_authoritative": false,
+			"enabled": blocked_local_integrity_count > 0,
 		},
 		{
 			"id": "boss_practice_status_metadata_invalid",
