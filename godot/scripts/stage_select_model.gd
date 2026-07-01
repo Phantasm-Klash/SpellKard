@@ -293,7 +293,8 @@ func _practice_plan_row(stage: Dictionary, patterns: Array[Dictionary], route_st
 	for pattern in patterns:
 		phase_pattern_ids.append(String(pattern.get("id", "")))
 		phase_labels.append(String(pattern.get("name_key", pattern.get("id", ""))))
-	return {
+	var row := _practice_validation_contract("stage_practice_plan", "stage_route")
+	row.merge({
 		"id": "stage_practice_plan",
 		"label_key": "screen.settings.stage_select",
 		"stage_id": String(stage.get("id", "")),
@@ -309,7 +310,8 @@ func _practice_plan_row(stage: Dictionary, patterns: Array[Dictionary], route_st
 		"phase_ticks": 600,
 		"ui_action": "apply_stage_practice_plan",
 		"enabled": patterns.size() > 0,
-	}
+	}, true)
+	return row
 
 func _practice_preset_rows(stage: Dictionary, patterns: Array[Dictionary], route_steps: Array[Dictionary]) -> Array[Dictionary]:
 	if patterns.is_empty():
@@ -323,8 +325,8 @@ func _practice_preset_rows(stage: Dictionary, patterns: Array[Dictionary], route
 	var peak_step: Dictionary = route_steps[clampi(peak_index, 0, max(0, route_steps.size() - 1))]
 	var peak_pattern_id := String(peak_step.get("pattern_id", all_phase_ids[0]))
 	var difficulty := int(stage.get("difficulty", 1))
-	return [
-		{
+	var route_row := _practice_validation_contract("stage_practice_preset", "full_route")
+	route_row.merge({
 			"id": "stage_practice_preset_route",
 			"label_key": "screen.settings.stage_select",
 			"preset_id": "route",
@@ -346,8 +348,9 @@ func _practice_preset_rows(stage: Dictionary, patterns: Array[Dictionary], route
 			"spawn_peak_per_second": _peak_float(route_steps, "spawn_rate_per_second"),
 			"ui_action": "apply_stage_practice_preset",
 			"enabled": true,
-		},
-		{
+	}, true)
+	var peak_row := _practice_validation_contract("stage_practice_preset", "danger_peak")
+	peak_row.merge({
 			"id": "stage_practice_preset_peak",
 			"label_key": "screen.settings.stage_select",
 			"preset_id": "peak",
@@ -369,8 +372,9 @@ func _practice_preset_rows(stage: Dictionary, patterns: Array[Dictionary], route
 			"spawn_peak_per_second": float(peak_step.get("spawn_rate_per_second", 0.0)),
 			"ui_action": "apply_stage_practice_preset",
 			"enabled": true,
-		},
-		{
+	}, true)
+	var survival_row := _practice_validation_contract("stage_practice_preset", "low_resource")
+	survival_row.merge({
 			"id": "stage_practice_preset_survival",
 			"label_key": "screen.settings.stage_select",
 			"preset_id": "survival",
@@ -392,8 +396,31 @@ func _practice_preset_rows(stage: Dictionary, patterns: Array[Dictionary], route
 			"spawn_peak_per_second": _peak_float(route_steps, "spawn_rate_per_second"),
 			"ui_action": "apply_stage_practice_preset",
 			"enabled": true,
-		},
-	]
+	}, true)
+	return [route_row, peak_row, survival_row]
+
+func _practice_validation_contract(entry_kind: String, preset_kind: String) -> Dictionary:
+	return {
+		"practice_entry_kind": entry_kind,
+		"practice_validation_kind": "stage_practice_local_verification",
+		"practice_validation_status": "local_practice_ready",
+		"practice_preset_kind": preset_kind,
+		"projection_scope": "local_practice_only",
+		"local_practice_authority": "client_local_practice",
+		"replay_verification_scope": "local_practice_hash",
+		"local_hash_authority": "local_practice_verification_only",
+		"online_result_authority": "server_settlement_required",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"boss_hp_authority": "server",
+		"server_authoritative": false,
+		"client_result_authoritative": false,
+		"requires_server_confirmation": false,
+		"server_confirmation_status": "not_applicable_local_practice",
+		"practice_replay_metadata_ready": true,
+		"server_required_for": ["damage", "reward", "settlement", "boss_hp"],
+	}
 
 func _peak_step_index(route_steps: Array[Dictionary]) -> int:
 	var best_index := 0

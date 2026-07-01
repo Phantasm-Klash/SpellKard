@@ -910,6 +910,20 @@ func _apply_stage_practice_plan() -> Dictionary:
 		"danger_peak": String(plan.get("danger_peak", "")),
 		"spawn_peak_per_second": float(plan.get("spawn_peak_per_second", 0.0)),
 		"math_basis_route": plan.get("math_basis_route", []),
+		"practice_validation_kind": String(plan.get("practice_validation_kind", "")),
+		"practice_validation_status": String(plan.get("practice_validation_status", "")),
+		"projection_scope": String(plan.get("projection_scope", "")),
+		"replay_verification_scope": String(plan.get("replay_verification_scope", "")),
+		"local_hash_authority": String(plan.get("local_hash_authority", "")),
+		"online_result_authority": String(plan.get("online_result_authority", "")),
+		"damage_authority": String(plan.get("damage_authority", "")),
+		"reward_authority": String(plan.get("reward_authority", "")),
+		"settlement_authority": String(plan.get("settlement_authority", "")),
+		"boss_hp_authority": String(plan.get("boss_hp_authority", "")),
+		"server_authoritative": bool(plan.get("server_authoritative", false)),
+		"client_result_authoritative": bool(plan.get("client_result_authoritative", false)),
+		"requires_server_confirmation": bool(plan.get("requires_server_confirmation", false)),
+		"server_confirmation_status": String(plan.get("server_confirmation_status", "")),
 	}
 
 func _apply_stage_practice_preset(preset: Dictionary) -> Dictionary:
@@ -962,6 +976,20 @@ func _apply_stage_practice_preset(preset: Dictionary) -> Dictionary:
 		"stage_run_enabled": stage_run_enabled,
 		"focus_math_basis": String(preset.get("focus_math_basis", "")),
 		"focus_reason": String(preset.get("focus_reason", "")),
+		"practice_validation_kind": String(preset.get("practice_validation_kind", "")),
+		"practice_validation_status": String(preset.get("practice_validation_status", "")),
+		"projection_scope": String(preset.get("projection_scope", "")),
+		"replay_verification_scope": String(preset.get("replay_verification_scope", "")),
+		"local_hash_authority": String(preset.get("local_hash_authority", "")),
+		"online_result_authority": String(preset.get("online_result_authority", "")),
+		"damage_authority": String(preset.get("damage_authority", "")),
+		"reward_authority": String(preset.get("reward_authority", "")),
+		"settlement_authority": String(preset.get("settlement_authority", "")),
+		"boss_hp_authority": String(preset.get("boss_hp_authority", "")),
+		"server_authoritative": bool(preset.get("server_authoritative", false)),
+		"client_result_authoritative": bool(preset.get("client_result_authoritative", false)),
+		"requires_server_confirmation": bool(preset.get("requires_server_confirmation", false)),
+		"server_confirmation_status": String(preset.get("server_confirmation_status", "")),
 	}
 
 func _active_pattern_config() -> Dictionary:

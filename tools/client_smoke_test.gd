@@ -160,6 +160,7 @@ func _process(_delta: float) -> bool:
 	var play_page_spec: Dictionary = client_menu_page_model.page_spec("play")
 	var modes_page_spec: Dictionary = client_menu_page_model.page_spec("modes")
 	var replay_page_spec: Dictionary = client_menu_page_model.page_spec("replay")
+	var practice_page_spec: Dictionary = client_menu_page_model.page_spec("practice")
 	var settings_page_spec: Dictionary = client_menu_page_model.page_spec("player_settings")
 	if String(play_page_spec.get("kind", "")) != "hub" or not (play_page_spec.get("mode_groups", []) as Array).has("pvp") or not (play_page_spec.get("mode_groups", []) as Array).has("boss"):
 		push_error("Smoke test failed: play page spec invalid %s" % [play_page_spec])
@@ -183,6 +184,13 @@ func _process(_delta: float) -> bool:
 		return true
 	if String(settings_page_spec.get("kind", "")) != "settings" or not (settings_page_spec.get("setting_groups", []) as Array).has("gamepad") or not (settings_page_spec.get("setting_groups", []) as Array).has("resolution"):
 		push_error("Smoke test failed: player settings page spec invalid %s" % [settings_page_spec])
+		quit(1)
+		return true
+	if String(practice_page_spec.get("kind", "")) != "playfield" \
+			or not (practice_page_spec.get("state_regions", []) as Array).has("practice_local_verification") \
+			or not (practice_page_spec.get("primary_row_ids", []) as Array).has("stage_practice_plan") \
+			or not (practice_page_spec.get("secondary_row_ids", []) as Array).has("stage_practice_preset_peak"):
+		push_error("Smoke test failed: practice page spec validation rows invalid %s" % [practice_page_spec])
 		quit(1)
 		return true
 	if String(play_page_spec.get("scene_id", "")) != "menu_hub" or String(settings_page_spec.get("scene_id", "")) != "settings_panel" or int(settings_page_spec.get("required_binding_count", 0)) < 6:
@@ -409,6 +417,9 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: stage practice plan row invalid %s" % [stage_plan_row])
 		quit(1)
 		return true
+	if not _validate_stage_practice_validation_row(stage_plan_row, "stage_practice_plan"):
+		quit(1)
+		return true
 	var stage_preset_rows: Array[Dictionary] = stage_select_model.practice_preset_rows(pattern_lab_model)
 	if not _rows_have_ids(stage_preset_rows, ["stage_practice_preset_route", "stage_practice_preset_peak", "stage_practice_preset_survival"]):
 		push_error("Smoke test failed: stage practice presets missing %s" % [stage_preset_rows])
@@ -417,6 +428,9 @@ func _process(_delta: float) -> bool:
 	var peak_preset: Dictionary = _find_row_by_id(stage_preset_rows, "stage_practice_preset_peak")
 	if String(peak_preset.get("ui_action", "")) != "apply_stage_practice_preset" or String(peak_preset.get("focus_pattern_id", "")).is_empty() or int(peak_preset.get("practice_seed", 0)) <= 0 or float(peak_preset.get("practice_initial_power", 0.0)) <= 0.0:
 		push_error("Smoke test failed: stage peak preset invalid %s" % [peak_preset])
+		quit(1)
+		return true
+	if not _validate_stage_practice_validation_row(peak_preset, "stage_practice_preset"):
 		quit(1)
 		return true
 	var stage_pattern_rows: Array[Dictionary] = main_node.call("_stage_pattern_rows")
@@ -4066,6 +4080,10 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: peak practice preset action invalid %s" % [accept_peak_preset])
 		quit(1)
 		return true
+	if String(accept_peak_preset.get("replay_verification_scope", "")) != "local_practice_hash" or String(accept_peak_preset.get("damage_authority", "")) != "server" or bool(accept_peak_preset.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: peak practice preset authority invalid %s" % [accept_peak_preset])
+		quit(1)
+		return true
 	if String(stage_select_model.active_pattern().get("id", "")).is_empty() or float(main_node.get("practice_initial_power")) < 2.0 or int(main_node.get("practice_initial_bombs")) < 3:
 		push_error("Smoke test failed: peak preset did not apply resources/pattern")
 		quit(1)
@@ -4096,6 +4114,10 @@ func _process(_delta: float) -> bool:
 	var accept_practice_plan: Dictionary = main_node.call("_ui_accept_selected")
 	if not bool(accept_practice_plan.get("ok", false)) or String(accept_practice_plan.get("action", "")) != "apply_stage_practice_plan" or not bool(main_node.get("stage_run_enabled")) or int(stage_select_model.selected_pattern_index) != 0 or String(character_model.selected_character_id) != "wide":
 		push_error("Smoke test failed: practice plan action invalid %s" % [accept_practice_plan])
+		quit(1)
+		return true
+	if String(accept_practice_plan.get("replay_verification_scope", "")) != "local_practice_hash" or String(accept_practice_plan.get("settlement_authority", "")) != "server" or bool(accept_practice_plan.get("server_authoritative", true)):
+		push_error("Smoke test failed: practice plan authority invalid %s" % [accept_practice_plan])
 		quit(1)
 		return true
 	main_node.call("_dispatch_ui_action", {"ui_action": "toggle_stage_run"})
@@ -7112,6 +7134,38 @@ func _validate_boss_pattern_catalog(stage_select_model: RefCounted) -> bool:
 	if emitted.is_empty() or not emitted[0].has("pattern_id"):
 		push_error("Smoke test failed: boss spellbook did not emit bullets")
 		return false
+	return true
+
+func _validate_stage_practice_validation_row(row: Dictionary, expected_kind: String) -> bool:
+	if row.is_empty():
+		push_error("Smoke test failed: stage practice validation row missing")
+		return false
+	if String(row.get("practice_entry_kind", "")) != expected_kind:
+		push_error("Smoke test failed: stage practice validation kind invalid %s" % [row])
+		return false
+	if String(row.get("practice_validation_kind", "")) != "stage_practice_local_verification" or String(row.get("practice_validation_status", "")) != "local_practice_ready":
+		push_error("Smoke test failed: stage practice validation status invalid %s" % [row])
+		return false
+	if String(row.get("projection_scope", "")) != "local_practice_only" or String(row.get("local_practice_authority", "")) != "client_local_practice":
+		push_error("Smoke test failed: stage practice local scope invalid %s" % [row])
+		return false
+	if String(row.get("replay_verification_scope", "")) != "local_practice_hash" or String(row.get("local_hash_authority", "")) != "local_practice_verification_only":
+		push_error("Smoke test failed: stage practice replay verification invalid %s" % [row])
+		return false
+	if String(row.get("online_result_authority", "")) != "server_settlement_required" or String(row.get("damage_authority", "")) != "server" or String(row.get("reward_authority", "")) != "server" or String(row.get("settlement_authority", "")) != "server" or String(row.get("boss_hp_authority", "")) != "server":
+		push_error("Smoke test failed: stage practice server authority labels invalid %s" % [row])
+		return false
+	if bool(row.get("server_authoritative", true)) or bool(row.get("client_result_authoritative", true)) or bool(row.get("requires_server_confirmation", true)):
+		push_error("Smoke test failed: stage practice authority flags invalid %s" % [row])
+		return false
+	if String(row.get("server_confirmation_status", "")) != "not_applicable_local_practice" or not bool(row.get("practice_replay_metadata_ready", false)):
+		push_error("Smoke test failed: stage practice confirmation/metadata invalid %s" % [row])
+		return false
+	var server_required: Array = row.get("server_required_for", [])
+	for field in ["damage", "reward", "settlement", "boss_hp"]:
+		if not server_required.has(field):
+			push_error("Smoke test failed: stage practice server required field missing %s in %s" % [field, row])
+			return false
 	return true
 
 func _validate_pattern_lab_rows(rows: Array[Dictionary], required_basis: Array[String]) -> bool:
