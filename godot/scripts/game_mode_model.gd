@@ -2199,6 +2199,7 @@ func _world_boss_result_row() -> Dictionary:
 	var outcome_projection := boss_outcome_projection(MODE_WORLD_BOSS)
 	var receipt_projection := boss_settlement_receipt_projection(MODE_WORLD_BOSS)
 	var receipt_card := _boss_settlement_receipt_card(MODE_WORLD_BOSS, receipt_projection)
+	var result_authority_summary := boss_result_authority_summary(MODE_WORLD_BOSS, outcome_projection, receipt_projection)
 	return {
 		"id": "world_boss_result",
 		"label_key": "screen.mode.boss.result",
@@ -2233,6 +2234,11 @@ func _world_boss_result_row() -> Dictionary:
 		"result_key_id": str(world_boss_state.get("last_result_key_id", "")),
 		"receipt_source": str(world_boss_state.get("last_result_receipt_source", "")),
 		"receipt_status": String(receipt_projection.get("receipt_status", "")),
+		"result_authority_summary": result_authority_summary,
+		"result_authority_summary_kind": String(result_authority_summary.get("summary_kind", "")),
+		"result_authority_text": String(result_authority_summary.get("authority_text", "")),
+		"result_authority_badges": result_authority_summary.get("authority_badges", []),
+		"result_server_required_fields": result_authority_summary.get("server_required_fields", []),
 		"settlement_receipt": receipt_projection.get("settlement_receipt", {}),
 		"settlement_receipt_projection": receipt_projection,
 		"receipt_card": receipt_card,
@@ -2264,6 +2270,7 @@ func _instance_boss_result_row() -> Dictionary:
 	var outcome_projection := boss_outcome_projection(MODE_INSTANCE_BOSS)
 	var receipt_projection := boss_settlement_receipt_projection(MODE_INSTANCE_BOSS)
 	var receipt_card := _boss_settlement_receipt_card(MODE_INSTANCE_BOSS, receipt_projection)
+	var result_authority_summary := boss_result_authority_summary(MODE_INSTANCE_BOSS, outcome_projection, receipt_projection)
 	var met_conditions := 0
 	for condition in star_conditions:
 		if typeof(condition) == TYPE_DICTIONARY and bool((condition as Dictionary).get("met", false)):
@@ -2309,6 +2316,11 @@ func _instance_boss_result_row() -> Dictionary:
 		"result_key_id": str(instance_boss_state.get("last_result_key_id", "")),
 		"receipt_source": str(instance_boss_state.get("last_result_receipt_source", "")),
 		"receipt_status": String(receipt_projection.get("receipt_status", "")),
+		"result_authority_summary": result_authority_summary,
+		"result_authority_summary_kind": String(result_authority_summary.get("summary_kind", "")),
+		"result_authority_text": String(result_authority_summary.get("authority_text", "")),
+		"result_authority_badges": result_authority_summary.get("authority_badges", []),
+		"result_server_required_fields": result_authority_summary.get("server_required_fields", []),
 		"settlement_receipt": receipt_projection.get("settlement_receipt", {}),
 		"settlement_receipt_projection": receipt_projection,
 		"receipt_card": receipt_card,
@@ -2447,6 +2459,67 @@ func boss_settlement_receipt_projection(mode_id: String) -> Dictionary:
 		"reward_authority": "server",
 		"damage_authority": "server",
 		"requires_server_confirmation": true,
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
+func boss_result_authority_summary(mode_id: String, outcome_projection: Dictionary = {}, receipt_projection: Dictionary = {}) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"summary_kind": "boss_result_authority_summary",
+			"authority_text": "invalid boss mode; server result required",
+			"server_required_fields": ["damage", "reward_grants", "settlement", "result_receipt"],
+			"authority_badges": ["damage_server", "reward_server", "settlement_server"],
+			"damage_authority": "server",
+			"reward_authority": "server",
+			"settlement_authority": "server",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var state := _state_for_mode(mode_id)
+	var safe_outcome := outcome_projection
+	if safe_outcome.is_empty():
+		safe_outcome = boss_outcome_projection(mode_id)
+	var safe_receipt := receipt_projection
+	if safe_receipt.is_empty():
+		safe_receipt = boss_settlement_receipt_projection(mode_id)
+	var server_required_fields: Array[String] = ["damage", "reward_grants", "settlement", "result_receipt"]
+	var authority_badges: Array[String] = ["damage_server", "reward_server", "settlement_server", "result_receipt_server"]
+	var mode_result_scope := "world_boss_persistent_hp"
+	if mode_id == MODE_WORLD_BOSS:
+		server_required_fields.append_array(["persistent_hp", "daily_attempts", "defeated_at", "world_announcement"])
+		authority_badges.append("persistent_hp_server")
+	else:
+		mode_result_scope = "instance_boss_clear"
+		server_required_fields.append_array(["clear_status", "stars", "access_gate"])
+		authority_badges.append("clear_status_server")
+	return {
+		"ok": true,
+		"reason": "none",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"summary_kind": "boss_result_authority_summary",
+		"authority_text": "server settlement owns %s; client only displays receipt and outcome projection" % mode_result_scope,
+		"mode_result_scope": mode_result_scope,
+		"outcome_kind": String(safe_outcome.get("outcome_kind", "")),
+		"outcome_status": String(safe_outcome.get("outcome_status", "")),
+		"receipt_status": String(safe_receipt.get("receipt_status", "pending_server_receipt")),
+		"result_status": str(state.get("last_result_status", "pending")),
+		"result_source": str(state.get("last_result_source", "")),
+		"result_receipt_id": str(state.get("last_result_receipt_id", "")),
+		"result_hash": str(state.get("last_result_hash", "")),
+		"result_rejected": bool(state.get("last_result_rejected_client_authoritative", false)),
+		"result_rejected_reason": str(state.get("last_result_rejected_reason", "")),
+		"server_required_fields": server_required_fields,
+		"authority_badges": authority_badges,
+		"requires_server_confirmation": true,
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 	}

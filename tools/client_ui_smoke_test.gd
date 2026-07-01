@@ -284,11 +284,15 @@ func _validate_boss_settlement_receipts() -> bool:
 		return false
 	if not _assert_boss_outcome_projection(_row_by_id(rows, "world_boss_result"), "world_boss", "world_boss_persistent_hp_outcome", "applied"):
 		return false
+	if not _assert_boss_result_authority_summary(_row_by_id(rows, "world_boss_result"), "world_boss", "world_boss_persistent_hp"):
+		return false
 	if bool(_row_by_id(rows, "world_boss_result").get("result_rejected", true)):
 		return _fail("world boss server receipt did not clear rejected flag %s" % [_row_by_id(rows, "world_boss_result")])
 	if not _assert_boss_result_receipt_row(_row_by_id(rows, "instance_boss_result"), "instance_boss", "instance_receipt_ui", "instance_hash_ui"):
 		return false
 	if not _assert_boss_outcome_projection(_row_by_id(rows, "instance_boss_result"), "instance_boss", "instance_boss_clear_outcome", "cleared"):
+		return false
+	if not _assert_boss_result_authority_summary(_row_by_id(rows, "instance_boss_result"), "instance_boss", "instance_boss_clear"):
 		return false
 	var world_result_index := _row_index_by_id(rows, "world_boss_result")
 	if world_result_index < 0:
@@ -1188,6 +1192,26 @@ func _assert_boss_outcome_projection(row: Dictionary, mode_id: String, expected_
 	var receipt_card: Dictionary = row.get("receipt_card", {})
 	if String(receipt_card.get("outcome_kind", "")) != expected_kind or String(receipt_card.get("outcome_status", "")) != expected_status:
 		return _fail("boss receipt card outcome mismatch %s" % [receipt_card])
+	return true
+
+func _assert_boss_result_authority_summary(row: Dictionary, mode_id: String, expected_scope: String) -> bool:
+	if row.is_empty():
+		return _fail("boss result authority summary row missing for %s" % mode_id)
+	var summary: Dictionary = row.get("result_authority_summary", {})
+	if String(row.get("result_authority_summary_kind", "")) != "boss_result_authority_summary" or String(summary.get("summary_kind", "")) != "boss_result_authority_summary":
+		return _fail("boss result authority summary kind mismatch %s" % [row])
+	if not String(row.get("result_authority_text", "")).contains("server settlement owns") or not String(summary.get("authority_text", "")).contains(expected_scope):
+		return _fail("boss result authority summary text mismatch %s" % [row])
+	if String(summary.get("mode_result_scope", "")) != expected_scope or bool(summary.get("client_result_authoritative", true)):
+		return _fail("boss result authority summary scope mismatch %s" % [summary])
+	if String(summary.get("damage_authority", "")) != "server" or String(summary.get("reward_authority", "")) != "server" or String(summary.get("settlement_authority", "")) != "server":
+		return _fail("boss result authority summary server authority mismatch %s" % [summary])
+	var required_fields: Array = summary.get("server_required_fields", [])
+	if required_fields.size() < 4 or not required_fields.has("damage") or not required_fields.has("reward_grants") or not required_fields.has("settlement") or not required_fields.has("result_receipt"):
+		return _fail("boss result authority summary required fields mismatch %s" % [summary])
+	var badges: Array = summary.get("authority_badges", [])
+	if not badges.has("damage_server") or not badges.has("reward_server") or not badges.has("settlement_server"):
+		return _fail("boss result authority summary badges mismatch %s" % [summary])
 	return true
 
 func _assert_boss_action_contract(row: Dictionary, mode_id: String, expected_entry_enabled: bool, expected_transfer_enabled: bool, expected_confirmation: String) -> bool:
