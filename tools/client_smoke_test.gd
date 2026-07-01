@@ -6465,6 +6465,22 @@ func _validate_boss_practice_validation_card_row(row: Dictionary, mode_id: Strin
 	if bool(row.get("server_authoritative", true)) or bool(row.get("client_result_authoritative", true)) or bool(row.get("requires_server_confirmation", true)):
 		push_error("Smoke test failed: boss practice validation authority flags invalid %s" % [row])
 		return false
+	if String(row.get("launch_contract_kind", "")) != "boss_practice_launch_contract" \
+			or String(row.get("launch_status", "")) != "ready_local_preview" \
+			or not bool(row.get("local_launch_allowed", false)) \
+			or String(row.get("launch_target_screen", "")) != "practice":
+		push_error("Smoke test failed: boss practice validation launch contract invalid %s" % [row])
+		return false
+	var allowed_fields: Array = row.get("local_practice_allowed_fields", [])
+	var forbidden_fields: Array = row.get("client_forbidden_result_fields", [])
+	if not allowed_fields.has("preview_bundle_signature_digest") \
+			or not allowed_fields.has("preview_phase_ids") \
+			or not forbidden_fields.has("damage_total") \
+			or not forbidden_fields.has("boss_hp") \
+			or not forbidden_fields.has("reward_grants") \
+			or not forbidden_fields.has("settlement_receipt"):
+		push_error("Smoke test failed: boss practice validation field boundary invalid %s" % [row])
+		return false
 	if int(row.get("player_count", 0)) != expected_count or not bool(row.get("replay_phase_validation_ready", false)):
 		push_error("Smoke test failed: boss practice validation readiness invalid %s expected_count=%d" % [row, expected_count])
 		return false
