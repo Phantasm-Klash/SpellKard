@@ -1840,11 +1840,18 @@ func boss_practice_validation_projection(mode_id: String) -> Dictionary:
 	var formation := validate_boss_formation(mode_id)
 	var formation_display := boss_formation_display_summary(mode_id)
 	var playfield := boss_playfield_projection(mode_id)
+	var replay_phase_rows := _boss_practice_replay_phase_validation_rows(practice)
+	var replay_phase_ready := not replay_phase_rows.is_empty()
 	var blockers: Array[String] = []
 	if not bool(practice.get("ok", false)):
 		blockers.append(String(practice.get("reason", "practice_preview_failed")))
 	if not bool(replay_metadata.get("ok", false)):
 		blockers.append(String(replay_metadata.get("reason", "replay_metadata_failed")))
+	if not replay_phase_ready:
+		blockers.append("replay_phase_validation_missing")
+	for phase_row in replay_phase_rows:
+		if String(phase_row.get("validation_status", "")) != "ready" and not blockers.has("replay_phase_validation_blocked"):
+			blockers.append("replay_phase_validation_blocked")
 	if not bool(formation.get("ok", false)):
 		for failure in _string_array(formation.get("failures", [])):
 			if not blockers.has(failure):
@@ -1873,6 +1880,10 @@ func boss_practice_validation_projection(mode_id: String) -> Dictionary:
 		"local_blockers": blockers,
 		"practice_preview_ready": bool(practice.get("ok", false)),
 		"replay_metadata_ready": bool(replay_metadata.get("ok", false)),
+		"replay_phase_validation_ready": replay_phase_ready and not blockers.has("replay_phase_validation_blocked"),
+		"replay_phase_validation_rows": replay_phase_rows,
+		"replay_phase_validation_count": replay_phase_rows.size(),
+		"replay_phase_validation_scope": "local_practice_hash",
 		"formation_valid": bool(formation.get("ok", false)),
 		"center_aim_valid": bool(formation_display.get("center_aim_valid", false)),
 		"all_slots_face_center": bool(formation_display.get("all_slots_face_center", false)),
@@ -1907,6 +1918,63 @@ func boss_practice_validation_projection(mode_id: String) -> Dictionary:
 		"server_authoritative": false,
 		"client_result_authoritative": false,
 	}
+
+func _boss_practice_replay_phase_validation_rows(practice: Dictionary) -> Array[Dictionary]:
+	var rows: Array[Dictionary] = []
+	var export_data := _cached_boss_preview_export_data()
+	var phases: Array = export_data.get("phases", [])
+	var bundle_phase_ids := _string_array(practice.get("preview_phase_ids", export_data.get("preview_phase_ids", [])))
+	var bundle_phase_digests := _int_array(practice.get("preview_phase_signature_digests", export_data.get("preview_phase_signature_digests", [])))
+	for i in range(phases.size()):
+		if typeof(phases[i]) != TYPE_DICTIONARY:
+			continue
+		var phase_entry: Dictionary = phases[i]
+		var preview: Dictionary = phase_entry.get("deterministic_preview", {})
+		var phase_id := String(phase_entry.get("phase_id", preview.get("phase_id", "")))
+		var digest := int(preview.get("signature_digest", 0))
+		var expected_digest := int(bundle_phase_digests[i]) if i < bundle_phase_digests.size() else 0
+		var expected_phase_id := String(bundle_phase_ids[i]) if i < bundle_phase_ids.size() else phase_id
+		var scope := String(preview.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE))
+		var status := "ready"
+		if phase_id != expected_phase_id:
+			status = "phase_id_mismatch"
+		elif digest <= 0 or digest != expected_digest:
+			status = "digest_mismatch"
+		elif scope != BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE:
+			status = "scope_mismatch"
+		elif String(preview.get("performance_budget_status", "")) != "within_budget":
+			status = "budget_blocked"
+		rows.append({
+			"id": "boss_practice_replay_phase_%s" % phase_id,
+			"phase_index": i,
+			"phase_id": phase_id,
+			"expected_phase_id": expected_phase_id,
+			"mode_category": "boss",
+			"validation_status": status,
+			"replay_verification_scope": "local_practice_hash",
+			"preview_authority_scope": scope,
+			"preview_signature_digest": digest,
+			"expected_signature_digest": expected_digest,
+			"sample_count": int(preview.get("sample_count", (preview.get("samples", []) as Array).size())),
+			"sample_window_start_tick": int(preview.get("sample_window_start_tick", 0)),
+			"sample_window_end_tick": int(preview.get("sample_window_end_tick", 0)),
+			"sample_window_stride_ticks": int(preview.get("sample_window_stride_ticks", 0)),
+			"sample_signature_digests": preview.get("sample_signature_digests", []),
+			"sample_emit_counts": preview.get("sample_emit_counts", []),
+			"max_emit_per_tick": int(preview.get("max_emit_per_tick", 0)),
+			"budget_headroom": int(preview.get("budget_headroom", 0)),
+			"performance_budget_status": String(preview.get("performance_budget_status", "")),
+			"local_hash_authority": "local_practice_verification_only",
+			"online_replay_authority": "server_audit_required",
+			"damage_authority": "server",
+			"reward_authority": "server",
+			"settlement_authority": "server",
+			"boss_hp_authority": "server",
+			"requires_server_confirmation": false,
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		})
+	return rows
 
 func _cached_boss_preview_export_data() -> Dictionary:
 	var cache_key := "%s:%d:export" % [BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, BOSS_LOCAL_PREVIEW_SEED]
@@ -3079,6 +3147,7 @@ func _boss_practice_validation_row(row_id: String, mode_id: String) -> Dictionar
 		{"id": "slots", "label": "slots", "value": player_count},
 		{"id": "center_aim", "label": "center aim", "value": "ok" if bool(projection.get("center_aim_valid", false)) else "blocked"},
 		{"id": "replay_hash", "label": "replay hash", "value": String(projection.get("replay_verification_scope", "local_practice_hash"))},
+		{"id": "phase_rows", "label": "phase rows", "value": int(projection.get("replay_phase_validation_count", 0))},
 	]
 	return {
 		"id": row_id,
@@ -3109,6 +3178,10 @@ func _boss_practice_validation_row(row_id: String, mode_id: String) -> Dictionar
 		"local_blockers": projection.get("local_blockers", []),
 		"practice_preview_ready": bool(projection.get("practice_preview_ready", false)),
 		"replay_metadata_ready": bool(projection.get("replay_metadata_ready", false)),
+		"replay_phase_validation_ready": bool(projection.get("replay_phase_validation_ready", false)),
+		"replay_phase_validation_rows": projection.get("replay_phase_validation_rows", []),
+		"replay_phase_validation_count": int(projection.get("replay_phase_validation_count", 0)),
+		"replay_phase_validation_scope": String(projection.get("replay_phase_validation_scope", "local_practice_hash")),
 		"formation_valid": bool(projection.get("formation_valid", false)),
 		"center_aim_valid": bool(projection.get("center_aim_valid", false)),
 		"all_slots_face_center": bool(projection.get("all_slots_face_center", false)),

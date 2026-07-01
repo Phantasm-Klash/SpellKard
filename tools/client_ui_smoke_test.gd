@@ -1339,6 +1339,7 @@ func _assert_boss_practice_validation_row(row: Dictionary, mode_id: String, expe
 		return _fail("boss practice validation must keep online authority on server %s" % [row])
 	if not bool(row.get("practice_preview_ready", false)) \
 			or not bool(row.get("replay_metadata_ready", false)) \
+			or not bool(row.get("replay_phase_validation_ready", false)) \
 			or not bool(row.get("formation_valid", false)) \
 			or not bool(row.get("center_aim_valid", false)) \
 			or not bool(row.get("all_slots_face_center", false)):
@@ -1350,6 +1351,7 @@ func _assert_boss_practice_validation_row(row: Dictionary, mode_id: String, expe
 			or int(row.get("preview_phase_count", 0)) < 3:
 		return _fail("boss practice validation missing deterministic signatures %s" % [row])
 	if String(row.get("replay_verification_scope", "")) != "local_practice_hash" \
+			or String(row.get("replay_phase_validation_scope", "")) != "local_practice_hash" \
 			or String(row.get("local_hash_authority", "")) != "local_practice_verification_only" \
 			or String(row.get("online_replay_authority", "")) != "server_audit_required":
 		return _fail("boss practice validation replay authority mismatch %s" % [row])
@@ -1362,6 +1364,28 @@ func _assert_boss_practice_validation_row(row: Dictionary, mode_id: String, expe
 	var metrics: Array = row.get("validation_metrics", [])
 	if metrics.size() < 5 or not String(row.get("validation_summary", "")).contains("replay local_practice_hash"):
 		return _fail("boss practice validation metrics invalid %s" % [row])
+	var phase_rows: Array = row.get("replay_phase_validation_rows", [])
+	if int(row.get("replay_phase_validation_count", 0)) != int(row.get("preview_phase_count", 0)) \
+			or phase_rows.size() != int(row.get("preview_phase_count", 0)):
+		return _fail("boss practice validation phase rows count invalid %s" % [row])
+	var phase_ids: Array = row.get("preview_phase_ids", [])
+	for i in range(phase_rows.size()):
+		if typeof(phase_rows[i]) != TYPE_DICTIONARY:
+			return _fail("boss practice validation phase row type invalid %s" % [row])
+		var phase_row: Dictionary = phase_rows[i]
+		if String(phase_row.get("validation_status", "")) != "ready" \
+				or String(phase_row.get("replay_verification_scope", "")) != "local_practice_hash" \
+				or String(phase_row.get("local_hash_authority", "")) != "local_practice_verification_only" \
+				or String(phase_row.get("online_replay_authority", "")) != "server_audit_required" \
+				or bool(phase_row.get("server_authoritative", true)) \
+				or bool(phase_row.get("client_result_authoritative", true)) \
+				or bool(phase_row.get("requires_server_confirmation", true)):
+			return _fail("boss practice validation phase row authority invalid %s" % [phase_row])
+		if String(phase_row.get("phase_id", "")) != String(phase_ids[i]) \
+				or int(phase_row.get("preview_signature_digest", 0)) <= 0 \
+				or int(phase_row.get("preview_signature_digest", 0)) != int(phase_row.get("expected_signature_digest", -1)) \
+				or String(phase_row.get("performance_budget_status", "")) != "within_budget":
+			return _fail("boss practice validation phase row digest invalid %s" % [phase_row])
 	if not _assert_boss_display_summary_fields(row, mode_id, expected_count):
 		return false
 	return true
