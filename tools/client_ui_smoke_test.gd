@@ -1395,6 +1395,20 @@ func _assert_boss_practice_validation_row(row: Dictionary, mode_id: String, expe
 			or String(row.get("local_practice_target_screen", "")) != "practice" \
 			or String(row.get("online_result_authority", "")) != "server_settlement_required":
 		return _fail("boss practice validation action contract mismatch %s" % [row])
+	if String(row.get("launch_contract_kind", "")) != "boss_practice_launch_contract" \
+			or String(row.get("launch_status", "")) != "ready_local_preview" \
+			or not bool(row.get("local_launch_allowed", false)) \
+			or String(row.get("launch_target_screen", "")) != "practice":
+		return _fail("boss practice validation launch contract mismatch %s" % [row])
+	var allowed_fields: Array = row.get("local_practice_allowed_fields", [])
+	var forbidden_fields: Array = row.get("client_forbidden_result_fields", [])
+	if not allowed_fields.has("preview_bundle_signature_digest") \
+			or not allowed_fields.has("preview_phase_ids") \
+			or not forbidden_fields.has("damage_total") \
+			or not forbidden_fields.has("boss_hp") \
+			or not forbidden_fields.has("reward_grants") \
+			or not forbidden_fields.has("settlement_receipt"):
+		return _fail("boss practice validation launch field boundary invalid %s" % [row])
 	var metrics: Array = row.get("validation_metrics", [])
 	if metrics.size() < 5 or not String(row.get("validation_summary", "")).contains("replay local_practice_hash"):
 		return _fail("boss practice validation metrics invalid %s" % [row])
@@ -1484,6 +1498,11 @@ func _assert_boss_practice_preview_launch(row_id: String, mode_id: String, rows:
 			or String(preview_action.get("performance_budget_status", "")) != "within_budget" \
 			or String(preview_action.get("local_hash_authority", "")) != "local_practice_verification_only" \
 			or String(preview_action.get("online_result_authority", "")) != "server_settlement_required" \
+			or String(preview_action.get("launch_contract_kind", "")) != "boss_practice_launch_contract" \
+			or String(preview_action.get("launch_status", "")) != "ready_local_preview" \
+			or not bool(preview_action.get("local_launch_allowed", false)) \
+			or not (preview_action.get("local_practice_allowed_fields", []) as Array).has("preview_bundle_signature_digest") \
+			or not (preview_action.get("client_forbidden_result_fields", []) as Array).has("settlement_receipt") \
 			or bool(preview_action.get("client_result_authoritative", true)):
 		return _fail("%s practice preview action invalid %s" % [mode_id, preview_action])
 	var snapshot: Dictionary = main_node.call("_ui_overlay_snapshot")

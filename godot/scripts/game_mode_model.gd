@@ -1893,6 +1893,7 @@ func boss_practice_validation_projection(mode_id: String) -> Dictionary:
 	if not bool(formation_display.get("all_slots_face_center", false)):
 		blockers.append("slot_aim_invalid")
 	var ready := blockers.is_empty()
+	var launch_contract := _boss_practice_launch_contract(mode_id, ready, blockers)
 	var validation_summary := "practice %s digest %d formation %d slots %d center %s replay %s" % [
 		"ready" if ready else "blocked",
 		int(practice.get("preview_bundle_signature_digest", 0)),
@@ -1910,6 +1911,16 @@ func boss_practice_validation_projection(mode_id: String) -> Dictionary:
 		"validation_status": "ready" if ready else "blocked_local",
 		"validation_summary": validation_summary,
 		"local_blockers": blockers,
+		"launch_contract": launch_contract,
+		"launch_contract_kind": String(launch_contract.get("contract_kind", "boss_practice_launch_contract")),
+		"launch_contract_version": int(launch_contract.get("contract_version", 1)),
+		"launch_status": String(launch_contract.get("launch_status", "blocked_local")),
+		"local_launch_allowed": bool(launch_contract.get("can_launch", false)),
+		"launch_target_screen": String(launch_contract.get("target_screen", "practice")),
+		"local_practice_allowed_fields": launch_contract.get("allowed_local_fields", []),
+		"client_forbidden_result_fields": launch_contract.get("client_forbidden_result_fields", []),
+		"launch_checklist": launch_contract.get("launch_checklist", []),
+		"launch_checklist_count": int((launch_contract.get("launch_checklist", []) as Array).size()),
 		"practice_preview_ready": bool(practice.get("ok", false)),
 		"replay_metadata_ready": bool(replay_metadata.get("ok", false)),
 		"replay_phase_validation_ready": replay_phase_ready and not blockers.has("replay_phase_validation_blocked"),
@@ -1960,6 +1971,60 @@ func boss_practice_validation_projection(mode_id: String) -> Dictionary:
 	}
 	boss_preview_cache[cache_key] = result
 	return result
+
+func _boss_practice_launch_contract(mode_id: String, ready: bool, blockers: Array[String]) -> Dictionary:
+	var allowed_fields: Array[String] = [
+		"mode_id",
+		"spellbook_id",
+		"preview_seed",
+		"preview_bundle_id",
+		"preview_bundle_signature_digest",
+		"preview_phase_ids",
+		"preview_phase_signature_digests",
+	]
+	var forbidden_result_fields: Array[String] = [
+		"damage_total",
+		"boss_hp",
+		"boss_hp_after_global",
+		"reward_grants",
+		"settlement_status",
+		"settlement_receipt",
+		"world_announcement",
+		"clear_status",
+		"stars",
+	]
+	var checklist: Array[Dictionary] = [
+		{"id": "preview_ready", "ok": ready, "status": "ready" if ready else "blocked_local"},
+		{"id": "target_screen", "ok": true, "status": "practice"},
+		{"id": "replay_scope", "ok": true, "status": "local_practice_hash"},
+		{"id": "online_result_boundary", "ok": true, "status": "server_settlement_required"},
+	]
+	return {
+		"ok": ready,
+		"reason": "none" if blockers.is_empty() else blockers[0],
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"contract_kind": "boss_practice_launch_contract",
+		"contract_version": 1,
+		"launch_action": "start_boss_practice_preview",
+		"launch_status": "ready_local_preview" if ready else "blocked_local",
+		"can_launch": ready,
+		"target_screen": "practice",
+		"allowed_local_fields": allowed_fields,
+		"client_forbidden_result_fields": forbidden_result_fields,
+		"launch_checklist": checklist,
+		"projection_scope": BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+		"replay_verification_scope": "local_practice_hash",
+		"local_hash_authority": "local_practice_verification_only",
+		"online_result_authority": "server_settlement_required",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"boss_hp_authority": "server",
+		"requires_server_confirmation": false,
+		"server_authoritative": false,
+		"client_result_authoritative": false,
+	}
 
 func _boss_practice_authority_checklist(practice: Dictionary, replay_metadata: Dictionary, replay_phase_rows: Array[Dictionary]) -> Array[Dictionary]:
 	return [
@@ -3224,6 +3289,13 @@ func _boss_practice_preview_row(row_id: String, mode_id: String) -> Dictionary:
 		"reward_server",
 		"settlement_server",
 	]
+	var launch_ready := bool(projection.get("ok", false)) and bool(replay_metadata.get("ok", false))
+	var launch_blockers: Array[String] = []
+	if not bool(projection.get("ok", false)):
+		launch_blockers.append(String(projection.get("reason", "practice_preview_failed")))
+	if not bool(replay_metadata.get("ok", false)):
+		launch_blockers.append(String(replay_metadata.get("reason", "replay_metadata_failed")))
+	var launch_contract := _boss_practice_launch_contract(mode_id, launch_ready, launch_blockers)
 	return {
 		"id": row_id,
 		"label_key": "screen.settings.boss_spellbook",
@@ -3253,6 +3325,16 @@ func _boss_practice_preview_row(row_id: String, mode_id: String) -> Dictionary:
 		"preview_card_action_hint": "start local practice preview; Replay verification only",
 		"local_practice_action": "start_boss_spellbook_run",
 		"local_practice_target_screen": "practice",
+		"launch_contract": launch_contract,
+		"launch_contract_kind": String(launch_contract.get("contract_kind", "boss_practice_launch_contract")),
+		"launch_contract_version": int(launch_contract.get("contract_version", 1)),
+		"launch_status": String(launch_contract.get("launch_status", "blocked_local")),
+		"local_launch_allowed": bool(launch_contract.get("can_launch", false)),
+		"launch_target_screen": String(launch_contract.get("target_screen", "practice")),
+		"local_practice_allowed_fields": launch_contract.get("allowed_local_fields", []),
+		"client_forbidden_result_fields": launch_contract.get("client_forbidden_result_fields", []),
+		"launch_checklist": launch_contract.get("launch_checklist", []),
+		"launch_checklist_count": int((launch_contract.get("launch_checklist", []) as Array).size()),
 		"replay_metadata_contract": replay_metadata,
 		"replay_metadata_ready": bool(replay_metadata.get("ok", false)),
 		"replay_metadata_contract_kind": String(replay_metadata.get("metadata_contract_kind", "")),
@@ -3324,6 +3406,16 @@ func _boss_practice_validation_row(row_id: String, mode_id: String) -> Dictionar
 		"validation_status": String(projection.get("validation_status", "")),
 		"validation_summary": String(projection.get("validation_summary", "")),
 		"validation_metrics": validation_metrics,
+		"launch_contract": projection.get("launch_contract", {}),
+		"launch_contract_kind": String(projection.get("launch_contract_kind", "boss_practice_launch_contract")),
+		"launch_contract_version": int(projection.get("launch_contract_version", 1)),
+		"launch_status": String(projection.get("launch_status", "blocked_local")),
+		"local_launch_allowed": bool(projection.get("local_launch_allowed", false)),
+		"launch_target_screen": String(projection.get("launch_target_screen", "practice")),
+		"local_practice_allowed_fields": projection.get("local_practice_allowed_fields", []),
+		"client_forbidden_result_fields": projection.get("client_forbidden_result_fields", []),
+		"launch_checklist": projection.get("launch_checklist", []),
+		"launch_checklist_count": int(projection.get("launch_checklist_count", 0)),
 		"preview_card_primary_metric": "practice validation",
 		"preview_card_secondary_metric": "formation %d slots %d" % [formation_signature, player_count],
 		"local_blockers": projection.get("local_blockers", []),
