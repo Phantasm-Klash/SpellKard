@@ -2545,6 +2545,43 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	if not main_node.call("_apply_instance_boss_result", {
+		"match_id": "ib-smoke-mechanic-failed",
+		"settlement_key": "instance-boss-result:ib-smoke-mechanic-failed",
+		"result_hash": "sha256:instanceboss-mechanic-failed",
+		"server_time": "2026-06-25T00:04:50Z",
+		"boss_defeated": true,
+		"survivors": 4,
+		"failed_mechanic": true,
+		"failed_mechanic_id": "altar_timeout",
+		"failed_mechanic_ids": ["altar_timeout", "seal_break_missed"],
+		"failed_mechanic_summary": "altar_timeout,seal_break_missed",
+		"clear_time_seconds": 160,
+		"server_authoritative": true,
+	}):
+		push_error("Smoke test failed: server failed-mechanic instance boss result rejected")
+		quit(1)
+		return true
+	var failed_mechanic_result: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_result")
+	var failed_mechanic_conditions: Array = failed_mechanic_result.get("star_conditions", [])
+	var failed_clear_condition: Dictionary = failed_mechanic_conditions[0] if failed_mechanic_conditions.size() > 0 and typeof(failed_mechanic_conditions[0]) == TYPE_DICTIONARY else {}
+	if bool(failed_mechanic_result.get("cleared", true)) or not bool(failed_mechanic_result.get("failed_mechanic", false)) or String(failed_mechanic_result.get("failed_mechanic_id", "")) != "altar_timeout" or String(failed_mechanic_result.get("failed_mechanic_authority", "")) != "server":
+		push_error("Smoke test failed: failed-mechanic instance boss result projection invalid %s" % [failed_mechanic_result])
+		quit(1)
+		return true
+	if bool(failed_clear_condition.get("met", true)) or String(failed_clear_condition.get("failed_mechanic_id", "")) != "altar_timeout" or String(failed_clear_condition.get("failed_mechanic_authority", "")) != "server":
+		push_error("Smoke test failed: failed-mechanic clear condition invalid %s" % [failed_clear_condition])
+		quit(1)
+		return true
+	if not (failed_mechanic_result.get("result_server_required_fields", []) as Array).has("failed_mechanic"):
+		push_error("Smoke test failed: failed-mechanic server authority field missing %s" % [failed_mechanic_result])
+		quit(1)
+		return true
+	var failed_conditions_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_conditions")
+	if String(failed_conditions_row.get("failed_mechanic_id", "")) != "altar_timeout" or bool(failed_conditions_row.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: failed-mechanic conditions row invalid %s" % [failed_conditions_row])
+		quit(1)
+		return true
+	if not main_node.call("_apply_instance_boss_result", {
 		"match_id": "ib-smoke-001",
 		"settlement_key": "instance-boss-result:ib-smoke-001",
 		"result_hash": "sha256:instanceboss",

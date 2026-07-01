@@ -539,7 +539,7 @@ func boss_authority_summary(mode_id: String) -> Dictionary:
 	if mode_id == MODE_WORLD_BOSS:
 		server_fields.append_array(["persistent_hp", "daily_attempts", "defeated_at", "world_announcement"])
 	else:
-		server_fields.append_array(["access_gate", "clear_status", "stars"])
+		server_fields.append_array(["access_gate", "clear_status", "stars", "failed_mechanic"])
 	var client_scopes: Array[String] = [
 		"local_display_projection",
 		"formation_preview",
@@ -1637,11 +1637,18 @@ func apply_instance_boss_result(result: Dictionary) -> bool:
 	var boss_defeated := bool(result.get("boss_defeated", result.get("instance_cleared", false)))
 	var survivors := int(result.get("survivors", 0))
 	var failed_mechanic := bool(result.get("failed_mechanic", false))
+	var failed_mechanic_ids := _boss_failed_mechanic_ids_from_result(result, failed_mechanic)
+	var failed_mechanic_id := String(result.get("failed_mechanic_id", failed_mechanic_ids[0] if not failed_mechanic_ids.is_empty() else ""))
+	var failed_mechanic_summary := String(result.get("failed_mechanic_summary", result.get("failed_mechanic_reason", ",".join(failed_mechanic_ids)))).strip_edges()
 	var survivor_required := bool(result.get("survivor_required", instance_boss_state.get("survivor_required", true)))
 	var cleared := bool(result.get("instance_cleared", boss_defeated and (survivors > 0 or not survivor_required) and not failed_mechanic))
 	instance_boss_state["boss_defeated"] = boss_defeated
 	instance_boss_state["survivors"] = survivors
 	instance_boss_state["failed_mechanic"] = failed_mechanic
+	instance_boss_state["failed_mechanic_id"] = failed_mechanic_id
+	instance_boss_state["failed_mechanic_ids"] = failed_mechanic_ids
+	instance_boss_state["failed_mechanic_summary"] = failed_mechanic_summary
+	instance_boss_state["failed_mechanic_source"] = "server_settlement" if failed_mechanic else "none"
 	instance_boss_state["cleared"] = cleared
 	instance_boss_state["party_status"] = str(result.get("party_status", "cleared" if cleared else "failed"))
 	instance_boss_state["current_hp"] = max(0.0, float(result.get("boss_hp_after", instance_boss_state.get("current_hp", 0.0))))
@@ -1716,7 +1723,7 @@ func _instance_boss_rows() -> Array[Dictionary]:
 		_boss_authority_summary_row("instance_boss_authority", MODE_INSTANCE_BOSS),
 		_boss_entry_row("instance_boss_entry", MODE_INSTANCE_BOSS, instance_boss_state),
 		{"id": "instance_boss_phase", "label_key": "screen.mode.instance.phase", "value": str(instance_boss_state.get("boss_phase", "phase_1")), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": true},
-		{"id": "instance_boss_conditions", "label_key": "screen.mode.instance.conditions", "value": "clear %s" % bool(instance_boss_state.get("cleared", false)), "items": instance_boss_state.get("clear_conditions", []), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": true},
+		{"id": "instance_boss_conditions", "label_key": "screen.mode.instance.conditions", "value": "clear %s mechanic %s" % [bool(instance_boss_state.get("cleared", false)), String(instance_boss_state.get("failed_mechanic_id", "")) if bool(instance_boss_state.get("failed_mechanic", false)) else "ok"], "items": instance_boss_state.get("clear_conditions", []), "failed_mechanic": bool(instance_boss_state.get("failed_mechanic", false)), "failed_mechanic_id": String(instance_boss_state.get("failed_mechanic_id", "")), "failed_mechanic_ids": _string_array(instance_boss_state.get("failed_mechanic_ids", [])), "failed_mechanic_summary": String(instance_boss_state.get("failed_mechanic_summary", "")), "failed_mechanic_authority": "server", "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": true},
 		{"id": "instance_boss_stars", "label_key": "screen.mode.instance.stars", "value": int(instance_boss_state.get("stars", 0)), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": bool(instance_boss_state.get("cleared", false))},
 		_boss_party_row("instance_boss_party", MODE_INSTANCE_BOSS, instance_boss_state),
 		_boss_formation_row("instance_boss_formation", MODE_INSTANCE_BOSS, instance_boss_state),
@@ -1772,6 +1779,10 @@ func _default_boss_state(is_world: bool) -> Dictionary:
 		"stars": 0,
 		"survivors": 0,
 		"failed_mechanic": false,
+		"failed_mechanic_id": "",
+		"failed_mechanic_ids": [],
+		"failed_mechanic_summary": "",
+		"failed_mechanic_source": "none",
 		"clear_time_seconds": 0,
 		"deaths": 0,
 		"bombs_used": 0,
@@ -2482,7 +2493,7 @@ func _boss_server_required_fields(mode_id: String) -> Array[String]:
 	if mode_id == MODE_WORLD_BOSS:
 		fields.append_array(["persistent_hp", "daily_attempts", "defeated_at", "world_announcement"])
 	elif mode_id == MODE_INSTANCE_BOSS:
-		fields.append_array(["access_gate", "clear_status", "stars"])
+		fields.append_array(["access_gate", "clear_status", "stars", "failed_mechanic"])
 	return fields
 
 func _boss_entry_intent_allowed_fields(mode_id: String) -> Array[String]:
@@ -2681,6 +2692,10 @@ func boss_outcome_projection(mode_id: String) -> Dictionary:
 	var cleared := bool(state.get("cleared", false))
 	var boss_defeated := bool(state.get("boss_defeated", false))
 	var failed_mechanic := bool(state.get("failed_mechanic", false))
+	var failed_mechanic_id := String(state.get("failed_mechanic_id", ""))
+	var failed_mechanic_ids := _string_array(state.get("failed_mechanic_ids", []))
+	var failed_mechanic_summary := String(state.get("failed_mechanic_summary", ""))
+	var failed_mechanic_source := String(state.get("failed_mechanic_source", "none"))
 	var survivors := int(state.get("survivors", 0))
 	var survivor_required := bool(state.get("survivor_required", true))
 	var outcome_status := "cleared" if cleared else str(state.get("last_result_status", "pending"))
@@ -2697,7 +2712,7 @@ func boss_outcome_projection(mode_id: String) -> Dictionary:
 			met_conditions,
 			star_conditions.size(),
 			survivors,
-			"failed" if failed_mechanic else "ok",
+			failed_mechanic_id if failed_mechanic and not failed_mechanic_id.is_empty() else ("failed" if failed_mechanic else "ok"),
 		],
 		"persistent_hp": false,
 		"cleared": cleared,
@@ -2705,6 +2720,10 @@ func boss_outcome_projection(mode_id: String) -> Dictionary:
 		"survivors": survivors,
 		"survivor_required": survivor_required,
 		"failed_mechanic": failed_mechanic,
+		"failed_mechanic_id": failed_mechanic_id,
+		"failed_mechanic_ids": failed_mechanic_ids,
+		"failed_mechanic_summary": failed_mechanic_summary,
+		"failed_mechanic_source": failed_mechanic_source,
 		"clear_rule": "survivor_required" if survivor_required else "survivor_optional",
 		"clear_time_seconds": int(state.get("clear_time_seconds", 0)),
 		"three_star_time_seconds": int(state.get("three_star_time_seconds", 180)),
@@ -2824,6 +2843,11 @@ func _instance_boss_result_row() -> Dictionary:
 		"survivor_required": bool(instance_boss_state.get("survivor_required", true)),
 		"clear_rule": "survivor_required" if bool(instance_boss_state.get("survivor_required", true)) else "survivor_optional",
 		"failed_mechanic": bool(instance_boss_state.get("failed_mechanic", false)),
+		"failed_mechanic_id": String(instance_boss_state.get("failed_mechanic_id", "")),
+		"failed_mechanic_ids": _string_array(instance_boss_state.get("failed_mechanic_ids", [])),
+		"failed_mechanic_summary": String(instance_boss_state.get("failed_mechanic_summary", "")),
+		"failed_mechanic_source": String(instance_boss_state.get("failed_mechanic_source", "none")),
+		"failed_mechanic_authority": "server",
 		"clear_time_seconds": int(instance_boss_state.get("clear_time_seconds", 0)),
 		"three_star_time_seconds": int(instance_boss_state.get("three_star_time_seconds", 180)),
 		"deaths": int(instance_boss_state.get("deaths", 0)),
@@ -2886,12 +2910,27 @@ func _calculate_instance_stars(result: Dictionary, cleared: bool) -> int:
 		stars += 1
 	return clampi(stars, 1, 3)
 
+func _boss_failed_mechanic_ids_from_result(result: Dictionary, failed_mechanic: bool) -> Array[String]:
+	var ids := _string_array(result.get("failed_mechanic_ids", []))
+	var single_id := String(result.get("failed_mechanic_id", "")).strip_edges()
+	if not single_id.is_empty() and not ids.has(single_id):
+		ids.push_front(single_id)
+	var reason := String(result.get("failed_mechanic_reason", "")).strip_edges()
+	if ids.is_empty() and failed_mechanic and not reason.is_empty():
+		ids.append(reason)
+	if ids.is_empty() and failed_mechanic:
+		ids.append("server_failed_mechanic")
+	return ids
+
 func _instance_boss_star_conditions(state: Dictionary) -> Array[Dictionary]:
 	var cleared := bool(state.get("cleared", false))
 	var boss_defeated := bool(state.get("boss_defeated", false))
 	var survivors := int(state.get("survivors", 0))
 	var survivor_required := bool(state.get("survivor_required", true))
 	var failed_mechanic := bool(state.get("failed_mechanic", false))
+	var failed_mechanic_id := String(state.get("failed_mechanic_id", ""))
+	var failed_mechanic_ids := _string_array(state.get("failed_mechanic_ids", []))
+	var failed_mechanic_summary := String(state.get("failed_mechanic_summary", ""))
 	var clear_time_seconds := int(state.get("clear_time_seconds", 0))
 	var three_star_time_seconds := int(state.get("three_star_time_seconds", 180))
 	var deaths := int(state.get("deaths", 0))
@@ -2905,6 +2944,11 @@ func _instance_boss_star_conditions(state: Dictionary) -> Array[Dictionary]:
 			"actual": "cleared" if cleared else "failed",
 			"target": "boss_hp_zero_survivor_no_failed_mechanic" if survivor_required else "boss_hp_zero_no_failed_mechanic",
 			"survivor_required": survivor_required,
+			"failed_mechanic": failed_mechanic,
+			"failed_mechanic_id": failed_mechanic_id,
+			"failed_mechanic_ids": failed_mechanic_ids,
+			"failed_mechanic_summary": failed_mechanic_summary,
+			"failed_mechanic_authority": "server",
 		},
 		{
 			"id": "time_star",
@@ -3024,7 +3068,7 @@ func boss_result_authority_summary(mode_id: String, outcome_projection: Dictiona
 		authority_badges.append("persistent_hp_server")
 	else:
 		mode_result_scope = "instance_boss_clear"
-		server_required_fields.append_array(["clear_status", "stars", "access_gate"])
+		server_required_fields.append_array(["clear_status", "stars", "access_gate", "failed_mechanic"])
 		authority_badges.append("clear_status_server")
 	return {
 		"ok": true,
