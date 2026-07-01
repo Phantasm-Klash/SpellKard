@@ -4816,6 +4816,10 @@ func _process(_delta: float) -> bool:
 	var boss_practice_summary: Dictionary = replay_list_model.boss_practice_verification_summary_row()
 	if int(boss_practice_summary.get("boss_practice_entry_count", 0)) != 1 \
 			or int(boss_practice_summary.get("boss_practice_ready_count", 0)) != 1 \
+			or int(boss_practice_summary.get("boss_practice_local_loadable_count", 0)) != 1 \
+			or int(boss_practice_summary.get("boss_practice_blocked_local_integrity_count", -1)) != 0 \
+			or String(boss_practice_summary.get("boss_practice_first_loadable_replay_id", "")) != "boss-practice-replay-smoke" \
+			or not String(boss_practice_summary.get("verification_card_secondary_metric", "")).contains("local-blocked 0") \
 			or int(boss_practice_summary.get("preview_phase_count", 0)) != int(boss_export.get("preview_phase_count", 0)) \
 			or String(boss_practice_summary.get("replay_verification_scope", "")) != "local_practice_hash" \
 			or String(boss_practice_summary.get("damage_authority", "")) != "server" \
@@ -4835,7 +4839,7 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	var boss_practice_status_cards: Array = boss_practice_summary.get("boss_practice_status_cards", [])
-	if not _validate_boss_practice_status_cards(boss_practice_status_cards, true, false, false, []):
+	if not _validate_boss_practice_status_cards(boss_practice_status_cards, true, false, false, false, []):
 		quit(1)
 		return true
 	var boss_practice_actions: Array[Dictionary] = replay_list_model.selected_action_rows()
@@ -4904,6 +4908,8 @@ func _process(_delta: float) -> bool:
 	var fallback_claim_summary: Dictionary = fallback_replay_list_model.boss_practice_verification_summary_row()
 	if int(fallback_claim_summary.get("boss_practice_rejected_server_claim_count", 0)) != 1 \
 			or int(fallback_claim_summary.get("boss_practice_rejected_server_claim_field_count", 0)) != 1 \
+			or int(fallback_claim_summary.get("boss_practice_local_loadable_count", -1)) != 0 \
+			or int(fallback_claim_summary.get("boss_practice_blocked_local_integrity_count", -1)) != 0 \
 			or String(fallback_claim_summary.get("recommended_filter", "")) != "rejected_server_claim" \
 			or String(fallback_claim_summary.get("recommended_filter_row_id", "")) != "replay_filter_rejected_server_claim" \
 			or String(fallback_claim_summary.get("selected_server_audit_status", "")) != "pending" \
@@ -4927,7 +4933,33 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	var fallback_claim_status_cards: Array = fallback_claim_summary.get("boss_practice_status_cards", [])
-	if not _validate_boss_practice_status_cards(fallback_claim_status_cards, false, false, true, ["damage_total"]):
+	if not _validate_boss_practice_status_cards(fallback_claim_status_cards, false, false, false, true, ["damage_total"]):
+		quit(1)
+		return true
+	var missing_file_replay := boss_practice_replay.duplicate(true)
+	missing_file_replay["replay_id"] = "boss-practice-missing-file"
+	missing_file_replay["path"] = "user://missing-boss-practice-smoke.json"
+	var missing_file_replay_list_model: RefCounted = ReplayListModelScript.new()
+	missing_file_replay_list_model.configure(replay_store)
+	missing_file_replay_list_model.entries = [missing_file_replay]
+	missing_file_replay_list_model.cursor = 0
+	missing_file_replay_list_model.set_verification_filter("all")
+	var missing_file_summary: Dictionary = missing_file_replay_list_model.boss_practice_verification_summary_row()
+	if int(missing_file_summary.get("boss_practice_entry_count", 0)) != 1 \
+			or int(missing_file_summary.get("boss_practice_ready_count", -1)) != 0 \
+			or int(missing_file_summary.get("boss_practice_local_loadable_count", -1)) != 0 \
+			or int(missing_file_summary.get("boss_practice_blocked_local_integrity_count", 0)) != 1 \
+			or String(missing_file_summary.get("boss_practice_first_blocked_integrity_replay_id", "")) != "boss-practice-missing-file" \
+			or String(missing_file_summary.get("selected_load_guard_reason", "")) != "file_missing" \
+			or bool(missing_file_summary.get("selected_can_play", true)) \
+			or bool(missing_file_summary.get("selected_requires_server_audit", true)) \
+			or not String(missing_file_summary.get("verification_card_secondary_metric", "")).contains("local-blocked 1") \
+			or bool(missing_file_summary.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: missing-file boss practice summary invalid %s" % [missing_file_summary])
+		quit(1)
+		return true
+	var missing_file_status_cards: Array = missing_file_summary.get("boss_practice_status_cards", [])
+	if not _validate_boss_practice_status_cards(missing_file_status_cards, false, true, false, false, []):
 		quit(1)
 		return true
 	if not replay_list_model.set_verification_filter("replay_boss_practice") or String(replay_list_model.get("active_verification_filter")) != "replay_boss_practice":
@@ -5374,22 +5406,25 @@ func _validate_replay_row_authority(row: Dictionary, expected_hash_authority: St
 		return false
 	return true
 
-func _validate_boss_practice_status_cards(cards: Array, expect_ready_enabled: bool, expect_invalid_enabled: bool, expect_claim_enabled: bool, expected_claim_fields: Array[String]) -> bool:
-	if cards.size() != 3:
+func _validate_boss_practice_status_cards(cards: Array, expect_ready_enabled: bool, expect_local_blocked_enabled: bool, expect_invalid_enabled: bool, expect_claim_enabled: bool, expected_claim_fields: Array[String]) -> bool:
+	if cards.size() != 4:
 		push_error("Smoke test failed: boss practice status card count invalid %s" % [cards])
 		return false
 	var expected_ids := [
 		"boss_practice_status_local_ready",
+		"boss_practice_status_local_blocked",
 		"boss_practice_status_metadata_invalid",
 		"boss_practice_status_server_claim_rejected",
 	]
 	var expected_filters := [
 		"replay_boss_practice",
 		"replay_metadata_invalid",
+		"replay_metadata_invalid",
 		"rejected_server_claim",
 	]
 	var expected_enabled := [
 		expect_ready_enabled,
+		expect_local_blocked_enabled,
 		expect_invalid_enabled,
 		expect_claim_enabled,
 	]
@@ -5416,7 +5451,7 @@ func _validate_boss_practice_status_cards(cards: Array, expect_ready_enabled: bo
 		if String(card.get("damage_authority", "")) != "server" or String(card.get("reward_authority", "")) != "server" or String(card.get("settlement_authority", "")) != "server":
 			push_error("Smoke test failed: boss practice status card server authority labels invalid %s" % [card])
 			return false
-	var claim_card: Dictionary = cards[2]
+	var claim_card: Dictionary = cards[3]
 	var claim_fields: Array = claim_card.get("rejected_server_claim_fields", [])
 	for expected_field in expected_claim_fields:
 		if not claim_fields.has(expected_field):
