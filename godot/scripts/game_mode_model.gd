@@ -122,9 +122,28 @@ func apply_server_mode_action_response(response: Dictionary) -> Dictionary:
 		for key in state.keys():
 			target[key] = state[key]
 		_set_state_for_mode(mode_id, target)
-		last_action_status = String(response.get("action_type", "mode_action"))
-		last_error_code = "none"
+		if String(response.get("action_type", "")) == "transfer_card":
+			var confirmation := _apply_server_boss_card_transfer_confirmation(response)
+			if not bool(confirmation.get("ok", false)):
+				var action_row_failed := {
+					"mode_id": mode_id,
+					"action_type": String(response.get("action_type", "")),
+					"action_id": String(response.get("action_id", "")),
+					"status": String(response.get("status", "")),
+					"accepted": bool(response.get("accepted", false)),
+					"server_authoritative": bool(response.get("server_authoritative", true)),
+					"client_result_authoritative": bool(response.get("client_result_authoritative", false)),
+				}
+				mode_action_requests.append(action_row_failed)
+				if mode_action_requests.size() > 32:
+					mode_action_requests.pop_front()
+				return {"ok": false, "reason": last_error_code, "action": action_row_failed}
+		else:
+			last_action_status = String(response.get("action_type", "mode_action"))
+			last_error_code = "none"
 	else:
+		if String(response.get("action_type", "")) == "transfer_card":
+			_apply_server_boss_card_transfer_confirmation(response)
 		last_action_status = "server_rejected"
 		last_error_code = String(response.get("reason", "mode_action_failed"))
 	var action_row := {
@@ -140,6 +159,13 @@ func apply_server_mode_action_response(response: Dictionary) -> Dictionary:
 	if mode_action_requests.size() > 32:
 		mode_action_requests.pop_front()
 	return {"ok": bool(response.get("accepted", false)), "reason": last_error_code, "action": action_row}
+
+func apply_server_boss_card_transfer_confirmation(response: Dictionary) -> Dictionary:
+	if String(response.get("action_type", "")) != "transfer_card":
+		last_action_status = "failed"
+		last_error_code = "transfer_confirmation_action_mismatch"
+		return {"ok": false, "reason": last_error_code}
+	return _apply_server_boss_card_transfer_confirmation(response)
 
 func mode_rows() -> Array[Dictionary]:
 	var rows: Array[Dictionary] = []
@@ -1906,6 +1932,74 @@ func request_boss_card_transfer(mode_id: String, from_player_id: String, to_play
 	last_error_code = "none"
 	return _action_result(true, request)
 
+func _apply_server_boss_card_transfer_confirmation(response: Dictionary) -> Dictionary:
+	var mode_id := String(response.get("mode_id", selected_mode_id))
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		last_action_status = "failed"
+		last_error_code = "boss_mode_invalid"
+		return {"ok": false, "reason": last_error_code}
+	if bool(response.get("client_result_authoritative", false)):
+		last_action_status = "failed"
+		last_error_code = "client_authoritative_transfer_confirmation"
+		return {"ok": false, "reason": last_error_code}
+	if not _has_explicit_server_authority(response):
+		last_action_status = "failed"
+		last_error_code = "server_authoritative_transfer_confirmation_required"
+		return {"ok": false, "reason": last_error_code}
+	var payload: Dictionary = response.get("payload", {}) if typeof(response.get("payload", {})) == TYPE_DICTIONARY else {}
+	var clean_card_id := String(response.get("card_id", payload.get("card_id", ""))).strip_edges()
+	var clean_from_player_id := String(response.get("from_player_id", payload.get("from_player_id", ""))).strip_edges()
+	var clean_to_player_id := String(response.get("to_player_id", payload.get("to_player_id", ""))).strip_edges()
+	if clean_card_id.is_empty():
+		last_action_status = "failed"
+		last_error_code = "transfer_confirmation_card_missing"
+		return {"ok": false, "reason": last_error_code}
+	var state := _state_for_mode(mode_id)
+	var requests: Array = state.get("transfer_requests", [])
+	var matched := false
+	var accepted := bool(response.get("accepted", false))
+	var confirmation_status := "server_confirmed" if accepted else "server_rejected"
+	for i in range(requests.size()):
+		if typeof(requests[i]) != TYPE_DICTIONARY:
+			continue
+		var request: Dictionary = requests[i]
+		var request_card_id := String(request.get("card_id", "")).strip_edges()
+		var request_from_player_id := String(request.get("from_player_id", "")).strip_edges()
+		var request_to_player_id := String(request.get("to_player_id", "")).strip_edges()
+		if request_card_id != clean_card_id:
+			continue
+		if not clean_from_player_id.is_empty() and request_from_player_id != clean_from_player_id:
+			continue
+		if not clean_to_player_id.is_empty() and request_to_player_id != clean_to_player_id:
+			continue
+		request["status"] = confirmation_status
+		request["server_confirmation_status"] = confirmation_status
+		request["server_action_id"] = String(response.get("action_id", request.get("server_action_id", "")))
+		request["server_confirmation_reason"] = String(response.get("reason", "none"))
+		request["server_authoritative"] = true
+		request["client_result_authoritative"] = false
+		requests[i] = request
+		matched = true
+		break
+	if not matched:
+		last_action_status = "failed"
+		last_error_code = "transfer_confirmation_request_missing"
+		return {"ok": false, "reason": last_error_code}
+	state["transfer_requests"] = requests
+	state["server_authoritative"] = true
+	_set_state_for_mode(mode_id, state)
+	last_action_status = "transfer_confirmation"
+	last_error_code = "none" if accepted else String(response.get("reason", "transfer_rejected"))
+	return {
+		"ok": accepted,
+		"reason": last_error_code,
+		"mode_id": mode_id,
+		"card_id": clean_card_id,
+		"server_confirmation_status": confirmation_status,
+		"server_authoritative": true,
+		"client_result_authoritative": false,
+	}
+
 func apply_world_boss_result(result: Dictionary) -> bool:
 	if bool(result.get("client_result_authoritative", false)):
 		last_action_status = "failed"
@@ -2809,11 +2903,15 @@ func _boss_transfer_row(row_id: String, mode_id: String, state: Dictionary) -> D
 			String(latest_request.get("card_id", "")),
 			String(latest_request.get("status", "requested")),
 		]
+	var pending_count := _boss_transfer_count_by_status(requests, ["requested"])
+	var confirmed_count := _boss_transfer_count_by_status(requests, ["server_confirmed", "accepted", "confirmed"])
+	var rejected_count := _boss_transfer_count_by_status(requests, ["server_rejected", "rejected"])
+	var latest_confirmation_status := String(latest_request.get("server_confirmation_status", latest_request.get("status", "none"))) if not latest_request.is_empty() else "none"
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.boss.transfer",
-		"value": "requested %d transferred %d latest %s" % [requests.size(), transferred_ids.size(), latest_summary],
-		"summary": "local transfer intent display only; party_members_only and once_per_card_per_match guards run before server confirmation",
+		"value": "requested %d pending %d confirmed %d rejected %d latest %s" % [requests.size(), pending_count, confirmed_count, rejected_count, latest_summary],
+		"summary": "local transfer intent and server confirmation receipt display only; party_members_only and once_per_card_per_match guards run before server confirmation",
 		"items": requests,
 		"mode_id": mode_id,
 		"mode_category": "boss",
@@ -2821,10 +2919,13 @@ func _boss_transfer_row(row_id: String, mode_id: String, state: Dictionary) -> D
 		"transferred_card_ids": transferred_ids,
 		"transfer_request_count": requests.size(),
 		"transferred_card_count": transferred_ids.size(),
-		"pending_server_confirmation_count": _boss_pending_transfer_count(requests),
+		"pending_server_confirmation_count": pending_count,
+		"server_confirmed_transfer_count": confirmed_count,
+		"server_rejected_transfer_count": rejected_count,
 		"latest_transfer_request": latest_request,
 		"latest_transfer_preview": latest_preview,
 		"latest_transfer_summary": latest_summary,
+		"latest_transfer_confirmation_status": latest_confirmation_status,
 		"action_availability": action_projection,
 			"action_status": String(action_projection.get("action_status", "")),
 			"local_blockers": action_projection.get("local_blockers", []),
@@ -2846,7 +2947,7 @@ func _boss_transfer_row(row_id: String, mode_id: String, state: Dictionary) -> D
 			"local_validation_rules": ["party_members_only", "no_self_transfer", "card_id_required", "once_per_card_per_match"],
 		"preflight_available": true,
 		"intent_authority": "client_request_only",
-		"server_confirmation_status": "pending" if _boss_pending_transfer_count(requests) > 0 else "none",
+		"server_confirmation_status": "pending" if pending_count > 0 else latest_confirmation_status,
 		"damage_authority": "server",
 		"reward_authority": "server",
 		"settlement_authority": "server",
@@ -2865,12 +2966,15 @@ func _latest_boss_transfer_request(requests: Array) -> Dictionary:
 	return {}
 
 func _boss_pending_transfer_count(requests: Array) -> int:
+	return _boss_transfer_count_by_status(requests, ["requested"])
+
+func _boss_transfer_count_by_status(requests: Array, statuses: Array[String]) -> int:
 	var count := 0
 	for request in requests:
 		if typeof(request) != TYPE_DICTIONARY:
 			continue
 		var row: Dictionary = request
-		if String(row.get("status", "requested")) == "requested":
+		if statuses.has(String(row.get("status", "requested"))):
 			count += 1
 	return count
 
