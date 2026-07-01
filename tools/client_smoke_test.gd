@@ -2059,6 +2059,10 @@ func _process(_delta: float) -> bool:
 	if not _validate_boss_action_availability(world_action_availability, "world_boss", true, "none", 4):
 		quit(1)
 		return true
+	var world_entry_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "world_boss_entry")
+	if not _validate_boss_entry_action_panel(world_entry_row.get("entry_action_panel", {}), "world_boss", true, "none", 4):
+		quit(1)
+		return true
 	var transfer_preview: Dictionary = game_mode_model.boss_transfer_preview("world_boss", "p1", "p2", "focus_lens")
 	if not _validate_boss_transfer_preview(transfer_preview, "world_boss", true, "none"):
 		quit(1)
@@ -2346,6 +2350,10 @@ func _process(_delta: float) -> bool:
 	if not _validate_boss_action_availability(locked_action_availability, "instance_boss", false, "entry_locked", 8):
 		quit(1)
 		return true
+	var locked_entry_row: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_entry")
+	if not _validate_boss_entry_action_panel(locked_entry_row.get("entry_action_panel", {}), "instance_boss", false, "entry_locked", 8):
+		quit(1)
+		return true
 	var locked_entry_request: Dictionary = main_node.call("_request_boss_entry", "instance_boss")
 	if bool(locked_entry_request.get("ok", true)) or String(locked_entry_request.get("last_error_code", "")) != "entry_locked":
 		push_error("Smoke test failed: locked instance entry request invalid %s" % [locked_entry_request])
@@ -2383,6 +2391,9 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	if not _validate_boss_action_availability(instance_entry_row.get("action_availability", {}), "instance_boss", true, "none", 8):
+		quit(1)
+		return true
+	if not _validate_boss_entry_action_panel(instance_entry_row.get("entry_action_panel", {}), "instance_boss", true, "none", 8):
 		quit(1)
 		return true
 	var instance_rules_row_after_access: Dictionary = _find_row_by_id(game_mode_model.mode_rows(), "instance_boss_rules")
@@ -2425,6 +2436,9 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	if not _validate_boss_action_availability(instance_entry_payload.get("action_availability", {}), "instance_boss", true, "none", 8):
+		quit(1)
+		return true
+	if not _validate_boss_entry_action_panel(instance_entry_payload.get("entry_action_panel", {}), "instance_boss", true, "none", 8):
 		quit(1)
 		return true
 	if main_node.call("_apply_instance_boss_result", {
@@ -5948,6 +5962,8 @@ func _validate_boss_display_contract_row(row: Dictionary, mode_id: String, expec
 		return false
 	if not _validate_boss_hud_projection({"hud_projection": row.get("hud_projection", {})}, mode_id, expected_count, expected_hp_ratio):
 		return false
+	if not _validate_boss_entry_action_panel(row.get("entry_action_panel", {}), mode_id, expected_entry_ready, "none" if expected_entry_ready else "entry_locked", expected_count):
+		return false
 	return true
 
 func _validate_boss_practice_preview_card_row(row: Dictionary, mode_id: String) -> bool:
@@ -6209,11 +6225,81 @@ func _validate_boss_action_availability(projection: Dictionary, mode_id: String,
 		return false
 	if not _validate_boss_ui_action_cards(projection.get("ui_action_cards", []), mode_id, expected_entry_ok, true, expected_reason):
 		return false
+	if not _validate_boss_entry_action_panel(projection.get("entry_action_panel", {}), mode_id, expected_entry_ok, expected_reason, expected_count):
+		return false
 	if not _validate_boss_entry_preview(projection.get("entry_preflight", {}), mode_id, expected_entry_ok, expected_reason):
 		return false
 	if not _validate_boss_playfield_projection({"playfield_projection": projection.get("playfield_projection", {})}, mode_id, expected_count, 1.0):
 		return false
 	return _validate_boss_hud_projection({"hud_projection": projection.get("hud_projection", {})}, mode_id, expected_count, 1.0)
+
+func _validate_boss_entry_action_panel(panel: Dictionary, mode_id: String, expected_entry_enabled: bool, expected_reason: String, expected_count: int) -> bool:
+	if panel.is_empty():
+		push_error("Smoke test failed: boss entry action panel missing for %s" % mode_id)
+		return false
+	if String(panel.get("mode_id", "")) != mode_id or String(panel.get("mode_category", "")) != "boss":
+		push_error("Smoke test failed: boss entry action panel identity invalid %s" % [panel])
+		return false
+	if String(panel.get("panel_kind", "")) != "boss_entry_action_panel" or String(panel.get("ui_control", "")) != "panel" or String(panel.get("render_slot", "")) != "mode_actions":
+		push_error("Smoke test failed: boss entry action panel UI kind invalid %s" % [panel])
+		return false
+	if String(panel.get("projection_scope", "")) != "local_display_only" or String(panel.get("intent_authority", "")) != "client_request_only":
+		push_error("Smoke test failed: boss entry action panel scope invalid %s" % [panel])
+		return false
+	if String(panel.get("entry_request_scope", "")) != "intent_only" or String(panel.get("transfer_request_scope", "")) != "intent_only":
+		push_error("Smoke test failed: boss entry action panel request scope invalid %s" % [panel])
+		return false
+	if String(panel.get("damage_authority", "")) != "server" or String(panel.get("reward_authority", "")) != "server" or String(panel.get("settlement_authority", "")) != "server":
+		push_error("Smoke test failed: boss entry action panel authority labels invalid %s" % [panel])
+		return false
+	if bool(panel.get("client_result_authoritative", true)) or not bool(panel.get("requires_server_confirmation", false)):
+		push_error("Smoke test failed: boss entry action panel authority flags invalid %s" % [panel])
+		return false
+	if bool(panel.get("entry_enabled", false)) != expected_entry_enabled or bool(panel.get("entry_valid", false)) != expected_entry_enabled:
+		push_error("Smoke test failed: boss entry action panel entry state invalid %s expected=%s" % [panel, expected_entry_enabled])
+		return false
+	if bool(panel.get("transfer_enabled", false)) != true:
+		push_error("Smoke test failed: boss entry action panel transfer state invalid %s" % [panel])
+		return false
+	if not bool(panel.get("display_ready", false)) or not bool(panel.get("formation_valid", false)):
+		push_error("Smoke test failed: boss entry action panel display/formation invalid %s" % [panel])
+		return false
+	var expected_status := "ready_for_server_confirmation" if expected_entry_enabled else "blocked_local"
+	var expected_confirmation := "required" if expected_entry_enabled else "blocked_local"
+	if String(panel.get("panel_status", "")) != expected_status or String(panel.get("server_confirmation_status", "")) != expected_confirmation:
+		push_error("Smoke test failed: boss entry action panel status invalid %s expected=%s/%s" % [panel, expected_status, expected_confirmation])
+		return false
+	if String(panel.get("reason", "")) != expected_reason:
+		push_error("Smoke test failed: boss entry action panel reason invalid %s expected=%s" % [panel, expected_reason])
+		return false
+	var disabled_reasons: Array = panel.get("disabled_reasons", [])
+	if expected_entry_enabled:
+		if not disabled_reasons.is_empty() or String(panel.get("entry_blocked_reason", "")) != "none":
+			push_error("Smoke test failed: boss entry action panel ready blockers invalid %s" % [panel])
+			return false
+	else:
+		if not disabled_reasons.has(expected_reason) or String(panel.get("entry_blocked_reason", "")) != expected_reason:
+			push_error("Smoke test failed: boss entry action panel blocked reason invalid %s expected=%s" % [panel, expected_reason])
+			return false
+	if int(panel.get("player_count", 0)) != expected_count or String(panel.get("slot_layout_policy", "")).is_empty() or (panel.get("slot_labels", []) as Array).size() != expected_count:
+		push_error("Smoke test failed: boss entry action panel formation summary invalid %s" % [panel])
+		return false
+	var server_fields: Array = panel.get("server_required_for", [])
+	for expected_field in ["entry_confirmation", "card_transfer_confirmation", "damage", "reward_grants", "settlement", "result_receipt"]:
+		if not server_fields.has(expected_field):
+			push_error("Smoke test failed: boss entry action panel server field missing %s in %s" % [expected_field, panel])
+			return false
+	var buttons: Array = panel.get("action_buttons", [])
+	if not _validate_boss_ui_action_cards(buttons, mode_id, expected_entry_enabled, true, expected_reason):
+		return false
+	var entry_button: Dictionary = panel.get("entry_button", {})
+	var transfer_button: Dictionary = panel.get("transfer_button", {})
+	if String(entry_button.get("action_card_kind", "")) != "boss_entry_intent" or String(transfer_button.get("action_card_kind", "")) != "boss_card_transfer_intent":
+		push_error("Smoke test failed: boss entry action panel nested buttons invalid %s" % [panel])
+		return false
+	if not _validate_boss_entry_preview(panel.get("entry_preflight", {}), mode_id, expected_entry_enabled, expected_reason):
+		return false
+	return true
 
 func _validate_boss_ui_action_cards(cards: Array, mode_id: String, expected_entry_enabled: bool, expected_transfer_enabled: bool, expected_entry_reason: String) -> bool:
 	if cards.size() != 2:

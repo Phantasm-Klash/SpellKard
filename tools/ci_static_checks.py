@@ -1153,6 +1153,10 @@ def check_protocol_client_scripts() -> list[str]:
             "\"preview_card_metrics\"",
             "\"preview_card_authority_badges\"",
             "\"render_slot\": \"mode_cards\"",
+            "func boss_entry_action_panel_projection(",
+            "func _boss_entry_action_panel_from_projection(",
+            "\"panel_kind\": \"boss_entry_action_panel\"",
+            "\"render_slot\": \"mode_actions\"",
             "func _boss_entry_request_payload(",
             "\"request_scope\": \"intent_only\"",
             "\"entry_request_scope\": \"intent_only\"",
@@ -1174,6 +1178,9 @@ def check_protocol_client_scripts() -> list[str]:
             "\"preview_card_authority_badges\"",
             "\"request_scope\"",
             "\"entry_request_scope\"",
+            "func _validate_boss_entry_action_panel(",
+            "\"boss_entry_action_panel\"",
+            "\"mode_actions\"",
         ]:
             if token not in text:
                 errors.append(f"tools/client_smoke_test.gd: missing Boss result authority smoke token {token}")
