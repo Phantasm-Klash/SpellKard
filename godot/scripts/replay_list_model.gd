@@ -634,6 +634,71 @@ func selected_action_rows() -> Array[Dictionary]:
 		}.merged(action_context, true),
 	]
 
+func selected_playback_guard_panel_row() -> Dictionary:
+	var entry := selected_entry()
+	var replay_id := String(entry.get("replay_id", ""))
+	var has_replay := not replay_id.is_empty()
+	var source_index := _source_index_for_replay_id(replay_id)
+	var selected_row_model := _row_from_entry(entry, source_index) if has_replay and source_index >= 0 else {}
+	var guard := _replay_action_guard(selected_row_model)
+	var validation := _practice_validation_context(selected_row_model)
+	var checklist := _practice_validation_checklist(validation, guard, selected_row_model)
+	var blockers: Array[String] = []
+	for item in checklist:
+		if not bool(item.get("ok", false)):
+			blockers.append(String(item.get("id", "")))
+	if bool(guard.get("requires_server_audit", false)) and not blockers.has("server_audit_required"):
+		blockers.append("server_audit_required")
+	if not has_replay and not blockers.has("no_replay_selected"):
+		blockers.append("no_replay_selected")
+	var can_load := has_replay and bool(guard.get("ok", false)) and not bool(guard.get("requires_server_audit", false)) and bool(validation.get("final_hash_ready", false))
+	var action_status := "local_playback_ready" if can_load else ("server_audit_required" if bool(guard.get("requires_server_audit", false)) else "blocked_local")
+	return {
+		"id": "replay_playback_guard_panel",
+		"label_key": "screen.replay.load",
+		"value": "%s %s" % [action_status, String(guard.get("local_load_policy", "none"))],
+		"summary": "selected Replay load panel: local practice playback only; server records and authority claims stay blocked for audit",
+		"panel_kind": "replay_playback_guard_panel",
+		"action_status": action_status,
+		"replay_id": replay_id,
+		"source_index": source_index,
+		"selected_can_load": can_load,
+		"selected_can_play": bool(validation.get("can_play", false)),
+		"selected_reason": String(guard.get("reason", validation.get("reason", ""))),
+		"selected_local_load_policy": String(guard.get("local_load_policy", "none")),
+		"selected_local_playback_authority": String(guard.get("local_playback_authority", "none")),
+		"selected_verification_status": String(guard.get("verification_status", "none")),
+		"selected_verification_section": String(guard.get("verification_section", "")),
+		"selected_final_hash_ready": bool(guard.get("final_hash_ready", false)),
+		"selected_final_result_hash": int(guard.get("final_result_hash", 0)),
+		"selected_requires_server_audit": bool(guard.get("requires_server_audit", false)),
+		"selected_server_audit_status": String(guard.get("server_audit_status", "not_required")),
+		"selected_server_authority_claim_fields": (guard.get("server_authority_claim_fields", []) as Array).duplicate() if typeof(guard.get("server_authority_claim_fields", [])) == TYPE_ARRAY else [],
+		"guard_blockers": blockers,
+		"guard_blocker_count": blockers.size(),
+		"practice_validation": validation,
+		"practice_checklist_items": checklist,
+		"practice_checklist_count": checklist.size(),
+		"replay_action_guard": guard,
+		"authority_contract_kind": "replay_selected_local_playback_guard_panel",
+		"render_slot": "focus_panel",
+		"server_authoritative": false,
+		"local_hash_authority": "local_practice_verification_only",
+		"replay_verification_scope": "local_practice_hash",
+		"local_playback_authority": "local_practice_hash" if can_load else String(guard.get("local_playback_authority", "none")),
+		"online_replay_authority": "server_audit_required",
+		"damage_authority": "server",
+		"settlement_authority": "server",
+		"reward_authority": "server",
+		"boss_hp_authority": "server",
+		"client_result_authoritative": false,
+		"section": "overview",
+		"section_label_key": "ui.menu_section_overview",
+		"ui_control": "status",
+		"ui_action": "",
+		"enabled": true,
+	}
+
 func request_selected_local_load() -> Dictionary:
 	var entry := selected_entry()
 	if entry.is_empty():

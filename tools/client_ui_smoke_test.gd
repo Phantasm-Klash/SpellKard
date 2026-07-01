@@ -698,6 +698,31 @@ func _validate_collection_page_contract() -> bool:
 		return _fail("boss practice replay verification badges missing authority boundaries %s" % [boss_practice_summary])
 	if not _assert_replay_ui_authority_row(boss_practice_summary):
 		return false
+	var playback_guard_panel := _row_by_id(replay_rows, "replay_playback_guard_panel")
+	if playback_guard_panel.is_empty() \
+			or String(playback_guard_panel.get("ui_control", "")) != "status" \
+			or not String(playback_guard_panel.get("ui_action", "")).is_empty() \
+			or String(playback_guard_panel.get("panel_kind", "")) != "replay_playback_guard_panel" \
+			or String(playback_guard_panel.get("authority_contract_kind", "")) != "replay_selected_local_playback_guard_panel" \
+			or String(playback_guard_panel.get("render_slot", "")) != "focus_panel" \
+			or String(playback_guard_panel.get("online_replay_authority", "")) != "server_audit_required" \
+			or String(playback_guard_panel.get("boss_hp_authority", "")) != "server" \
+			or bool(playback_guard_panel.get("client_result_authoritative", true)):
+		return _fail("replay page missing selected playback guard panel contract %s" % [replay_rows])
+	var panel_checklist: Array = playback_guard_panel.get("practice_checklist_items", [])
+	if int(playback_guard_panel.get("practice_checklist_count", -1)) != panel_checklist.size() or panel_checklist.size() != 5:
+		return _fail("replay playback guard panel checklist invalid %s" % [playback_guard_panel])
+	if String(playback_guard_panel.get("selected_local_load_policy", "")) == "loadable_local_practice":
+		if not bool(playback_guard_panel.get("selected_can_load", false)) \
+				or String(playback_guard_panel.get("action_status", "")) != "local_playback_ready" \
+				or bool(playback_guard_panel.get("selected_requires_server_audit", true)):
+			return _fail("local replay playback guard panel should be ready %s" % [playback_guard_panel])
+	else:
+		if bool(playback_guard_panel.get("selected_can_load", true)) \
+				or String(playback_guard_panel.get("action_status", "")) == "local_playback_ready":
+			return _fail("blocked replay playback guard panel should not be loadable %s" % [playback_guard_panel])
+	if not _assert_replay_ui_authority_row(playback_guard_panel):
+		return false
 	if not String(snapshot.get("section_tabs", "")).contains(_text("ui.menu_section_overview")):
 		return _fail("replay filter tabs should expose verification overview %s" % [snapshot])
 	if not String(snapshot.get("page_focus_action_ids", "")).contains("replay_filter_replay_boss_practice") or not String(snapshot.get("page_focus_action_ids", "")).contains("replay_filter_replay_local_ready"):
@@ -810,6 +835,18 @@ func _validate_server_replay_pending_guard() -> bool:
 			or String(guard.get("reason", "")) != "server_record_pending_audit" \
 			or bool(guard.get("client_result_authoritative", true)):
 		return _fail("server pending replay load guard invalid %s" % [guard])
+	var guard_panel := _row_by_id(rows, "replay_playback_guard_panel")
+	if guard_panel.is_empty() \
+			or bool(guard_panel.get("selected_can_load", true)) \
+			or String(guard_panel.get("action_status", "")) != "server_audit_required" \
+			or String(guard_panel.get("selected_local_load_policy", "")) != "blocked_server_audit" \
+			or not bool(guard_panel.get("selected_requires_server_audit", false)) \
+			or String(guard_panel.get("selected_server_audit_status", "")) != "pending" \
+			or not (guard_panel.get("guard_blockers", []) as Array).has("server_audit_required") \
+			or bool(guard_panel.get("client_result_authoritative", true)):
+		return _fail("server pending replay guard panel invalid %s" % [guard_panel])
+	if not _assert_replay_ui_authority_row(guard_panel):
+		return false
 	main_node.call("_ui_set_cursor", load_index)
 	await _settle_frames(2)
 	var snapshot: Dictionary = main_node.call("_ui_overlay_snapshot")
