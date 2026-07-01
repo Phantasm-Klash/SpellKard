@@ -6010,6 +6010,11 @@ func _validate_boss_playfield_projection(row: Dictionary, mode_id: String, expec
 		return false
 	if not _validate_boss_roster_authority_contract(projection.get("roster_authority_contract", {}), mode_id, expected_count, bool(projection.get("server_authoritative", false))):
 		return false
+	if not _validate_boss_rule_safety_projection(projection.get("rule_safety_projection", {}), mode_id, String(projection.get("friendly_fire", "")), String(projection.get("arena_policy", "")), String(projection.get("friendly_fire_warning", "")), String(projection.get("friendly_fire_risk_level", "")), bool(projection.get("server_authoritative", false))):
+		return false
+	if not bool(projection.get("rules_display_only", false)):
+		push_error("Smoke test failed: boss playfield should mark rules display-only %s" % [projection])
+		return false
 	if String(projection.get("roster_projection_scope", "")) != "local_display_only" or String(projection.get("roster_lock_authority", "")) != "server" or bool(projection.get("local_roster_authoritative", true)):
 		push_error("Smoke test failed: boss playfield roster authority invalid %s" % [projection])
 		return false
@@ -6076,6 +6081,11 @@ func _validate_boss_hud_projection(row: Dictionary, mode_id: String, expected_co
 		push_error("Smoke test failed: boss HUD authority contract invalid %s" % [projection])
 		return false
 	if not _validate_boss_roster_authority_contract(projection.get("roster_authority_contract", {}), mode_id, expected_count, bool(projection.get("server_authoritative", false))):
+		return false
+	if not _validate_boss_rule_safety_projection(projection.get("rule_safety_projection", {}), mode_id, String(projection.get("friendly_fire", "")), String(projection.get("arena_policy", "")), String(projection.get("friendly_fire_warning", "")), String(projection.get("friendly_fire_risk_level", "")), bool(projection.get("server_authoritative", false))):
+		return false
+	if not bool(projection.get("rules_display_only", false)):
+		push_error("Smoke test failed: boss HUD should mark rules display-only %s" % [projection])
 		return false
 	if bool(projection.get("persistent_hp", false)) != (mode_id == "world_boss"):
 		push_error("Smoke test failed: boss HUD persistence invalid %s" % [projection])
@@ -6221,6 +6231,38 @@ func _validate_boss_display_health_row(row: Dictionary, mode_id: String, expecte
 			return false
 	return true
 
+func _validate_boss_rule_safety_projection(projection: Dictionary, mode_id: String, expected_friendly_fire: String, expected_arena_policy: String, expected_warning: String, expected_risk_level: String, expect_server_authoritative: bool) -> bool:
+	if String(projection.get("safety_kind", "")) != "boss_rule_safety_projection":
+		push_error("Smoke test failed: boss rule safety projection kind invalid %s" % [projection])
+		return false
+	if String(projection.get("mode_id", "")) != mode_id or String(projection.get("mode_category", "")) != "boss":
+		push_error("Smoke test failed: boss rule safety projection identity invalid %s" % [projection])
+		return false
+	if String(projection.get("projection_scope", "")) != "local_display_only" or String(projection.get("intent_authority", "")) != "client_request_only":
+		push_error("Smoke test failed: boss rule safety projection scope invalid %s" % [projection])
+		return false
+	if String(projection.get("damage_authority", "")) != "server" or String(projection.get("reward_authority", "")) != "server" or String(projection.get("settlement_authority", "")) != "server" or String(projection.get("boss_hp_authority", "")) != "server":
+		push_error("Smoke test failed: boss rule safety projection authority invalid %s" % [projection])
+		return false
+	if bool(projection.get("client_result_authoritative", true)) or not bool(projection.get("requires_server_confirmation", false)):
+		push_error("Smoke test failed: boss rule safety projection flags invalid %s" % [projection])
+		return false
+	if bool(projection.get("server_authoritative", false)) != expect_server_authoritative:
+		push_error("Smoke test failed: boss rule safety projection server flag invalid %s expected=%s" % [projection, expect_server_authoritative])
+		return false
+	if String(projection.get("friendly_fire", "")) != expected_friendly_fire or String(projection.get("arena_policy", "")) != expected_arena_policy:
+		push_error("Smoke test failed: boss rule safety projection policy invalid %s expected=%s/%s" % [projection, expected_friendly_fire, expected_arena_policy])
+		return false
+	if String(projection.get("friendly_fire_warning", "")) != expected_warning or String(projection.get("friendly_fire_risk_level", "")) != expected_risk_level:
+		push_error("Smoke test failed: boss rule safety projection warning invalid %s expected=%s/%s" % [projection, expected_warning, expected_risk_level])
+		return false
+	var badges: Array = projection.get("safety_badges", [])
+	for expected_badge in ["rules_display_only", "damage_server", "settlement_server", "friendly_fire_%s" % expected_friendly_fire, "arena_%s" % expected_arena_policy]:
+		if not badges.has(expected_badge):
+			push_error("Smoke test failed: boss rule safety projection badge missing %s in %s" % [expected_badge, projection])
+			return false
+	return true
+
 func _validate_boss_rule_safety_row(row: Dictionary, mode_id: String, expected_friendly_fire: String, expected_arena_policy: String, expected_warning: String, expected_risk_level: String, expect_server_authoritative: bool) -> bool:
 	if row.is_empty():
 		push_error("Smoke test failed: boss rule safety row missing for %s" % mode_id)
@@ -6254,11 +6296,7 @@ func _validate_boss_rule_safety_row(row: Dictionary, mode_id: String, expected_f
 		push_error("Smoke test failed: boss rule safety enabled flag invalid %s expected=%s" % [row, expected_enabled])
 		return false
 	var projection: Dictionary = row.get("safety_projection", {})
-	if String(projection.get("safety_kind", "")) != "boss_rule_safety_projection" or bool(projection.get("client_result_authoritative", true)):
-		push_error("Smoke test failed: boss rule safety nested projection invalid %s" % [projection])
-		return false
-	if String(projection.get("friendly_fire", "")) != expected_friendly_fire or String(projection.get("arena_policy", "")) != expected_arena_policy or String(projection.get("friendly_fire_risk_level", "")) != expected_risk_level:
-		push_error("Smoke test failed: boss rule safety nested policy invalid %s" % [projection])
+	if not _validate_boss_rule_safety_projection(projection, mode_id, expected_friendly_fire, expected_arena_policy, expected_warning, expected_risk_level, expect_server_authoritative):
 		return false
 	var badges: Array = row.get("safety_badges", [])
 	for expected_badge in ["rules_display_only", "damage_server", "settlement_server", "friendly_fire_%s" % expected_friendly_fire, "arena_%s" % expected_arena_policy]:
@@ -6403,6 +6441,11 @@ func _validate_boss_draw_snapshot(snapshot: Dictionary, mode_id: String, expecte
 		return false
 	if String(snapshot.get("roster_projection_scope", "")) != "local_display_only" or String(snapshot.get("roster_lock_authority", "")) != "server" or bool(snapshot.get("local_roster_authoritative", true)):
 		push_error("Smoke test failed: boss draw snapshot roster authority invalid %s" % [snapshot])
+		return false
+	if not _validate_boss_rule_safety_projection(snapshot.get("rule_safety_projection", {}), mode_id, String((snapshot.get("projection", {}) as Dictionary).get("friendly_fire", "")), String((snapshot.get("projection", {}) as Dictionary).get("arena_policy", "")), String(snapshot.get("friendly_fire_warning", "")), String(snapshot.get("friendly_fire_risk_level", "")), bool(snapshot.get("server_authoritative", false))):
+		return false
+	if not bool(snapshot.get("rules_display_only", false)):
+		push_error("Smoke test failed: boss draw snapshot should mark rules display-only %s" % [snapshot])
 		return false
 	if absf(float(snapshot.get("hp_ratio", -1.0)) - expected_hp_ratio) > 0.001:
 		push_error("Smoke test failed: boss draw snapshot hp invalid %s" % [snapshot])

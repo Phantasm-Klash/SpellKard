@@ -1007,6 +1007,7 @@ func boss_playfield_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2
 	var contract := boss_formation_contract(mode_id)
 	var roster_authority := boss_roster_authority_contract(mode_id)
 	var formation_display_summary := boss_formation_display_summary(mode_id, playfield)
+	var rule_safety := boss_rule_safety_projection(mode_id)
 	var current_hp := float(state.get("current_hp", 0.0))
 	var max_hp := float(state.get("max_hp", 0.0))
 	var screen_center := playfield.position + Vector2(
@@ -1049,9 +1050,14 @@ func boss_playfield_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2
 		"entry_valid": bool(entry.get("ok", false)),
 		"entry_failures": entry.get("failures", []),
 		"aim_policy": String(state.get("aim_policy", "toward_center")),
-		"friendly_fire": String(state.get("friendly_fire", "disabled")),
-		"arena_policy": String(state.get("arena_policy", "fixed_directions")),
-		"friendly_fire_warning": String(state.get("friendly_fire_warning", "none")),
+		"rule_safety_projection": rule_safety,
+		"safety_kind": String(rule_safety.get("safety_kind", "boss_rule_safety_projection")),
+		"safety_badges": rule_safety.get("safety_badges", []),
+		"friendly_fire": String(rule_safety.get("friendly_fire", state.get("friendly_fire", "disabled"))),
+		"arena_policy": String(rule_safety.get("arena_policy", state.get("arena_policy", "fixed_directions"))),
+		"friendly_fire_warning": String(rule_safety.get("friendly_fire_warning", state.get("friendly_fire_warning", "none"))),
+		"friendly_fire_risk_level": String(rule_safety.get("friendly_fire_risk_level", "none")),
+		"rules_display_only": true,
 		"requires_server_confirmation": true,
 		"damage_authority": "server",
 		"reward_authority": "server",
@@ -1078,6 +1084,7 @@ func boss_hud_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO,
 	var formation := validate_boss_formation(mode_id)
 	var contract := boss_formation_contract(mode_id)
 	var roster_authority := boss_roster_authority_contract(mode_id)
+	var rule_safety: Dictionary = playfield_projection.get("rule_safety_projection", boss_rule_safety_projection(mode_id))
 	var formation_display_summary: Dictionary = playfield_projection.get("formation_display_summary", boss_formation_display_summary(mode_id, playfield))
 	var current_hp := float(playfield_projection.get("current_hp", state.get("current_hp", 0.0)))
 	var max_hp := float(playfield_projection.get("max_hp", state.get("max_hp", 0.0)))
@@ -1087,7 +1094,7 @@ func boss_hud_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO,
 		"hp %.0f/%.0f" % [current_hp, max_hp],
 		"party %d/%d-%d" % [int(formation.get("player_count", 0)), BOSS_MIN_PLAYERS, BOSS_MAX_PLAYERS],
 		"entry %s" % ("ready" if bool(entry.get("ok", false)) else ",".join(entry_failures)),
-		"rules %s/%s" % [String(state.get("friendly_fire", "disabled")), String(state.get("arena_policy", "fixed_directions"))],
+		"rules %s/%s" % [String(rule_safety.get("friendly_fire", state.get("friendly_fire", "disabled"))), String(rule_safety.get("arena_policy", state.get("arena_policy", "fixed_directions")))],
 	]
 	return {
 		"ok": true,
@@ -1120,9 +1127,14 @@ func boss_hud_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO,
 		"local_roster_authoritative": false,
 		"formation_display_summary": formation_display_summary,
 		"formation_display_signature": int(formation_display_summary.get("formation_display_signature", 0)),
-		"friendly_fire": String(state.get("friendly_fire", "disabled")),
-		"arena_policy": String(state.get("arena_policy", "fixed_directions")),
-		"friendly_fire_warning": String(state.get("friendly_fire_warning", "none")),
+		"rule_safety_projection": rule_safety,
+		"safety_kind": String(rule_safety.get("safety_kind", "boss_rule_safety_projection")),
+		"safety_badges": rule_safety.get("safety_badges", []),
+		"friendly_fire": String(rule_safety.get("friendly_fire", state.get("friendly_fire", "disabled"))),
+		"arena_policy": String(rule_safety.get("arena_policy", state.get("arena_policy", "fixed_directions"))),
+		"friendly_fire_warning": String(rule_safety.get("friendly_fire_warning", state.get("friendly_fire_warning", "none"))),
+		"friendly_fire_risk_level": String(rule_safety.get("friendly_fire_risk_level", "none")),
+		"rules_display_only": true,
 		"rules_source": String(state.get("rules_source", "local_default")),
 		"result_status": String(state.get("last_result_status", "pending")),
 		"result_source": String(state.get("last_result_source", "")),
