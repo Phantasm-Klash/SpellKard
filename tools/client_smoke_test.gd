@@ -4551,6 +4551,17 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: local replay load request invalid %s" % [local_replay_load_request])
 		quit(1)
 		return true
+	var local_practice_validation: Dictionary = local_replay_load_request.get("practice_validation", {})
+	if String(local_practice_validation.get("contract_kind", "")) != "replay_practice_validation" \
+			or not bool(local_practice_validation.get("ok", false)) \
+			or String(local_practice_validation.get("reason", "")) != "local_practice_hash_ready" \
+			or String(local_practice_validation.get("online_replay_authority", "")) != "server_audit_required" \
+			or String(local_practice_validation.get("damage_authority", "")) != "server" \
+			or String(local_practice_validation.get("settlement_authority", "")) != "server" \
+			or bool(local_practice_validation.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: local replay practice validation context invalid %s" % [local_practice_validation])
+		quit(1)
+		return true
 	var replay_filter_rows: Array[Dictionary] = replay_list_model.verification_filter_rows()
 	if replay_filter_rows.size() < 5 or String(replay_filter_rows[0].get("verification_filter", "")) != "all" or not bool(replay_filter_rows[0].get("active", false)) or bool(replay_filter_rows[0].get("client_result_authoritative", true)):
 		push_error("Smoke test failed: replay verification filter rows invalid %s" % [replay_filter_rows])
@@ -4679,6 +4690,18 @@ func _process(_delta: float) -> bool:
 			or not bool(server_replay_load_request.get("requires_server_audit", false)) \
 			or bool(server_replay_load_request.get("client_result_authoritative", true)):
 		push_error("Smoke test failed: server replay load request invalid %s" % [server_replay_load_request])
+		quit(1)
+		return true
+	var server_practice_validation: Dictionary = server_replay_load_request.get("practice_validation", {})
+	if String(server_practice_validation.get("contract_kind", "")) != "replay_practice_validation" \
+			or bool(server_practice_validation.get("ok", true)) \
+			or String(server_practice_validation.get("reason", "")) != "server_record_pending_audit" \
+			or not bool(server_practice_validation.get("requires_server_audit", false)) \
+			or String(server_practice_validation.get("local_playback_authority", "")) != "server_audit_required" \
+			or String(server_practice_validation.get("online_replay_authority", "")) != "server_audit_required" \
+			or String(server_practice_validation.get("damage_authority", "")) != "server" \
+			or bool(server_practice_validation.get("client_result_authoritative", true)):
+		push_error("Smoke test failed: server replay practice validation context invalid %s" % [server_practice_validation])
 		quit(1)
 		return true
 	if main_node.call("_load_selected_replay_snapshot") or String(main_node.get("replay_file_status")) != "load_failed" or String(main_node.get("replay_index_action_status")) != "server_record_pending_audit":
