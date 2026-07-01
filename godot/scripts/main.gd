@@ -2111,7 +2111,9 @@ func _gensoulkyo_join_queue(mode_id: String = "", mode_params: Dictionary = {}) 
 	var target_mode_id: String = mode_id
 	if target_mode_id.is_empty() and matchmaking_model != null:
 		target_mode_id = String(matchmaking_model.selected_mode_id)
-	var result: Dictionary = await gensoulkyo_http_client.join_queue(target_mode_id, _gensoulkyo_loadout_mode_params(mode_params))
+	var request_mode_params := mode_params.duplicate(true)
+	request_mode_params["mode_id"] = target_mode_id
+	var result: Dictionary = await gensoulkyo_http_client.join_queue(target_mode_id, _gensoulkyo_loadout_mode_params(request_mode_params))
 	_update_ui_overlay()
 	return result
 
@@ -2121,7 +2123,9 @@ func _gensoulkyo_create_room(mode_id: String = "", mode_params: Dictionary = {})
 	var target_mode_id: String = mode_id
 	if target_mode_id.is_empty() and matchmaking_model != null:
 		target_mode_id = String(matchmaking_model.selected_mode_id)
-	var result: Dictionary = await gensoulkyo_http_client.create_room(target_mode_id, _gensoulkyo_loadout_mode_params(mode_params))
+	var request_mode_params := mode_params.duplicate(true)
+	request_mode_params["mode_id"] = target_mode_id
+	var result: Dictionary = await gensoulkyo_http_client.create_room(target_mode_id, _gensoulkyo_loadout_mode_params(request_mode_params))
 	_update_ui_overlay()
 	return result
 
@@ -2131,7 +2135,9 @@ func _gensoulkyo_join_room(room_code: String, mode_id: String = "", mode_params:
 	var target_mode_id: String = mode_id
 	if target_mode_id.is_empty() and matchmaking_model != null:
 		target_mode_id = String(matchmaking_model.selected_mode_id)
-	var result: Dictionary = await gensoulkyo_http_client.join_room(room_code, target_mode_id, _gensoulkyo_loadout_mode_params(mode_params))
+	var request_mode_params := mode_params.duplicate(true)
+	request_mode_params["mode_id"] = target_mode_id
+	var result: Dictionary = await gensoulkyo_http_client.join_room(room_code, target_mode_id, _gensoulkyo_loadout_mode_params(request_mode_params))
 	_update_ui_overlay()
 	return result
 

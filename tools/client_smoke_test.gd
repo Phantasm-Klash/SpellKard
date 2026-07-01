@@ -1020,6 +1020,33 @@ func _process(_delta: float) -> bool:
 		push_error("Smoke test failed: Gensoulkyo decks request invalid")
 		quit(1)
 		return true
+	var session_a_token := String(gensoulkyo_api_model.session_token)
+	var session_a_user := String(gensoulkyo_api_model.user_id)
+	var session_a_seq_before := int((decks_request.get("business_envelope", {}) as Dictionary).get("seq", 0))
+	var session_b_login: Dictionary = gensoulkyo_api_model.apply_login_response({
+		"ok": true,
+		"user_id": "server-user-smoke-b",
+		"session_token": "session-smoke-b",
+		"display_name": "Smoke Player B",
+		"server_authoritative": true,
+	})
+	if not bool(session_b_login.get("ok", false)):
+		push_error("Smoke test failed: Gensoulkyo second session login did not apply")
+		quit(1)
+		return true
+	var session_b_inventory_request: Dictionary = gensoulkyo_api_model.inventory_request()
+	var session_b_envelope: Dictionary = session_b_inventory_request.get("business_envelope", {})
+	if int(session_b_envelope.get("seq", 0)) != 1 or String(session_b_envelope.get("nonce", "")).is_empty():
+		push_error("Smoke test failed: Gensoulkyo second session envelope did not start cleanly %s" % [session_b_envelope])
+		quit(1)
+		return true
+	gensoulkyo_api_model.use_session(session_a_token, session_a_user)
+	var session_a_resume_request: Dictionary = gensoulkyo_api_model.chests_request()
+	var session_a_resume_envelope: Dictionary = session_a_resume_request.get("business_envelope", {})
+	if int(session_a_resume_envelope.get("seq", 0)) != session_a_seq_before + 1 or String(session_a_resume_envelope.get("nonce", "")) == String(session_b_envelope.get("nonce", "")):
+		push_error("Smoke test failed: Gensoulkyo session envelope resume invalid a_before=%d a=%s b=%s" % [session_a_seq_before, session_a_resume_envelope, session_b_envelope])
+		quit(1)
+		return true
 	var decks_apply: Dictionary = gensoulkyo_api_model.apply_decks_response({"ok": true, "user_id": "server-user-smoke", "active_deck_id": String(server_deck_snapshot.get("deck_id", "")), "decks": [server_deck_snapshot.merged({"active": true}, true)], "server_authoritative": true}, deck_builder, matchmaking_model)
 	if not bool(decks_apply.get("ok", false)) or int(decks_apply.get("deck_count", 0)) <= 0:
 		push_error("Smoke test failed: Gensoulkyo decks response did not apply")
@@ -1125,6 +1152,11 @@ func _process(_delta: float) -> bool:
 	var main_loadout_params: Dictionary = main_node.call("_gensoulkyo_loadout_mode_params", {})
 	if String(main_loadout_params.get("stage_id", "")) != String(stage_select_model.selected_stage_id) or String(main_loadout_params.get("character_id", "")) != String(character_model.selected_character_id) or String(main_loadout_params.get("rating_code", "")) != String(game_mode_model.certification_state.get("rating_code", "")):
 		push_error("Smoke test failed: Gensoulkyo loadout params invalid")
+		quit(1)
+		return true
+	var world_boss_loadout_params: Dictionary = main_node.call("_gensoulkyo_loadout_mode_params", {"mode_id": "world_boss"})
+	if String(world_boss_loadout_params.get("mode_id", "")) != "world_boss" or world_boss_loadout_params.has("rating_code"):
+		push_error("Smoke test failed: Gensoulkyo world boss loadout params should not include certification rating %s" % [world_boss_loadout_params])
 		quit(1)
 		return true
 	var battle_allocation := _smoke_battle_allocation("match-server-smoke")

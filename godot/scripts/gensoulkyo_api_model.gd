@@ -77,6 +77,7 @@ var last_business_envelope_status := "not_started"
 var last_business_envelope_error := "none"
 var last_verified_business_envelope_seq := 0
 var seen_business_envelope_nonces: Dictionary = {}
+var business_envelope_state_by_session: Dictionary = {}
 
 func configure(endpoint: String = DEFAULT_BASE_URL) -> void:
 	set_base_url(endpoint)
@@ -87,6 +88,13 @@ func configure(endpoint: String = DEFAULT_BASE_URL) -> void:
 func set_base_url(endpoint: String) -> void:
 	var trimmed := endpoint.strip_edges()
 	base_url = DEFAULT_BASE_URL if trimmed.is_empty() else trimmed.trim_suffix("/")
+
+func use_session(next_session_token: String, next_user_id: String = "") -> void:
+	_store_business_envelope_state_for_current_session()
+	session_token = next_session_token
+	if not next_user_id.is_empty():
+		user_id = next_user_id
+	_restore_business_envelope_state_for_current_session()
 
 func anonymous_login_request(device_id: String = "", requested_display_name: String = "Local Tester") -> Dictionary:
 	var request := _request("POST", "/v1/auth/anonymous", {
@@ -260,13 +268,14 @@ func activity_claim_request(claim_kind: String, claim_id: String) -> Dictionary:
 func apply_login_response(response: Dictionary, matchmaking_model: RefCounted = null) -> Dictionary:
 	last_response = response.duplicate(true)
 	last_endpoint = "auth_anonymous"
+	_store_business_envelope_state_for_current_session()
 	session_token = String(response.get("session_token", session_token))
 	user_id = String(response.get("user_id", user_id))
 	display_name = String(response.get("display_name", display_name))
 	connection_status = "authenticated" if not session_token.is_empty() else "auth_failed"
 	last_error_code = "none" if connection_status == "authenticated" else "session_missing"
 	if connection_status == "authenticated":
-		_reset_business_envelope_state()
+		_restore_business_envelope_state_for_current_session()
 	if matchmaking_model != null and matchmaking_model.has_method("apply_server_session"):
 		matchmaking_model.apply_server_session(response)
 	return _result(connection_status == "authenticated", "login", {"user_id": user_id, "session_token": session_token})
@@ -829,8 +838,10 @@ func validate_business_envelope(envelope: Dictionary, now_ms: int = 0, record_no
 		seen_business_envelope_nonces[nonce] = true
 		if seen_business_envelope_nonces.size() > 128:
 			seen_business_envelope_nonces.erase(seen_business_envelope_nonces.keys()[0])
+		_store_business_envelope_state_for_current_session()
 	last_business_envelope_status = "validated_scaffold"
 	last_business_envelope_error = "none"
+	_store_business_envelope_state_for_current_session()
 	return {"ok": true, "reason": "none", "seq": seq, "nonce": nonce, "timestamp_ms": timestamp_ms}
 
 func _server_deck_snapshot(deck_snapshot: Dictionary) -> Dictionary:
@@ -1024,6 +1035,7 @@ func _record_request(request: Dictionary) -> Dictionary:
 func _business_envelope(method: String, path: String, body: Dictionary, authenticated: bool, endpoint: String) -> Dictionary:
 	if not authenticated or session_token.is_empty():
 		return {}
+	_restore_business_envelope_state_for_current_session()
 	business_envelope_seq += 1
 	var timestamp_ms := _now_ms()
 	var body_json := JSON.stringify(body)
@@ -1063,6 +1075,7 @@ func _business_envelope(method: String, path: String, body: Dictionary, authenti
 	last_business_envelope = envelope.duplicate(true)
 	last_business_envelope_status = "built_scaffold"
 	last_business_envelope_error = "none"
+	_store_business_envelope_state_for_current_session()
 	return envelope
 
 func _business_envelope_headers(envelope: Dictionary) -> Array[String]:
@@ -1084,6 +1097,46 @@ func _reset_business_envelope_state() -> void:
 	last_business_envelope_error = "none"
 	last_verified_business_envelope_seq = 0
 	seen_business_envelope_nonces.clear()
+	business_envelope_state_by_session.clear()
+
+func _store_business_envelope_state_for_current_session() -> void:
+	if session_token.is_empty():
+		return
+	business_envelope_state_by_session[_session_id_hint()] = {
+		"seq": business_envelope_seq,
+		"last_envelope": last_business_envelope.duplicate(true),
+		"status": last_business_envelope_status,
+		"error": last_business_envelope_error,
+		"verified_seq": last_verified_business_envelope_seq,
+		"nonces": seen_business_envelope_nonces.duplicate(true),
+	}
+
+func _restore_business_envelope_state_for_current_session() -> void:
+	if session_token.is_empty():
+		business_envelope_seq = 0
+		last_business_envelope = {}
+		last_business_envelope_status = "not_started"
+		last_business_envelope_error = "none"
+		last_verified_business_envelope_seq = 0
+		seen_business_envelope_nonces.clear()
+		return
+	var key := _session_id_hint()
+	if not business_envelope_state_by_session.has(key):
+		business_envelope_seq = 0
+		last_business_envelope = {}
+		last_business_envelope_status = "not_started"
+		last_business_envelope_error = "none"
+		last_verified_business_envelope_seq = 0
+		seen_business_envelope_nonces.clear()
+		_store_business_envelope_state_for_current_session()
+		return
+	var state: Dictionary = business_envelope_state_by_session.get(key, {})
+	business_envelope_seq = int(state.get("seq", 0))
+	last_business_envelope = (state.get("last_envelope", {}) as Dictionary).duplicate(true)
+	last_business_envelope_status = String(state.get("status", "not_started"))
+	last_business_envelope_error = String(state.get("error", "none"))
+	last_verified_business_envelope_seq = int(state.get("verified_seq", 0))
+	seen_business_envelope_nonces = (state.get("nonces", {}) as Dictionary).duplicate(true)
 
 func _business_nonce(endpoint: String, seq: int, timestamp_ms: int) -> String:
 	var material := "%s:%d:%d:%d" % [endpoint, seq, timestamp_ms, Time.get_ticks_usec()]
