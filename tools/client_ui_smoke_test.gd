@@ -3,16 +3,19 @@ extends SceneTree
 const MAIN_SCENE := "res://scenes/main.tscn"
 const WAIT_FRAMES := 30
 const MAX_FRAMES := 900
+const MAX_WALL_MS := 45000
 const TEST_VIEWPORT := Vector2(1280, 720)
 const LOG_STAGE_PROGRESS := false
 
 var frame_count := 0
+var start_ticks_msec := 0
 var main_node: Node = null
 var failed := false
 var stage := "init"
 var validation_started := false
 
 func _initialize() -> void:
+	start_ticks_msec = Time.get_ticks_msec()
 	var packed_scene := load(MAIN_SCENE)
 	if packed_scene == null:
 		_fail("failed to load %s" % MAIN_SCENE)
@@ -24,6 +27,10 @@ func _initialize() -> void:
 func _process(_delta: float) -> bool:
 	frame_count += 1
 	if failed:
+		return true
+	if Time.get_ticks_msec() - start_ticks_msec > MAX_WALL_MS:
+		_fail("timed out after %d ms at frame %d" % [MAX_WALL_MS, frame_count])
+		quit(1)
 		return true
 	if frame_count > MAX_FRAMES:
 		_fail("timed out at frame %d" % frame_count)
@@ -161,6 +168,7 @@ func _validate_play_pages() -> bool:
 	if main_node.call("_configure_boss_party", "instance_boss", ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p7"]):
 		return _fail("instance boss duplicate party ids should be rejected")
 	snapshot = await _open_snapshot("modes")
+	_mark_stage("modes:rows")
 	rows = main_node.call("_ui_screen_rows", 64)
 	if not _assert_boss_party_status_row(_row_by_id(rows, "world_boss_party"), "world_boss", 4, "cardinal_4"):
 		return false
@@ -190,17 +198,22 @@ func _validate_play_pages() -> bool:
 		return false
 	if not _assert_boss_practice_validation_row(_row_by_id(rows, "instance_boss_practice_validation"), "instance_boss", 8):
 		return false
+	_mark_stage("modes:overview")
 	var modes_overview_text := String(snapshot.get("overview_cards_text", ""))
 	if not modes_overview_text.contains(_text("screen.settings.boss_spellbook")) or not modes_overview_text.contains("phases") or not modes_overview_text.contains("digest"):
 		return _fail("modes overview cards missing boss practice preview card metrics %s" % modes_overview_text)
 	if not modes_overview_text.contains("practice validation"):
 		return _fail("modes overview cards missing boss practice validation metrics %s" % modes_overview_text)
+	_mark_stage("modes:launch_world_preview")
 	if not await _assert_boss_practice_preview_launch("world_boss_practice_preview", "world_boss"):
 		return false
+	_mark_stage("modes:launch_instance_preview")
 	if not await _assert_boss_practice_preview_launch("instance_boss_practice_preview", "instance_boss"):
 		return false
+	_mark_stage("modes:launch_world_validation")
 	if not await _assert_boss_practice_preview_launch("world_boss_practice_validation", "world_boss"):
 		return false
+	_mark_stage("modes:launch_instance_validation")
 	if not await _assert_boss_practice_preview_launch("instance_boss_practice_validation", "instance_boss"):
 		return false
 	snapshot = await _open_snapshot("modes")
