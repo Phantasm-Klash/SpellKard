@@ -359,6 +359,31 @@ func boss_action_availability_projection(mode_id: String) -> Dictionary:
 			"server_required_for": _boss_server_required_fields(mode_id),
 			"ui_action_contract": _boss_ui_action_contract(false, false),
 			"ui_action_cards": _boss_ui_action_cards(mode_id, false, false, ["boss_mode_invalid"], "blocked_local"),
+			"entry_action_panel": _boss_entry_action_panel_from_projection(mode_id, {
+				"mode_id": mode_id,
+				"mode_category": "boss",
+				"action_status": "blocked_local",
+				"local_blockers": ["boss_mode_invalid"],
+				"display_ready": false,
+				"entry_valid": false,
+				"formation_valid": false,
+				"can_request_entry": false,
+				"can_request_transfer": false,
+				"server_confirmation_status": "blocked_local",
+				"projection_scope": "local_display_only",
+				"intent_authority": "client_request_only",
+				"entry_request_scope": "intent_only",
+				"transfer_request_scope": "intent_only",
+				"server_required_for": _boss_server_required_fields(mode_id),
+				"ui_action_contract": _boss_ui_action_contract(false, false),
+				"ui_action_cards": _boss_ui_action_cards(mode_id, false, false, ["boss_mode_invalid"], "blocked_local"),
+				"damage_authority": "server",
+				"reward_authority": "server",
+				"settlement_authority": "server",
+				"requires_server_confirmation": true,
+				"server_authoritative": false,
+				"client_result_authoritative": false,
+			}),
 			"damage_authority": "server",
 			"reward_authority": "server",
 			"settlement_authority": "server",
@@ -417,6 +442,44 @@ func boss_action_availability_projection(mode_id: String) -> Dictionary:
 			"server_required_for": _boss_server_required_fields(mode_id),
 			"ui_action_contract": _boss_ui_action_contract(can_request_entry, can_request_transfer),
 			"ui_action_cards": _boss_ui_action_cards(mode_id, can_request_entry, can_request_transfer, local_blockers, String(entry.get("server_confirmation_status", "required" if can_request_entry else "blocked_local"))),
+			"entry_action_panel": _boss_entry_action_panel_from_projection(mode_id, {
+				"mode_id": mode_id,
+				"mode_category": "boss",
+				"action_status": action_status,
+				"local_blockers": local_blockers,
+				"display_blockers": display_blockers,
+				"entry_failures": entry_failures,
+				"formation_failures": formation_failures,
+				"display_ready": display_ready,
+				"entry_valid": can_request_entry,
+				"formation_valid": bool(formation.get("ok", false)),
+				"can_request_entry": can_request_entry,
+				"can_request_transfer": can_request_transfer,
+				"can_display_playfield": display_ready,
+				"entry_preflight": entry,
+				"server_confirmation_status": String(entry.get("server_confirmation_status", "required" if can_request_entry else "blocked_local")),
+				"projection_scope": "local_display_only",
+				"intent_authority": "client_request_only",
+				"entry_request_scope": "intent_only",
+				"transfer_request_scope": "intent_only",
+				"server_required_for": _boss_server_required_fields(mode_id),
+				"ui_action_contract": _boss_ui_action_contract(can_request_entry, can_request_transfer),
+				"ui_action_cards": _boss_ui_action_cards(mode_id, can_request_entry, can_request_transfer, local_blockers, String(entry.get("server_confirmation_status", "required" if can_request_entry else "blocked_local"))),
+				"player_count": int(formation.get("player_count", 0)),
+				"slot_layout_policy": String(formation.get("slot_layout_policy", "")),
+				"slot_labels": formation.get("slot_labels", []),
+				"attempts_left": int(entry.get("attempts_left", 0)),
+				"required_rating": String(entry.get("required_rating", "")),
+				"player_rating": String(entry.get("player_rating", "")),
+				"required_key_id": String(entry.get("required_key_id", "")),
+				"owned_key_count": int(entry.get("owned_key_count", 0)),
+				"damage_authority": "server",
+				"reward_authority": "server",
+				"settlement_authority": "server",
+				"requires_server_confirmation": true,
+				"server_authoritative": bool(state.get("server_authoritative", false)),
+				"client_result_authoritative": false,
+			}),
 			"player_count": int(formation.get("player_count", 0)),
 			"slot_layout_policy": String(formation.get("slot_layout_policy", "")),
 			"slot_labels": formation.get("slot_labels", []),
@@ -438,6 +501,9 @@ func boss_action_availability_projection(mode_id: String) -> Dictionary:
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 	}
+
+func boss_entry_action_panel_projection(mode_id: String) -> Dictionary:
+	return _boss_entry_action_panel_from_projection(mode_id, boss_action_availability_projection(mode_id))
 
 func boss_authority_summary(mode_id: String) -> Dictionary:
 	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
@@ -1073,6 +1139,7 @@ func boss_display_contract_row(row_id: String, mode_id: String) -> Dictionary:
 	var hud_projection := boss_hud_projection(mode_id)
 	var entry_preview := boss_entry_preview(mode_id)
 	var action_projection := boss_action_availability_projection(mode_id)
+	var entry_action_panel: Dictionary = action_projection.get("entry_action_panel", _boss_entry_action_panel_from_projection(mode_id, action_projection))
 	var formation_display_summary: Dictionary = playfield_projection.get("formation_display_summary", boss_formation_display_summary(mode_id))
 	var formation_failures := _string_array(playfield_projection.get("formation_failures", []))
 	var entry_failures := _string_array(entry_preview.get("failures", []))
@@ -1112,6 +1179,7 @@ func boss_display_contract_row(row_id: String, mode_id: String) -> Dictionary:
 		"formation_display_summary": formation_display_summary,
 		"formation_display_signature": int(formation_display_summary.get("formation_display_signature", 0)),
 		"action_availability": action_projection,
+			"entry_action_panel": entry_action_panel,
 			"action_status": String(action_projection.get("action_status", "")),
 			"local_blockers": action_projection.get("local_blockers", []),
 			"can_request_entry": bool(action_projection.get("can_request_entry", false)),
@@ -1613,6 +1681,7 @@ func _boss_entry_request_payload(mode_id: String, entry: Dictionary) -> Dictiona
 		"owned_key_count": int(entry.get("owned_key_count", 0)),
 		"entry_preflight": entry.duplicate(true),
 		"action_availability": action_projection,
+		"entry_action_panel": _boss_entry_action_panel_from_projection(mode_id, action_projection),
 		"local_validation": "boss_entry_preflight",
 		"local_validation_rules": ["attempts_available", "party_size", "rating_requirement", "key_requirement"],
 		"request_scope": "intent_only",
@@ -1838,6 +1907,7 @@ func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 func _boss_entry_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
 	var validation := boss_entry_preview(mode_id)
 	var action_projection := boss_action_availability_projection(mode_id)
+	var entry_action_panel: Dictionary = action_projection.get("entry_action_panel", _boss_entry_action_panel_from_projection(mode_id, action_projection))
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.boss.entry",
@@ -1858,6 +1928,7 @@ func _boss_entry_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 		"owned_key_count": int(validation.get("owned_key_count", 0)),
 		"entry_preflight": validation,
 		"action_availability": action_projection,
+		"entry_action_panel": entry_action_panel,
 			"action_status": String(action_projection.get("action_status", "")),
 			"local_blockers": action_projection.get("local_blockers", []),
 			"can_request_entry": bool(action_projection.get("can_request_entry", false)),
@@ -1880,6 +1951,85 @@ func _boss_entry_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 		"enabled": bool(validation.get("ok", false)),
+	}
+
+func _boss_entry_action_panel_from_projection(mode_id: String, projection: Dictionary) -> Dictionary:
+	var cards: Array = projection.get("ui_action_cards", [])
+	var action_buttons: Array[Dictionary] = []
+	var entry_button: Dictionary = {}
+	var transfer_button: Dictionary = {}
+	for raw_card in cards:
+		if typeof(raw_card) != TYPE_DICTIONARY:
+			continue
+		var card: Dictionary = raw_card
+		var button := {
+			"id": String(card.get("id", "")),
+			"label_key": String(card.get("label_key", "")),
+			"ui_action": String(card.get("ui_action", "")),
+			"action_card_kind": String(card.get("action_card_kind", "")),
+			"action_status": String(card.get("action_status", "")),
+			"enabled": bool(card.get("enabled", false)),
+			"blocked_reason": String(card.get("blocked_reason", "none")),
+			"request_scope": String(card.get("request_scope", "intent_only")),
+			"server_confirmation_status": String(card.get("server_confirmation_status", "")),
+			"requires_server_confirmation": bool(card.get("requires_server_confirmation", true)),
+			"damage_authority": "server",
+			"reward_authority": "server",
+			"settlement_authority": "server",
+			"client_result_authoritative": false,
+		}
+		action_buttons.append(button)
+		if String(button.get("action_card_kind", "")) == "boss_entry_intent":
+			entry_button = button
+		elif String(button.get("action_card_kind", "")) == "boss_card_transfer_intent":
+			transfer_button = button
+	var local_blockers := _string_array(projection.get("local_blockers", []))
+	var entry_blocked_reason := "none" if local_blockers.is_empty() else local_blockers[0]
+	var panel_status := "ready_for_server_confirmation" if bool(projection.get("can_request_entry", false)) else "blocked_local"
+	return {
+		"ok": bool(projection.get("can_request_entry", false)) and bool(projection.get("display_ready", false)),
+		"reason": String(projection.get("reason", "none" if local_blockers.is_empty() else local_blockers[0])),
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"panel_kind": "boss_entry_action_panel",
+		"ui_control": "panel",
+		"render_slot": "mode_actions",
+		"panel_status": panel_status,
+		"primary_action_id": String(entry_button.get("id", "%s_entry_action_card" % mode_id)),
+		"secondary_action_id": String(transfer_button.get("id", "%s_transfer_action_card" % mode_id)),
+		"entry_enabled": bool(projection.get("can_request_entry", false)),
+		"transfer_enabled": bool(projection.get("can_request_transfer", false)),
+		"display_ready": bool(projection.get("display_ready", false)),
+		"formation_valid": bool(projection.get("formation_valid", false)),
+		"entry_valid": bool(projection.get("entry_valid", false)),
+		"disabled_reasons": local_blockers,
+		"entry_blocked_reason": entry_blocked_reason,
+		"transfer_blocked_reason": "none" if bool(projection.get("can_request_transfer", false)) else entry_blocked_reason,
+		"action_buttons": action_buttons,
+		"entry_button": entry_button,
+		"transfer_button": transfer_button,
+		"entry_preflight": projection.get("entry_preflight", {}),
+		"player_count": int(projection.get("player_count", 0)),
+		"slot_layout_policy": String(projection.get("slot_layout_policy", "")),
+		"slot_labels": projection.get("slot_labels", []),
+		"attempts_left": int(projection.get("attempts_left", 0)),
+		"required_rating": String(projection.get("required_rating", "")),
+		"player_rating": String(projection.get("player_rating", "")),
+		"required_key_id": String(projection.get("required_key_id", "")),
+		"owned_key_count": int(projection.get("owned_key_count", 0)),
+		"action_availability_kind": String(projection.get("availability_contract_kind", "")),
+		"server_required_for": projection.get("server_required_for", _boss_server_required_fields(mode_id)),
+		"entry_request_scope": String(projection.get("entry_request_scope", "intent_only")),
+		"transfer_request_scope": String(projection.get("transfer_request_scope", "intent_only")),
+		"server_confirmation_status": String(projection.get("server_confirmation_status", "required" if bool(projection.get("can_request_entry", false)) else "blocked_local")),
+		"projection_scope": "local_display_only",
+		"intent_authority": "client_request_only",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"requires_server_confirmation": true,
+		"server_authoritative": bool(projection.get("server_authoritative", false)),
+		"client_result_authoritative": false,
 	}
 
 func _boss_formation_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
