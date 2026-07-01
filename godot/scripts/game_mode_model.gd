@@ -1138,6 +1138,62 @@ func boss_hud_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO,
 		"client_result_authoritative": false,
 	}
 
+func boss_rule_safety_projection(mode_id: String) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"safety_kind": "boss_rule_safety_projection",
+			"projection_scope": "local_display_only",
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var state := _state_for_mode(mode_id)
+	var friendly_fire := _sanitized_boss_friendly_fire(String(state.get("friendly_fire", "disabled")))
+	var arena_policy := _sanitized_boss_arena_policy(String(state.get("arena_policy", state.get("movement_area_policy", "fixed_directions"))))
+	var warning := _boss_friendly_fire_warning(friendly_fire)
+	var risk_level := _boss_friendly_fire_risk_level(friendly_fire)
+	var badges: Array[String] = [
+		"rules_display_only",
+		"damage_server",
+		"settlement_server",
+		"friendly_fire_%s" % friendly_fire,
+		"arena_%s" % arena_policy,
+	]
+	return {
+		"ok": true,
+		"reason": "none",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"safety_kind": "boss_rule_safety_projection",
+		"friendly_fire": friendly_fire,
+		"friendly_fire_warning": warning,
+		"friendly_fire_risk_level": risk_level,
+		"friendly_fire_enabled": friendly_fire != "disabled",
+		"arena_policy": arena_policy,
+		"movement_area_policy": arena_policy,
+		"movement_constraint_summary": _boss_arena_policy_summary(arena_policy),
+		"rules_source": String(state.get("rules_source", "local_default")),
+		"safety_badges": badges,
+		"safety_text": "friendly_fire %s risk %s arena %s source %s" % [
+			friendly_fire,
+			risk_level,
+			arena_policy,
+			String(state.get("rules_source", "local_default")),
+		],
+		"projection_scope": "local_display_only",
+		"intent_authority": "client_request_only",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"boss_hp_authority": "server",
+		"requires_server_confirmation": true,
+		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
 func boss_local_status_row(row_id: String, mode_id: String) -> Dictionary:
 	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
 		return {
@@ -1935,6 +1991,7 @@ func _world_boss_rows() -> Array[Dictionary]:
 	return [
 		_boss_hp_row("world_boss_hp", world_boss_state, true),
 		_boss_rules_row("world_boss_rules", MODE_WORLD_BOSS, world_boss_state),
+		_boss_rule_safety_row("world_boss_rule_safety", MODE_WORLD_BOSS),
 		_boss_authority_summary_row("world_boss_authority", MODE_WORLD_BOSS),
 		{"id": "world_boss_attempts", "label_key": "screen.mode.boss.attempts", "value": int(world_boss_state.get("daily_attempts_left", 0)), "mode_category": "boss", "server_authoritative": bool(world_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": int(world_boss_state.get("daily_attempts_left", 0)) > 0},
 		_boss_entry_row("world_boss_entry", MODE_WORLD_BOSS, world_boss_state),
@@ -1954,6 +2011,7 @@ func _instance_boss_rows() -> Array[Dictionary]:
 	return [
 		_boss_hp_row("instance_boss_hp", instance_boss_state, false),
 		_boss_rules_row("instance_boss_rules", MODE_INSTANCE_BOSS, instance_boss_state),
+		_boss_rule_safety_row("instance_boss_rule_safety", MODE_INSTANCE_BOSS),
 		_boss_authority_summary_row("instance_boss_authority", MODE_INSTANCE_BOSS),
 		_boss_entry_row("instance_boss_entry", MODE_INSTANCE_BOSS, instance_boss_state),
 		{"id": "instance_boss_phase", "label_key": "screen.mode.instance.phase", "value": str(instance_boss_state.get("boss_phase", "phase_1")), "mode_category": "boss", "server_authoritative": bool(instance_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": true},
@@ -2256,6 +2314,39 @@ func _boss_rules_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 		"server_authoritative": bool(state.get("server_authoritative", false)),
 		"client_result_authoritative": false,
 		"enabled": true,
+	}
+
+func _boss_rule_safety_row(row_id: String, mode_id: String) -> Dictionary:
+	var projection := boss_rule_safety_projection(mode_id)
+	return {
+		"id": row_id,
+		"label_key": "screen.mode.boss.rules",
+		"value": String(projection.get("safety_text", "")),
+		"summary": "local rule safety display only; friendly-fire damage, Boss HP, rewards, and settlement remain server-authoritative",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"ui_control": "status",
+		"safety_kind": String(projection.get("safety_kind", "boss_rule_safety_projection")),
+		"safety_projection": projection,
+		"friendly_fire": String(projection.get("friendly_fire", "disabled")),
+		"friendly_fire_warning": String(projection.get("friendly_fire_warning", "none")),
+		"friendly_fire_risk_level": String(projection.get("friendly_fire_risk_level", "none")),
+		"friendly_fire_enabled": bool(projection.get("friendly_fire_enabled", false)),
+		"arena_policy": String(projection.get("arena_policy", "fixed_directions")),
+		"movement_area_policy": String(projection.get("movement_area_policy", "fixed_directions")),
+		"movement_constraint_summary": String(projection.get("movement_constraint_summary", "")),
+		"rules_source": String(projection.get("rules_source", "local_default")),
+		"safety_badges": projection.get("safety_badges", []),
+		"projection_scope": "local_display_only",
+		"intent_authority": "client_request_only",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"boss_hp_authority": "server",
+		"requires_server_confirmation": true,
+		"server_authoritative": bool(projection.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+		"enabled": bool(projection.get("ok", false)),
 	}
 
 func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dictionary:
@@ -3477,6 +3568,24 @@ func _boss_friendly_fire_warning(policy: String) -> String:
 			return "all_friendly_fire_enabled"
 		_:
 			return "none"
+
+func _boss_friendly_fire_risk_level(policy: String) -> String:
+	match _sanitized_boss_friendly_fire(policy):
+		"player_bullets_only":
+			return "moderate"
+		"all_friendly_fire":
+			return "high"
+		_:
+			return "none"
+
+func _boss_arena_policy_summary(policy: String) -> String:
+	match _sanitized_boss_arena_policy(policy):
+		"shared_ring":
+			return "shared_ring_movement"
+		"personal_lanes":
+			return "personal_lane_movement"
+		_:
+			return "fixed_direction_slots"
 
 func _rating_meets_requirement(player_rating: String, required_rating: String) -> bool:
 	if required_rating.strip_edges().is_empty():

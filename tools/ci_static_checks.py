@@ -1163,6 +1163,14 @@ def check_protocol_client_scripts() -> list[str]:
             "\"request_scope\": \"intent_only\"",
             "\"entry_request_scope\": \"intent_only\"",
             "\"intent_authority\": \"client_request_only\"",
+            "func boss_rule_safety_projection(",
+            "func _boss_rule_safety_row(",
+            "\"safety_kind\": \"boss_rule_safety_projection\"",
+            "\"friendly_fire_risk_level\"",
+            "\"safety_badges\"",
+            "rules_display_only",
+            "func _boss_friendly_fire_risk_level(",
+            "func _boss_arena_policy_summary(",
         ]:
             if token not in text:
                 errors.append(f"godot/scripts/game_mode_model.gd: missing Boss result authority token {token}")
@@ -1183,6 +1191,10 @@ def check_protocol_client_scripts() -> list[str]:
             "func _validate_boss_entry_action_panel(",
             "\"boss_entry_action_panel\"",
             "\"mode_actions\"",
+            "func _validate_boss_rule_safety_row(",
+            "\"boss_rule_safety_projection\"",
+            "\"friendly_fire_risk_level\"",
+            "\"rules_display_only\"",
         ]:
             if token not in text:
                 errors.append(f"tools/client_smoke_test.gd: missing Boss result authority smoke token {token}")
