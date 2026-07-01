@@ -947,7 +947,7 @@ func _practice_validation_context(row: Dictionary) -> Dictionary:
 			"client_result_authoritative": false,
 		}
 	var requires_server_audit := bool(row.get("requires_server_audit", false))
-	var final_hash_ready := bool(row.get("can_verify_final_hash", false)) and int(row.get("final_result_hash", 0)) != 0
+	var final_hash_ready := not requires_server_audit and bool(row.get("can_verify_final_hash", false)) and int(row.get("final_result_hash", 0)) != 0
 	var can_play := bool(row.get("can_play", false)) and not requires_server_audit and final_hash_ready
 	var gates: Array[String] = [
 		"metadata_valid",
@@ -1127,7 +1127,9 @@ func _replay_action_guard(row: Dictionary) -> Dictionary:
 			"client_result_authoritative": false,
 		}
 	var reason := String(row.get("local_load_guard_reason", row.get("load_rejection_reason", "")))
-	var can_play := bool(row.get("can_play", false)) and reason.is_empty()
+	var requires_server_audit := bool(row.get("requires_server_audit", false))
+	var final_hash_ready := not requires_server_audit and bool(row.get("can_verify_final_hash", false)) and int(row.get("final_result_hash", 0)) != 0
+	var can_play := bool(row.get("can_play", false)) and reason.is_empty() and final_hash_ready
 	return {
 		"ok": can_play,
 		"reason": "loadable_local_practice" if can_play else reason,
@@ -1135,10 +1137,10 @@ func _replay_action_guard(row: Dictionary) -> Dictionary:
 		"verification_status": String(row.get("verification_status", "")),
 		"verification_section": String(row.get("section", "")),
 		"final_hash_required": true,
-		"final_hash_ready": bool(row.get("can_verify_final_hash", false)) and int(row.get("final_result_hash", 0)) != 0,
+		"final_hash_ready": final_hash_ready,
 		"final_result_hash": int(row.get("final_result_hash", 0)),
 		"local_load_policy": String(row.get("local_load_policy", "none")),
-		"requires_server_audit": bool(row.get("requires_server_audit", false)),
+		"requires_server_audit": requires_server_audit,
 		"server_audit_status": String(row.get("server_audit_status", "")),
 		"local_playback_authority": String(row.get("local_playback_authority", "")),
 		"local_hash_authority": "local_practice_verification_only",
@@ -1374,8 +1376,9 @@ func local_load_guard_for_entry(entry: Dictionary) -> Dictionary:
 	var rejection_reason := _entry_local_load_rejection_reason(entry, verification_status, metadata_valid, server_authoritative, server_claim_fields)
 	var requires_server_audit := server_authoritative or not server_claim_fields.is_empty() or _entry_verification_section(verification_status) == "replay_server_pending"
 	var local_load_policy := "blocked_server_audit" if requires_server_audit else ("blocked_local_integrity" if not rejection_reason.is_empty() else "loadable_local_practice")
+	var final_hash_ready := not requires_server_audit and int(entry.get("final_result_hash", 0)) != 0 and int(entry.get("final_tick", 0)) >= 0
 	var guard := {
-		"ok": rejection_reason.is_empty(),
+		"ok": rejection_reason.is_empty() and final_hash_ready,
 		"reason": "loadable" if rejection_reason.is_empty() else rejection_reason,
 		"verification_status": verification_status,
 		"verification_section": _entry_verification_section(verification_status),
@@ -1383,6 +1386,9 @@ func local_load_guard_for_entry(entry: Dictionary) -> Dictionary:
 		"metadata_valid": metadata_valid,
 		"server_authoritative": server_authoritative,
 		"server_authority_claim_fields": server_claim_fields,
+		"final_hash_required": true,
+		"final_hash_ready": final_hash_ready,
+		"final_result_hash": int(entry.get("final_result_hash", 0)),
 		"local_load_policy": local_load_policy,
 		"requires_server_audit": requires_server_audit,
 		"server_audit_status": "pending" if requires_server_audit else "not_required",
@@ -1400,7 +1406,7 @@ func local_load_guard_for_entry(entry: Dictionary) -> Dictionary:
 		"section": _entry_verification_section(verification_status),
 		"final_tick": int(entry.get("final_tick", 0)),
 		"final_result_hash": int(entry.get("final_result_hash", 0)),
-		"can_verify_final_hash": int(entry.get("final_result_hash", 0)) != 0 and int(entry.get("final_tick", 0)) >= 0,
+		"can_verify_final_hash": final_hash_ready,
 		"input_integrity_status": _entry_input_integrity_status(entry),
 		"input_count": int(entry.get("input_count", 0)),
 		"input_tick_span": int(entry.get("input_tick_span", 0)),
