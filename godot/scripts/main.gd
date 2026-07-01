@@ -6217,6 +6217,9 @@ func _boss_action_context_text(row: Dictionary) -> String:
 	var receipt_context := _boss_settlement_receipt_context_text(row)
 	if not receipt_context.is_empty():
 		return receipt_context
+	var transfer_context := _boss_transfer_confirmation_context_text(row)
+	if not transfer_context.is_empty():
+		return transfer_context
 	var status := String(row.get("action_status", ""))
 	if status.is_empty() and typeof(row.get("action_availability", {})) == TYPE_DICTIONARY:
 		var action_availability: Dictionary = row.get("action_availability", {})
@@ -6237,6 +6240,29 @@ func _boss_action_context_text(row: Dictionary) -> String:
 	if not blockers.is_empty():
 		parts.append("blocked %s" % ",".join(blockers))
 	return "boss action %s" % " ".join(parts)
+
+func _boss_transfer_confirmation_context_text(row: Dictionary) -> String:
+	if String(row.get("transfer_contract_kind", "")) != "boss_card_transfer_confirmation_contract":
+		return ""
+	var pending := int(row.get("pending_server_confirmation_count", 0))
+	var confirmed := int(row.get("server_confirmed_transfer_count", 0))
+	var rejected := int(row.get("server_rejected_transfer_count", 0))
+	var latest_status := String(row.get("latest_transfer_confirmation_status", row.get("server_confirmation_status", "")))
+	var server_status := String(row.get("server_confirmation_status", ""))
+	var parts: Array[String] = [
+		"boss transfer",
+		"pending %d" % pending,
+		"confirmed %d" % confirmed,
+		"rejected %d" % rejected,
+	]
+	if not latest_status.is_empty() and latest_status != "none":
+		parts.append("latest %s" % latest_status)
+	if not server_status.is_empty() and server_status != latest_status:
+		parts.append("server %s" % server_status)
+	if bool(row.get("requires_server_confirmation", false)):
+		parts.append("server required")
+	parts.append("client intent only")
+	return " ".join(parts)
 
 func _boss_settlement_receipt_context_text(row: Dictionary) -> String:
 	var receipt_projection: Dictionary = {}

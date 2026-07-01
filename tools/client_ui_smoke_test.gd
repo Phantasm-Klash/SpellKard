@@ -208,6 +208,19 @@ func _validate_play_pages() -> bool:
 		return false
 	if not _assert_boss_action_contract(_row_by_id(rows, "world_boss_display"), "world_boss", true, true, "required"):
 		return false
+	var transfer_result: Dictionary = main_node.call("_request_boss_card_transfer", "world_boss", "p1", "p2", "focus_lens")
+	if not bool(transfer_result.get("ok", false)):
+		return _fail("world boss transfer request should create pending server confirmation %s" % [transfer_result])
+	snapshot = await _open_snapshot("modes")
+	rows = main_node.call("_ui_screen_rows", 64)
+	var world_transfer_index := _row_index_by_id(rows, "world_boss_transfer")
+	if world_transfer_index < 0:
+		return _fail("modes page missing world boss transfer row")
+	main_node.call("_ui_set_cursor", world_transfer_index)
+	await _settle_frames(2)
+	snapshot = main_node.call("_ui_overlay_snapshot")
+	if not String(snapshot.get("detail", "")).contains("boss transfer pending 1") or not String(snapshot.get("detail", "")).contains("server pending"):
+		return _fail("world boss transfer detail missing server confirmation context %s" % [snapshot])
 	var instance_entry_index := _row_index_by_id(rows, "instance_boss_entry")
 	if instance_entry_index < 0:
 		return _fail("modes page missing instance boss entry row")
