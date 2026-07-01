@@ -150,10 +150,18 @@ func _validate_play_pages() -> bool:
 		return false
 	if not main_node.call("_configure_boss_party", "world_boss", ["p1", "p2", "p3", "p4"]):
 		return _fail("world boss UI party setup failed")
+	if main_node.call("_configure_boss_party", "world_boss", ["p1", "p2", "p2", "p4"]):
+		return _fail("world boss duplicate party ids should be rejected")
 	if not main_node.call("_configure_boss_party", "instance_boss", ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]):
 		return _fail("instance boss UI party setup failed")
+	if main_node.call("_configure_boss_party", "instance_boss", ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p7"]):
+		return _fail("instance boss duplicate party ids should be rejected")
 	snapshot = await _open_snapshot("modes")
 	rows = main_node.call("_ui_screen_rows", 64)
+	if not _assert_boss_formation_row(_row_by_id(rows, "world_boss_formation"), "world_boss", 4, "cardinal_4"):
+		return false
+	if not _assert_boss_formation_row(_row_by_id(rows, "instance_boss_formation"), "instance_boss", 8, "eight_direction_8"):
+		return false
 	if not _assert_boss_practice_preview_row(_row_by_id(rows, "world_boss_practice_preview"), "world_boss"):
 		return false
 	if not _assert_boss_practice_preview_row(_row_by_id(rows, "instance_boss_practice_preview"), "instance_boss"):
@@ -1050,6 +1058,29 @@ func _assert_boss_status_row(row: Dictionary, mode_id: String) -> bool:
 		return _fail("boss status row missing slot layout policy %s" % [row])
 	if typeof(row.get("slot_labels", [])) != TYPE_ARRAY:
 		return _fail("boss status row missing slot labels %s" % [row])
+	return true
+
+func _assert_boss_formation_row(row: Dictionary, mode_id: String, expected_count: int, expected_layout: String) -> bool:
+	if row.is_empty():
+		return _fail("boss formation row missing for %s" % mode_id)
+	if String(row.get("mode_id", "")) != mode_id or String(row.get("mode_category", "")) != "boss":
+		return _fail("boss formation identity mismatch %s" % [row])
+	if bool(row.get("client_result_authoritative", true)):
+		return _fail("boss formation must not be client authoritative %s" % [row])
+	if not bool(row.get("formation_valid", false)):
+		return _fail("boss formation should remain valid after rejected duplicate party %s" % [row])
+	if int(row.get("player_count", 0)) != expected_count or String(row.get("slot_layout_policy", "")) != expected_layout:
+		return _fail("boss formation count/layout mismatch %s" % [row])
+	var slots: Array = row.get("display_slots", [])
+	var labels: Array = row.get("slot_labels", [])
+	if slots.size() != expected_count or labels.size() != expected_count:
+		return _fail("boss formation slots/labels mismatch %s" % [row])
+	if int(row.get("formation_display_signature", 0)) <= 0:
+		return _fail("boss formation missing stable display signature %s" % [row])
+	for raw_slot in slots:
+		var slot: Dictionary = raw_slot
+		if not bool(slot.get("aim_to_center", false)) or bool(slot.get("client_result_authoritative", true)):
+			return _fail("boss formation slot authority/aim mismatch %s" % [slot])
 	return true
 
 func _assert_boss_practice_preview_row(row: Dictionary, mode_id: String) -> bool:

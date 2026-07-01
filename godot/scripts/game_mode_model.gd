@@ -590,6 +590,11 @@ func configure_boss_party(mode_id: String, player_ids: Array) -> bool:
 		last_error_code = "boss_mode_invalid"
 		return false
 	var ids := _string_array(player_ids)
+	var id_failures := _boss_party_id_failures(ids)
+	if not id_failures.is_empty():
+		last_action_status = "failed"
+		last_error_code = id_failures[0]
+		return false
 	var valid_count := ids.size() >= BOSS_MIN_PLAYERS and ids.size() <= BOSS_MAX_PLAYERS
 	var state := _state_for_mode(mode_id)
 	state["party_ids"] = ids
@@ -1599,6 +1604,20 @@ func _boss_positions(player_ids: Array[String]) -> Array[Dictionary]:
 			"slot_layout_policy": _boss_slot_layout_policy(count),
 		})
 	return rows
+
+func _boss_party_id_failures(player_ids: Array[String]) -> Array[String]:
+	var failures: Array[String] = []
+	var seen: Dictionary = {}
+	for i in range(player_ids.size()):
+		var player_id := player_ids[i].strip_edges()
+		if player_id.is_empty():
+			failures.append("player_id_empty")
+			continue
+		if seen.has(player_id):
+			failures.append("player_id_duplicate")
+			continue
+		seen[player_id] = true
+	return failures
 
 func _boss_slot_layout_policy(count: int) -> String:
 	match count:
