@@ -9,6 +9,7 @@ var frame_count := 0
 var main_node: Node = null
 var failed := false
 var stage := "init"
+var validation_started := false
 
 func _initialize() -> void:
 	var packed_scene := load(MAIN_SCENE)
@@ -18,20 +19,21 @@ func _initialize() -> void:
 		return
 	main_node = packed_scene.instantiate()
 	root.add_child(main_node)
-	call_deferred("_start_validation")
 
 func _process(_delta: float) -> bool:
 	frame_count += 1
 	if failed:
 		return true
 	if frame_count > MAX_FRAMES:
-		_fail("timed out")
+		_fail("timed out at frame %d" % frame_count)
 		quit(1)
 		return true
+	if not validation_started and frame_count >= WAIT_FRAMES:
+		validation_started = true
+		call_deferred("_start_validation")
 	return false
 
 func _start_validation() -> void:
-	await _settle_frames(WAIT_FRAMES)
 	var ok: bool = await _run_validation()
 	if ok:
 		print("client_ui_smoke_test ok")

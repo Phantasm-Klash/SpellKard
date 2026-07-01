@@ -4432,6 +4432,8 @@ func _sync_secondary_scene_host() -> void:
 		_set_ui_root_interactive(root, should_show)
 		if should_show:
 			ui_root_box = root as HBoxContainer
+	if not show_shell:
+		return
 	var fallback_box := _active_bound_container("ContentPanel", ui_content_box)
 	if fallback_box is VBoxContainer:
 		ui_content_box = fallback_box as VBoxContainer
