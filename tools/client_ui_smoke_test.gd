@@ -647,6 +647,27 @@ func _validate_collection_page_contract() -> bool:
 		return _fail("replay page missing playability summary contract %s" % [replay_rows])
 	if not _assert_replay_ui_authority_row(replay_playability_summary):
 		return false
+	var practice_checklist := _row_by_id(replay_rows, "replay_practice_validation_checklist")
+	if practice_checklist.is_empty() \
+			or String(practice_checklist.get("ui_control", "")) != "status" \
+			or not String(practice_checklist.get("ui_action", "")).is_empty() \
+			or String(practice_checklist.get("checklist_kind", "")) != "replay_practice_validation_checklist" \
+			or String(practice_checklist.get("authority_contract_kind", "")) != "replay_local_practice_validation_checklist" \
+			or String(practice_checklist.get("online_replay_authority", "")) != "server_audit_required" \
+			or String(practice_checklist.get("boss_hp_authority", "")) != "server" \
+			or bool(practice_checklist.get("client_result_authoritative", true)):
+		return _fail("replay page missing practice validation checklist contract %s" % [replay_rows])
+	var checklist_items: Array = practice_checklist.get("checklist_items", [])
+	if checklist_items.size() != 5 \
+			or int(practice_checklist.get("checklist_ready_count", -1)) + int(practice_checklist.get("checklist_blocked_count", -1)) != checklist_items.size():
+		return _fail("replay practice validation checklist counts invalid %s" % [practice_checklist])
+	if not _checklist_has_ids(checklist_items, ["metadata_valid", "input_integrity_valid_or_preview", "final_hash_present", "server_audit_not_required", "local_file_available"]):
+		return _fail("replay practice validation checklist missing gates %s" % [practice_checklist])
+	for item in checklist_items:
+		if bool(item.get("client_result_authoritative", true)) or String(item.get("online_replay_authority", "")) != "server_audit_required":
+			return _fail("replay practice validation checklist item authority invalid %s" % [item])
+	if not _assert_replay_ui_authority_row(practice_checklist):
+		return false
 	var boss_practice_summary := _row_by_id(replay_rows, "replay_boss_practice_verification")
 	if boss_practice_summary.is_empty() \
 			or String(boss_practice_summary.get("ui_control", "")) != "status" \
@@ -1344,6 +1365,16 @@ func _assert_replay_filter_card_row(row: Dictionary, filter_id: String) -> bool:
 	if String(row.get("ui_action", "")) != "set_replay_filter" or String(row.get("ui_control", "")) != "button":
 		return _fail("replay filter card action/control mismatch %s" % [row])
 	return _assert_replay_ui_authority_row(row)
+
+func _checklist_has_ids(items: Array, ids: Array[String]) -> bool:
+	var seen := {}
+	for item in items:
+		if typeof(item) == TYPE_DICTIONARY:
+			seen[String((item as Dictionary).get("id", ""))] = true
+	for id in ids:
+		if not seen.has(id):
+			return false
+	return true
 
 func _assert_replay_ui_authority_row(row: Dictionary) -> bool:
 	if row.is_empty():

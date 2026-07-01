@@ -251,6 +251,7 @@
   "screen.main.promotions": "推广",
   "screen.main.replay": "Replay",
   "screen.replay.load": "播放 Replay",
+  "screen.replay.practice_validation": "练习验证清单",
   "screen.replay.favorite": "收藏 Replay",
   "screen.replay.remove": "从列表移除",
   "screen.main.player_settings": "玩家设置",

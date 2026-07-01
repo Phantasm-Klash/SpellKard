@@ -299,6 +299,67 @@ func replay_playability_summary_row() -> Dictionary:
 		"enabled": true,
 	}
 
+func practice_validation_checklist_row() -> Dictionary:
+	var selected := selected_entry()
+	var selected_source_index := _source_index_for_replay_id(String(selected.get("replay_id", "")))
+	var selected_row_model := _row_from_entry(selected, selected_source_index) if not selected.is_empty() and selected_source_index >= 0 else {}
+	var validation := _practice_validation_context(selected_row_model)
+	var guard := local_load_guard_for_entry(selected) if not selected.is_empty() else _replay_action_guard({})
+	var checklist := _practice_validation_checklist(validation, guard, selected_row_model)
+	var ready_count := 0
+	var blocked_count := 0
+	for item in checklist:
+		if bool(item.get("ok", false)):
+			ready_count += 1
+		else:
+			blocked_count += 1
+	var selected_can_play := bool(validation.get("ok", false)) and bool(guard.get("ok", false)) and not bool(validation.get("requires_server_audit", false))
+	return {
+		"id": "replay_practice_validation_checklist",
+		"label_key": "screen.replay.practice_validation",
+		"value": "%s gates %d/%d reason %s" % [
+			"ready" if selected_can_play else "blocked",
+			ready_count,
+			checklist.size(),
+			String(validation.get("reason", guard.get("reason", ""))),
+		],
+		"summary": "selected Replay practice gate checklist; local hash playback only, online records and Boss outcomes stay server-audited",
+		"selected_replay_id": String(validation.get("replay_id", "")),
+		"selected_can_play": selected_can_play,
+		"selected_reason": String(validation.get("reason", guard.get("reason", ""))),
+		"selected_local_load_policy": String(validation.get("local_load_policy", guard.get("local_load_policy", "none"))),
+		"selected_verification_status": String(validation.get("verification_status", "")),
+		"selected_verification_scope": String(validation.get("verification_scope", "")),
+		"selected_input_integrity_status": String(validation.get("input_integrity_status", "")),
+		"selected_metadata_status": String(validation.get("metadata_status", "")),
+		"selected_final_hash_ready": bool(validation.get("final_hash_ready", false)),
+		"selected_final_result_hash": int(validation.get("final_result_hash", 0)),
+		"selected_requires_server_audit": bool(validation.get("requires_server_audit", false)),
+		"selected_server_audit_status": String(validation.get("server_audit_status", "not_required")),
+		"checklist_kind": "replay_practice_validation_checklist",
+		"checklist_ready_count": ready_count,
+		"checklist_blocked_count": blocked_count,
+		"checklist_items": checklist,
+		"practice_validation": validation,
+		"replay_action_guard": guard,
+		"authority_contract_kind": "replay_local_practice_validation_checklist",
+		"server_authoritative": false,
+		"local_hash_authority": "local_practice_verification_only",
+		"replay_verification_scope": "local_practice_hash",
+		"local_playback_authority": String(validation.get("local_playback_authority", guard.get("local_playback_authority", "none"))),
+		"online_replay_authority": "server_audit_required",
+		"damage_authority": "server",
+		"settlement_authority": "server",
+		"reward_authority": "server",
+		"boss_hp_authority": "server",
+		"client_result_authoritative": false,
+		"section": "overview",
+		"section_label_key": "ui.menu_section_overview",
+		"ui_control": "status",
+		"ui_action": "",
+		"enabled": true,
+	}
+
 func boss_practice_verification_summary_row() -> Dictionary:
 	var boss_rows: Array[Dictionary] = []
 	for i in range(entries.size()):
@@ -815,6 +876,35 @@ func _practice_validation_context(row: Dictionary) -> Dictionary:
 		"settlement_authority": "server",
 		"reward_authority": "server",
 		"boss_hp_authority": "server",
+		"client_result_authoritative": false,
+	}
+
+func _practice_validation_checklist(validation: Dictionary, guard: Dictionary, row: Dictionary) -> Array[Dictionary]:
+	var metadata_ok := String(validation.get("metadata_status", "")) == "valid"
+	var input_status := String(validation.get("input_integrity_status", ""))
+	var input_ok := input_status == "valid" or input_status == "preview_input_not_recorded"
+	var final_hash_ok := bool(validation.get("final_hash_ready", false))
+	var server_audit_ok := not bool(validation.get("requires_server_audit", false)) and String(validation.get("server_audit_status", "not_required")) == "not_required"
+	var path_ok := not String(row.get("path", "")).is_empty() and String(guard.get("reason", "")) != "missing_path" and String(guard.get("reason", "")) != "file_missing"
+	return [
+		_practice_validation_check_item("metadata_valid", metadata_ok, String(validation.get("metadata_status", "none")), "local index metadata must match replay schema"),
+		_practice_validation_check_item("input_integrity_valid_or_preview", input_ok, input_status, "recorded inputs must be contiguous, or boss spellbook preview may omit live input"),
+		_practice_validation_check_item("final_hash_present", final_hash_ok, str(validation.get("final_result_hash", 0)), "local practice playback requires a final hash"),
+		_practice_validation_check_item("server_audit_not_required", server_audit_ok, String(validation.get("server_audit_status", "not_required")), "online/server records stay blocked until server audit"),
+		_practice_validation_check_item("local_file_available", path_ok, String(guard.get("reason", "")), "local playback needs an existing replay file"),
+	]
+
+func _practice_validation_check_item(id: String, ok: bool, value: String, summary: String) -> Dictionary:
+	return {
+		"id": id,
+		"ok": ok,
+		"value": value,
+		"summary": summary,
+		"local_hash_authority": "local_practice_verification_only",
+		"online_replay_authority": "server_audit_required",
+		"damage_authority": "server",
+		"settlement_authority": "server",
+		"reward_authority": "server",
 		"client_result_authoritative": false,
 	}
 

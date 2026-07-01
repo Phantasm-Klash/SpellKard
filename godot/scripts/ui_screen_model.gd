@@ -893,6 +893,8 @@ func _replay_rows(limit: int) -> Array[Dictionary]:
 		rows.append(replay_list_model.replay_authority_summary_row())
 	if replay_list_model.has_method("replay_playability_summary_row"):
 		rows.append(replay_list_model.replay_playability_summary_row())
+	if replay_list_model.has_method("practice_validation_checklist_row"):
+		rows.append(replay_list_model.practice_validation_checklist_row())
 	if replay_list_model.has_method("boss_practice_verification_summary_row"):
 		rows.append(replay_list_model.boss_practice_verification_summary_row())
 	if replay_list_model.has_method("selected_action_rows"):
