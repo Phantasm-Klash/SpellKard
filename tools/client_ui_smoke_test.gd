@@ -4,6 +4,7 @@ const MAIN_SCENE := "res://scenes/main.tscn"
 const WAIT_FRAMES := 30
 const MAX_FRAMES := 900
 const TEST_VIEWPORT := Vector2(1280, 720)
+const LOG_STAGE_PROGRESS := false
 
 var frame_count := 0
 var main_node: Node = null
@@ -34,6 +35,7 @@ func _process(_delta: float) -> bool:
 	return false
 
 func _start_validation() -> void:
+	_mark_stage("validation")
 	var ok: bool = await _run_validation()
 	if ok:
 		print("client_ui_smoke_test ok")
@@ -47,7 +49,7 @@ func _run_validation() -> bool:
 	_prepare_default_language_state()
 	if not _assert_default_language_state():
 		return false
-	stage = "home"
+	_mark_stage("home")
 	var snapshot: Dictionary = await _open_snapshot("main_menu")
 	if not _assert_page_health(snapshot, "home", 0, 0):
 		return false
@@ -87,7 +89,7 @@ func _run_validation() -> bool:
 	return true
 
 func _validate_play_pages() -> bool:
-	stage = "play"
+	_mark_stage("play")
 	var snapshot: Dictionary = await _open_snapshot("play")
 	if not _assert_page_health(snapshot, "play", 1, 4):
 		return false
@@ -243,7 +245,7 @@ func _validate_play_pages() -> bool:
 	return true
 
 func _validate_boss_settlement_receipts() -> bool:
-	stage = "boss_settlement_receipts"
+	_mark_stage("boss_settlement_receipts")
 	if main_node.call("_apply_world_boss_result", {
 		"client_result_authoritative": true,
 		"boss_hp_after_global": 0,
@@ -340,7 +342,7 @@ func _validate_boss_settlement_receipts() -> bool:
 	return true
 
 func _validate_result_reward_loop() -> bool:
-	stage = "result_loop"
+	_mark_stage("result_loop")
 	var snapshot: Dictionary = await _open_snapshot("match")
 	if not _assert_page_health(snapshot, "match_result_loop", 3, 5):
 		return false
@@ -374,7 +376,7 @@ func _validate_result_reward_loop() -> bool:
 	return true
 
 func _validate_gameplay_view_unobstructed() -> bool:
-	stage = "gameplay_view"
+	_mark_stage("gameplay_view")
 	var snapshot: Dictionary = await _open_snapshot("practice")
 	if bool(snapshot.get("visible", true)):
 		return _fail("practice should hide menu panel %s" % [snapshot])
@@ -397,7 +399,7 @@ func _validate_gameplay_view_unobstructed() -> bool:
 	return true
 
 func _validate_menu_independence() -> bool:
-	stage = "menu_independence"
+	_mark_stage("menu_independence")
 	var snapshot: Dictionary = await _open_snapshot("play")
 	if not _assert_nav_family(snapshot, "play", _text_keys(["screen.main.play", "screen.main.certification", "screen.main.practice", "screen.main.start_match", "screen.main.network_match", "screen.main.modes"]), _text_keys(["screen.main.collection", "screen.main.community", "screen.main.player_settings", "screen.main.deck", "screen.main.friends", "screen.main.promotions"])):
 		return false
@@ -438,7 +440,7 @@ func _validate_menu_independence() -> bool:
 	return true
 
 func _validate_community_pages() -> bool:
-	stage = "community"
+	_mark_stage("community")
 	var snapshot: Dictionary = await _open_snapshot("community")
 	if not _assert_page_health(snapshot, "community", 1, 4):
 		return false
@@ -478,7 +480,7 @@ func _validate_community_pages() -> bool:
 	return true
 
 func _validate_settings_pages() -> bool:
-	stage = "settings"
+	_mark_stage("settings")
 	var snapshot: Dictionary = await _open_snapshot("player_settings")
 	if not _assert_page_health(snapshot, "player_settings", 1, 4):
 		return false
@@ -614,7 +616,7 @@ func _assert_deep_row_visible(screen_id: String, row_id: String) -> bool:
 	return true
 
 func _validate_collection_page_contract() -> bool:
-	stage = "collection"
+	_mark_stage("collection")
 	var snapshot: Dictionary = await _open_snapshot("collection")
 	if not _assert_page_health(snapshot, "collection", 1, 4):
 		return false
@@ -943,14 +945,23 @@ func _press_home_button(index: int, expected_screen: String) -> bool:
 	return true
 
 func _open_snapshot(screen_id: String) -> Dictionary:
+	_mark_stage("open:%s" % screen_id)
 	main_node.call("_open_ui_screen", screen_id)
+	_mark_stage("viewport:%s" % screen_id)
 	main_node.call("_set_test_viewport_size", TEST_VIEWPORT)
+	_mark_stage("settle:%s" % screen_id)
 	await _settle_frames(2)
+	_mark_stage("snapshot:%s" % screen_id)
 	return main_node.call("_ui_overlay_snapshot")
 
 func _settle_frames(count: int) -> void:
 	for i in range(count):
 		await process_frame
+
+func _mark_stage(next_stage: String) -> void:
+	stage = next_stage
+	if LOG_STAGE_PROGRESS:
+		print("client_ui_smoke stage=%s frame=%d" % [stage, frame_count])
 
 func _prepare_default_language_state() -> void:
 	var store: Variant = main_node.get("player_settings_store")

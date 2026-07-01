@@ -36,6 +36,7 @@ var battle_royale_state: Dictionary = {}
 var world_boss_state: Dictionary = {}
 var instance_boss_state: Dictionary = {}
 var mode_action_requests: Array[Dictionary] = []
+var boss_preview_cache: Dictionary = {}
 
 func _init() -> void:
 	reset_local_state()
@@ -45,9 +46,11 @@ func configure(matchmaking: RefCounted, network_match: RefCounted, spellbook_mod
 	network_match_model = network_match
 	if spellbook_model != null:
 		boss_spellbook_model = spellbook_model
+		boss_preview_cache.clear()
 
 func configure_boss_spellbook(spellbook_model: RefCounted) -> void:
 	boss_spellbook_model = spellbook_model
+	boss_preview_cache.clear()
 
 func reset_local_state() -> void:
 	certification_state = {
@@ -78,6 +81,7 @@ func reset_local_state() -> void:
 	world_boss_state = _default_boss_state(true)
 	instance_boss_state = _default_boss_state(false)
 	mode_action_requests.clear()
+	boss_preview_cache.clear()
 	selected_mode_id = MODE_CERTIFICATION
 	last_action_status = "none"
 	last_error_code = "none"
@@ -1620,7 +1624,7 @@ func boss_practice_preview_projection(mode_id: String) -> Dictionary:
 			"server_authoritative": false,
 			"client_result_authoritative": false,
 		}
-	var export_data: Dictionary = boss_spellbook_model.phase_export_data(BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, BOSS_LOCAL_PREVIEW_SEED)
+	var export_data: Dictionary = _cached_boss_preview_export_data()
 	if export_data.is_empty():
 		return {
 			"ok": false,
@@ -1691,12 +1695,12 @@ func boss_practice_replay_metadata(mode_id: String, phase_id: String = "nonspell
 			"server_authoritative": false,
 			"client_result_authoritative": false,
 		}
-	var export_data: Dictionary = boss_spellbook_model.phase_export_data(BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, BOSS_LOCAL_PREVIEW_SEED)
+	var export_data: Dictionary = _cached_boss_preview_export_data()
 	var phase_ids := _string_array(export_data.get("preview_phase_ids", []))
 	var selected_phase_id := phase_id
 	if selected_phase_id.is_empty() and not phase_ids.is_empty():
 		selected_phase_id = phase_ids[0]
-	var preview: Dictionary = boss_spellbook_model.deterministic_phase_preview(BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, selected_phase_id, BOSS_LOCAL_PREVIEW_SEED)
+	var preview: Dictionary = _cached_boss_phase_preview(selected_phase_id)
 	if preview.is_empty() or export_data.is_empty():
 		return {
 			"ok": false,
@@ -1772,6 +1776,28 @@ func boss_practice_replay_metadata(mode_id: String, phase_id: String = "nonspell
 		"server_authoritative": false,
 		"client_result_authoritative": false,
 	}
+
+func _cached_boss_preview_export_data() -> Dictionary:
+	var cache_key := "%s:%d:export" % [BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, BOSS_LOCAL_PREVIEW_SEED]
+	if boss_preview_cache.has(cache_key):
+		return (boss_preview_cache.get(cache_key, {}) as Dictionary).duplicate(true)
+	if boss_spellbook_model == null or not boss_spellbook_model.has_method("phase_export_data"):
+		return {}
+	var export_data: Dictionary = boss_spellbook_model.phase_export_data(BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, BOSS_LOCAL_PREVIEW_SEED)
+	boss_preview_cache[cache_key] = export_data.duplicate(true)
+	return export_data.duplicate(true)
+
+func _cached_boss_phase_preview(phase_id: String) -> Dictionary:
+	if phase_id.is_empty():
+		return {}
+	var cache_key := "%s:%s:%d:phase" % [BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, phase_id, BOSS_LOCAL_PREVIEW_SEED]
+	if boss_preview_cache.has(cache_key):
+		return (boss_preview_cache.get(cache_key, {}) as Dictionary).duplicate(true)
+	if boss_spellbook_model == null or not boss_spellbook_model.has_method("deterministic_phase_preview"):
+		return {}
+	var preview: Dictionary = boss_spellbook_model.deterministic_phase_preview(BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, phase_id, BOSS_LOCAL_PREVIEW_SEED)
+	boss_preview_cache[cache_key] = preview.duplicate(true)
+	return preview.duplicate(true)
 
 func validate_boss_formation(mode_id: String) -> Dictionary:
 	var failures: Array[String] = []
