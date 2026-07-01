@@ -6568,6 +6568,8 @@ func _validate_boss_entry_preview(preview: Dictionary, mode_id: String, expected
 	if not rules.has("attempts_available") or not rules.has("party_size") or not rules.has("rating_requirement") or not rules.has("key_requirement"):
 		push_error("Smoke test failed: boss entry preview rules invalid %s" % [preview])
 		return false
+	if not _validate_boss_entry_preflight_checklist(preview, mode_id, expected_ok):
+		return false
 	if String(preview.get("intent_authority", "")) != "client_request_only" or not bool(preview.get("requires_server_confirmation", false)):
 		push_error("Smoke test failed: boss entry preview intent authority invalid %s" % [preview])
 		return false
@@ -6699,6 +6701,54 @@ func _validate_boss_entry_action_panel(panel: Dictionary, mode_id: String, expec
 		return false
 	if not _validate_boss_entry_preview(panel.get("entry_preflight", {}), mode_id, expected_entry_enabled, expected_reason):
 		return false
+	if not _validate_boss_entry_preflight_checklist(panel, mode_id, expected_entry_enabled):
+		return false
+	return true
+
+func _validate_boss_entry_preflight_checklist(source: Dictionary, mode_id: String, expected_entry_ok: bool) -> bool:
+	if String(source.get("entry_preflight_checklist_kind", "")) != "boss_entry_preflight_checklist" or int(source.get("entry_preflight_checklist_version", 0)) != 1:
+		push_error("Smoke test failed: boss entry preflight checklist contract invalid %s" % [source])
+		return false
+	var checklist: Array = source.get("entry_preflight_checklist", [])
+	if checklist.size() != 7:
+		push_error("Smoke test failed: boss entry preflight checklist size invalid %s" % [source])
+		return false
+	var statuses: Dictionary = {}
+	for raw_item in checklist:
+		if typeof(raw_item) != TYPE_DICTIONARY:
+			push_error("Smoke test failed: boss entry preflight checklist item invalid %s" % [checklist])
+			return false
+		var item: Dictionary = raw_item
+		var item_id := String(item.get("id", ""))
+		statuses[item_id] = String(item.get("status", ""))
+		if String(item.get("mode_id", "")) != mode_id or String(item.get("mode_category", "")) != "boss":
+			push_error("Smoke test failed: boss entry preflight checklist identity invalid %s" % [item])
+			return false
+		if String(item.get("projection_scope", "")) != "local_display_only" or String(item.get("intent_authority", "")) != "client_request_only":
+			push_error("Smoke test failed: boss entry preflight checklist scope invalid %s" % [item])
+			return false
+		if String(item.get("damage_authority", "")) != "server" or String(item.get("reward_authority", "")) != "server" or String(item.get("settlement_authority", "")) != "server":
+			push_error("Smoke test failed: boss entry preflight checklist authority invalid %s" % [item])
+			return false
+		if bool(item.get("client_result_authoritative", true)):
+			push_error("Smoke test failed: boss entry preflight checklist became client authoritative %s" % [item])
+			return false
+	for required_id in ["attempts_available", "party_size", "fixed_direction_slots", "center_aim", "rating_requirement", "key_requirement", "server_confirmation_required"]:
+		if not statuses.has(required_id):
+			push_error("Smoke test failed: boss entry preflight checklist missing %s in %s" % [required_id, source])
+			return false
+	if expected_entry_ok:
+		for passed_id in ["attempts_available", "party_size", "fixed_direction_slots", "center_aim"]:
+			if String(statuses.get(passed_id, "")) != "passed":
+				push_error("Smoke test failed: boss entry preflight checklist ready item invalid %s in %s" % [passed_id, source])
+				return false
+		if String(statuses.get("server_confirmation_required", "")) != "pending_server":
+			push_error("Smoke test failed: boss entry preflight checklist confirmation status invalid %s" % [source])
+			return false
+	else:
+		if String(statuses.get("server_confirmation_required", "")) != "blocked_local":
+			push_error("Smoke test failed: boss entry preflight checklist blocked confirmation invalid %s" % [source])
+			return false
 	return true
 
 func _validate_boss_ui_action_cards(cards: Array, mode_id: String, expected_entry_enabled: bool, expected_transfer_enabled: bool, expected_entry_reason: String) -> bool:

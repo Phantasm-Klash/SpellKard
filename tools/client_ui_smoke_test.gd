@@ -1412,6 +1412,8 @@ func _assert_boss_action_contract(row: Dictionary, mode_id: String, expected_ent
 	for field in ["mode_id", "boss_instance_id", "party_ids", "selected_deck_id", "deck_snapshot_hash", "client_action_seq", "requested_at_tick"]:
 		if not allowed_fields.has(field):
 			return _fail("boss entry allowed intent field missing %s in %s" % [field, row])
+	if not _assert_boss_entry_preflight_checklist(row, mode_id, expected_entry_enabled):
+		return false
 	var forbidden_fields: Array = row.get("client_forbidden_entry_fields", [])
 	for field in ["damage", "damage_this_match", "team_damage", "boss_hp_after", "reward_grants", "settlement_result", "settlement_receipt", "server_result_hash"]:
 		if not forbidden_fields.has(field):
@@ -1488,6 +1490,41 @@ func _assert_boss_action_contract(row: Dictionary, mode_id: String, expected_ent
 				return _fail("boss entry action card missing forbidden field %s in %s" % [field, card])
 	if not saw_entry_card:
 		return _fail("boss entry action card missing %s" % [row])
+	return true
+
+func _assert_boss_entry_preflight_checklist(row: Dictionary, mode_id: String, expected_entry_enabled: bool) -> bool:
+	if String(row.get("entry_preflight_checklist_kind", "")) != "boss_entry_preflight_checklist" or int(row.get("entry_preflight_checklist_version", 0)) != 1:
+		return _fail("boss entry preflight checklist contract missing %s" % [row])
+	var checklist: Array = row.get("entry_preflight_checklist", [])
+	if checklist.size() != 7:
+		return _fail("boss entry preflight checklist size mismatch %s" % [row])
+	var statuses: Dictionary = {}
+	for raw_item in checklist:
+		if typeof(raw_item) != TYPE_DICTIONARY:
+			return _fail("boss entry preflight checklist item invalid %s" % [checklist])
+		var item: Dictionary = raw_item
+		var item_id := String(item.get("id", ""))
+		statuses[item_id] = String(item.get("status", ""))
+		if String(item.get("mode_id", "")) != mode_id or String(item.get("mode_category", "")) != "boss":
+			return _fail("boss entry preflight checklist identity invalid %s" % [item])
+		if String(item.get("projection_scope", "")) != "local_display_only" or String(item.get("intent_authority", "")) != "client_request_only":
+			return _fail("boss entry preflight checklist scope invalid %s" % [item])
+		if String(item.get("damage_authority", "")) != "server" or String(item.get("reward_authority", "")) != "server" or String(item.get("settlement_authority", "")) != "server":
+			return _fail("boss entry preflight checklist authority invalid %s" % [item])
+		if bool(item.get("client_result_authoritative", true)):
+			return _fail("boss entry preflight checklist became client authoritative %s" % [item])
+	for required_id in ["attempts_available", "party_size", "fixed_direction_slots", "center_aim", "rating_requirement", "key_requirement", "server_confirmation_required"]:
+		if not statuses.has(required_id):
+			return _fail("boss entry preflight checklist missing %s in %s" % [required_id, row])
+	if expected_entry_enabled:
+		for passed_id in ["attempts_available", "party_size", "fixed_direction_slots", "center_aim"]:
+			if String(statuses.get(passed_id, "")) != "passed":
+				return _fail("boss entry preflight ready item mismatch %s in %s" % [passed_id, row])
+		if String(statuses.get("server_confirmation_required", "")) != "pending_server":
+			return _fail("boss entry preflight server pending missing %s" % [row])
+	else:
+		if String(statuses.get("server_confirmation_required", "")) != "blocked_local":
+			return _fail("boss entry preflight blocked server state missing %s" % [row])
 	return true
 
 func _assert_page_authority_contract(snapshot: Dictionary, label: String, expected_scope: String, expected_text: String) -> bool:
