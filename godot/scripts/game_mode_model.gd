@@ -1823,6 +1823,91 @@ func boss_practice_replay_metadata(mode_id: String, phase_id: String = "nonspell
 		"client_result_authoritative": false,
 	}
 
+func boss_practice_validation_projection(mode_id: String) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"validation_kind": "boss_practice_validation_projection",
+			"projection_scope": BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var practice := boss_practice_preview_projection(mode_id)
+	var replay_metadata := boss_practice_replay_metadata(mode_id)
+	var formation := validate_boss_formation(mode_id)
+	var formation_display := boss_formation_display_summary(mode_id)
+	var playfield := boss_playfield_projection(mode_id)
+	var blockers: Array[String] = []
+	if not bool(practice.get("ok", false)):
+		blockers.append(String(practice.get("reason", "practice_preview_failed")))
+	if not bool(replay_metadata.get("ok", false)):
+		blockers.append(String(replay_metadata.get("reason", "replay_metadata_failed")))
+	if not bool(formation.get("ok", false)):
+		for failure in _string_array(formation.get("failures", [])):
+			if not blockers.has(failure):
+				blockers.append(failure)
+	if not bool(formation_display.get("center_aim_valid", false)):
+		blockers.append("center_aim_invalid")
+	if not bool(formation_display.get("all_slots_face_center", false)):
+		blockers.append("slot_aim_invalid")
+	var ready := blockers.is_empty()
+	var validation_summary := "practice %s digest %d formation %d slots %d center %s replay %s" % [
+		"ready" if ready else "blocked",
+		int(practice.get("preview_bundle_signature_digest", 0)),
+		int(formation_display.get("formation_display_signature", 0)),
+		int(formation.get("player_count", 0)),
+		"ok" if bool(formation_display.get("center_aim_valid", false)) else "blocked",
+		String(replay_metadata.get("replay_verification_scope", "local_practice_hash")),
+	]
+	return {
+		"ok": ready,
+		"reason": "none" if blockers.is_empty() else blockers[0],
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"validation_kind": "boss_practice_validation_projection",
+		"validation_status": "ready" if ready else "blocked_local",
+		"validation_summary": validation_summary,
+		"local_blockers": blockers,
+		"practice_preview_ready": bool(practice.get("ok", false)),
+		"replay_metadata_ready": bool(replay_metadata.get("ok", false)),
+		"formation_valid": bool(formation.get("ok", false)),
+		"center_aim_valid": bool(formation_display.get("center_aim_valid", false)),
+		"all_slots_face_center": bool(formation_display.get("all_slots_face_center", false)),
+		"player_count": int(formation.get("player_count", 0)),
+		"slot_layout_policy": String(formation.get("slot_layout_policy", "")),
+		"slot_labels": formation.get("slot_labels", []),
+		"slot_display_points": formation_display.get("slot_points", []),
+		"slot_summary_text": String(formation_display.get("slot_summary_text", "")),
+		"formation_display_signature": int(formation_display.get("formation_display_signature", 0)),
+		"preview_bundle_signature_digest": int(practice.get("preview_bundle_signature_digest", 0)),
+		"preview_phase_count": int(practice.get("preview_phase_count", 0)),
+		"preview_phase_ids": practice.get("preview_phase_ids", []),
+		"preview_seed": int(practice.get("preview_seed", BOSS_LOCAL_PREVIEW_SEED)),
+		"preview_authority_scope": String(practice.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)),
+		"replay_metadata_contract_kind": String(replay_metadata.get("metadata_contract_kind", "")),
+		"replay_verification_scope": String(replay_metadata.get("replay_verification_scope", "local_practice_hash")),
+		"local_hash_authority": String(replay_metadata.get("local_hash_authority", "local_practice_verification_only")),
+		"online_replay_authority": String(replay_metadata.get("online_replay_authority", "server_audit_required")),
+		"performance_budget_status": String(practice.get("performance_budget_status", "")),
+		"preview_max_emit_per_tick": int(practice.get("preview_max_emit_per_tick", 0)),
+		"preview_min_budget_headroom": int(practice.get("preview_min_budget_headroom", 0)),
+		"playfield_projection": playfield,
+		"hp_persistence_policy": String(playfield.get("hp_persistence_policy", "persistent_global_hp" if mode_id == MODE_WORLD_BOSS else "per_instance_hp")),
+		"projection_scope": BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE,
+		"practice_mode": "boss_spellbook_practice",
+		"result_scope": "local_practice_validation_only",
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"boss_hp_authority": "server",
+		"requires_server_confirmation": false,
+		"server_authoritative": false,
+		"client_result_authoritative": false,
+	}
+
 func _cached_boss_preview_export_data() -> Dictionary:
 	var cache_key := "%s:%d:export" % [BOSS_LOCAL_PREVIEW_SPELLBOOK_ID, BOSS_LOCAL_PREVIEW_SEED]
 	if boss_preview_cache.has(cache_key):
@@ -2203,6 +2288,7 @@ func _world_boss_rows() -> Array[Dictionary]:
 		_boss_playfield_row("world_boss_playfield", MODE_WORLD_BOSS),
 		_boss_hud_row("world_boss_hud", MODE_WORLD_BOSS),
 		_boss_practice_preview_row("world_boss_practice_preview", MODE_WORLD_BOSS),
+		_boss_practice_validation_row("world_boss_practice_validation", MODE_WORLD_BOSS),
 		_boss_transfer_row("world_boss_transfer", MODE_WORLD_BOSS, world_boss_state),
 		_world_boss_result_row(),
 		{"id": "world_boss_announcement", "label_key": "screen.mode.boss.announcement", "value": str(world_boss_state.get("world_announcement", "")), "mode_category": "boss", "server_authoritative": bool(world_boss_state.get("server_authoritative", false)), "client_result_authoritative": false, "enabled": not str(world_boss_state.get("defeated_at", "")).is_empty()},
@@ -2225,6 +2311,7 @@ func _instance_boss_rows() -> Array[Dictionary]:
 		_boss_playfield_row("instance_boss_playfield", MODE_INSTANCE_BOSS),
 		_boss_hud_row("instance_boss_hud", MODE_INSTANCE_BOSS),
 		_boss_practice_preview_row("instance_boss_practice_preview", MODE_INSTANCE_BOSS),
+		_boss_practice_validation_row("instance_boss_practice_validation", MODE_INSTANCE_BOSS),
 		_boss_transfer_row("instance_boss_transfer", MODE_INSTANCE_BOSS, instance_boss_state),
 		_instance_boss_result_row(),
 	]
@@ -2975,6 +3062,82 @@ func _boss_practice_preview_row(row_id: String, mode_id: String) -> Dictionary:
 		"reward_authority": "server",
 		"settlement_authority": "server",
 		"server_confirmation_status": String(projection.get("server_confirmation_status", "not_applicable_local_preview")),
+		"requires_server_confirmation": false,
+		"server_authoritative": false,
+		"client_result_authoritative": false,
+		"enabled": bool(projection.get("ok", false)),
+	}
+
+func _boss_practice_validation_row(row_id: String, mode_id: String) -> Dictionary:
+	var projection := boss_practice_validation_projection(mode_id)
+	var player_count := int(projection.get("player_count", 0))
+	var digest := int(projection.get("preview_bundle_signature_digest", 0))
+	var formation_signature := int(projection.get("formation_display_signature", 0))
+	var validation_metrics: Array[Dictionary] = [
+		{"id": "digest", "label": "digest", "value": digest},
+		{"id": "formation", "label": "formation", "value": formation_signature},
+		{"id": "slots", "label": "slots", "value": player_count},
+		{"id": "center_aim", "label": "center aim", "value": "ok" if bool(projection.get("center_aim_valid", false)) else "blocked"},
+		{"id": "replay_hash", "label": "replay hash", "value": String(projection.get("replay_verification_scope", "local_practice_hash"))},
+	]
+	return {
+		"id": row_id,
+		"label_key": "screen.settings.boss_spellbook",
+		"value": "practice validation %s digest %d formation %d slots %d" % [
+			String(projection.get("validation_status", "")),
+			digest,
+			formation_signature,
+			player_count,
+		],
+		"summary": "local Boss practice validation combines spellbook digest, replay hash metadata, and center-facing formation; online damage, rewards, Boss HP, and settlement remain server-authoritative",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"mode_group": "boss",
+		"section": "boss_preview",
+		"section_label_key": "ui.menu_section_boss",
+		"ui_control": "card",
+		"ui_control_label_key": "ui.control_card",
+		"overview_card_kind": "boss_practice_validation",
+		"render_slot": "mode_cards",
+		"validation_projection": projection,
+		"validation_kind": String(projection.get("validation_kind", "boss_practice_validation_projection")),
+		"validation_status": String(projection.get("validation_status", "")),
+		"validation_summary": String(projection.get("validation_summary", "")),
+		"validation_metrics": validation_metrics,
+		"preview_card_primary_metric": "practice validation",
+		"preview_card_secondary_metric": "formation %d slots %d" % [formation_signature, player_count],
+		"local_blockers": projection.get("local_blockers", []),
+		"practice_preview_ready": bool(projection.get("practice_preview_ready", false)),
+		"replay_metadata_ready": bool(projection.get("replay_metadata_ready", false)),
+		"formation_valid": bool(projection.get("formation_valid", false)),
+		"center_aim_valid": bool(projection.get("center_aim_valid", false)),
+		"all_slots_face_center": bool(projection.get("all_slots_face_center", false)),
+		"player_count": player_count,
+		"slot_layout_policy": String(projection.get("slot_layout_policy", "")),
+		"slot_labels": projection.get("slot_labels", []),
+		"slot_display_points": projection.get("slot_display_points", []),
+		"slot_summary_text": String(projection.get("slot_summary_text", "")),
+		"formation_display_signature": formation_signature,
+		"preview_bundle_signature_digest": digest,
+		"preview_phase_count": int(projection.get("preview_phase_count", 0)),
+		"preview_phase_ids": projection.get("preview_phase_ids", []),
+		"preview_seed": int(projection.get("preview_seed", BOSS_LOCAL_PREVIEW_SEED)),
+		"preview_authority_scope": String(projection.get("preview_authority_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)),
+		"replay_metadata_contract_kind": String(projection.get("replay_metadata_contract_kind", "")),
+		"replay_verification_scope": String(projection.get("replay_verification_scope", "local_practice_hash")),
+		"local_hash_authority": String(projection.get("local_hash_authority", "local_practice_verification_only")),
+		"online_replay_authority": String(projection.get("online_replay_authority", "server_audit_required")),
+		"performance_budget_status": String(projection.get("performance_budget_status", "")),
+		"preview_max_emit_per_tick": int(projection.get("preview_max_emit_per_tick", 0)),
+		"preview_min_budget_headroom": int(projection.get("preview_min_budget_headroom", 0)),
+		"hp_persistence_policy": String(projection.get("hp_persistence_policy", "persistent_global_hp" if mode_id == MODE_WORLD_BOSS else "per_instance_hp")),
+		"projection_scope": String(projection.get("projection_scope", BOSS_LOCAL_PREVIEW_AUTHORITY_SCOPE)),
+		"practice_mode": String(projection.get("practice_mode", "boss_spellbook_practice")),
+		"result_scope": String(projection.get("result_scope", "local_practice_validation_only")),
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"boss_hp_authority": "server",
 		"requires_server_confirmation": false,
 		"server_authoritative": false,
 		"client_result_authoritative": false,
