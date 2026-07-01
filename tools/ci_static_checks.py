@@ -1142,6 +1142,8 @@ def check_protocol_client_scripts() -> list[str]:
             "\"client_result_authoritative\": false",
             "\"defeat_timestamp_source\"",
             "\"star_conditions\"",
+            "\"failed_mechanic_authority\": \"server\"",
+            "\"failed_mechanic_ids\"",
             "func boss_practice_preview_projection(",
             "func _boss_practice_preview_row(",
             "\"local_practice_preview_only\"",
