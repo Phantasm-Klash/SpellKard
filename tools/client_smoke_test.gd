@@ -762,7 +762,7 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	var game_mode_state_rows: Array[Dictionary] = game_mode_model.mode_rows()
-	if not _rows_have_ids(game_mode_state_rows, ["world_boss_hp", "world_boss_rules", "world_boss_rule_safety", "world_boss_authority", "world_boss_party", "world_boss_formation", "world_boss_display", "world_boss_display_health", "world_boss_playfield", "world_boss_hud", "world_boss_practice_preview", "world_boss_transfer", "world_boss_result", "instance_boss_hp", "instance_boss_rules", "instance_boss_rule_safety", "instance_boss_authority", "instance_boss_party", "instance_boss_formation", "instance_boss_display", "instance_boss_display_health", "instance_boss_playfield", "instance_boss_hud", "instance_boss_practice_preview", "instance_boss_transfer", "instance_boss_result"]):
+	if not _rows_have_ids(game_mode_state_rows, ["world_boss_hp", "world_boss_rules", "world_boss_rule_safety", "world_boss_authority", "world_boss_party", "world_boss_formation", "world_boss_display", "world_boss_display_health", "world_boss_playfield", "world_boss_hud", "world_boss_practice_preview", "world_boss_practice_validation", "world_boss_transfer", "world_boss_result", "instance_boss_hp", "instance_boss_rules", "instance_boss_rule_safety", "instance_boss_authority", "instance_boss_party", "instance_boss_formation", "instance_boss_display", "instance_boss_display_health", "instance_boss_playfield", "instance_boss_hud", "instance_boss_practice_preview", "instance_boss_practice_validation", "instance_boss_transfer", "instance_boss_result"]):
 		push_error("Smoke test failed: boss mode state rows incomplete")
 		quit(1)
 		return true
@@ -786,6 +786,8 @@ func _process(_delta: float) -> bool:
 	var instance_hud_row: Dictionary = _find_row_by_id(game_mode_state_rows, "instance_boss_hud")
 	var world_practice_preview_row: Dictionary = _find_row_by_id(game_mode_state_rows, "world_boss_practice_preview")
 	var instance_practice_preview_row: Dictionary = _find_row_by_id(game_mode_state_rows, "instance_boss_practice_preview")
+	var world_practice_validation_row: Dictionary = _find_row_by_id(game_mode_state_rows, "world_boss_practice_validation")
+	var instance_practice_validation_row: Dictionary = _find_row_by_id(game_mode_state_rows, "instance_boss_practice_validation")
 	if not bool(world_hp_row.get("persistent_hp", false)) or bool(instance_hp_row.get("persistent_hp", true)):
 		push_error("Smoke test failed: boss hp persistence flags invalid world=%s instance=%s" % [world_hp_row, instance_hp_row])
 		quit(1)
@@ -848,6 +850,12 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	if not _validate_boss_practice_preview_card_row(instance_practice_preview_row, "instance_boss"):
+		quit(1)
+		return true
+	if not _validate_boss_practice_validation_card_row(world_practice_validation_row, "world_boss", 4):
+		quit(1)
+		return true
+	if not _validate_boss_practice_validation_card_row(instance_practice_validation_row, "instance_boss", 8):
 		quit(1)
 		return true
 	if not _validate_row_label_keys(mode_rows, localization):
@@ -6401,6 +6409,53 @@ func _validate_boss_practice_preview_card_row(row: Dictionary, mode_id: String) 
 	if int(row.get("preview_bundle_signature_digest", 0)) <= 0 or int(row.get("preview_phase_count", 0)) < 3 or String(row.get("performance_budget_status", "")) != "within_budget":
 		push_error("Smoke test failed: boss practice preview deterministic bundle invalid %s" % [row])
 		return false
+	return true
+
+func _validate_boss_practice_validation_card_row(row: Dictionary, mode_id: String, expected_count: int) -> bool:
+	if row.is_empty():
+		push_error("Smoke test failed: boss practice validation card missing for %s" % mode_id)
+		return false
+	if String(row.get("mode_id", "")) != mode_id or String(row.get("mode_category", "")) != "boss":
+		push_error("Smoke test failed: boss practice validation identity invalid %s" % [row])
+		return false
+	if String(row.get("validation_kind", "")) != "boss_practice_validation_projection" or String(row.get("overview_card_kind", "")) != "boss_practice_validation":
+		push_error("Smoke test failed: boss practice validation kind invalid %s" % [row])
+		return false
+	if String(row.get("projection_scope", "")) != "local_practice_preview_only" or String(row.get("replay_verification_scope", "")) != "local_practice_hash" or String(row.get("replay_phase_validation_scope", "")) != "local_practice_hash":
+		push_error("Smoke test failed: boss practice validation scope invalid %s" % [row])
+		return false
+	if String(row.get("local_hash_authority", "")) != "local_practice_verification_only" or String(row.get("online_replay_authority", "")) != "server_audit_required":
+		push_error("Smoke test failed: boss practice validation replay authority invalid %s" % [row])
+		return false
+	if String(row.get("damage_authority", "")) != "server" or String(row.get("reward_authority", "")) != "server" or String(row.get("settlement_authority", "")) != "server" or String(row.get("boss_hp_authority", "")) != "server":
+		push_error("Smoke test failed: boss practice validation online authority invalid %s" % [row])
+		return false
+	if bool(row.get("server_authoritative", true)) or bool(row.get("client_result_authoritative", true)) or bool(row.get("requires_server_confirmation", true)):
+		push_error("Smoke test failed: boss practice validation authority flags invalid %s" % [row])
+		return false
+	if int(row.get("player_count", 0)) != expected_count or not bool(row.get("replay_phase_validation_ready", false)):
+		push_error("Smoke test failed: boss practice validation readiness invalid %s expected_count=%d" % [row, expected_count])
+		return false
+	var phase_rows: Array = row.get("replay_phase_validation_rows", [])
+	if phase_rows.size() != int(row.get("preview_phase_count", 0)) or phase_rows.size() < 3:
+		push_error("Smoke test failed: boss practice validation phase rows count invalid %s" % [row])
+		return false
+	var phase_ids: Array = row.get("preview_phase_ids", [])
+	for i in range(phase_rows.size()):
+		if typeof(phase_rows[i]) != TYPE_DICTIONARY:
+			push_error("Smoke test failed: boss practice validation phase row type invalid %s" % [row])
+			return false
+		var phase_row: Dictionary = phase_rows[i]
+		if String(phase_row.get("phase_id", "")) != String(phase_ids[i]) \
+				or String(phase_row.get("validation_status", "")) != "ready" \
+				or String(phase_row.get("replay_verification_scope", "")) != "local_practice_hash" \
+				or String(phase_row.get("local_hash_authority", "")) != "local_practice_verification_only" \
+				or int(phase_row.get("preview_signature_digest", 0)) <= 0 \
+				or int(phase_row.get("preview_signature_digest", 0)) != int(phase_row.get("expected_signature_digest", -1)) \
+				or bool(phase_row.get("server_authoritative", true)) \
+				or bool(phase_row.get("client_result_authoritative", true)):
+			push_error("Smoke test failed: boss practice validation phase row invalid %s" % [phase_row])
+			return false
 	return true
 
 func _validate_boss_authority_summary_row(row: Dictionary, mode_id: String, expect_server_projection: bool, expected_rules_source: String, expected_receipt_status: String) -> bool:
