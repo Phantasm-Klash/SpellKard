@@ -569,6 +569,28 @@ func selected_action_rows() -> Array[Dictionary]:
 		}.merged(action_context, true),
 	]
 
+func request_selected_local_load() -> Dictionary:
+	var entry := selected_entry()
+	if entry.is_empty():
+		action_status = "load_blocked"
+		return _local_load_request_result({}, {}, {}, false, "no_replay_selected")
+	var replay_id := String(entry.get("replay_id", ""))
+	var source_index := _source_index_for_replay_id(replay_id)
+	var selected_row_model := _row_from_entry(entry, source_index) if source_index >= 0 else {}
+	var guard := _replay_action_guard(selected_row_model)
+	if not bool(guard.get("ok", false)):
+		action_status = "load_blocked"
+		return _local_load_request_result(entry, selected_row_model, guard, false, String(guard.get("reason", "load_rejected")))
+	var path := String(selected_row_model.get("path", entry.get("path", "")))
+	if path.is_empty():
+		action_status = "load_blocked"
+		return _local_load_request_result(entry, selected_row_model, guard, false, "missing_path")
+	if not FileAccess.file_exists(path):
+		action_status = "load_blocked"
+		return _local_load_request_result(entry, selected_row_model, guard, false, "file_missing")
+	action_status = "load_ready"
+	return _local_load_request_result(entry, selected_row_model, guard, true, "load_ready")
+
 func set_verification_filter(filter_id: String) -> bool:
 	if not VERIFICATION_FILTERS.has(filter_id):
 		action_status = "filter_failed"
@@ -846,6 +868,45 @@ func _replay_action_guard(row: Dictionary) -> Dictionary:
 		"damage_authority": "server",
 		"settlement_authority": "server",
 		"reward_authority": "server",
+		"client_result_authoritative": false,
+	}
+
+func _local_load_request_result(entry: Dictionary, row: Dictionary, guard: Dictionary, ok: bool, reason: String) -> Dictionary:
+	var safe_guard := guard.duplicate(true)
+	var safe_row := row.duplicate(true)
+	var replay_id := String(safe_row.get("replay_id", entry.get("replay_id", "")))
+	var source_index := int(safe_row.get("source_index", _source_index_for_replay_id(replay_id)))
+	var path := String(safe_row.get("path", entry.get("path", "")))
+	return {
+		"ok": ok,
+		"reason": reason,
+		"action_status": "load_ready" if ok else "load_blocked",
+		"load_request_kind": "selected_local_replay_load",
+		"replay_id": replay_id,
+		"path": path,
+		"source_index": source_index,
+		"verification_status": String(safe_row.get("verification_status", safe_guard.get("verification_status", "none"))),
+		"verification_section": String(safe_row.get("section", safe_guard.get("verification_section", ""))),
+		"verification_scope": String(safe_row.get("verification_scope", "")),
+		"local_load_policy": String(safe_guard.get("local_load_policy", safe_row.get("local_load_policy", "none"))),
+		"local_load_guard_reason": String(safe_row.get("local_load_guard_reason", safe_row.get("load_rejection_reason", ""))),
+		"requires_server_audit": bool(safe_guard.get("requires_server_audit", safe_row.get("requires_server_audit", false))),
+		"server_audit_status": String(safe_guard.get("server_audit_status", safe_row.get("server_audit_status", "not_required"))),
+		"replay_authority_scope": String(safe_row.get("replay_authority_scope", "none")),
+		"local_playback_authority": String(safe_guard.get("local_playback_authority", safe_row.get("local_playback_authority", "none"))),
+		"local_hash_authority": "local_practice_verification_only",
+		"snapshot_source": "local_file" if ok else "blocked",
+		"can_play": ok,
+		"filter_navigation_label": String(safe_row.get("filter_navigation_label", "0/0")),
+		"selected_filtered_index": int(safe_row.get("filtered_index", 0)),
+		"selected_filtered_count": int(safe_row.get("filtered_count", 0)),
+		"replay_action_guard": safe_guard,
+		"boss_practice_verification": (safe_row.get("boss_practice_verification", {}) as Dictionary).duplicate(true) if typeof(safe_row.get("boss_practice_verification", {})) == TYPE_DICTIONARY else {},
+		"server_authoritative": false,
+		"damage_authority": "server",
+		"settlement_authority": "server",
+		"reward_authority": "server",
+		"boss_hp_authority": "server",
 		"client_result_authoritative": false,
 	}
 
