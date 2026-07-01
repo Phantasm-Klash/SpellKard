@@ -531,6 +531,7 @@ func boss_authority_summary(mode_id: String) -> Dictionary:
 	var receipt := boss_settlement_receipt_projection(mode_id)
 	var server_fields: Array[String] = [
 		"entry_confirmation",
+		"roster_lock",
 		"damage",
 		"reward_grants",
 		"settlement",
@@ -717,6 +718,7 @@ func boss_party_status_summary(mode_id: String) -> Dictionary:
 	var entry := boss_entry_preview(mode_id)
 	var transfer_available := bool(formation.get("ok", false)) and party_ids.size() >= 2
 	var fixed_direction_ready := bool(formation.get("ok", false)) and (player_count == 4 or player_count == 8)
+	var roster_authority := boss_roster_authority_contract(mode_id)
 	return {
 		"ok": bool(formation.get("ok", false)),
 		"reason": "none" if bool(formation.get("ok", false)) else ",".join(formation_failures),
@@ -740,6 +742,12 @@ func boss_party_status_summary(mode_id: String) -> Dictionary:
 		"transfer_available": transfer_available,
 		"can_request_transfer": transfer_available,
 		"server_confirmation_status": String(entry.get("server_confirmation_status", "required" if bool(entry.get("ok", false)) else "blocked_local")),
+		"roster_authority_contract": roster_authority,
+		"roster_contract_kind": String(roster_authority.get("contract_kind", "")),
+		"roster_projection_scope": String(roster_authority.get("roster_projection_scope", "local_display_only")),
+		"roster_lock_authority": String(roster_authority.get("roster_lock_authority", "server")),
+		"roster_lock_status": String(roster_authority.get("roster_lock_status", "local_preview")),
+		"local_roster_authoritative": false,
 		"display_status": "ready" if bool(formation.get("ok", false)) else "blocked",
 		"display_scope": "local_display_only",
 		"projection_scope": "local_display_only",
@@ -750,6 +758,54 @@ func boss_party_status_summary(mode_id: String) -> Dictionary:
 		"settlement_authority": "server",
 		"requires_server_confirmation": true,
 		"server_authoritative": bool(state.get("server_authoritative", false)),
+		"client_result_authoritative": false,
+	}
+
+func boss_roster_authority_contract(mode_id: String) -> Dictionary:
+	if not [MODE_WORLD_BOSS, MODE_INSTANCE_BOSS].has(mode_id):
+		return {
+			"ok": false,
+			"reason": "boss_mode_invalid",
+			"mode_id": mode_id,
+			"mode_category": "boss",
+			"contract_kind": "boss_roster_authority_contract",
+			"roster_projection_scope": "local_display_only",
+			"roster_lock_authority": "server",
+			"local_roster_authoritative": false,
+			"server_authoritative": false,
+			"client_result_authoritative": false,
+		}
+	var state := _state_for_mode(mode_id)
+	var formation := validate_boss_formation(mode_id)
+	var party_ids := _string_array(state.get("party_ids", []))
+	var server_confirmed := bool(state.get("server_authoritative", false))
+	var roster_locked := bool(state.get("boss_roster_locked", state.get("roster_locked", false)))
+	var lock_status := "server_locked" if server_confirmed and roster_locked else ("server_snapshot_unlocked" if server_confirmed else "local_preview")
+	return {
+		"ok": true,
+		"reason": "none",
+		"mode_id": mode_id,
+		"mode_category": "boss",
+		"contract_kind": "boss_roster_authority_contract",
+		"contract_version": 1,
+		"roster_projection_scope": "local_display_only",
+		"roster_confirmation_status": "server_confirmed" if server_confirmed else "pending_server_confirmation",
+		"roster_lock_authority": "server",
+		"roster_lock_status": lock_status,
+		"server_locked": server_confirmed and roster_locked,
+		"local_roster_preview": true,
+		"local_roster_authoritative": false,
+		"party_ids": party_ids,
+		"player_count": int(formation.get("player_count", party_ids.size())),
+		"slot_layout_policy": String(formation.get("slot_layout_policy", _boss_slot_layout_policy(party_ids.size()))),
+		"slot_labels": formation.get("slot_labels", _boss_slot_labels(party_ids.size())),
+		"server_required_for": _boss_server_required_fields(mode_id),
+		"client_forbidden_roster_fields": ["damage", "reward_grants", "settlement", "boss_hp", "result_receipt"],
+		"damage_authority": "server",
+		"reward_authority": "server",
+		"settlement_authority": "server",
+		"requires_server_confirmation": true,
+		"server_authoritative": server_confirmed,
 		"client_result_authoritative": false,
 	}
 
@@ -770,6 +826,7 @@ func boss_formation_display_summary(mode_id: String, playfield: Rect2 = Rect2(Ve
 		}
 	var state := _state_for_mode(mode_id)
 	var validation := validate_boss_formation(mode_id)
+	var roster_authority := boss_roster_authority_contract(mode_id)
 	var slots := boss_display_slots(mode_id, playfield)
 	var slot_summaries: Array[String] = []
 	var slot_points: Array[Dictionary] = []
@@ -794,6 +851,10 @@ func boss_formation_display_summary(mode_id: String, playfield: Rect2 = Rect2(Ve
 			"aim_angle_degrees": angle_degrees,
 			"aim_to_center": bool(slot.get("aim_to_center", false)),
 			"aim_vector": aim_vector,
+			"roster_authority_contract": roster_authority,
+			"roster_projection_scope": String(roster_authority.get("roster_projection_scope", "local_display_only")),
+			"roster_lock_authority": String(roster_authority.get("roster_lock_authority", "server")),
+			"local_roster_authoritative": false,
 			"client_result_authoritative": false,
 		})
 	var signature_source := "%s|%s|%s|%s|%s" % [
@@ -825,6 +886,11 @@ func boss_formation_display_summary(mode_id: String, playfield: Rect2 = Rect2(Ve
 		"display_radius_ratio": BOSS_DISPLAY_RADIUS,
 		"friendly_fire": String(state.get("friendly_fire", "disabled")),
 		"arena_policy": String(state.get("arena_policy", "fixed_directions")),
+		"roster_authority_contract": roster_authority,
+		"roster_projection_scope": String(roster_authority.get("roster_projection_scope", "local_display_only")),
+		"roster_lock_authority": String(roster_authority.get("roster_lock_authority", "server")),
+		"roster_lock_status": String(roster_authority.get("roster_lock_status", "local_preview")),
+		"local_roster_authoritative": false,
 		"projection_scope": "local_display_only",
 		"damage_authority": "server",
 		"reward_authority": "server",
@@ -885,6 +951,7 @@ func boss_display_slots(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO, 
 		return []
 	var state := _state_for_mode(mode_id)
 	var contract := boss_formation_contract(mode_id)
+	var roster_authority := boss_roster_authority_contract(mode_id)
 	var positions: Array = state.get("positions", [])
 	var slots: Array[Dictionary] = []
 	for raw_position in positions:
@@ -915,6 +982,10 @@ func boss_display_slots(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO, 
 			"arena_policy": String(state.get("arena_policy", "fixed_directions")),
 			"friendly_fire_warning": String(state.get("friendly_fire_warning", "none")),
 			"boss_center": state.get("boss_center", BOSS_CENTER),
+			"roster_authority_contract": roster_authority,
+			"roster_projection_scope": String(roster_authority.get("roster_projection_scope", "local_display_only")),
+			"roster_lock_authority": String(roster_authority.get("roster_lock_authority", "server")),
+			"local_roster_authoritative": false,
 			"server_authoritative": bool(state.get("server_authoritative", false)),
 			"client_result_authoritative": false,
 		})
@@ -934,6 +1005,7 @@ func boss_playfield_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2
 	var formation := validate_boss_formation(mode_id)
 	var entry := validate_boss_entry(mode_id)
 	var contract := boss_formation_contract(mode_id)
+	var roster_authority := boss_roster_authority_contract(mode_id)
 	var formation_display_summary := boss_formation_display_summary(mode_id, playfield)
 	var current_hp := float(state.get("current_hp", 0.0))
 	var max_hp := float(state.get("max_hp", 0.0))
@@ -962,6 +1034,11 @@ func boss_playfield_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2
 		"screen_bounds": screen_bounds,
 		"display_slots": boss_display_slots(mode_id, playfield),
 		"formation_contract": contract,
+		"roster_authority_contract": roster_authority,
+		"roster_projection_scope": String(roster_authority.get("roster_projection_scope", "local_display_only")),
+		"roster_lock_authority": String(roster_authority.get("roster_lock_authority", "server")),
+		"roster_lock_status": String(roster_authority.get("roster_lock_status", "local_preview")),
+		"local_roster_authoritative": false,
 		"formation_display_summary": formation_display_summary,
 		"formation_display_signature": int(formation_display_summary.get("formation_display_signature", 0)),
 		"player_count": int(formation.get("player_count", 0)),
@@ -1000,6 +1077,7 @@ func boss_hud_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO,
 	var entry := validate_boss_entry(mode_id)
 	var formation := validate_boss_formation(mode_id)
 	var contract := boss_formation_contract(mode_id)
+	var roster_authority := boss_roster_authority_contract(mode_id)
 	var formation_display_summary: Dictionary = playfield_projection.get("formation_display_summary", boss_formation_display_summary(mode_id, playfield))
 	var current_hp := float(playfield_projection.get("current_hp", state.get("current_hp", 0.0)))
 	var max_hp := float(playfield_projection.get("max_hp", state.get("max_hp", 0.0)))
@@ -1035,6 +1113,11 @@ func boss_hud_projection(mode_id: String, playfield: Rect2 = Rect2(Vector2.ZERO,
 		"slot_layout_policy": String(formation.get("slot_layout_policy", "")),
 		"slot_labels": formation.get("slot_labels", []),
 		"formation_contract": contract,
+		"roster_authority_contract": roster_authority,
+		"roster_projection_scope": String(roster_authority.get("roster_projection_scope", "local_display_only")),
+		"roster_lock_authority": String(roster_authority.get("roster_lock_authority", "server")),
+		"roster_lock_status": String(roster_authority.get("roster_lock_status", "local_preview")),
+		"local_roster_authoritative": false,
 		"formation_display_summary": formation_display_summary,
 		"formation_display_signature": int(formation_display_summary.get("formation_display_signature", 0)),
 		"friendly_fire": String(state.get("friendly_fire", "disabled")),
@@ -1079,6 +1162,7 @@ func boss_local_status_row(row_id: String, mode_id: String) -> Dictionary:
 	var result_status := String(state.get("last_result_status", "pending"))
 	var slot_layout_policy := String(formation.get("slot_layout_policy", _boss_slot_layout_policy(player_count)))
 	var contract := boss_formation_contract(mode_id)
+	var roster_authority := boss_roster_authority_contract(mode_id)
 	var action_projection := boss_action_availability_projection(mode_id)
 	var display_projection := boss_playfield_projection(mode_id)
 	var practice_preview := boss_practice_preview_projection(mode_id)
@@ -1126,6 +1210,11 @@ func boss_local_status_row(row_id: String, mode_id: String) -> Dictionary:
 		"slot_layout_policy": slot_layout_policy,
 		"slot_labels": formation.get("slot_labels", _boss_slot_labels(player_count)),
 		"formation_contract": contract,
+		"roster_authority_contract": roster_authority,
+		"roster_projection_scope": String(roster_authority.get("roster_projection_scope", "local_display_only")),
+		"roster_lock_authority": String(roster_authority.get("roster_lock_authority", "server")),
+		"roster_lock_status": String(roster_authority.get("roster_lock_status", "local_preview")),
+		"local_roster_authoritative": false,
 		"action_availability": action_projection,
 		"action_status": String(action_projection.get("action_status", "")),
 		"can_request_entry": bool(action_projection.get("can_request_entry", false)),
@@ -1225,6 +1314,11 @@ func boss_display_contract_row(row_id: String, mode_id: String) -> Dictionary:
 		"hud_projection": hud_projection,
 		"display_slots": playfield_projection.get("display_slots", []),
 		"formation_contract": playfield_projection.get("formation_contract", {}),
+		"roster_authority_contract": playfield_projection.get("roster_authority_contract", {}),
+		"roster_projection_scope": String(playfield_projection.get("roster_projection_scope", "local_display_only")),
+		"roster_lock_authority": String(playfield_projection.get("roster_lock_authority", "server")),
+		"roster_lock_status": String(playfield_projection.get("roster_lock_status", "local_preview")),
+		"local_roster_authoritative": false,
 		"formation_display_summary": formation_display_summary,
 		"formation_display_signature": int(formation_display_summary.get("formation_display_signature", 0)),
 		"action_availability": action_projection,
@@ -2028,6 +2122,7 @@ func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 	var display_slots := boss_display_slots(mode_id)
 	var contract := boss_formation_contract(mode_id)
 	var party_status_summary := boss_party_status_summary(mode_id)
+	var roster_authority: Dictionary = party_status_summary.get("roster_authority_contract", boss_roster_authority_contract(mode_id))
 	return {
 		"id": row_id,
 		"label_key": "screen.mode.boss.party",
@@ -2051,6 +2146,11 @@ func _boss_party_row(row_id: String, mode_id: String, state: Dictionary) -> Dict
 		"slot_layout_policy": String(party_status_summary.get("slot_layout_policy", _boss_slot_layout_policy(positions.size()))),
 		"slot_labels": party_status_summary.get("slot_labels", _boss_slot_labels(positions.size())),
 		"formation_contract": contract,
+		"roster_authority_contract": roster_authority,
+		"roster_projection_scope": String(roster_authority.get("roster_projection_scope", "local_display_only")),
+		"roster_lock_authority": String(roster_authority.get("roster_lock_authority", "server")),
+		"roster_lock_status": String(roster_authority.get("roster_lock_status", "local_preview")),
+		"local_roster_authoritative": false,
 		"formation_valid": bool(party_status_summary.get("formation_valid", false)),
 		"formation_failures": party_status_summary.get("formation_failures", []),
 		"fixed_direction_ready": bool(party_status_summary.get("fixed_direction_ready", false)),
@@ -2225,6 +2325,7 @@ func _boss_formation_row(row_id: String, mode_id: String, state: Dictionary) -> 
 	var validation := validate_boss_formation(mode_id)
 	var display_slots := boss_display_slots(mode_id)
 	var contract := boss_formation_contract(mode_id)
+	var roster_authority := boss_roster_authority_contract(mode_id)
 	var formation_display_summary := boss_formation_display_summary(mode_id)
 	return {
 		"id": row_id,
@@ -2240,6 +2341,11 @@ func _boss_formation_row(row_id: String, mode_id: String, state: Dictionary) -> 
 		"slot_layout_policy": String(validation.get("slot_layout_policy", "")),
 		"slot_labels": validation.get("slot_labels", []),
 		"formation_contract": contract,
+		"roster_authority_contract": roster_authority,
+		"roster_projection_scope": String(roster_authority.get("roster_projection_scope", "local_display_only")),
+		"roster_lock_authority": String(roster_authority.get("roster_lock_authority", "server")),
+		"roster_lock_status": String(roster_authority.get("roster_lock_status", "local_preview")),
+		"local_roster_authoritative": false,
 		"formation_display_summary": formation_display_summary,
 		"formation_display_signature": int(formation_display_summary.get("formation_display_signature", 0)),
 		"player_count": int(validation.get("player_count", 0)),
@@ -2273,6 +2379,11 @@ func _boss_playfield_row(row_id: String, mode_id: String) -> Dictionary:
 		"playfield_projection": projection,
 		"display_slots": projection.get("display_slots", []),
 		"formation_contract": projection.get("formation_contract", {}),
+		"roster_authority_contract": projection.get("roster_authority_contract", {}),
+		"roster_projection_scope": String(projection.get("roster_projection_scope", "local_display_only")),
+		"roster_lock_authority": String(projection.get("roster_lock_authority", "server")),
+		"roster_lock_status": String(projection.get("roster_lock_status", "local_preview")),
+		"local_roster_authoritative": false,
 		"formation_display_summary": formation_display_summary,
 		"formation_display_signature": int(formation_display_summary.get("formation_display_signature", 0)),
 		"projection_scope": String(projection.get("projection_scope", "local_display_only")),
@@ -2301,6 +2412,11 @@ func _boss_hud_row(row_id: String, mode_id: String) -> Dictionary:
 		"playfield_projection": projection.get("playfield_projection", {}),
 		"display_slots": projection.get("display_slots", []),
 		"formation_contract": projection.get("formation_contract", {}),
+		"roster_authority_contract": projection.get("roster_authority_contract", {}),
+		"roster_projection_scope": String(projection.get("roster_projection_scope", "local_display_only")),
+		"roster_lock_authority": String(projection.get("roster_lock_authority", "server")),
+		"roster_lock_status": String(projection.get("roster_lock_status", "local_preview")),
+		"local_roster_authoritative": false,
 		"formation_display_summary": formation_display_summary,
 		"formation_display_signature": int(formation_display_summary.get("formation_display_signature", 0)),
 		"projection_scope": String(projection.get("projection_scope", "local_display_only")),
@@ -2484,6 +2600,7 @@ func _boss_pending_transfer_count(requests: Array) -> int:
 func _boss_server_required_fields(mode_id: String) -> Array[String]:
 	var fields: Array[String] = [
 		"entry_confirmation",
+		"roster_lock",
 		"card_transfer_confirmation",
 		"damage",
 		"reward_grants",

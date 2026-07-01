@@ -5777,6 +5777,11 @@ func _validate_boss_party_row_contract(row: Dictionary, mode_id: String, expecte
 	if String(row.get("aim_policy", "")) != "toward_center" or String(row.get("friendly_fire", "")) != "disabled" or bool(row.get("client_result_authoritative", true)):
 		push_error("Smoke test failed: boss party row authority/display contract invalid %s" % [row])
 		return false
+	if not _validate_boss_roster_authority_contract(row.get("roster_authority_contract", {}), mode_id, expected_count, bool(row.get("server_authoritative", false))):
+		return false
+	if String(row.get("roster_projection_scope", "")) != "local_display_only" or String(row.get("roster_lock_authority", "")) != "server" or bool(row.get("local_roster_authoritative", true)):
+		push_error("Smoke test failed: boss party row roster authority invalid %s" % [row])
+		return false
 	var expected_layout_policy := "cardinal_4" if expected_count == 4 else ("eight_direction_8" if expected_count == 8 else "even_ring_%d" % expected_count)
 	if String(row.get("slot_layout_policy", "")) != expected_layout_policy:
 		push_error("Smoke test failed: boss party layout policy invalid %s" % [row])
@@ -5825,6 +5830,8 @@ func _validate_boss_formation_display_summary(summary: Dictionary, mode_id: Stri
 		return false
 	if String(summary.get("projection_scope", "")) != "local_display_only" or String(summary.get("damage_authority", "")) != "server" or String(summary.get("reward_authority", "")) != "server" or String(summary.get("settlement_authority", "")) != "server":
 		push_error("Smoke test failed: boss formation display summary authority labels invalid %s" % [summary])
+		return false
+	if not _validate_boss_roster_authority_contract(summary.get("roster_authority_contract", {}), mode_id, expected_count, bool(summary.get("server_authoritative", false))):
 		return false
 	if bool(summary.get("client_result_authoritative", true)) or not bool(summary.get("requires_server_confirmation", false)):
 		push_error("Smoke test failed: boss formation display summary authority flags invalid %s" % [summary])
@@ -5911,6 +5918,51 @@ func _validate_boss_formation_contract(contract: Dictionary, mode_id: String, ex
 			return false
 	return true
 
+func _validate_boss_roster_authority_contract(contract: Dictionary, mode_id: String, expected_count: int, expect_server_authoritative: bool) -> bool:
+	if contract.is_empty():
+		push_error("Smoke test failed: boss roster authority contract missing for %s" % mode_id)
+		return false
+	if String(contract.get("contract_kind", "")) != "boss_roster_authority_contract" or int(contract.get("contract_version", 0)) != 1:
+		push_error("Smoke test failed: boss roster authority contract kind invalid %s" % [contract])
+		return false
+	if String(contract.get("mode_id", "")) != mode_id or String(contract.get("mode_category", "")) != "boss":
+		push_error("Smoke test failed: boss roster authority identity invalid %s" % [contract])
+		return false
+	if String(contract.get("roster_projection_scope", "")) != "local_display_only" or String(contract.get("roster_lock_authority", "")) != "server":
+		push_error("Smoke test failed: boss roster authority scope invalid %s" % [contract])
+		return false
+	if bool(contract.get("local_roster_authoritative", true)) or bool(contract.get("client_result_authoritative", true)) or not bool(contract.get("requires_server_confirmation", false)):
+		push_error("Smoke test failed: boss roster authority flags invalid %s" % [contract])
+		return false
+	if bool(contract.get("server_authoritative", false)) != expect_server_authoritative:
+		push_error("Smoke test failed: boss roster server projection flag invalid %s expected=%s" % [contract, expect_server_authoritative])
+		return false
+	var expected_confirmation := "server_confirmed" if expect_server_authoritative else "pending_server_confirmation"
+	if String(contract.get("roster_confirmation_status", "")) != expected_confirmation:
+		push_error("Smoke test failed: boss roster confirmation status invalid %s expected=%s" % [contract, expected_confirmation])
+		return false
+	var lock_status := String(contract.get("roster_lock_status", ""))
+	if expect_server_authoritative:
+		if not ["server_snapshot_unlocked", "server_locked"].has(lock_status):
+			push_error("Smoke test failed: boss roster server lock status invalid %s" % [contract])
+			return false
+	else:
+		if lock_status != "local_preview":
+			push_error("Smoke test failed: boss roster local lock status invalid %s" % [contract])
+			return false
+	if int(contract.get("player_count", 0)) != expected_count:
+		push_error("Smoke test failed: boss roster player count invalid %s expected=%d" % [contract, expected_count])
+		return false
+	var required_fields: Array = contract.get("server_required_for", [])
+	if not required_fields.has("entry_confirmation") or not required_fields.has("roster_lock") or not required_fields.has("settlement"):
+		push_error("Smoke test failed: boss roster server required fields invalid %s" % [contract])
+		return false
+	var forbidden_fields: Array = contract.get("client_forbidden_roster_fields", [])
+	if not forbidden_fields.has("damage") or not forbidden_fields.has("boss_hp") or not forbidden_fields.has("result_receipt"):
+		push_error("Smoke test failed: boss roster forbidden fields invalid %s" % [contract])
+		return false
+	return true
+
 func _validate_boss_playfield_projection(row: Dictionary, mode_id: String, expected_count: int, expected_hp_ratio: float) -> bool:
 	if row.is_empty():
 		push_error("Smoke test failed: boss playfield row missing for %s" % mode_id)
@@ -5931,6 +5983,11 @@ func _validate_boss_playfield_projection(row: Dictionary, mode_id: String, expec
 		return false
 	if bool(projection.get("client_result_authoritative", true)) or not bool(projection.get("requires_server_confirmation", false)):
 		push_error("Smoke test failed: boss playfield authority contract invalid %s" % [projection])
+		return false
+	if not _validate_boss_roster_authority_contract(projection.get("roster_authority_contract", {}), mode_id, expected_count, bool(projection.get("server_authoritative", false))):
+		return false
+	if String(projection.get("roster_projection_scope", "")) != "local_display_only" or String(projection.get("roster_lock_authority", "")) != "server" or bool(projection.get("local_roster_authoritative", true)):
+		push_error("Smoke test failed: boss playfield roster authority invalid %s" % [projection])
 		return false
 	if bool(projection.get("persistent_hp", false)) != (mode_id == "world_boss"):
 		push_error("Smoke test failed: boss playfield persistence invalid %s" % [projection])
@@ -5964,6 +6021,8 @@ func _validate_boss_playfield_projection(row: Dictionary, mode_id: String, expec
 		if bool(slot.get("client_result_authoritative", true)) or not bool(slot.get("aim_to_center", false)) or aim_vector.length() < 0.99:
 			push_error("Smoke test failed: boss playfield slot authority/aim invalid %s" % [slot])
 			return false
+		if not _validate_boss_roster_authority_contract(slot.get("roster_authority_contract", {}), mode_id, expected_count, bool(slot.get("server_authoritative", false))):
+			return false
 		if not _validate_boss_formation_contract(slot.get("formation_contract", {}), mode_id, expected_count):
 			return false
 	if row.has("projection_scope") and (String(row.get("projection_scope", "")) != "local_display_only" or String(row.get("damage_authority", "")) != "server" or String(row.get("settlement_authority", "")) != "server" or bool(row.get("client_result_authoritative", true))):
@@ -5991,6 +6050,8 @@ func _validate_boss_hud_projection(row: Dictionary, mode_id: String, expected_co
 		return false
 	if bool(projection.get("client_result_authoritative", true)) or not bool(projection.get("requires_server_confirmation", false)):
 		push_error("Smoke test failed: boss HUD authority contract invalid %s" % [projection])
+		return false
+	if not _validate_boss_roster_authority_contract(projection.get("roster_authority_contract", {}), mode_id, expected_count, bool(projection.get("server_authoritative", false))):
 		return false
 	if bool(projection.get("persistent_hp", false)) != (mode_id == "world_boss"):
 		push_error("Smoke test failed: boss HUD persistence invalid %s" % [projection])
@@ -6200,6 +6261,11 @@ func _validate_boss_draw_snapshot(snapshot: Dictionary, mode_id: String, expecte
 		return false
 	if String(snapshot.get("projection_scope", "")) != "local_display_only" or String(snapshot.get("damage_authority", "")) != "server" or String(snapshot.get("reward_authority", "")) != "server" or String(snapshot.get("settlement_authority", "")) != "server" or bool(snapshot.get("client_result_authoritative", true)):
 		push_error("Smoke test failed: boss draw snapshot authority invalid %s" % [snapshot])
+		return false
+	if not _validate_boss_roster_authority_contract(snapshot.get("roster_authority_contract", {}), mode_id, expected_count, bool(snapshot.get("server_authoritative", false))):
+		return false
+	if String(snapshot.get("roster_projection_scope", "")) != "local_display_only" or String(snapshot.get("roster_lock_authority", "")) != "server" or bool(snapshot.get("local_roster_authoritative", true)):
+		push_error("Smoke test failed: boss draw snapshot roster authority invalid %s" % [snapshot])
 		return false
 	if absf(float(snapshot.get("hp_ratio", -1.0)) - expected_hp_ratio) > 0.001:
 		push_error("Smoke test failed: boss draw snapshot hp invalid %s" % [snapshot])
@@ -6514,6 +6580,8 @@ func _validate_boss_display_slots(slots: Array[Dictionary], mode_id: String, exp
 			return false
 		if bool(slot.get("client_result_authoritative", true)) or String(slot.get("friendly_fire", "")) != "disabled":
 			push_error("Smoke test failed: boss display slot authority invalid %s" % [slot])
+			return false
+		if not _validate_boss_roster_authority_contract(slot.get("roster_authority_contract", {}), mode_id, expected_count, bool(slot.get("server_authoritative", false))):
 			return false
 		if normalized_spawn.length() < 0.99 or normalized_spawn.length() > 1.01 or aim_vector.length() < 0.99 or aim_vector.length() > 1.01 or normalized_spawn.dot(aim_vector) > -0.99:
 			push_error("Smoke test failed: boss display vectors invalid %s" % [slot])
