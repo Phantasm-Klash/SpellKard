@@ -12,6 +12,8 @@ TypeScript client for **Phantasm Klash / SpellKard**, replacing the Godot client
 
 ```
 laya/
+  index.html           runnable bootstrap: loads engine/libs/*.js then dist/ (no IDE needed)
+  dev/serve.mjs        zero-dependency static server used by `npm run dev`
   src/core/            engine-agnostic layer — NO LayaAir imports, checked by tsconfig.json
     math/              deterministic math: FNV-1a/mix32 (Godot + boss-race conventions), 64-bit FNV/BigInt
     protocol/          hand-rolled dependency-free protobuf codec + phk.v1 message types
@@ -19,11 +21,12 @@ laya/
     sim/               authoritative boss-race simulation mirroring PhK-BattleServer/src/boss_race.cpp
     game/              input encoding, view model, lobby screen flow
   src/platform/laya/   LayaAir adapters: Socket, Timer, input, BossRaceView, 4 scenes, app wiring
+  src/platform/laya/main.ts  browser entry point loaded by index.html
   src/platform/web/    browser adapters: WebSocket, fetch, timer, WS-relay datagram, WebCrypto AEAD/ECDH
   types/laya.d.ts      hand-written LayaAir shim (see "Engine integration")
   engine/libs/*.js     vendored LayaAir 3.3.13 runtime
   tests/               zero-dependency test runner + suites
-  tools/               gen_protocol.mjs, fetch_engine.mjs
+  tools/               gen_protocol.mjs, fetch_engine.mjs, fix_esm_imports.mjs
 ```
 
 The **core layer is the deliverable that must type-check on its own**. Everything
@@ -39,6 +42,9 @@ npm run typecheck      # tsc -p tsconfig.json      --noEmit  (core layer only)
 npm run typecheck:full # tsc -p tsconfig.full.json --noEmit  (core + adapters + laya.d.ts)
 npm test               # compiles tests and runs them on node (no test framework)
 npm run check          # typecheck + test
+npm run build          # compiles the whole client to dist/ as loadable ES modules
+npm run dev            # build, then serve index.html at http://127.0.0.1:8080
+npm run serve          # static server only (assumes dist/ is already built)
 npm run build:core     # emits dist/ with .d.ts for the core layer
 ```
 
@@ -70,15 +76,52 @@ only the surface this client touches (`Sprite`, `Text`, `Stage`, `Socket`, `Time
 ~10 MB declaration set. When the IDE is wired into CI, replace it with the
 engine-generated `laya.d.ts` and drop the shim.
 
-**Pending for a runnable build.** This scaffold has no LayaAir IDE project file
-(`.laya`/`laya.json`), no `index.html` bootstrap and no compiled bundles. To ship:
+## Running locally
 
-1. Create a LayaAir IDE project pointing at `src/`, or load `engine/libs/*.js`
-   with plain `<script>` tags in `index.html`.
-2. Instantiate `SpellKardApp` from `src/platform/laya/app.ts` with a `ClientConfig`
-   (stage size, `lobbyHttpBase`, `lobbyWsUrl`, `relayUrl`, socket/datagram factories).
-3. Bundle with the LayaAir IDE compiler (or any bundler that understands the
-   `Laya` global declared by `types/laya.d.ts`).
+The client runs from a plain static server — **no LayaAir IDE project is
+required**. `index.html` loads the vendored runtime with ordinary `<script>`
+tags and then loads the compiled client as one ES module:
+
+```bash
+cd laya
+npm install          # typescript only, offline-cacheable
+npm run dev          # builds dist/ and serves http://127.0.0.1:8080/
+```
+
+Open <http://127.0.0.1:8080/> and the lobby screen renders. `npm run build`
+alone produces the browser bundle; `npm run serve` serves an existing build
+(`PORT=9000 npm run serve` to change the port).
+
+**How the build works.** `tsconfig.browser.json` emits the whole client
+(`src/core` + `src/platform` + the `src/platform/laya/main.ts` entry) to `dist/`
+as ES modules. TypeScript keeps relative specifiers verbatim, so
+`tools/fix_esm_imports.mjs` appends the missing `.js` extension afterwards —
+that is the entire "bundler". `dist/` is gitignored; rebuild after editing
+`src/`.
+
+**Configuring the upstreams.** `index.html` sets
+`window.PHANTASM_KLASH_CONFIG` and every field can be overridden per-URL:
+
+```
+http://127.0.0.1:8080/?lobbyHttpBase=https://lobby.example&lobbyWsUrl=wss://lobby.example/ws
+```
+
+| Field | Meaning |
+| --- | --- |
+| `stageWidth` / `stageHeight` | Design resolution passed to `Laya.init` |
+| `lobbyHttpBase` | Gensoulkyo REST base. Empty = same origin |
+| `lobbyWsUrl` | Nakama-style lobby WSS url. Empty = use the REST transport |
+| `relayUrl` | WebSocket relay that tunnels battle KCP datagrams. Empty = offline battle |
+| `backgroundColor` | Stage clear colour |
+
+With the defaults (no server) the lobby still renders and sign-in simply
+reports a transport error; point `lobbyHttpBase` at a running Gensoulkyo to sign
+in for real. The battle channel only connects when `relayUrl` is set.
+
+`src/platform/laya/main.ts` resolves this config, awaits `Laya.init(...)` (it is
+asynchronous in LayaAir 3) and then instantiates `SpellKardApp` from
+`src/platform/laya/app.ts`. A LayaAir IDE project can still be generated later
+to replace `index.html`, but nothing in the build depends on it.
 
 ## Protocol
 
@@ -148,10 +191,11 @@ Metrics (`snapshotsReceived`, `averagePositionErrorMilli`, `hashMatches`,
 
 ## Test suite
 
-`npm test` runs a zero-dependency runner (`tests/harness.ts`) over 35 tests:
+`npm test` runs a zero-dependency runner (`tests/harness.ts`) over 44 tests:
 deterministic math parity, protobuf round-trips, the battle wire codec,
-boss-race simulation parity, and a KCP loopback harness that delivers ordered
-messages under 20 % packet loss.
+boss-race simulation parity, a KCP loopback harness that delivers ordered
+messages under 20 % packet loss, and the matchmaking queue (RPC payload mapping,
+REST routes and the `LobbyFlow` queue actions).
 
 ## Not yet wired
 
@@ -167,9 +211,11 @@ messages under 20 % packet loss.
   lobby WebSocket to relay KCP datagrams; `src/platform/web/ws_relay_datagram.ts`
   implements the client side but **Gensoulkyo does not expose that relay endpoint
   yet** (`WsRelayDatagramFactory` documents the expected frame shape).
-* **Matchmaking queue.** The lobby flow exposes create/join room and ready; the
-  `matchmaking.join/ticket/cancel` RPCs are implemented in `LobbyClient` but not
-  surfaced in `LobbyScene`.
+* **Matchmaking queue.** `LobbyClient.joinMatchmaking` / `fetchMatchmakingTicket`
+  / `cancelMatchmaking` wrap the `matchmaking.join` / `.ticket` / `.cancel` RPCs,
+  and `LobbyScene` exposes join / refresh / cancel buttons plus a live queue
+  status line. There is no automatic poll loop yet: the player refreshes the
+  ticket manually, and a `match_start` push clears the ticket.
 * **Card / bomb / focus mechanics.** `card_slot`, `bomb` and `slow` are encoded
   and transmitted, and `slow` is captured by `LayaInput`; the boss-race
   simulation currently only consumes movement + shoot.

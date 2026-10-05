@@ -124,6 +124,18 @@ export interface MatchResultView {
   settledAtMs: number;
 }
 
+/** Gensoulkyo matchmaking queue ticket (`matchmaking.join` / `.ticket` / `.cancel`). */
+export interface MatchmakingTicketView {
+  ticketId: string;
+  modeId: string;
+  /** Server-defined queue status: `queued`, `matched`, `cancelled`, … */
+  queueStatus: string;
+  /** Set once the queue finds a match for this ticket. */
+  matchId: string;
+  /** Set when the match is a room-code match instead of a queue match. */
+  roomCode: string;
+}
+
 export type LobbyEvent =
   | { kind: 'room_state'; room: RoomView }
   | { kind: 'match_start'; matchId: string; serverSeedHex: string; endpoint: string; playerIds: string[] }
@@ -149,6 +161,7 @@ export class LobbyClient {
   room: RoomView | null = null;
   allocation: BattleAllocationView | null = null;
   ticket: BattleTicketView | null = null;
+  matchmakingTicket: MatchmakingTicketView | null = null;
   lastError = '';
   lastResponse: LobbyRpcResponse | null = null;
 
@@ -345,6 +358,56 @@ export class LobbyClient {
     return response.ok;
   }
 
+  /**
+   * `matchmaking.join` / `POST /v1/matchmaking/join`.
+   *
+   * Enqueues the player for a mode and stores the returned queue ticket. The
+   * server owns match creation; the client only polls the ticket afterwards.
+   */
+  async joinMatchmaking(
+    modeId = 'mvp_boss_race',
+    modeParams: Record<string, unknown> = {},
+  ): Promise<MatchmakingTicketView | null> {
+    const response = await this.call('matchmaking.join', {
+      mode_id: modeId,
+      mode_params: modeParams,
+    });
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    this.matchmakingTicket = this.matchmakingFromPayload(response.payload, modeId);
+    return this.matchmakingTicket;
+  }
+
+  /** `matchmaking.ticket` / `GET /v1/matchmaking/tickets/{ticket_id}`. */
+  async fetchMatchmakingTicket(ticketId = ''): Promise<MatchmakingTicketView | null> {
+    const target = ticketId !== '' ? ticketId : this.matchmakingTicket?.ticketId ?? '';
+    if (target === '') {
+      this.lastError = 'matchmaking_ticket_missing_id';
+      return null;
+    }
+    const response = await this.call('matchmaking.ticket', { ticket_id: target });
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    this.matchmakingTicket = this.matchmakingFromPayload(response.payload, this.matchmakingTicket?.modeId ?? '');
+    return this.matchmakingTicket;
+  }
+
+  /** `matchmaking.cancel` / `POST /v1/matchmaking/tickets/{ticket_id}/cancel`. */
+  async cancelMatchmaking(ticketId = ''): Promise<boolean> {
+    const target = ticketId !== '' ? ticketId : this.matchmakingTicket?.ticketId ?? '';
+    if (target === '') {
+      this.lastError = 'matchmaking_cancel_missing_id';
+      return false;
+    }
+    const response = await this.call('matchmaking.cancel', { ticket_id: target });
+    if (response.ok) {
+      this.matchmakingTicket = null;
+    }
+    return response.ok;
+  }
+
   /** `battle.allocation` — the server-assigned battle server + seed. */
   async fetchBattleAllocation(matchId = ''): Promise<BattleAllocationView | null> {
     const response = await this.call('battle.allocation', { match_id: matchId });
@@ -418,6 +481,7 @@ export class LobbyClient {
     const seedHex = message.serverSeedHex ?? bytesToHex(message.serverSeed ?? message.server_seed ?? new Uint8Array(0));
     const endpoint = message.endpoint ?? '';
     const playerIds = message.playerIds ?? message.player_ids ?? [];
+    this.matchmakingTicket = null;
     this.emit({ kind: 'match_start', matchId, serverSeedHex: seedHex, endpoint, playerIds });
     return true;
   }
@@ -453,6 +517,17 @@ export class LobbyClient {
       host: booleanField(payload, 'host'),
       connected: booleanField(payload, 'connected'),
       characterId: stringField(payload, 'character_id', 'characterId'),
+    };
+  }
+
+  private matchmakingFromPayload(payload: Record<string, unknown>, modeId: string): MatchmakingTicketView {
+    const ticket = isRecord(payload.ticket) ? payload.ticket : payload;
+    return {
+      ticketId: stringField(ticket, 'ticket_id', 'ticketId'),
+      modeId: stringField(ticket, 'mode_id', 'modeId') || modeId,
+      queueStatus: stringField(ticket, 'queue_status', 'queueStatus') || 'queued',
+      matchId: stringField(ticket, 'match_id', 'matchId'),
+      roomCode: stringField(ticket, 'room_code', 'roomCode'),
     };
   }
 }
@@ -523,6 +598,10 @@ const REST_ROUTES: Record<string, RestRoute> = {
   'matchmaking.ticket': {
     method: 'GET',
     path: (r) => `/v1/matchmaking/tickets/${payloadString(r, 'ticket_id', 'ticketId')}`,
+  },
+  'matchmaking.cancel': {
+    method: 'POST',
+    path: (r) => `/v1/matchmaking/tickets/${payloadString(r, 'ticket_id', 'ticketId')}/cancel`,
   },
   'battle.allocation': {
     method: 'GET',

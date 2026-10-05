@@ -10,6 +10,7 @@ import './protocol_codec.test';
 import './battle_codec.test';
 import './boss_race_sim.test';
 import './kcp_loopback.test';
+import './matchmaking.test';
 
 import { runAll } from './harness';
 

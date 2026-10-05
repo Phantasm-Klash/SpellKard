@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>Phantasm Klash</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: #0b0716;
+        overflow: hidden;
+      }
+      /* LayaAir appends this container + its canvas to <body> during Laya.init. */
+      #layaContainer {
+        position: absolute;
+        inset: 0;
+      }
+      #boot-error {
+        position: absolute;
+        left: 12px;
+        top: 12px;
+        max-width: 80ch;
+        color: #ff8080;
+        font: 13px/1.5 monospace;
+        white-space: pre-wrap;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="boot-error"></pre>
+    <script>
+      // Runtime configuration. Override any field with a query parameter, e.g.
+      //   index.html?lobbyHttpBase=https://lobby.example&lobbyWsUrl=wss://lobby.example/ws
+      // Point lobbyHttpBase at a running Gensoulkyo to sign in for real; with the
+      // default (same origin, no server) the lobby screen still renders and the
+      // sign-in call simply reports a transport error.
+      window.PHANTASM_KLASH_CONFIG = {
+        stageWidth: 960,
+        stageHeight: 720,
+        lobbyHttpBase: '',
+        lobbyWsUrl: '',
+        relayUrl: '',
+        backgroundColor: '#0b0716',
+      };
+    </script>
+
+    <!-- LayaAir 3.3.13 runtime, in dependency order (see tools/fetch_engine.mjs). -->
+    <script src="./engine/libs/laya.core.js"></script>
+    <script src="./engine/libs/laya.webgl_2D.js"></script>
+    <script src="./engine/libs/laya.opengl_2D.js"></script>
+    <script src="./engine/libs/laya.device.js"></script>
+    <script src="./engine/libs/laya.ui.js"></script>
+    <script src="./engine/libs/laya.ani.js"></script>
+
+    <!-- Compiled client (produced by `npm run build`). -->
+    <script type="module">
+      import { bootstrap } from './dist/platform/laya/main.js';
+
+      bootstrap().catch((error) => {
+        const banner = document.getElementById('boot-error');
+        if (banner) {
+          banner.textContent = `Client failed to start:\n${error && error.stack ? error.stack : String(error)}`;
+        }
+        console.error('[spellkard] bootstrap failed', error);
+      });
+    </script>
+  </body>
+</html>

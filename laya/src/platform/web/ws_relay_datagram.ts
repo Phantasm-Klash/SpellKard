@@ -14,7 +14,7 @@
  * the same framing.
  */
 
-import type { DatagramHandlers, DatagramLike, SocketLike } from '../../core/net/transport';
+import type { DatagramFactory, DatagramHandlers, DatagramLike, SocketFactory, SocketLike } from '../../core/net/transport';
 
 export interface RelaySessionDescriptor {
   /** e.g. `wss://lobby.example/v1/battle/relay`. */
@@ -92,5 +92,30 @@ export class WsRelayDatagramFactory {
   open(): DatagramLike {
     const socket = this.connect(buildRelayUrl(this.descriptor));
     return new WsRelayDatagram(socket);
+  }
+}
+
+/**
+ * `DatagramFactory` adapter so the browser bootstrap can hand the battle client
+ * a relay-backed datagram channel. `open(endpoint)` treats the endpoint as the
+ * relay base URL when no explicit `relayUrl` was configured; the session is
+ * identified server-side by the KCP `conv` (see `BattleClient`), so the
+ * descriptor carries no per-match ids here.
+ */
+export class RelayDatagramFactory implements DatagramFactory {
+  constructor(
+    private readonly sockets: SocketFactory,
+    private readonly relayUrl = '',
+  ) {}
+
+  open(endpoint: string): DatagramLike {
+    const descriptor: RelaySessionDescriptor = {
+      relayUrl: this.relayUrl !== '' ? this.relayUrl : endpoint,
+      matchId: '',
+      playerId: '',
+      battleServerId: '',
+      ticketId: '',
+    };
+    return new WsRelayDatagramFactory((url) => this.sockets.connect(url), descriptor).open();
   }
 }

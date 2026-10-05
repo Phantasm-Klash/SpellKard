@@ -7,7 +7,14 @@
  * `snapshot()`.
  */
 
-import type { BattleAllocationView, BattleTicketView, LobbyClient, RoomView, SessionState } from '../net/lobby_client';
+import type {
+  BattleAllocationView,
+  BattleTicketView,
+  LobbyClient,
+  MatchmakingTicketView,
+  RoomView,
+  SessionState,
+} from '../net/lobby_client';
 
 export enum LobbyScreen {
   Login = 'login',
@@ -45,12 +52,31 @@ export interface LobbyFlowSnapshot {
   room: RoomView | null;
   allocation: BattleAllocationView | null;
   ticket: BattleTicketView | null;
+  /** Active matchmaking queue ticket, if the player is queued. */
+  matchmaking: MatchmakingTicketView | null;
   match: MatchStartInfo | null;
   result: MatchResultInfo | null;
   lastError: string;
 }
 
 export type LobbyFlowListener = (snapshot: LobbyFlowSnapshot) => void;
+
+/**
+ * Human-readable matchmaking queue line for the lobby screen. Kept in the core
+ * layer (no LayaAir types) so it can be unit-tested.
+ */
+export function describeMatchmakingQueue(snapshot: LobbyFlowSnapshot): string {
+  const ticket = snapshot.matchmaking;
+  if (ticket === null) {
+    return 'Matchmaking queue: idle';
+  }
+  const match = ticket.matchId === '' ? '' : ` → match ${ticket.matchId}`;
+  const room = ticket.roomCode === '' ? '' : ` · room ${ticket.roomCode}`;
+  return (
+    `Matchmaking queue: ${ticket.queueStatus}\n` +
+    `ticket ${ticket.ticketId || '-'} · ${ticket.modeId || '-'}${match}${room}`
+  );
+}
 
 export class LobbyFlow {
   private screen = LobbyScreen.Login;
@@ -114,6 +140,7 @@ export class LobbyFlow {
       room: this.client.room,
       allocation: this.client.allocation,
       ticket: this.client.ticket,
+      matchmaking: this.client.matchmakingTicket,
       match: this.match,
       result: this.result,
       lastError: this.lastError,
@@ -187,6 +214,58 @@ export class LobbyFlow {
     await this.client.leaveRoom();
     this.statusText = 'Left room';
     this.setScreen(LobbyScreen.Lobby);
+  }
+
+  /**
+   * Enqueue for a mode (`matchmaking.join`). The queue lives on the lobby
+   * screen — the server, not the client, decides when a match is found, so the
+   * status text shows the ticket until a `match_start` event arrives.
+   */
+  async joinMatchmaking(modeId = 'mvp_boss_race'): Promise<boolean> {
+    this.statusText = 'Joining matchmaking queue…';
+    this.notify();
+    const ticket = await this.client.joinMatchmaking(modeId);
+    if (ticket === null) {
+      this.fail(`Matchmaking join failed: ${this.client.lastError}`);
+      return false;
+    }
+    this.statusText = `In queue ${ticket.ticketId} (${ticket.queueStatus})`;
+    this.notify();
+    return true;
+  }
+
+  /** Re-poll the active queue ticket for a found match. */
+  async refreshMatchmakingTicket(): Promise<boolean> {
+    if (this.client.matchmakingTicket === null) {
+      this.fail('Not in a matchmaking queue');
+      return false;
+    }
+    const updated = await this.client.fetchMatchmakingTicket();
+    if (updated === null) {
+      this.fail(`Queue poll failed: ${this.client.lastError}`);
+      return false;
+    }
+    const suffix = updated.matchId === '' ? '' : ` → match ${updated.matchId}`;
+    this.statusText = `Queue ${updated.ticketId}: ${updated.queueStatus}${suffix}`;
+    this.notify();
+    return true;
+  }
+
+  /** Leave the matchmaking queue (`matchmaking.cancel`). */
+  async cancelMatchmaking(): Promise<boolean> {
+    if (this.client.matchmakingTicket === null) {
+      this.statusText = 'Not in a matchmaking queue';
+      this.notify();
+      return false;
+    }
+    const ok = await this.client.cancelMatchmaking();
+    if (!ok) {
+      this.fail(`Queue cancel failed: ${this.client.lastError}`);
+      return false;
+    }
+    this.statusText = 'Left matchmaking queue';
+    this.notify();
+    return true;
   }
 
   /** Ready up and start polling for the allocation + signed battle ticket. */

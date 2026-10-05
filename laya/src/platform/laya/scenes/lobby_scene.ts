@@ -1,5 +1,6 @@
 /**
- * Lobby screen: sign in, pick a room code, create or join a room.
+ * Lobby screen: sign in, pick a room code, create/join a room, and use the
+ * matchmaking queue.
  *
  * Room codes are cycled from a small preset list instead of a text field so the
  * screen stays dependency-free; a real `Laya.TextInput` (laya.ui) replaces the
@@ -7,6 +8,7 @@
  */
 
 import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow';
+import { describeMatchmakingQueue } from '../../../core/game/lobby_flow';
 import { createButton, createLabel, createTitle, type ButtonHandle } from './ui_kit';
 import type { ClientScene } from './scene';
 
@@ -24,10 +26,14 @@ export class LobbyScene implements ClientScene {
   private readonly statusLabel: Laya.Text;
   private readonly roomLabel: Laya.Text;
   private readonly profileLabel: Laya.Text;
+  private readonly queueLabel: Laya.Text;
   private readonly signInButton: ButtonHandle;
   private readonly createButton: ButtonHandle;
   private readonly joinButton: ButtonHandle;
   private readonly cycleButton: ButtonHandle;
+  private readonly joinQueueButton: ButtonHandle;
+  private readonly refreshQueueButton: ButtonHandle;
+  private readonly cancelQueueButton: ButtonHandle;
   private roomCodeIndex = 0;
   private busy = false;
 
@@ -60,13 +66,25 @@ export class LobbyScene implements ClientScene {
     this.joinButton = createButton('Join room', 24, 400, width - 48, () => void this.joinRoom());
     this.root.addChild(this.joinButton.sprite);
 
+    this.queueLabel = createLabel('', width, 456);
+    this.root.addChild(this.queueLabel);
+
+    this.joinQueueButton = createButton('Join matchmaking queue', 24, 500, width - 48, () => void this.joinQueue());
+    this.root.addChild(this.joinQueueButton.sprite);
+
+    this.refreshQueueButton = createButton('Refresh queue status', 24, 560, width - 48, () => void this.refreshQueue());
+    this.root.addChild(this.refreshQueueButton.sprite);
+
+    this.cancelQueueButton = createButton('Cancel matchmaking', 24, 620, width - 48, () => void this.cancelQueue());
+    this.root.addChild(this.cancelQueueButton.sprite);
+
     this.roomCodeIndex = 0;
     this.refresh();
   }
 
   onEnter(): void {
     this.root.visible = true;
-    this.refresh();
+    this.applySnapshot(this.options.flow.snapshot());
   }
 
   onExit(): void {
@@ -88,16 +106,21 @@ export class LobbyScene implements ClientScene {
         `${snapshot.session.displayName} (${snapshot.session.playerId || snapshot.session.userId})\n` +
         `ruleset ${snapshot.session.rulesetVersion || '-'}`;
     }
-    this.refresh();
+    this.queueLabel.text = describeMatchmakingQueue(snapshot);
+    this.refresh(snapshot);
   }
 
-  private refresh(): void {
+  private refresh(snapshot: LobbyFlowSnapshot = this.options.flow.snapshot()): void {
     this.roomLabel.text = `Room code: ${this.roomCode}`;
-    const signedIn = this.options.flow.snapshot().session !== null;
+    const signedIn = snapshot.session !== null;
+    const queued = snapshot.matchmaking !== null;
     this.createButton.setEnabled(signedIn && !this.busy);
     this.joinButton.setEnabled(signedIn && !this.busy);
     this.signInButton.setEnabled(!signedIn && !this.busy);
     this.cycleButton.setEnabled(!this.busy);
+    this.joinQueueButton.setEnabled(signedIn && !queued && !this.busy);
+    this.refreshQueueButton.setEnabled(queued && !this.busy);
+    this.cancelQueueButton.setEnabled(queued && !this.busy);
   }
 
   private cycleRoomCode(): void {
@@ -106,26 +129,38 @@ export class LobbyScene implements ClientScene {
   }
 
   private async signIn(): Promise<void> {
-    this.busy = true;
-    this.refresh();
-    await this.options.flow.signIn('Player');
-    this.busy = false;
-    this.refresh();
+    await this.run(() => this.options.flow.signIn('Player'));
   }
 
   private async createRoom(): Promise<void> {
-    this.busy = true;
-    this.refresh();
-    await this.options.flow.createRoom(this.roomCode);
-    this.busy = false;
-    this.refresh();
+    await this.run(() => this.options.flow.createRoom(this.roomCode));
   }
 
   private async joinRoom(): Promise<void> {
+    await this.run(() => this.options.flow.joinRoom(this.roomCode));
+  }
+
+  private async joinQueue(): Promise<void> {
+    await this.run(() => this.options.flow.joinMatchmaking());
+  }
+
+  private async refreshQueue(): Promise<void> {
+    await this.run(() => this.options.flow.refreshMatchmakingTicket());
+  }
+
+  private async cancelQueue(): Promise<void> {
+    await this.run(() => this.options.flow.cancelMatchmaking());
+  }
+
+  /** Runs a flow action with the busy flag set and the screen refreshed after. */
+  private async run(action: () => Promise<unknown>): Promise<void> {
     this.busy = true;
     this.refresh();
-    await this.options.flow.joinRoom(this.roomCode);
-    this.busy = false;
-    this.refresh();
+    try {
+      await action();
+    } finally {
+      this.busy = false;
+      this.refresh();
+    }
   }
 }

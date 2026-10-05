@@ -146,7 +146,23 @@ declare namespace Laya {
   const stage: Stage;
   const timer: Timer;
 
-  function init(width: number, height: number, ...rest: unknown[]): void;
+  /** Stage description accepted by `Laya.init`. */
+  interface StageConfig {
+    designWidth: number;
+    designHeight: number;
+    scaleMode?: string;
+    screenMode?: string;
+    alignH?: string;
+    alignV?: string;
+    backgroundColor?: string;
+  }
+
+  /**
+   * `Laya.init` is asynchronous in LayaAir 3: it returns a promise that resolves
+   * once the render device, stage and 2D renderer are ready.
+   */
+  function init(stageConfig: StageConfig): Promise<void>;
+  function init(width: number, height: number): Promise<void>;
 }
 
 /** LayaAir render backends accepted by `Laya.init`. */
