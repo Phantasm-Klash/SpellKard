@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.test-build/
+*.tsbuildinfo
+.DS_Store
+
+# LayaAir release archive cache used by tools/fetch_engine.mjs.
+# engine/libs/*.js IS committed so the scaffold runs offline.
+engine/.cache/
