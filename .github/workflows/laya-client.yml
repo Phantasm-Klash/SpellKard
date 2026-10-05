@@ -1,0 +1,48 @@
+name: Laya Client CI
+
+# Typecheck + test the LayaAir 3 TypeScript client (laya/**).
+# The existing protocol-audit workflow only covers godot/** and tools/**, so
+# laya changes previously triggered no CI at all.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "laya/**"
+      - ".github/workflows/laya-client.yml"
+  pull_request:
+    paths:
+      - "laya/**"
+      - ".github/workflows/laya-client.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: laya
+
+jobs:
+  laya-typecheck-test:
+    name: npm ci + typecheck + test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: npm
+          cache-dependency-path: laya/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm run test
