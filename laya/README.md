@@ -21,14 +21,16 @@ laya/
     sim/               authoritative boss-race simulation mirroring PhK-BattleServer/src/boss_race.cpp
     game/              input encoding, view model, lobby screen flow
   src/platform/laya/   LayaAir adapters: Socket, Timer, input, BossRaceView, 4 scenes, app wiring
-  src/platform/laya/main.ts  browser/native entry point loaded by index.html
+  src/platform/laya/main.ts  browser/native entry point loaded by index.html (`bootstrap`, `startClient`)
   src/platform/web/    browser adapters: WebSocket, fetch, timer, WS-relay datagram, WebCrypto AEAD/ECDH
   src/platform/native/ LayaNative adapters: raw-UDP datagram backed by the spk_udp extension
-  native/udp_ext/      LayaNative C++ UDP extension (source, descriptor, build docs)
+  native/udp_ext/      LayaNative C++ UDP extension (source, descriptor, CMake + MSVC project)
+  layaide/             LayaAir IDE 3.4.1 project -> Windows native client (see layaide/README.md)
   types/laya.d.ts      hand-written LayaAir shim (see "Engine integration")
   engine/libs/*.js     vendored LayaAir 3.3.13 runtime
   tests/               zero-dependency test runner + suites
-  tools/               gen_protocol.mjs, fetch_engine.mjs, fix_esm_imports.mjs
+  tools/               gen_protocol.mjs, fetch_engine.mjs, fetch_windows_support.mjs,
+                       assemble_windows_client.mjs, fix_esm_imports.mjs
 ```
 
 The **core layer is the deliverable that must type-check on its own**. Everything
@@ -48,6 +50,9 @@ npm run build          # compiles the whole client to dist/ as loadable ES modul
 npm run dev            # build, then serve index.html at http://127.0.0.1:8080
 npm run serve          # static server only (assumes dist/ is already built)
 npm run build:core     # emits dist/ with .d.ts for the core layer
+npm run fetch:windows  # downloads the LayaAir Windows Build Support runtime (~159 MB)
+npm run assemble:windows  # composes a runnable Windows client dir from the runtime + extension
+npm run ide:check      # structural self-check of the LayaAir IDE project (layaide/)
 ```
 
 ## Engine integration
@@ -151,61 +156,72 @@ official native runtime — no Electron/Node shell. The client code is unchanged
 `main.ts` picks the raw-UDP battle channel when the `spk_udp` extension is
 loaded (`battleTransport: auto`), and keeps the WS relay otherwise.
 
-### 1. Build the client scripts
+The Windows client is produced from the LayaAir IDE project in **`layaide/`** —
+open it in the IDE and *发布 → Windows*. See `layaide/README.md` for the
+step-by-step walkthrough. The short version:
 
 ```bash
 npm install
-npm run build          # emits dist/ (ES modules) — the payload the native runtime loads
+npm run fetch:windows     # LayaAir Windows Build Support runtime + SDK (~159 MB)
+npm run ide:check         # verify the layaide/ project wiring
+# then, in the IDE: open layaide/, build the extension, 发布 → Windows
 ```
 
-### 2. Export the Native project from the LayaAir IDE
+### Where the Windows runtime comes from
 
-LayaNative is delivered through the LayaAir IDE / CLI, not a standalone zip:
-
-1. Install the LayaAir IDE (or CLI) for Windows: <https://layaair.com/3.x/doc/basics/developmentEnvironment/download/readme.html>.
-   The CLI is also on GitHub (`layabox/layaair-cli`, Node 20+):
-   `layaair install 3.4.1` then `layaair build --list-platforms`.
-2. Open this `laya/` directory as a LayaAir project (or point the IDE at the
-   built `dist/`), then **发布 → 导出 Native 工程** for **Windows**.
-3. The export produces a Visual Studio solution (`windows/…`, `LayaBox.slnx`)
-   and an `extension/` folder — this is where the UDP extension is wired in.
-
-> The cross-platform extension mechanism (JSVM + `LayaExtension.h` +
-> `.layaext.json`) requires **LayaAir 3.4.1 or newer**. Older versions only have
-> the deprecated Windows-only extension API.
-
-### 3. Add the `spk_udp` extension
-
-Copy the extension sources into the exported project's `windows/extension/`:
+LayaNative's Windows runtime is **not** an npm package and **not** on GitHub
+releases. It ships as the LayaAir **Windows Build Support** module, a public
+Tencent-COS download whose URL the IDE/CLI read from its own module manifest
+(`<layaair-cli>/Resources/modules.json`, entry `id: "windows"`):
 
 ```
-windows/extension/
-  main.cpp          <- native/udp_ext/src/main.cpp
-  udp_socket.h/.cpp <- native/udp_ext/src/udp_socket.{h,cpp}
-  spk_udp.layaext.json
-  extension.vcxproj <- add the two .cpp files to the existing project
+https://ldc-1251285021.file.myqcloud.com/layaair-modules/windows-support-for-3.4.1.zip
 ```
 
-Add `udp_socket.cpp` and `main.cpp` to `extension.vcxproj`, build `x64`, and make
-sure the DLL lands next to the descriptor (the export normally copies both
-automatically). Then enable loading in `windows/resource/config.ini`:
+| | |
+| --- | --- |
+| Size | 158,950,350 bytes (~159 MB download, ~476 MB extracted) |
+| Player | `x64/Release/LayaBox.exe` (the thin `wWinMain` -> `conchMain` launcher) |
+| Runtime | `project/Runtime/x64/release/bin/*.dll` (`conch.dll`, `v8.dll`, `libGLESv2.dll`, `OpenAL32.dll`, `layax_ffi.dll`, …) |
+| SDK headers | `project/Runtime/x64/release/include/{extension/LayaExtension.h, jsvm/JSVM.h}` |
+| Import lib | `project/Runtime/x64/release/lib/conch.lib` |
+| MSVC templates | `project/LayaBox.{vcxproj,slnx}`, `project/extension/extension.vcxproj` |
 
-```ini
-[common]
-LoadExtension=true
+`npm run fetch:windows` downloads it into `native/windows/sdk/` (gitignored) and
+verifies the required files. **A Linux host cannot compile the Windows client**
+(MSVC + `v145` toolset); the IDE/VS build must run on Windows.
+
+`npm run assemble:windows` composes a runnable directory from that runtime plus
+this project's `layaide/build-templates/windows/release/` payload (config.ini
+with `LoadExtension=true`, the `spk_udp` descriptor, `spk_udp.dll` when built):
+
+```bash
+npm run assemble:windows                          # runtime shell (boots the LayaAir demo)
+npm run assemble:windows -- --app <published-dir> # + the IDE-published SpellKard app
 ```
 
-`native/udp_ext/README.md` has the full Windows (MSVC) and Linux build notes,
-plus the JS-facing API.
+The application payload itself (compiled scripts, `resources/`, the runtime's
+`scripts/index.js`) is produced by the IDE's Windows publish — `--app` copies it
+on top of the assembled runtime.
 
-### 4. Run
+Two other sources were probed and ruled out:
 
-Launch the exported `LayaBox.exe` (or the IDE's **Native 预览**). The lobby talks
-to `lobbyWsUrl`; the battle channel opens a raw UDP socket to the endpoint from
-`MatchStartMessage` (`host:<port>`). Because the deployment sits behind NAT, keep
-`battleTransport: auto`/`relay` as a fallback — if the battle server's UDP port
-is not reachable from outside, the client can instead tunnel KCP over
-`ws://host:7350/v1/battle/relay` (Gensoulkyo's relay, `runtime/lobbyws`).
+* `layanative3` (npm, latest `1.0.8`) — its SDK archives
+  (`https://www.layabox.com/layanative3.0/layanativeRes/release-v3.1.6.zip`)
+  contain **only** `android_studio/` and `ios/`; `createapp` has no Windows
+  target.
+* `github.com/layabox` releases — no Windows runtime assets; `LayaAir-Steam` is
+  the official *example* of the extension API (it is where the `.layaext.json`
+  v1 format and the `build-templates/windows/release/` merge convention were
+  confirmed from).
+
+### Why 3.4.1 is the floor
+
+The cross-platform extension mechanism (JSVM API + `extension/LayaExtension.h`
++ `.layaext.json` + `LayaExtensionInterface.get_env()/get_exports()`) was
+introduced in **LayaAir 3.4.1**. Older runtimes only have the deprecated
+Windows-only extension API. `npm run ide:check` fails if the project descriptor
+drops below 3.4.1.
 
 ### Extension source layout
 
@@ -214,17 +230,30 @@ native/udp_ext/
   src/udp_socket.{h,cpp}   portable non-blocking UDP core (no Laya dependency)
   src/main.cpp             LayaNative entry + JSVM glue -> global `spk_udp`
   src/udp_selftest.cpp     loopback smoke test for the UDP core
-  include/extension/LayaExtension.h   compile-verification shim (NOT the real header)
+  include/extension/LayaExtension.h   compile-verification shim (mirrors the real header)
+  include/jsvm/JSVM.h                 compile-verification shim (mirrors the real header)
+  windows/extension.vcxproj           MSVC project -> layaide/build-templates/windows/release/spk_udp.dll
   spk_udp.layaext.json     extension descriptor
   CMakeLists.txt           Linux/CI build (shim) + selftest
   README.md                build & wiring instructions
 ```
+
+The `include/` shim is a byte-level mirror of the **real** 3.4.1 headers at the
+API level (verified against `Runtime/x64/release/include/…` from the support
+package), so `main.cpp` is genuinely syntax-checked on Linux CI. It is never
+used for the Windows build — the SDK header wins.
 
 The extension is **poll-based**: JS calls `spk_udp.recvFrom(handle, buffer)` on a
 timer and the extension writes the datagram into the caller's `ArrayBuffer`. That
 avoids cross-thread `post_to_js` marshalling and keeps the JSVM surface to
 ints + ArrayBuffers. `src/platform/native/native_udp_datagram.ts` wraps it as a
 core `DatagramLike`, so `KcpSession` is unchanged.
+
+The lobby talks to `lobbyWsUrl`; the battle channel opens a raw UDP socket to the
+endpoint from `MatchStartMessage` (`host:<port>`). Because the deployment sits
+behind NAT, keep `battleTransport: auto`/`relay` as a fallback — if the battle
+server's UDP port is not reachable from outside, the client tunnels KCP over
+`ws://host:7350/v1/battle/relay` (Gensoulkyo's relay, `runtime/lobbyws`) instead.
 
 ## Protocol
 

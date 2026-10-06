@@ -13,8 +13,11 @@
     "dev": "npm run build && node dev/serve.mjs",
     "test": "tsc -p tsconfig.test.json && node .test-build/tests/run.js",
     "fetch:engine": "node tools/fetch_engine.mjs",
+    "fetch:windows": "node tools/fetch_windows_support.mjs",
+    "assemble:windows": "node tools/assemble_windows_client.mjs",
     "gen:protocol": "node tools/gen_protocol.mjs",
-    "check": "npm run typecheck && npm run test"
+    "ide:check": "node layaide/tools/check_project.mjs",
+    "check": "npm run typecheck && npm run test && npm run ide:check"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

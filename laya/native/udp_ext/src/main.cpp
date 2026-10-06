@@ -21,6 +21,11 @@
 // and returns the byte count; the sender address is read back with
 // `lastRecvAddress`. This keeps the JSVM surface small (no object/array
 // construction) and is safe because JS is single-threaded and polls each tick.
+//
+// Built against the real LayaNative SDK headers
+// (`<support-package>/project/Runtime/x64/release/include/{jsvm,extension}`).
+// The `include/` shim in this directory reproduces those two headers for
+// Linux/CI syntax checking only.
 
 #include <extension/LayaExtension.h>
 
@@ -33,6 +38,15 @@
 #include "udp_socket.h"
 
 namespace {
+
+// Engine interface table, kept so log_* is reachable from every callback.
+const LayaExtensionInterface* g_engine = nullptr;
+
+void logInfo(const char* message) {
+  if (g_engine != nullptr && g_engine->log_info != nullptr) {
+    g_engine->log_info(message);
+  }
+}
 
 struct Entry {
   spellkard::UdpSocket socket;
@@ -63,7 +77,7 @@ bool argInt(jsvm_env env, jsvm_value* argv, size_t argc, size_t index, int32_t& 
     return false;
   }
   int32_t value = 0;
-  if (jsvm_get_value_int32(env, argv[index], &value) != 0) {
+  if (jsvm_get_value_int32(env, argv[index], &value) != jsvm_ok) {
     return false;
   }
   out = value;
@@ -77,7 +91,8 @@ bool argString(jsvm_env env, jsvm_value* argv, size_t argc, size_t index, std::s
   char buffer[512];
   std::memset(buffer, 0, sizeof(buffer));
   size_t length = 0;
-  if (jsvm_get_value_string_utf8(env, argv[index], buffer, sizeof(buffer) - 1, &length) != 0) {
+  if (jsvm_get_value_string_utf8(env, argv[index], buffer, sizeof(buffer) - 1, &length) !=
+      jsvm_ok) {
     return false;
   }
   if (length >= sizeof(buffer) - 1) {
@@ -88,11 +103,12 @@ bool argString(jsvm_env env, jsvm_value* argv, size_t argc, size_t index, std::s
   return true;
 }
 
-bool argBuffer(jsvm_env env, jsvm_value* argv, size_t argc, size_t index, void** data, size_t* length) {
+bool argBuffer(jsvm_env env, jsvm_value* argv, size_t argc, size_t index, void** data,
+               size_t* length) {
   if (index >= argc) {
     return false;
   }
-  return jsvm_get_arraybuffer_info(env, argv[index], data, length) == 0;
+  return jsvm_get_arraybuffer_info(env, argv[index], data, length) == jsvm_ok;
 }
 
 jsvm_value makeInt(jsvm_env env, int32_t value) {
@@ -259,15 +275,21 @@ jsvm_value jsClose(jsvm_env env, jsvm_callback_info info) {
 
 void registerFunction(jsvm_env env, jsvm_value exports, const char* name, jsvm_callback callback) {
   jsvm_value fn;
-  jsvm_create_function(env, name, JSVM_AUTO_LENGTH, callback, nullptr, &fn);
+  if (jsvm_create_function(env, name, JSVM_AUTO_LENGTH, callback, nullptr, &fn) != jsvm_ok) {
+    return;
+  }
   jsvm_set_named_property(env, exports, name, fn);
 }
 
 int onEvent(LayaExtEventType event, const LayaExtensionInterface* iface, void* userData) {
   (void)userData;
   if (event == LAYA_EXT_EVENT_INIT && iface != nullptr) {
+    g_engine = iface;
     jsvm_env env = iface->get_env();
     jsvm_value exports = iface->get_exports();
+    if (env == nullptr || exports == nullptr) {
+      return -1;
+    }
     registerFunction(env, exports, "version", jsVersion);
     registerFunction(env, exports, "create", jsCreate);
     registerFunction(env, exports, "bind", jsBind);
@@ -277,12 +299,14 @@ int onEvent(LayaExtEventType event, const LayaExtensionInterface* iface, void* u
     registerFunction(env, exports, "lastRecvAddress", jsLastRecvAddress);
     registerFunction(env, exports, "localPort", jsLocalPort);
     registerFunction(env, exports, "close", jsClose);
-  } else if (event == LAYA_EXT_EVENT_DESTROY) {
+    logInfo("spk_udp extension loaded");
+  } else if (event == LAYA_EXT_EVENT_DEINIT) {
     std::lock_guard<std::mutex> lock(registryMutex());
     for (auto& item : registry()) {
       item.second->socket.close();
     }
     registry().clear();
+    g_engine = nullptr;
   }
   return 0;
 }

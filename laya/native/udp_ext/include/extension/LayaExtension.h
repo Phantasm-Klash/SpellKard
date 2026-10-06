@@ -1,97 +1,144 @@
 /*
  * COMPILE-VERIFICATION SHIM — NOT THE REAL HEADER.
  *
- * LayaNative ships the real `extension/LayaExtension.h` (and the `jsvm_*` C API)
- * with the Native project exported by the LayaAir IDE. That runtime is not a
- * standalone download, so this shim reproduces only the symbols the SpellKard
- * UDP extension uses, using the signatures from the official docs:
+ * The real `extension/LayaExtension.h` is the stable C ABI contract for
+ * LayaNative extensions. It ships inside the **Windows / Android / iOS / Linux /
+ * OHOS Build Support** module:
  *
- *   https://layaair.com/3.x/doc/released/native/extension/
+ *   <support-package>/project/Runtime/<arch>/release/include/extension/LayaExtension.h
  *
- * It exists so `udp_ext` can be syntax-checked on CI without the runtime. When
- * you build the real Windows DLL from an exported Native project, DELETE this
- * file / do not put this `include/` directory on the include path — the runtime
- * header must win. See ../README.md.
+ * That package is a public download (see ../README.md). This shim reproduces the
+ * real header 1:1 (verified against LayaAir 3.4.1
+ * `Runtime/x64/release/include/extension/LayaExtension.h`, 8870 bytes) so the
+ * SpellKard UDP extension can be syntax-checked on Linux CI without the runtime.
+ *
+ * When you build the real Windows DLL from the IDE-exported Native project,
+ * DELETE this file / do not put this `include/` directory on the include path —
+ * the runtime header must win. See ../README.md.
  */
 #ifndef SPELLKARD_LAYANATIVE_SHIM_LAYAEXTENSION_H
 #define SPELLKARD_LAYANATIVE_SHIM_LAYAEXTENSION_H
 
-#include <cstddef>
-#include <cstdint>
+#include <stdint.h>
+#include <stddef.h>
 
-#define LAYA_EXTENSION_API_VERSION 1
-#define JSVM_AUTO_LENGTH static_cast<size_t>(-1)
-
-typedef struct jsvm_env__* jsvm_env;
-typedef struct jsvm_callback_info__* jsvm_callback_info;
-
-typedef struct jsvm_value__ {
-  void* opaque;
-} jsvm_value;
-
-typedef jsvm_value (*jsvm_callback)(jsvm_env env, jsvm_callback_info info);
-
-typedef enum LayaExtEventType {
-  LAYA_EXT_EVENT_INIT = 0,
-  LAYA_EXT_EVENT_UPDATE = 1,
-  LAYA_EXT_EVENT_PAUSE = 2,
-  LAYA_EXT_EVENT_RESUME = 3,
-  LAYA_EXT_EVENT_DESTROY = 4,
-} LayaExtEventType;
+/* Real header: #include <jsvm/JSVM.h> */
+#include <jsvm/JSVM.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// --- JSVM callback/argument helpers (documented) ---------------------------
-void jsvm_get_cb_info(jsvm_env env, jsvm_callback_info info, size_t* argc, jsvm_value* argv,
-                      jsvm_value* this_arg, void** data);
-int jsvm_get_value_int32(jsvm_env env, jsvm_value value, int32_t* result);
-int jsvm_create_int32(jsvm_env env, int32_t value, jsvm_value* result);
-int jsvm_create_function(jsvm_env env, const char* name, size_t length, jsvm_callback callback,
-                         void* data, jsvm_value* result);
-int jsvm_set_named_property(jsvm_env env, jsvm_value object, const char* name, jsvm_value value);
-
-// --- string/arraybuffer helpers (names follow the JSVM C API convention) ----
-int jsvm_get_value_string_utf8(jsvm_env env, jsvm_value value, char* buffer, size_t size,
-                               size_t* result);
-int jsvm_create_string_utf8(jsvm_env env, const char* value, size_t length, jsvm_value* result);
-int jsvm_get_arraybuffer_info(jsvm_env env, jsvm_value value, void** data, size_t* length);
-
-#ifdef __cplusplus
-}  // extern "C"
+/* -------------------------------------------------------------------------- */
+/*  Platform export macro                                                     */
+/* -------------------------------------------------------------------------- */
+#if defined(_WIN32)
+#define LAYA_EXT_EXPORT __declspec(dllexport)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LAYA_EXT_EXPORT __attribute__((visibility("default")))
+#else
+#define LAYA_EXT_EXPORT
 #endif
 
-struct LayaExtensionInterface {
+/* -------------------------------------------------------------------------- */
+/*  Version                                                                   */
+/* -------------------------------------------------------------------------- */
+#define LAYA_EXTENSION_API_VERSION 1
+
+/* -------------------------------------------------------------------------- */
+/*  Lifecycle event types                                                     */
+/* -------------------------------------------------------------------------- */
+typedef enum {
+  LAYA_EXT_EVENT_INIT = 0,   /** Called during extension loading (register JS classes here) */
+  LAYA_EXT_EVENT_DEINIT = 1, /** Called during extension unloading */
+} LayaExtEventType;
+
+/* -------------------------------------------------------------------------- */
+/*  Callback signatures                                                       */
+/* -------------------------------------------------------------------------- */
+typedef void (*LayaExtFrameCallback)(float dt, void* user_data);
+typedef void (*LayaExtVoidCallback)(void* user_data);
+
+/* -------------------------------------------------------------------------- */
+/*  Engine-provided interface (function pointer table)                        */
+/* -------------------------------------------------------------------------- */
+typedef struct {
+  uint32_t api_version;
+
+  /* --- JS Environment --- */
   jsvm_env (*get_env)();
   jsvm_value (*get_exports)();
-  void (*post_to_js)(void* data);
-};
 
-typedef struct LayaExtensionInitInfo {
-  int api_version;
+  /* --- Threading --- */
+  void (*post_to_js)(LayaExtVoidCallback callback, void* user_data);
+
+  /* --- Logging --- */
+  void (*log_info)(const char* msg);
+  void (*log_warn)(const char* msg);
+  void (*log_error)(const char* msg);
+} LayaExtensionInterface;
+
+/* -------------------------------------------------------------------------- */
+/*  Extension initialization info (filled by extension entry point)           */
+/* -------------------------------------------------------------------------- */
+typedef struct {
+  uint32_t api_version;
   const char* name;
   const char* version;
   int (*on_event)(LayaExtEventType event, const LayaExtensionInterface* iface, void* user_data);
   void* user_data;
 } LayaExtensionInitInfo;
 
-#ifdef _WIN32
-#define LAYA_EXT_EXPORT __declspec(dllexport)
+/* -------------------------------------------------------------------------- */
+/*  Entry point                                                               */
+/* -------------------------------------------------------------------------- */
+typedef int (*LayaExtensionEntryFunc)(const LayaExtensionInterface* engine_interface,
+                                      LayaExtensionInitInfo* out_info);
+
+#define LAYA_EXTENSION_ENTRY_SYMBOL "laya_extension_init"
+
+#ifdef __cplusplus
+#define LAYA_EXTENSION_ENTRY(init_func)                       \
+  extern "C" LAYA_EXT_EXPORT int laya_extension_init(         \
+      const LayaExtensionInterface* engine_interface,         \
+      LayaExtensionInitInfo* out_info) {                      \
+    return init_func(engine_interface, out_info);             \
+  }
 #else
-#define LAYA_EXT_EXPORT __attribute__((visibility("default")))
+#define LAYA_EXTENSION_ENTRY(init_func)                       \
+  LAYA_EXT_EXPORT int laya_extension_init(                    \
+      const LayaExtensionInterface* engine_interface,         \
+      LayaExtensionInitInfo* out_info) {                      \
+    return init_func(engine_interface, out_info);             \
+  }
 #endif
 
-#define LAYA_EXTENSION_ENTRY(fn)                                                        \
-  extern "C" LAYA_EXT_EXPORT int laya_extension_init(const LayaExtensionInterface* engine, \
-                                                     LayaExtensionInitInfo* info) {     \
-    return fn(engine, info);                                                            \
-  }
+#if defined(__GNUC__) || defined(__clang__)
+#define _LAYA_EXT_USED __attribute__((used))
+#else
+#define _LAYA_EXT_USED
+#endif
 
-#define LAYA_EXTENSION_ENTRY_NAMED(name, fn)                                                       \
-  extern "C" LAYA_EXT_EXPORT int laya_extension_init_##name(const LayaExtensionInterface* engine,   \
-                                                            LayaExtensionInitInfo* info) {         \
-    return fn(engine, info);                                                                       \
+#ifdef __cplusplus
+#define LAYA_EXTENSION_ENTRY_NAMED(ext_name, init_func)       \
+  extern "C" LAYA_EXT_EXPORT _LAYA_EXT_USED                   \
+  int laya_extension_init_##ext_name(                         \
+      const LayaExtensionInterface* engine_interface,         \
+      LayaExtensionInitInfo* out_info) {                      \
+    return init_func(engine_interface, out_info);             \
   }
+#else
+#define LAYA_EXTENSION_ENTRY_NAMED(ext_name, init_func)       \
+  LAYA_EXT_EXPORT _LAYA_EXT_USED                              \
+  int laya_extension_init_##ext_name(                         \
+      const LayaExtensionInterface* engine_interface,         \
+      LayaExtensionInitInfo* out_info) {                      \
+    return init_func(engine_interface, out_info);             \
+  }
+#endif
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
 
 #endif  // SPELLKARD_LAYANATIVE_SHIM_LAYAEXTENSION_H

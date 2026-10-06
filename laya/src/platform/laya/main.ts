@@ -122,19 +122,12 @@ const consoleLogger: Logger = {
 };
 
 /**
- * Boots the engine and the client. Safe to call once, after the LayaAir
- * `<script>` tags have run.
+ * Builds the platform adapters and starts the client against an **already
+ * initialised** LayaAir engine. This is the entry the LayaAir IDE project uses
+ * (`laya/layaide/src/SpellKardBoot.ts`): the IDE owns `Laya.init` and the
+ * startup scene, so the client must not call `Laya.init` a second time.
  */
-export async function bootstrap(config: BrowserRuntimeConfig = resolveRuntimeConfig()): Promise<SpellKardApp> {
-  await Laya.init({
-    designWidth: config.stageWidth,
-    designHeight: config.stageHeight,
-    scaleMode: 'showall',
-    screenMode: 'none',
-    alignH: 'center',
-    alignV: 'middle',
-    backgroundColor: config.backgroundColor,
-  });
+export function startClient(config: BrowserRuntimeConfig): SpellKardApp {
   Laya.stage.frameRate = 60;
 
   const sockets = new LayaSocketFactory();
@@ -152,4 +145,21 @@ export async function bootstrap(config: BrowserRuntimeConfig = resolveRuntimeCon
   });
   app.start();
   return app;
+}
+
+/**
+ * Boots the engine and the client. Safe to call once, after the LayaAir
+ * `<script>` tags have run.
+ */
+export async function bootstrap(config: BrowserRuntimeConfig = resolveRuntimeConfig()): Promise<SpellKardApp> {
+  await Laya.init({
+    designWidth: config.stageWidth,
+    designHeight: config.stageHeight,
+    scaleMode: 'showall',
+    screenMode: 'none',
+    alignH: 'center',
+    alignV: 'middle',
+    backgroundColor: config.backgroundColor,
+  });
+  return startClient(config);
 }

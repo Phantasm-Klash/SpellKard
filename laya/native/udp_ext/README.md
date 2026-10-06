@@ -34,36 +34,66 @@ This keeps the JSVM surface to ints + ArrayBuffers and needs no cross-thread
 src/udp_socket.{h,cpp}   portable non-blocking UDP core — NO Laya dependency
 src/main.cpp             LayaNative entry + JSVM glue (registers `spk_udp`)
 src/udp_selftest.cpp     loopback smoke test for the core
-include/extension/LayaExtension.h   compile-verification SHIM (see below)
+include/extension/LayaExtension.h   compile-verification SHIM (mirrors the real header)
+include/jsvm/JSVM.h                 compile-verification SHIM (mirrors the real header)
+windows/extension.vcxproj           MSVC Release|x64 project -> spk_udp.dll
 spk_udp.layaext.json     extension descriptor (name must stay `spk_udp`)
 CMakeLists.txt           Linux/CI build + selftest
 ```
 
+## Where the real headers live
+
+The real `extension/LayaExtension.h` and `jsvm/JSVM.h` ship inside the LayaAir
+**Windows / Android / iOS / Linux / OHOS Build Support** module:
+
+```
+<support-package>/project/Runtime/<arch>/release/include/{extension/LayaExtension.h, jsvm/JSVM.h}
+<support-package>/project/Runtime/<arch>/release/lib/conch.lib
+```
+
+For Windows, get the module with:
+
+```bash
+npm run fetch:windows      # from laya/ — downloads + extracts into native/windows/sdk/
+```
+
+or install **Windows 构建支持** from the LayaAir IDE's module manager. The
+download is public:
+`https://ldc-1251285021.file.myqcloud.com/layaair-modules/windows-support-for-3.4.1.zip`.
+
 ## Windows build (MSVC)
 
-The extension only builds **inside the Native project exported by the LayaAir
-IDE** (the IDE generates the `.vcxproj` and copies the DLL to the runtime's load
-path). Steps:
+`windows/extension.vcxproj` builds `spk_udp.dll` and writes it straight into
+`layaide/build-templates/windows/release/`, next to the descriptor, so the
+LayaAir IDE merges both into the published Windows client directory.
 
-1. In the LayaAir IDE (3.4.1+), export the Native project for Windows
-   (**发布 → 导出 Native 工程**). You get `windows/…`, `LayaBox.slnx`, and
-   `windows/extension/extension.vcxproj`.
-2. Copy `src/main.cpp`, `src/udp_socket.h`, `src/udp_socket.cpp` into
-   `windows/extension/`, and add both `.cpp` files to `extension.vcxproj`.
-3. Copy `spk_udp.layaext.json` next to the project (or into the extension
-   folder) so the build copies it to the runtime's extension directory.
-4. Build `x64` / Release. The build emits `spk_udp.dll` and copies it + the
-   descriptor next to the runtime. `ws2_32.lib` is linked via `#pragma comment`.
-5. Enable loading in `windows/resource/config.ini`:
+1. Set the SDK root (the project also falls back to
+   `native/windows/sdk/project/Runtime/x64/release` if you ran
+   `npm run fetch:windows`):
+
+   ```powershell
+   $env:LAYANATIVE_SDK_ROOT = "D:\path\to\windows-support-for-3.4.1\project\Runtime\x64\release"
+   ```
+
+2. Open `windows/extension.vcxproj` in Visual Studio, select **Release|x64**
+   (toolset `v145`, C++20, static CRT — matching the official LayaAir templates)
+   and build. The `ValidateDependencies` target fails fast with a readable
+   message when `LAYANATIVE_SDK_ROOT` is wrong or incomplete.
+
+3. The build emits `spk_udp.dll` next to `spk_udp.layaext.json`. The published
+   client must also have `config.ini` with:
+
    ```ini
    [common]
    LoadExtension=true
    ```
-6. `spk_udp.version()` should now be callable from the project's JS.
+
+   (`layaide/build-templates/windows/release/config.ini` already sets it.)
+
+4. `spk_udp.version()` should now be callable from the project's JS.
 
 `extension.name` in `spk_udp.layaext.json` **must** equal `info->name` in
-`main.cpp` (`"spk_udp"`), and the `libraries` value must equal the built DLL
-name.
+`main.cpp` (`"spk_udp"`), and the `libraries` value must equal the built DLL name.
 
 ## Linux build (CI / reference)
 
@@ -73,28 +103,27 @@ cmake --build build
 ./build/spk_udp_selftest     # loopback UDP smoke test, exits 0 on success
 ```
 
-For a real Linux runtime build, point the extension at the runtime's headers:
+For a real Linux runtime build, point the extension at the runtime's headers
+(the Linux Build Support module ships the same layout as Windows):
 
 ```bash
-cmake -S . -B build-real -DSPK_USE_SHIM_HEADER=OFF -DSPK_LAYANATIVE_INCLUDE=/path/to/layanative/include
+cmake -S . -B build-real -DSPK_USE_SHIM_HEADER=OFF -DSPK_LAYANATIVE_INCLUDE=/path/to/runtime/include
 cmake --build build-real      # produces libspk_udp.so
 ```
 
-## ⚠️ About `include/extension/LayaExtension.h`
+## ⚠️ About `include/`
 
-The real `LayaExtension.h` and the `jsvm_*` C API ship **with the LayaNative
-runtime** (inside the IDE-exported Native project). They are not a standalone
-public download, so this repository cannot vendor them. `include/extension/
-LayaExtension.h` is a **compile-verification shim** that reproduces only the
-symbols `main.cpp` uses, with the signatures from the official docs.
+`include/extension/LayaExtension.h` and `include/jsvm/JSVM.h` are
+**compile-verification shims**, not the real headers. They reproduce the real
+3.4.1 API exactly — verified symbol-for-symbol against
+`Runtime/x64/release/include/…` from the Windows Build Support package and
+against the official `layabox/LayaAir-Steam` extension sample — so `main.cpp`
+is genuinely syntax-checked on Linux CI without the runtime.
 
-* For CI, `-DSPK_USE_SHIM_HEADER=ON` lets `main.cpp` be syntax-checked and
-  `udp_selftest` run.
-* For a real build, **use the runtime's header** (do not put this `include/`
-  directory on the include path). The documented symbols are exact; the
-  `jsvm_*` string/ArrayBuffer helpers (`jsvm_get_value_string_utf8`,
-  `jsvm_create_string_utf8`, `jsvm_get_arraybuffer_info`) follow the JSVM
-  naming convention and may need a signature tweak against the real header.
+* For CI, `-DSPK_USE_SHIM_HEADER=ON` puts `include/` on the include path.
+* For a real build, **use the runtime's headers** — do not put this `include/`
+  directory on the include path; the SDK header must win. The `windows/`
+  vcxproj and the real-build CMake path both do this.
 
-If a symbol mismatch appears at real-build time, only `main.cpp` (the thin glue)
-changes — `udp_socket.cpp` is pure C++ and unaffected.
+If the real headers ever drift, only `main.cpp` (the thin glue) may need a
+signature tweak — `udp_socket.cpp` is pure C++ and unaffected.

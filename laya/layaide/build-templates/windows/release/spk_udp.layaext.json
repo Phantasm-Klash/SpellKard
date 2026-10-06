@@ -1,0 +1,12 @@
+{
+  "extension": {
+    "name": "spk_udp",
+    "version": "1.0.0",
+    "api_version": 1,
+    "description": "SpellKard raw UDP socket extension (KCP battle channel for LayaNative)"
+  },
+  "libraries": {
+    "windows.x86_64": "spk_udp.dll"
+  },
+  "dependencies": []
+}
