@@ -5,8 +5,8 @@ TypeScript client for **Phantasm Klash / SpellKard**, replacing the Godot client
 
 | Channel | Upstream | Transport |
 | --- | --- | --- |
-| Lobby / business | **Gensoulkyo** (Go) | HTTP REST + Nakama-style WSS (`runtime/httpapi`, `runtime/nakamaapi`) |
-| Boss-race battle | **PhK-BattleServer** (C++) | KCP over UDP (standard skywind3000/ikcp wire format) |
+| Lobby / business | **Gensoulkyo** (Go) | HTTP REST + lobby WS (`runtime/lobbyws`, `{"type","seq","payload"}` envelopes) |
+| Boss-race battle | **PhK-BattleServer** (C++) | KCP over UDP (standard skywind3000/ikcp wire format) — raw UDP on native, WS relay in the browser |
 
 ## Layout
 
@@ -21,8 +21,10 @@ laya/
     sim/               authoritative boss-race simulation mirroring PhK-BattleServer/src/boss_race.cpp
     game/              input encoding, view model, lobby screen flow
   src/platform/laya/   LayaAir adapters: Socket, Timer, input, BossRaceView, 4 scenes, app wiring
-  src/platform/laya/main.ts  browser entry point loaded by index.html
+  src/platform/laya/main.ts  browser/native entry point loaded by index.html
   src/platform/web/    browser adapters: WebSocket, fetch, timer, WS-relay datagram, WebCrypto AEAD/ECDH
+  src/platform/native/ LayaNative adapters: raw-UDP datagram backed by the spk_udp extension
+  native/udp_ext/      LayaNative C++ UDP extension (source, descriptor, build docs)
   types/laya.d.ts      hand-written LayaAir shim (see "Engine integration")
   engine/libs/*.js     vendored LayaAir 3.3.13 runtime
   tests/               zero-dependency test runner + suites
@@ -110,18 +112,119 @@ http://127.0.0.1:8080/?lobbyHttpBase=https://lobby.example&lobbyWsUrl=wss://lobb
 | --- | --- |
 | `stageWidth` / `stageHeight` | Design resolution passed to `Laya.init` |
 | `lobbyHttpBase` | Gensoulkyo REST base. Empty = same origin |
-| `lobbyWsUrl` | Nakama-style lobby WSS url. Empty = use the REST transport |
-| `relayUrl` | WebSocket relay that tunnels battle KCP datagrams. Empty = offline battle |
+| `lobbyWsUrl` | Lobby WS url (e.g. `ws://host:7350/v1/lobby/ws`). Empty = use the REST transport |
+| `relayUrl` | WebSocket relay that tunnels battle KCP datagrams (e.g. `ws://host:7350/v1/battle/relay`). Empty = offline battle |
+| `battleTransport` | `auto` (default) / `relay` / `udp`. `udp` uses the native `spk_udp` extension |
 | `backgroundColor` | Stage clear colour |
 
 With the defaults (no server) the lobby still renders and sign-in simply
 reports a transport error; point `lobbyHttpBase` at a running Gensoulkyo to sign
-in for real. The battle channel only connects when `relayUrl` is set.
+in for real. The battle channel only connects when `relayUrl` is set (web) or
+`spk_udp` is loaded (native).
+
+### Lobby WebSocket protocol
+
+`WsLobbyTransport` speaks Gensoulkyo's lobby WS protocol
+(`runtime/lobbyws/protocol.go`). Every frame is a JSON envelope:
+
+```json
+{"type": 1, "seq": 7, "payload": { ... }}
+```
+
+`type` is a `phk.v1.LobbyMessageType` (1 auth request … 12 match result, 100
+error); payload field names follow `lobby.proto`. The server never echoes `seq`,
+so responses are correlated by message type. `RoomState` / `MatchStart` /
+`MatchResult` pushes are surfaced as `LobbyEvent`s. Operations the WS protocol
+does not define (matchmaking, battle ticket, replay, `rooms.get`, `match.ready`)
+are delegated to an HTTP fallback transport. The envelope codec lives in
+`src/core/net/lobby_protocol.ts`.
 
 `src/platform/laya/main.ts` resolves this config, awaits `Laya.init(...)` (it is
 asynchronous in LayaAir 3) and then instantiates `SpellKardApp` from
 `src/platform/laya/app.ts`. A LayaAir IDE project can still be generated later
 to replace `index.html`, but nothing in the build depends on it.
+
+## Windows native client (LayaNative)
+
+The same LayaAir project ships to Windows through **LayaNative**, LayaAir's
+official native runtime — no Electron/Node shell. The client code is unchanged:
+`main.ts` picks the raw-UDP battle channel when the `spk_udp` extension is
+loaded (`battleTransport: auto`), and keeps the WS relay otherwise.
+
+### 1. Build the client scripts
+
+```bash
+npm install
+npm run build          # emits dist/ (ES modules) — the payload the native runtime loads
+```
+
+### 2. Export the Native project from the LayaAir IDE
+
+LayaNative is delivered through the LayaAir IDE / CLI, not a standalone zip:
+
+1. Install the LayaAir IDE (or CLI) for Windows: <https://layaair.com/3.x/doc/basics/developmentEnvironment/download/readme.html>.
+   The CLI is also on GitHub (`layabox/layaair-cli`, Node 20+):
+   `layaair install 3.4.1` then `layaair build --list-platforms`.
+2. Open this `laya/` directory as a LayaAir project (or point the IDE at the
+   built `dist/`), then **发布 → 导出 Native 工程** for **Windows**.
+3. The export produces a Visual Studio solution (`windows/…`, `LayaBox.slnx`)
+   and an `extension/` folder — this is where the UDP extension is wired in.
+
+> The cross-platform extension mechanism (JSVM + `LayaExtension.h` +
+> `.layaext.json`) requires **LayaAir 3.4.1 or newer**. Older versions only have
+> the deprecated Windows-only extension API.
+
+### 3. Add the `spk_udp` extension
+
+Copy the extension sources into the exported project's `windows/extension/`:
+
+```
+windows/extension/
+  main.cpp          <- native/udp_ext/src/main.cpp
+  udp_socket.h/.cpp <- native/udp_ext/src/udp_socket.{h,cpp}
+  spk_udp.layaext.json
+  extension.vcxproj <- add the two .cpp files to the existing project
+```
+
+Add `udp_socket.cpp` and `main.cpp` to `extension.vcxproj`, build `x64`, and make
+sure the DLL lands next to the descriptor (the export normally copies both
+automatically). Then enable loading in `windows/resource/config.ini`:
+
+```ini
+[common]
+LoadExtension=true
+```
+
+`native/udp_ext/README.md` has the full Windows (MSVC) and Linux build notes,
+plus the JS-facing API.
+
+### 4. Run
+
+Launch the exported `LayaBox.exe` (or the IDE's **Native 预览**). The lobby talks
+to `lobbyWsUrl`; the battle channel opens a raw UDP socket to the endpoint from
+`MatchStartMessage` (`host:<port>`). Because the deployment sits behind NAT, keep
+`battleTransport: auto`/`relay` as a fallback — if the battle server's UDP port
+is not reachable from outside, the client can instead tunnel KCP over
+`ws://host:7350/v1/battle/relay` (Gensoulkyo's relay, `runtime/lobbyws`).
+
+### Extension source layout
+
+```
+native/udp_ext/
+  src/udp_socket.{h,cpp}   portable non-blocking UDP core (no Laya dependency)
+  src/main.cpp             LayaNative entry + JSVM glue -> global `spk_udp`
+  src/udp_selftest.cpp     loopback smoke test for the UDP core
+  include/extension/LayaExtension.h   compile-verification shim (NOT the real header)
+  spk_udp.layaext.json     extension descriptor
+  CMakeLists.txt           Linux/CI build (shim) + selftest
+  README.md                build & wiring instructions
+```
+
+The extension is **poll-based**: JS calls `spk_udp.recvFrom(handle, buffer)` on a
+timer and the extension writes the datagram into the caller's `ArrayBuffer`. That
+avoids cross-thread `post_to_js` marshalling and keeps the JSVM surface to
+ints + ArrayBuffers. `src/platform/native/native_udp_datagram.ts` wraps it as a
+core `DatagramLike`, so `KcpSession` is unchanged.
 
 ## Protocol
 
@@ -191,11 +294,13 @@ Metrics (`snapshotsReceived`, `averagePositionErrorMilli`, `hashMatches`,
 
 ## Test suite
 
-`npm test` runs a zero-dependency runner (`tests/harness.ts`) over 44 tests:
+`npm test` runs a zero-dependency runner (`tests/harness.ts`) over 69 tests:
 deterministic math parity, protobuf round-trips, the battle wire codec,
 boss-race simulation parity, a KCP loopback harness that delivers ordered
-messages under 20 % packet loss, and the matchmaking queue (RPC payload mapping,
-REST routes and the `LobbyFlow` queue actions).
+messages under 20 % packet loss, the matchmaking queue (RPC payload mapping,
+REST routes and the `LobbyFlow` queue actions), the lobby WS envelope
+codec/transport (`lobby_ws_protocol.test.ts`), and the native UDP datagram
+adapter (`native_udp_datagram.test.ts`).
 
 ## Not yet wired
 
@@ -207,10 +312,13 @@ REST routes and the `LobbyFlow` queue actions).
   (`MatchServer::HandleSessionPayload`), so the handshake is not yet enforced
   end-to-end. XChaCha20 is not available in Web Crypto, so only
   ChaCha20-Poly1305 is advertised.
-* **Web battle transport.** Native builds use UDP directly. The browser needs the
-  lobby WebSocket to relay KCP datagrams; `src/platform/web/ws_relay_datagram.ts`
-  implements the client side but **Gensoulkyo does not expose that relay endpoint
-  yet** (`WsRelayDatagramFactory` documents the expected frame shape).
+* **Battle transport.** Native builds open a raw UDP socket through the
+  `spk_udp` LayaNative extension (`src/platform/native/native_udp_datagram.ts`).
+  The browser cannot open UDP, so it tunnels KCP datagrams through
+  `ws://host:7350/v1/battle/relay`; `src/platform/web/ws_relay_datagram.ts`
+  implements the client side and Gensoulkyo's `lobbyws.HandleRelay` implements
+  the server side. `battleTransport` selects the channel (`auto` prefers UDP
+  when `spk_udp` is present).
 * **Matchmaking queue.** `LobbyClient.joinMatchmaking` / `fetchMatchmakingTicket`
   / `cancelMatchmaking` wrap the `matchmaking.join` / `.ticket` / `.cancel` RPCs,
   and `LobbyScene` exposes join / refresh / cancel buttons plus a live queue

@@ -11,6 +11,8 @@ import './battle_codec.test';
 import './boss_race_sim.test';
 import './kcp_loopback.test';
 import './matchmaking.test';
+import './lobby_ws_protocol.test';
+import './native_udp_datagram.test';
 
 import { runAll } from './harness';
 

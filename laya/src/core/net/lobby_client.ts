@@ -7,14 +7,26 @@
  * the transport, so web builds can use the WebSocket relay while native builds
  * use HTTP without duplicating business logic.
  *
- * Wire-format note: the exact WS envelope is not frozen server-side yet
- * (`HandleWSSMessage` takes a `WSSMessage` value, but no `Upgrader` is wired
- * up in `runtime/httpapi`). `WsLobbyTransport` therefore uses the documented
- * request/response JSON shape below and is marked as the integration seam.
+ * Wire-format note: the WS transport speaks Gensoulkyo's lobby WS protocol
+ * (`runtime/lobbyws/protocol.go`): a `{"type", "seq", "payload"}` envelope whose
+ * payload field names follow `lobby.proto` (see `lobby_protocol.ts`). The server
+ * does not echo `seq`, so responses are correlated by message type. Operations
+ * that the WS protocol does not define (matchmaking, battle ticket, replay, …)
+ * are delegated to an optional fallback transport.
  */
 
 import type { Logger, SocketLike } from './transport';
 import { nullLogger } from './transport';
+import {
+  LOBBY_MESSAGE,
+  LOBBY_WS_ROUTES,
+  DEFAULT_VERSION_STAMP,
+  decodeLobbyEnvelope,
+  encodeLobbyEnvelope,
+  errorStatusFromPayload,
+  errorStatusOf,
+  type VersionStamp,
+} from './lobby_protocol';
 
 /** Gensoulkyo `nakamaapi.Response`. */
 export interface LobbyRpcResponse {
@@ -614,18 +626,61 @@ const REST_ROUTES: Record<string, RestRoute> = {
   'replay.get': { method: 'GET', path: (r) => `/v1/replays/${payloadString(r, 'replay_id', 'replayId')}` },
 };
 
+/** Configuration for {@link WsLobbyTransport}. */
+export interface WsLobbyTransportConfig {
+  logger?: Logger;
+  /** Version stamp echoed in every request; defaults to the vendored descriptor. */
+  version?: VersionStamp;
+  platform?: string;
+  clientBuild?: string;
+  /**
+   * Stable anonymous identity used when no session token is available yet. The
+   * lobby WS `AuthRequest` needs a `session_token` or a `user_id`.
+   */
+  userId?: string;
+  /**
+   * Transport used for operations the lobby WS protocol does not define
+   * (matchmaking, battle ticket, replay, …). When omitted those calls fail with
+   * `lobby_ws_unsupported_op`.
+   */
+  fallback?: LobbyTransport;
+  /** Receives pushed `room_state` / `match_start` / `match_result` events. */
+  onEvent?: (event: LobbyEvent) => void;
+}
+
+interface PendingLobbyCall {
+  readonly types: readonly number[];
+  readonly resolve: (response: LobbyRpcResponse) => void;
+}
+
 /**
- * WebSocket transport. Sends `LobbyRpcRequest` JSON frames and correlates
- * `LobbyRpcResponse` frames by `cid`.
- *
- * This is the seam where the web build multiplexes lobby RPC and the battle
- * KCP relay over one socket once Gensoulkyo exposes a WS upgrader.
+ * Lobby WebSocket transport. Speaks the `{"type","seq","payload"}` envelope from
+ * `runtime/lobbyws/protocol.go`; the server does not echo `seq`, so responses
+ * are correlated by message type. Pushed `RoomState` / `MatchStart` /
+ * `MatchResult` envelopes are surfaced through `onEvent`.
  */
 export class WsLobbyTransport implements LobbyTransport {
-  private readonly pending = new Map<string, (response: LobbyRpcResponse) => void>();
+  private readonly pending: PendingLobbyCall[] = [];
+  private readonly listeners: LobbyEventListener[] = [];
+  private readonly logger: Logger;
+  private readonly version: VersionStamp;
+  private readonly platform: string;
+  private readonly clientBuild: string;
+  private readonly fallback: LobbyTransport | null;
+  private readonly userId: string;
+  private sequence = 0;
   private closed = false;
 
-  constructor(private readonly socket: SocketLike, private readonly logger: Logger = nullLogger) {
+  constructor(private readonly socket: SocketLike, config: WsLobbyTransportConfig = {}) {
+    this.logger = config.logger ?? nullLogger;
+    this.version = config.version ?? DEFAULT_VERSION_STAMP;
+    this.platform = config.platform ?? 'web';
+    this.clientBuild = config.clientBuild ?? '0.1.0-draft';
+    this.fallback = config.fallback ?? null;
+    this.userId = config.userId ?? '';
+    if (config.onEvent !== undefined) {
+      this.listeners.push(config.onEvent);
+    }
     this.socket.setHandlers({
       onMessage: (data) => this.handleMessage(data),
       onClose: (code, reason) => this.handleClose(code, reason),
@@ -633,60 +688,253 @@ export class WsLobbyTransport implements LobbyTransport {
     });
   }
 
+  /** Subscribe to pushed lobby events; returns an unsubscribe function. */
+  onEvent(listener: LobbyEventListener): () => void {
+    this.listeners.push(listener);
+    return () => {
+      const index = this.listeners.indexOf(listener);
+      if (index >= 0) {
+        this.listeners.splice(index, 1);
+      }
+    };
+  }
+
   call(request: LobbyRpcRequest): Promise<LobbyRpcResponse> {
+    const route = LOBBY_WS_ROUTES[request.id];
+    if (route === undefined) {
+      if (this.fallback !== null) {
+        return this.fallback.call(request);
+      }
+      return Promise.resolve({ ok: false, status: 0, error_code: `lobby_ws_unsupported_op:${request.id}` });
+    }
     if (this.closed || !this.socket.connected) {
       return Promise.resolve({ ok: false, status: 0, error_code: 'lobby_ws_not_connected' });
     }
-    const cid = request.cid ?? request.id;
+    const payload = this.buildRequestPayload(request.id, request);
+    this.sequence += 1;
+    const frame = encodeLobbyEnvelope(route.requestType, payload, this.sequence);
     return new Promise<LobbyRpcResponse>((resolve) => {
-      this.pending.set(cid, resolve);
-      this.socket.send(JSON.stringify({ ...request, cid }));
+      this.pending.push({ types: route.responseTypes, resolve });
+      this.socket.send(frame);
     });
   }
 
   close(): void {
     this.closed = true;
     this.socket.close();
-    for (const resolve of this.pending.values()) {
-      resolve({ ok: false, status: 0, error_code: 'lobby_ws_closed' });
+    this.rejectAll('lobby_ws_closed');
+  }
+
+  /** Builds the `lobby.proto` payload for a routed operation. */
+  private buildRequestPayload(id: string, request: LobbyRpcRequest): Record<string, unknown> {
+    const payload = request.payload ?? {};
+    const sessionToken = request.session_id ?? stringField(payload, 'session_token', 'sessionToken');
+    const userId =
+      (request.user_id ?? stringField(payload, 'user_id', 'userId', 'device_id', 'deviceId')) || this.userId;
+    const playerId = stringField(payload, 'player_id', 'playerId');
+    const roomCode = stringField(payload, 'room_code', 'roomCode');
+    switch (id) {
+      case 'auth.anonymous':
+        return {
+          version: this.version,
+          session_token: sessionToken,
+          user_id: userId,
+          platform: this.platform,
+          client_build: this.clientBuild,
+        };
+      case 'bootstrap':
+        return {
+          version: this.version,
+          session_token: sessionToken,
+          user_id: userId,
+          known_ruleset_version: stringField(payload, 'known_ruleset_version', 'knownRulesetVersion'),
+        };
+      case 'rooms.create':
+        return {
+          version: this.version,
+          room_code: roomCode,
+          mode_id: stringField(payload, 'mode_id', 'modeId'),
+          host_user_id: stringField(payload, 'host_user_id', 'hostUserId') || userId,
+          loadout: loadoutPayload(userId, playerId, payload),
+          mode_params: stringRecordField(payload, 'mode_params', 'modeParams'),
+        };
+      case 'rooms.join':
+        return {
+          version: this.version,
+          room_code: roomCode,
+          user_id: userId,
+          player_id: playerId,
+          loadout: loadoutPayload(userId, playerId, payload),
+        };
+      case 'rooms.leave':
+        return {
+          version: this.version,
+          room_code: roomCode,
+          user_id: userId,
+          player_id: playerId,
+          reason: stringField(payload, 'reason') || 'client_left',
+        };
+      default:
+        return {};
     }
-    this.pending.clear();
   }
 
   private handleMessage(data: string | Uint8Array): void {
     const text = typeof data === 'string' ? data : decodeUtf8Loose(data);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      this.logger.warn('lobby ws: dropped non-JSON frame');
+    const envelope = decodeLobbyEnvelope(text);
+    if (envelope === null) {
+      this.logger.warn('lobby ws: dropped non-envelope frame');
       return;
     }
-    if (!isRecord(parsed)) {
+    const type = envelope.type;
+    if (type === LOBBY_MESSAGE.Error) {
+      const status = errorStatusFromPayload(envelope.payload);
+      const pending = this.pending.shift();
+      if (pending !== undefined) {
+        pending.resolve({ ok: false, status: 0, error_code: status.code, message: status.message });
+      } else {
+        this.logger.warn(`lobby ws error: ${status.code} ${status.message}`);
+      }
       return;
     }
-    const cid = stringField(parsed, 'cid');
-    const resolve = this.pending.get(cid);
-    if (resolve === undefined) {
-      return;
+    const index = this.pending.findIndex((entry) => entry.types.includes(type));
+    if (index >= 0) {
+      const [pending] = this.pending.splice(index, 1);
+      const error = errorStatusOf(envelope.payload);
+      if (error !== null) {
+        pending.resolve({ ok: false, status: 0, error_code: error.code, message: error.message });
+      } else {
+        pending.resolve({ ok: true, status: 200, payload: envelope.payload });
+      }
     }
-    this.pending.delete(cid);
-    resolve({
-      ok: booleanField(parsed, 'ok'),
-      status: numberField(parsed, 'status'),
-      error_code: stringField(parsed, 'error_code', 'errorCode') || undefined,
-      message: stringField(parsed, 'message') || undefined,
-      payload: parsed.payload,
-    });
+    this.handlePush(type, envelope.payload);
+  }
+
+  private handlePush(type: number, payload: unknown): void {
+    switch (type) {
+      case LOBBY_MESSAGE.RoomState:
+        this.emit({ kind: 'room_state', room: roomViewFromState(payload) });
+        break;
+      case LOBBY_MESSAGE.MatchStart:
+        this.emit(matchStartEvent(payload));
+        break;
+      case LOBBY_MESSAGE.MatchResult:
+        this.emit({ kind: 'match_result', result: matchResultView(payload) });
+        break;
+      default:
+        break;
+    }
   }
 
   private handleClose(code: number, reason: string): void {
     this.closed = true;
-    for (const resolve of this.pending.values()) {
-      resolve({ ok: false, status: 0, error_code: `lobby_ws_closed:${code}:${reason}` });
-    }
-    this.pending.clear();
+    this.rejectAll(`lobby_ws_closed:${code}:${reason}`);
+    this.emit({ kind: 'transport_closed', reason: `${code}:${reason}` });
   }
+
+  private rejectAll(errorCode: string): void {
+    for (const pending of this.pending) {
+      pending.resolve({ ok: false, status: 0, error_code: errorCode });
+    }
+    this.pending.length = 0;
+  }
+
+  private emit(event: LobbyEvent): void {
+    for (const listener of this.listeners) {
+      listener(event);
+    }
+  }
+}
+
+function loadoutPayload(userId: string, playerId: string, payload: Record<string, unknown>): Record<string, unknown> {
+  return {
+    user_id: stringField(payload, 'user_id', 'userId') || userId,
+    player_id: stringField(payload, 'player_id', 'playerId') || playerId,
+    character_id: stringField(payload, 'character_id', 'characterId'),
+    stage_id: stringField(payload, 'stage_id', 'stageId'),
+    rating_code: stringField(payload, 'rating_code', 'ratingCode'),
+  };
+}
+
+function stringRecordField(source: Record<string, unknown>, ...keys: string[]): Record<string, string> {
+  for (const key of keys) {
+    const value = source[key];
+    if (isRecord(value)) {
+      const out: Record<string, string> = {};
+      for (const [entryKey, entryValue] of Object.entries(value)) {
+        if (typeof entryValue === 'string') {
+          out[entryKey] = entryValue;
+        }
+      }
+      return out;
+    }
+  }
+  return {};
+}
+
+function numberRecordField(source: Record<string, unknown>, ...keys: string[]): Record<string, number> {
+  for (const key of keys) {
+    const value = source[key];
+    if (isRecord(value)) {
+      const out: Record<string, number> = {};
+      for (const [entryKey, entryValue] of Object.entries(value)) {
+        if (typeof entryValue === 'number') {
+          out[entryKey] = entryValue;
+        }
+      }
+      return out;
+    }
+  }
+  return {};
+}
+
+/** `RoomStateMessage` payload → the client-facing room view. */
+export function roomViewFromState(payload: unknown): RoomView {
+  const source = isRecord(payload) ? payload : {};
+  return {
+    roomCode: stringField(source, 'room_code', 'roomCode'),
+    hostUserId: stringField(source, 'host_user_id', 'hostUserId'),
+    modeId: stringField(source, 'mode_id', 'modeId'),
+    allReady: booleanField(source, 'all_ready', 'allReady'),
+    rulesetVersion: stringField(source, 'ruleset_version', 'rulesetVersion'),
+    players: Array.isArray(source.players)
+      ? source.players.filter(isRecord).map((player) => ({
+          userId: stringField(player, 'user_id', 'userId'),
+          playerId: stringField(player, 'player_id', 'playerId'),
+          displayName: stringField(player, 'display_name', 'displayName'),
+          ready: booleanField(player, 'ready'),
+          host: booleanField(player, 'host'),
+          connected: booleanField(player, 'connected'),
+          characterId: stringField(player, 'character_id', 'characterId'),
+        }))
+      : [],
+  };
+}
+
+/** `MatchStartMessage` payload → a `match_start` event. */
+export function matchStartEvent(payload: unknown): LobbyEvent {
+  const source = isRecord(payload) ? payload : {};
+  return {
+    kind: 'match_start',
+    matchId: stringField(source, 'match_id', 'matchId'),
+    serverSeedHex: stringField(source, 'server_seed_hex', 'serverSeedHex') || hexField(source, 'server_seed', 'serverSeed'),
+    endpoint: stringField(source, 'endpoint'),
+    playerIds: stringArrayField(source, 'player_ids', 'playerIds'),
+  };
+}
+
+/** `MatchResultMessage` payload → the client-facing result view. */
+export function matchResultView(payload: unknown): MatchResultView {
+  const source = isRecord(payload) ? payload : {};
+  return {
+    matchId: stringField(source, 'match_id', 'matchId'),
+    winnerPlayerId: stringField(source, 'winner_player_id', 'winnerPlayerId'),
+    points: numberRecordField(source, 'points'),
+    replayId: stringField(source, 'replay_id', 'replayId'),
+    serverAuthoritative: booleanField(source, 'server_authoritative', 'serverAuthoritative'),
+    modeId: stringField(source, 'mode_id', 'modeId'),
+    settledAtMs: numberField(source, 'settled_at_ms', 'settledAtMs'),
+  };
 }
 
 // ---------------------------------------------------------------------------

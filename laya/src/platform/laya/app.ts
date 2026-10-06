@@ -31,6 +31,10 @@ export interface ClientConfig {
   socketFactory: SocketFactory;
   /** Datagram factory for the battle channel. */
   datagramFactory: DatagramFactory;
+  /** Stable anonymous identity used when the lobby WS has no session token yet. */
+  deviceId?: string;
+  /** Build id reported to the lobby on auth. */
+  clientBuild?: string;
   timer?: TimerLike;
   logger?: Logger;
 }
@@ -51,12 +55,23 @@ export class SpellKardApp {
   constructor(config: ClientConfig) {
     this.timer = config.timer ?? new LayaTimer();
 
+    const httpTransport = new HttpLobbyTransport(new FetchHttpClient(config.lobbyHttpBase));
     const lobbyTransport =
       config.lobbyWsUrl !== ''
-        ? new WsLobbyTransport(config.socketFactory.connect(config.lobbyWsUrl), config.logger)
-        : new HttpLobbyTransport(new FetchHttpClient(config.lobbyHttpBase));
+        ? new WsLobbyTransport(config.socketFactory.connect(config.lobbyWsUrl), {
+            logger: config.logger,
+            platform: 'laya',
+            clientBuild: config.clientBuild,
+            userId: config.deviceId,
+            fallback: httpTransport,
+          })
+        : httpTransport;
 
     this.lobbyClient = new LobbyClient({ transport: lobbyTransport, logger: config.logger });
+    if (lobbyTransport instanceof WsLobbyTransport) {
+      // Pushed room state / match start / match result arrive out-of-band.
+      lobbyTransport.onEvent((event) => this.lobbyClient.dispatchEvent(event));
+    }
     this.flow = new LobbyFlow(this.lobbyClient);
     this.battleClient = new BattleClient({
       datagramFactory: config.datagramFactory,

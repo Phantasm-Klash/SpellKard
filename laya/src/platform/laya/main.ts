@@ -13,10 +13,12 @@
  *   index.html?lobbyHttpBase=https://lobby.example&lobbyWsUrl=wss://lobby.example/ws
  */
 
-import { OfflineDatagramFactory, type DatagramFactory, type Logger, type SocketFactory } from '../../core/net/transport';
+import { OfflineDatagramFactory, type DatagramFactory, type Logger, type SocketFactory, type TimerLike } from '../../core/net/transport';
+import { NativeUdpDatagramFactory, resolveNativeUdpModule } from '../native/native_udp_datagram';
 import { RelayDatagramFactory } from '../web/ws_relay_datagram';
 import { SpellKardApp } from './app';
 import { LayaSocketFactory } from './laya_socket';
+import { LayaTimer } from './laya_timer';
 
 export interface BrowserRuntimeConfig {
   stageWidth: number;
@@ -27,6 +29,12 @@ export interface BrowserRuntimeConfig {
   lobbyWsUrl: string;
   /** WebSocket relay that tunnels battle KCP datagrams. Empty = offline battle. */
   relayUrl: string;
+  /**
+   * Battle channel: `relay` tunnels KCP over the lobby WebSocket (web), `udp`
+   * uses the native `spk_udp` extension (LayaNative). `auto` picks `udp` when
+   * the extension is loaded, otherwise `relay`.
+   */
+  battleTransport: 'auto' | 'relay' | 'udp';
   backgroundColor: string;
 }
 
@@ -42,6 +50,7 @@ const DEFAULT_CONFIG: BrowserRuntimeConfig = {
   lobbyHttpBase: '',
   lobbyWsUrl: '',
   relayUrl: '',
+  battleTransport: 'auto',
   backgroundColor: '#0b0716',
 };
 
@@ -57,6 +66,13 @@ function pickString(value: string | null, fallback: string): string {
   return value === null ? fallback : value;
 }
 
+function pickBattleTransport(value: string | null, fallback: BrowserRuntimeConfig['battleTransport']): BrowserRuntimeConfig['battleTransport'] {
+  if (value === 'relay' || value === 'udp' || value === 'auto') {
+    return value;
+  }
+  return fallback;
+}
+
 /** Merges `index.html` globals with URL query overrides. */
 export function resolveRuntimeConfig(search = window.location.search): BrowserRuntimeConfig {
   const fromWindow = window.PHANTASM_KLASH_CONFIG ?? {};
@@ -67,12 +83,29 @@ export function resolveRuntimeConfig(search = window.location.search): BrowserRu
     lobbyHttpBase: pickString(params.get('lobbyHttpBase'), fromWindow.lobbyHttpBase ?? DEFAULT_CONFIG.lobbyHttpBase),
     lobbyWsUrl: pickString(params.get('lobbyWsUrl'), fromWindow.lobbyWsUrl ?? DEFAULT_CONFIG.lobbyWsUrl),
     relayUrl: pickString(params.get('relayUrl'), fromWindow.relayUrl ?? DEFAULT_CONFIG.relayUrl),
+    battleTransport: pickBattleTransport(
+      params.get('battleTransport'),
+      fromWindow.battleTransport ?? DEFAULT_CONFIG.battleTransport,
+    ),
     backgroundColor: pickString(params.get('backgroundColor'), fromWindow.backgroundColor ?? DEFAULT_CONFIG.backgroundColor),
   };
 }
 
-/** A `DatagramFactory` that opens the WS-relay KCP tunnel used by web builds. */
-function datagramFactoryFor(config: BrowserRuntimeConfig, sockets: SocketFactory): DatagramFactory {
+/**
+ * Chooses the battle datagram channel. Native builds prefer the `spk_udp`
+ * extension; web builds tunnel KCP through the lobby WebSocket relay. When the
+ * relay is not configured either way, the battle channel stays offline.
+ */
+function datagramFactoryFor(
+  config: BrowserRuntimeConfig,
+  sockets: SocketFactory,
+  timer: TimerLike,
+): DatagramFactory {
+  const nativeModule = resolveNativeUdpModule();
+  const wantsUdp = config.battleTransport === 'udp' || (config.battleTransport === 'auto' && nativeModule !== null);
+  if (wantsUdp && nativeModule !== null) {
+    return new NativeUdpDatagramFactory(nativeModule, timer);
+  }
   if (config.relayUrl === '') {
     // No relay configured: the lobby still runs, the battle channel stays offline.
     return new OfflineDatagramFactory();
@@ -105,6 +138,7 @@ export async function bootstrap(config: BrowserRuntimeConfig = resolveRuntimeCon
   Laya.stage.frameRate = 60;
 
   const sockets = new LayaSocketFactory();
+  const timer = new LayaTimer();
   const app = new SpellKardApp({
     stageWidth: config.stageWidth,
     stageHeight: config.stageHeight,
@@ -112,7 +146,8 @@ export async function bootstrap(config: BrowserRuntimeConfig = resolveRuntimeCon
     lobbyWsUrl: config.lobbyWsUrl,
     relayUrl: config.relayUrl,
     socketFactory: sockets,
-    datagramFactory: datagramFactoryFor(config, sockets),
+    datagramFactory: datagramFactoryFor(config, sockets, timer),
+    timer,
     logger: consoleLogger,
   });
   app.start();
