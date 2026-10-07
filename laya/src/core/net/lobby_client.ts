@@ -43,6 +43,7 @@ export interface LobbyRpcRequest {
   cid?: string;
   session_id?: string;
   user_id?: string;
+  device_id?: string;
   display_name?: string;
   payload?: Record<string, unknown>;
 }
@@ -71,6 +72,7 @@ export interface LobbyClientConfig {
   logger?: Logger;
   clientBuild?: string;
   platform?: string;
+  deviceId?: string;
 }
 
 export interface SessionState {
@@ -166,6 +168,7 @@ export class LobbyClient {
   private readonly logger: Logger;
   private readonly clientBuild: string;
   private readonly platform: string;
+  private readonly deviceId: string;
   private readonly listeners: LobbyEventListener[] = [];
   private sequence = 0;
 
@@ -182,6 +185,7 @@ export class LobbyClient {
     this.logger = config.logger ?? nullLogger;
     this.clientBuild = config.clientBuild ?? '0.1.0-draft';
     this.platform = config.platform ?? 'web';
+    this.deviceId = config.deviceId ?? '';
   }
 
   onEvent(listener: LobbyEventListener): () => void {
@@ -222,6 +226,9 @@ export class LobbyClient {
       cid: this.nextCid(),
       payload,
     };
+    if (this.deviceId !== '') {
+      request.device_id = this.deviceId;
+    }
     if (this.session !== null) {
       request.session_id = this.session.sessionToken;
       request.user_id = this.session.userId;
@@ -246,6 +253,7 @@ export class LobbyClient {
   /** `auth.anonymous` / `POST /v1/auth/anonymous`. */
   async loginAnonymous(displayName = 'Player'): Promise<SessionState | null> {
     const response = await this.call('auth.anonymous', {
+      device_id: this.deviceId,
       display_name: displayName,
       platform: this.platform,
       client_build: this.clientBuild,
@@ -578,6 +586,125 @@ export class HttpLobbyTransport implements LobbyTransport {
   close(): void {
     // HTTP is stateless; nothing to release.
   }
+}
+
+/**
+ * Nakama HTTP RPC transport.
+ *
+ * Nakama's `/v2/rpc/<id>?unwrap=true` endpoint accepts a JSON string as its
+ * RPC payload. `HttpClient` implementations serialize their request body, so
+ * this transport deliberately passes `JSON.stringify(payload)` as the body;
+ * the platform adapter then performs the outer JSON serialization required on
+ * the wire. Auth uses the HTTP key until `auth.anonymous` returns a session
+ * token, after which the token is sent as a Bearer credential.
+ *
+ * This class does not create or alter the business envelope. Authenticated
+ * callers must provide the envelope fields in the request payload so the
+ * server-side replay and authority guard remains the single source of truth.
+ */
+export class NakamaLobbyTransport implements LobbyTransport {
+  private sessionToken: string;
+
+  constructor(
+    private readonly http: HttpClient,
+    private readonly options: NakamaLobbyTransportOptions = {},
+  ) {
+    this.sessionToken = options.sessionToken ?? '';
+  }
+
+  async call(request: LobbyRpcRequest): Promise<LobbyRpcResponse> {
+    const rpcId = request.id.trim();
+    if (rpcId === '') {
+      return { ok: false, status: 400, error_code: 'nakama_rpc_id_missing' };
+    }
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    };
+    if (this.sessionToken !== '') {
+      headers.Authorization = `Bearer ${this.sessionToken}`;
+    } else if ((this.options.httpKey ?? '') !== '') {
+      headers.Authorization = `Basic ${encodeBasicAuth(`${this.options.httpKey ?? ''}:`)}`;
+    }
+    const response = await this.http.request(
+      'POST',
+      `/v2/rpc/${encodeURIComponent(rpcId)}?unwrap=true`,
+      JSON.stringify(request.payload ?? {}),
+      headers,
+    );
+    const result = nakamaResponse(response);
+    if (result.ok && rpcId === 'auth.anonymous' && isRecord(result.payload)) {
+      const token = stringField(result.payload, 'session_token', 'sessionToken');
+      if (token !== '') {
+        this.sessionToken = token;
+      }
+    }
+    return result;
+  }
+
+  close(): void {
+    // HTTP is stateless; nothing to release.
+  }
+}
+
+export interface NakamaLobbyTransportOptions {
+  /** Nakama runtime HTTP key used before an authenticated session exists. */
+  httpKey?: string;
+  /** Optional existing Nakama session token, useful after a cold restart. */
+  sessionToken?: string;
+}
+
+function nakamaResponse(response: HttpResponseLike): LobbyRpcResponse {
+  const body = response.body;
+  const statusOk = response.status >= 200 && response.status < 300;
+  if (!isRecord(body)) {
+    return {
+      ok: statusOk,
+      status: response.status,
+      error_code: statusOk ? undefined : `nakama_http_${response.status}`,
+      payload: statusOk ? body : undefined,
+    };
+  }
+  if (body.ok === false || !statusOk) {
+    return {
+      ok: false,
+      status: response.status,
+      error_code: stringField(body, 'error_code', 'errorCode', 'code') || `nakama_http_${response.status}`,
+      message: stringField(body, 'message'),
+      payload: body.payload,
+    };
+  }
+  return {
+    ok: statusOk,
+    status: response.status,
+    error_code: stringField(body, 'error_code', 'errorCode') || undefined,
+    message: stringField(body, 'message') || undefined,
+    // `unwrap=true` returns the operation payload directly. The fallback also
+    // accepts a wrapped response so local proxies remain compatible.
+    payload: body.payload ?? body,
+  };
+}
+
+function encodeBasicAuth(value: string): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let result = '';
+  let buffer = 0;
+  let bits = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    buffer = (buffer << 8) | value.charCodeAt(index);
+    bits += 8;
+    while (bits >= 6) {
+      bits -= 6;
+      result += alphabet[(buffer >> bits) & 0x3f];
+    }
+  }
+  if (bits > 0) {
+    result += alphabet[(buffer << (6 - bits)) & 0x3f];
+  }
+  while (result.length % 4 !== 0) {
+    result += '=';
+  }
+  return result;
 }
 
 interface RestRoute {
