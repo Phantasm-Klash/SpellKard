@@ -37,6 +37,12 @@ export interface BulletRenderItem {
   patternId: string;
   position: RenderPoint;
   radius: number;
+  /**
+   * Travel direction in radians (0 = +x, +y is screen-down). Renderers use it
+   * to orient directional art (arrowheads, laser capsules, trail dots); it is
+   * `NaN`-free because bullets always carry a non-zero velocity.
+   */
+  angleRad: number;
   /** Bullets owned by the local player's Boss copy vs. the opponent's. */
   ownerIsLocal: boolean;
 }
@@ -156,6 +162,9 @@ export function buildBossRaceFrame(
     patternId: bullet.patternId,
     position: transform.toPixels(bullet.xMilli, bullet.yMilli),
     radius: Math.max(1, transform.radiusToPixels(bullet.radiusMilli) * bulletRadiusScale),
+    // Velocity is integer milli-units; atan2 stays finite as long as the bullet
+    // is actually moving, which the simulation guarantees.
+    angleRad: Math.atan2(bullet.vyMilli, bullet.vxMilli),
     ownerIsLocal: bullet.ownerPlayerId === options.localPlayerId,
   }));
 

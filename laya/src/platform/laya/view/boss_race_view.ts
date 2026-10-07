@@ -7,23 +7,25 @@
  * draw calls later without touching the frame model.
  *
  * This is a thin adapter: all coordinates and colour decisions come from
- * `core/game/boss_race_view_model`.
+ * `core/game/boss_race_view_model`; the actual shapes live in the sibling
+ * `arena` (field + actors), `bullets` (curtain) and `hud` (status strip)
+ * modules, so this file stays a layer-ordering skeleton with object pools.
  */
 
 import type { BossRaceFrame, PlayfieldLayout, RenderPoint } from '../../../core/game/boss_race_view_model';
+import { drawBoss, drawPlayfield, drawPlayer } from './arena';
+import { vectorBulletRenderer } from './bullets';
+import { drawHudBar, type HudState } from './hud';
+import * as theme from './theme';
 
-const COLOR_BACKGROUND = '#0a0713';
-const COLOR_PLAYFIELD = '#150c22';
-const COLOR_BORDER = '#4a3a6a';
-const COLOR_LOCAL_BULLET = '#7fd4ff';
-const COLOR_OPPONENT_BULLET = '#ff8fb1';
-const COLOR_PLAYER = '#ffffff';
-const COLOR_LOCAL_PLAYER = '#ffe36e';
-const COLOR_BOSS = '#c46bff';
-const COLOR_BOSS_DEFEATED = '#4b3a63';
-const COLOR_HUD = '#e8e2ff';
-const COLOR_HP_BAR = '#59e08a';
-const COLOR_HP_BACK = '#331e3f';
+const COLOR_BACKGROUND = theme.COLOR_BACKGROUND;
+const COLOR_HUD = theme.COLOR_HUD;
+
+/** Pixel radius of a Boss copy: the local one reads larger than the rival's. */
+const BOSS_RADIUS_LOCAL = 22;
+const BOSS_RADIUS_RIVAL = 16;
+/** Pixel radius of the player ship hitbox. */
+const PLAYER_RADIUS = 4;
 
 export interface BossRaceViewOptions {
   layout: PlayfieldLayout;
@@ -38,6 +40,7 @@ export class BossRaceView {
   private readonly playfield: Laya.Sprite;
   private readonly bulletLayer: Laya.Sprite;
   private readonly actorLayer: Laya.Sprite;
+  private readonly hudLayer: Laya.Sprite;
   private readonly hud: Laya.Text;
   private readonly bulletPool: Laya.Sprite[] = [];
   private readonly actorPool: Laya.Sprite[] = [];
@@ -57,14 +60,19 @@ export class BossRaceView {
 
     this.playfield = new Laya.Sprite();
     this.playfield.pos(0, 0);
-    this.playfield.graphics.drawRect(0, 0, this.layout.width, this.layout.height, COLOR_PLAYFIELD);
-    this.playfield.graphics.drawRect(0, 0, this.layout.width, this.layout.height, null, COLOR_BORDER, 2);
+    drawPlayfield(this.playfield.graphics, this.layout.width, this.layout.height);
     this.root.addChild(this.playfield);
 
     this.bulletLayer = new Laya.Sprite();
     this.actorLayer = new Laya.Sprite();
     this.root.addChild(this.bulletLayer);
     this.root.addChild(this.actorLayer);
+
+    // Structured HUD strip. It can render either as vector bars (`hudState`) or
+    // as a plain text block (`hudLines`); both target the same region.
+    this.hudLayer = new Laya.Sprite();
+    this.hudLayer.pos(0, this.layout.height);
+    this.root.addChild(this.hudLayer);
 
     this.hud = new Laya.Text();
     this.hud.pos(8, this.layout.height + 8);
@@ -80,11 +88,27 @@ export class BossRaceView {
     return this.layout.height;
   }
 
-  /** Redraws the whole frame. `hudLines` are rendered verbatim in the HUD block. */
-  render(frame: BossRaceFrame, hudLines: string[] = []): void {
+  /**
+   * Redraws the whole frame.
+   *
+   * @param hudLines  plain-text HUD lines, rendered verbatim (legacy contract)
+   * @param hudState  when given, the HUD strip is drawn as vector bars instead
+   *                  of text; `hudLines` is then ignored
+   */
+  render(frame: BossRaceFrame, hudLines: string[] = [], hudState?: HudState): void {
     this.drawBullets(frame);
     this.drawActors(frame);
-    this.hud.text = hudLines.join('\n');
+    if (hudState !== undefined) {
+      this.hud.text = '';
+      this.hud.visible = false;
+      this.hudLayer.visible = true;
+      this.hudLayer.graphics.clear();
+      drawHudBar(this.hudLayer.graphics, 0, 0, this.layout.width, this.hudHeight, hudState);
+    } else {
+      this.hudLayer.visible = false;
+      this.hud.text = hudLines.join('\n');
+      this.hud.visible = true;
+    }
   }
 
   destroy(): void {
@@ -97,9 +121,17 @@ export class BossRaceView {
       const sprite = this.bulletSprite(this.activeBullets);
       sprite.visible = true;
       sprite.pos(bullet.position.x, bullet.position.y);
-      const radius = bullet.radius;
       sprite.graphics.clear();
-      sprite.graphics.drawCircle(0, 0, radius, bullet.ownerIsLocal ? COLOR_LOCAL_BULLET : COLOR_OPPONENT_BULLET);
+      // Pattern-specific vector art (orb / arrow / laser / streak); `angleRad`
+      // orients the directional families and `tick` drives the animation.
+      vectorBulletRenderer.draw(
+        sprite.graphics,
+        bullet.patternId,
+        bullet.radius,
+        bullet.ownerIsLocal,
+        bullet.angleRad,
+        frame.tick,
+      );
       this.activeBullets += 1;
     }
     for (let i = this.activeBullets; i < this.bulletPool.length; i += 1) {
@@ -110,22 +142,20 @@ export class BossRaceView {
   private drawActors(frame: BossRaceFrame): void {
     this.activeActors = 0;
 
+    // Draw the rival Boss first so the local copy stays on top.
     if (frame.opponentBoss !== null) {
-      this.drawBoss(frame.opponentBoss.position, frame.opponentBoss.defeated, false, frame.opponentBoss.hpRatio);
+      this.drawBoss(frame.opponentBoss.position, frame.opponentBoss.defeated, false, frame.opponentBoss.hpRatio, frame.tick);
     }
     if (frame.boss !== null) {
-      this.drawBoss(frame.boss.position, frame.boss.defeated, true, frame.boss.hpRatio);
+      this.drawBoss(frame.boss.position, frame.boss.defeated, true, frame.boss.hpRatio, frame.tick);
     }
     for (const player of frame.players) {
       const sprite = this.actorSprite(this.activeActors);
       sprite.visible = true;
       sprite.pos(player.position.x, player.position.y);
       sprite.graphics.clear();
-      if (player.isLocal) {
-        sprite.graphics.drawCircle(0, 0, 4, COLOR_LOCAL_PLAYER, COLOR_PLAYER, 1);
-      } else {
-        sprite.graphics.drawCircle(0, 0, 3, COLOR_PLAYER);
-      }
+      // `PlayerRenderItem` carries no facing yet, so ships default to +x.
+      drawPlayer(sprite.graphics, PLAYER_RADIUS, player.isLocal, false, 0);
       this.activeActors += 1;
     }
     for (let i = this.activeActors; i < this.actorPool.length; i += 1) {
@@ -133,25 +163,12 @@ export class BossRaceView {
     }
   }
 
-  private drawBoss(position: RenderPoint, defeated: boolean, isLocal: boolean, hpRatio: number): void {
+  private drawBoss(position: RenderPoint, defeated: boolean, isLocal: boolean, hpRatio: number, tick: number): void {
     const sprite = this.actorSprite(this.activeActors);
     sprite.visible = true;
     sprite.pos(position.x, position.y);
     sprite.graphics.clear();
-    sprite.graphics.drawCircle(
-      0,
-      0,
-      isLocal ? 22 : 16,
-      defeated ? COLOR_BOSS_DEFEATED : COLOR_BOSS,
-      COLOR_BORDER,
-      2,
-    );
-    if (isLocal) {
-      // Local Boss HP bar, so the race is readable at a glance.
-      const barWidth = 48;
-      sprite.graphics.drawRect(-barWidth / 2, 30, barWidth, 4, COLOR_HP_BACK);
-      sprite.graphics.drawRect(-barWidth / 2, 30, Math.max(0, barWidth * hpRatio), 4, COLOR_HP_BAR);
-    }
+    drawBoss(sprite.graphics, isLocal ? BOSS_RADIUS_LOCAL : BOSS_RADIUS_RIVAL, hpRatio, defeated, isLocal, tick);
     this.activeActors += 1;
   }
 

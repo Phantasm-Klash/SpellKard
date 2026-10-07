@@ -20,6 +20,7 @@ import {
 } from '../../../core/sim/boss_race';
 import type { LayaInput } from '../laya_input';
 import { BossRaceView } from '../view/boss_race_view';
+import type { HudState } from '../view/hud';
 import type { ClientScene } from './scene';
 
 export interface BattleSceneOptions {
@@ -33,6 +34,13 @@ export interface BattleSceneOptions {
   bossMaxHp: number;
   onMatchEnd?: (winnerPlayerId: string) => void;
 }
+
+/**
+ * Height reserved for the HUD strip below the playfield. Tall enough for the
+ * structured HUD's label / bar / value / damage rows plus the footer line, with
+ * padding — see `drawHudBar`.
+ */
+const HUD_HEIGHT = 108;
 
 export class BattleScene implements ClientScene {
   readonly root: Laya.Sprite;
@@ -52,8 +60,8 @@ export class BattleScene implements ClientScene {
     this.root.visible = false;
 
     this.view = new BossRaceView({
-      layout: { width: options.width, height: options.height - 80 },
-      hudHeight: 80,
+      layout: { width: options.width, height: options.height - HUD_HEIGHT },
+      hudHeight: HUD_HEIGHT,
     });
     this.root.addChild(this.view.root);
 
@@ -84,6 +92,11 @@ export class BattleScene implements ClientScene {
 
   get currentFrame(): BossRaceFrame | null {
     return this.frame;
+  }
+
+  /** Debug-only: direct view access for the local screenshot harness. */
+  get __debugView(): BossRaceView {
+    return this.view;
   }
 
   /** Starts the fixed-tick loop at the battle client's tick rate. */
@@ -137,13 +150,51 @@ export class BattleScene implements ClientScene {
       return;
     }
     this.frame = buildBossRaceFrame(source, {
-      layout: { width: this.options.width, height: this.options.height - 80 },
+      layout: { width: this.options.width, height: this.options.height - HUD_HEIGHT },
       localPlayerId: this.options.localPlayerId(),
       bossMaxHp: this.options.bossMaxHp,
     });
-    this.view.render(this.frame, this.hudLines(source));
+    this.view.render(this.frame, this.hudLines(source), this.hudState(source));
   }
 
+  /**
+   * Assembles the structured HUD state consumed by the vector HUD strip. The
+   * string rows from `hudLines` remain the fallback; this richer shape lets the
+   * view draw bars and badges instead of monospaced text.
+   */
+  private hudState(snapshot: BossRaceSnapshot): HudState {
+    const metrics = this.options.battle.metrics;
+    const local = snapshot.players.find((player) => player.playerId === this.options.localPlayerId());
+    const opponent = snapshot.players.find((player) => player.playerId !== this.options.localPlayerId());
+    const maxHp = this.options.bossMaxHp > 0 ? this.options.bossMaxHp : 1;
+    const hashTotal = metrics.hashMatches + metrics.hashMismatches;
+    return {
+      localHpRatio: Math.max(0, Math.min(1, (local?.bossCurrentHp ?? 0) / maxHp)),
+      rivalHpRatio: Math.max(0, Math.min(1, (opponent?.bossCurrentHp ?? 0) / maxHp)),
+      bossMaxHp: this.options.bossMaxHp,
+      localHp: local?.bossCurrentHp ?? 0,
+      rivalHp: opponent?.bossCurrentHp ?? 0,
+      damageDealt: local?.damageDealt ?? 0,
+      tick: snapshot.tick,
+      stateName: BossRaceState[snapshot.state] ?? String(snapshot.state),
+      patternId: patternFor(snapshot.tick),
+      bullets: snapshot.bullets.length,
+      connectionLabel: this.authoritative === null ? 'predicted' : 'server',
+      metricsLine: `snaps ${metrics.snapshotsReceived} · err ${metrics.averagePositionErrorMilli.toFixed(0)} · hash ${metrics.hashMatches}/${hashTotal} · snap ${metrics.hardSnaps}`,
+    };
+  }
+
+  /**
+   * Builds the HUD text block returned to `BossRaceView.render(frame, hudLines)`.
+   *
+   * The contract stays a `string[]` (the view renders it verbatim), but the rows
+   * are now laid out as aligned `LABEL  value` columns so the eye can scan down a
+   * column instead of parsing one long line. Row order is by importance:
+   *   1. Boss HP / damage / rival HP  — the race outcome, kept first and loudest
+   *   2. connection + tick + state + pattern
+   *   3. input + bullet count
+   *   4. reconciliation metrics (network health)
+   */
   private hudLines(snapshot: BossRaceSnapshot): string[] {
     const battle = this.options.battle;
     const raw = this.options.input.snapshot();
@@ -152,17 +203,22 @@ export class BattleScene implements ClientScene {
     const local = snapshot.players.find((player) => player.playerId === this.options.localPlayerId());
     const opponent = snapshot.players.find((player) => player.playerId !== this.options.localPlayerId());
     const source = this.authoritative === null ? 'predicted' : 'server';
+    const inputs = [describeDirectionBits(rawToBits(raw)), raw.shoot ? 'shoot' : '', raw.slow ? 'focus' : '']
+      .filter((value) => value !== '')
+      .join(' ');
+    const hashTotal = metrics.hashMatches + metrics.hashMismatches;
     return [
-      `${source} · tick ${snapshot.tick} · ${stateName} · pattern ${patternFor(snapshot.tick)}`,
-      `Boss HP ${local?.bossCurrentHp ?? '-'}/${this.options.bossMaxHp} · damage ${local?.damageDealt ?? 0}` +
-        ` · rival HP ${opponent?.bossCurrentHp ?? '-'}`,
-      `bullets ${snapshot.bullets.length} · input ${describeDirectionBits(rawToBits(raw))}` +
-        `${raw.shoot ? ' +shoot' : ''}${raw.slow ? ' +focus' : ''}`,
-      `snapshots ${metrics.snapshotsReceived} · err ${metrics.averagePositionErrorMilli.toFixed(0)}` +
-        ` · hash ${metrics.hashMatches}/${metrics.hashMatches + metrics.hashMismatches}` +
-        ` · hardSnap ${metrics.hardSnaps}`,
+      row('BOSS', `HP ${local?.bossCurrentHp ?? '-'}/${this.options.bossMaxHp}`, `dmg ${local?.damageDealt ?? 0}`, `rival ${opponent?.bossCurrentHp ?? '-'}`),
+      row('NET', source, `tick ${snapshot.tick}`, stateName, `pattern ${patternFor(snapshot.tick)}`),
+      row('FP', `bullets ${snapshot.bullets.length}`, inputs),
+      row('SYNC', `snaps ${metrics.snapshotsReceived}`, `err ${metrics.averagePositionErrorMilli.toFixed(0)}`, `hash ${metrics.hashMatches}/${hashTotal}`, `snap ${metrics.hardSnaps}`),
     ];
   }
+}
+
+/** Joins HUD cells with a fixed gutter so columns line up across rows. */
+function row(label: string, ...cells: string[]): string {
+  return `${label.padEnd(5)} │ ${cells.join('  ·  ')}`;
 }
 
 function patternFor(tick: number): string {

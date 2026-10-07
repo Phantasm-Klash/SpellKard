@@ -35,6 +35,8 @@ declare namespace Laya {
     static readonly MOUSE_DOWN: string;
     static readonly MOUSE_UP: string;
     static readonly MOUSE_MOVE: string;
+    static readonly MOUSE_OVER: string;
+    static readonly MOUSE_OUT: string;
     static readonly CLICK: string;
     static readonly RESIZE: string;
   }
@@ -45,12 +47,50 @@ declare namespace Laya {
     constructor(x?: number, y?: number);
   }
 
+  /**
+   * Vector drawing surface. The client renders without any binary asset, so the
+   * visual layer is built entirely from these primitives.
+   *
+   * IMPORTANT: this mirrors the *real* LayaAir 3 `Graphics` API. Text is drawn
+   * with `fillText`, NOT `drawText`; there is no `linearGradient`, `lineCap` or
+   * `lineJoin`. Adding a method here that the engine lacks type-checks fine but
+   * throws at runtime, so verify against `engine/libs/laya.core.js` first.
+   *
+   * `clear()` resets the command list, so a redraw always starts from the
+   * sprite's local origin.
+   */
   class Graphics {
     clear(recoverCmds?: boolean): Graphics;
-    drawRect(x: number, y: number, width: number, height: number, fillColor: string | null, lineColor?: string | null, lineWidth?: number): Graphics;
-    drawCircle(x: number, y: number, radius: number, fillColor: string | null, lineColor?: string | null, lineWidth?: number): Graphics;
+
+    // --- filled shapes ---
+    drawRect(x: number, y: number, width: number, height: number, fillColor: string | null, lineColor?: string | null, lineWidth?: number, percent?: boolean): Graphics;
+    drawRoundRect(x: number, y: number, width: number, height: number, lt: number, rt: number, lb: number, rb: number, fillColor: string | null, lineColor?: string | null, lineWidth?: number, percent?: boolean): Graphics;
+    drawCircle(x: number, y: number, radius: number, fillColor: string | null, lineColor?: string | null, lineWidth?: number, percent?: boolean): Graphics;
+    /** Note: takes full width/height, not radii. */
+    drawEllipse(x: number, y: number, width: number, height: number, fillColor: string | null, lineColor?: string | null, lineWidth?: number, percent?: boolean): Graphics;
+    drawPie(x: number, y: number, radius: number, startAngle: number, endAngle: number, fillColor: string | null, lineColor?: string | null, lineWidth?: number): Graphics;
+    drawPoly(x: number, y: number, points: number[], fillColor: string | null, lineColor?: string | null, lineWidth?: number): Graphics;
+
+    // --- stroked shapes ---
     drawLine(fromX: number, fromY: number, toX: number, toY: number, lineColor: string, lineWidth?: number): Graphics;
-    drawText(text: string, x: number, y: number, font: string, color: string, textAlign?: string): Graphics;
+    drawLines(x: number, y: number, points: number[], lineColor: string, lineWidth?: number): Graphics;
+    drawCurves(x: number, y: number, points: number[], lineColor: string, lineWidth?: number): Graphics;
+    drawPath(x: number, y: number, paths: unknown[], brush?: unknown, pen?: unknown): Graphics;
+
+    // --- text ---
+    fillText(text: string, x: number, y: number, font: string, color: string, textAlign?: string): Graphics;
+    fillBorderText(text: string, x: number, y: number, font: string, fillColor: string, textAlign?: string, lineWidth?: number, borderColor?: string): Graphics;
+    strokeText(text: string, x: number, y: number, font: string, color: string, lineWidth: number, textAlign?: string): Graphics;
+
+    // --- clip / alpha / transform (relative to the sprite's own origin) ---
+    clipRect(x: number, y: number, width: number, height: number): Graphics;
+    alpha(value: number): Graphics;
+    save(): Graphics;
+    restore(): Graphics;
+    translate(tx: number, ty: number): Graphics;
+    rotate(angle: number, pivotX?: number, pivotY?: number): Graphics;
+    scale(scaleX: number, scaleY: number, pivotX?: number, pivotY?: number): Graphics;
+    transform(matrix: unknown, pivotX?: number, pivotY?: number): Graphics;
   }
 
   class Sprite extends EventDispatcher {
@@ -83,11 +123,14 @@ declare namespace Laya {
     fontSize: number;
     font: string;
     bold: boolean;
+    italic: boolean;
     align: string;
     valign: string;
     overflow: string;
     wordWrap: boolean;
     leading: number;
+    stroke: number;
+    strokeColor: string;
     constructor(text?: string);
   }
 

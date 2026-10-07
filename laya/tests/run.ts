@@ -9,6 +9,7 @@ import './deterministic.test';
 import './protocol_codec.test';
 import './battle_codec.test';
 import './boss_race_sim.test';
+import './bullet_visual.test';
 import './kcp_loopback.test';
 import './matchmaking.test';
 import './lobby_ws_protocol.test';

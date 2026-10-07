@@ -37,4 +37,5 @@ export * from './sim/boss_race';
 
 export * from './game/input';
 export * from './game/boss_race_view_model';
+export * from './game/bullet_visual';
 export * from './game/lobby_flow';
