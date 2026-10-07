@@ -744,34 +744,119 @@ function payloadString(request: LobbyRpcRequest, ...keys: string[]): string {
   return '';
 }
 
+function pathSegment(value: string): string {
+  return encodeURIComponent(value);
+}
+
+function queryString(request: LobbyRpcRequest, ...keys: string[]): string {
+  const payload = request.payload ?? {};
+  const params: string[] = [];
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === 'string' || typeof value === 'number') {
+      params.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+    }
+  }
+  return params.length === 0 ? '' : `?${params.join('&')}`;
+}
+
 const REST_ROUTES: Record<string, RestRoute> = {
   'auth.anonymous': { method: 'POST', path: () => '/v1/auth/anonymous' },
   bootstrap: { method: 'GET', path: () => '/v1/bootstrap' },
+  'inventory.get': { method: 'GET', path: () => '/v1/inventory' },
+  inventory: { method: 'GET', path: () => '/v1/inventory' },
+  'cards.upgrade': { method: 'POST', path: () => '/v1/cards/upgrade' },
+  'decks.list': { method: 'GET', path: () => '/v1/decks' },
+  decks: { method: 'GET', path: () => '/v1/decks' },
+  'decks.save': { method: 'POST', path: () => '/v1/decks/save' },
+  'chests.list': { method: 'GET', path: () => '/v1/chests' },
+  chests: { method: 'GET', path: () => '/v1/chests' },
+  'chests.open': { method: 'POST', path: () => '/v1/chests/open' },
+  'presence.heartbeat': { method: 'POST', path: () => '/v1/presence/heartbeat' },
   'rooms.create': { method: 'POST', path: () => '/v1/rooms/create' },
   'rooms.list': { method: 'GET', path: () => '/v1/rooms' },
-  'rooms.get': { method: 'GET', path: (r) => `/v1/rooms/${payloadString(r, 'room_code', 'roomCode')}` },
-  'rooms.rules': { method: 'GET', path: (r) => `/v1/rooms/${payloadString(r, 'room_code', 'roomCode')}/rules` },
-  'rooms.join': { method: 'POST', path: (r) => `/v1/rooms/${payloadString(r, 'room_code', 'roomCode')}/join` },
-  'rooms.leave': { method: 'POST', path: (r) => `/v1/rooms/${payloadString(r, 'room_code', 'roomCode')}/leave` },
-  'match.ready': { method: 'POST', path: (r) => `/v1/matches/${payloadString(r, 'match_id', 'matchId')}/ready` },
+  'rooms.get': { method: 'GET', path: (r) => `/v1/rooms/${pathSegment(payloadString(r, 'room_code', 'roomCode'))}` },
+  'rooms.rules': {
+    method: 'GET',
+    path: (r) => `/v1/rooms/${pathSegment(payloadString(r, 'room_code', 'roomCode'))}/rules`,
+  },
+  'rooms.join': {
+    method: 'POST',
+    path: (r) => `/v1/rooms/${pathSegment(payloadString(r, 'room_code', 'roomCode'))}/join`,
+  },
+  'rooms.leave': {
+    method: 'POST',
+    path: (r) => `/v1/rooms/${pathSegment(payloadString(r, 'room_code', 'roomCode'))}/leave`,
+  },
+  'rooms.messages': {
+    method: 'POST',
+    path: (r) => `/v1/rooms/${pathSegment(payloadString(r, 'room_code', 'roomCode'))}/messages`,
+  },
+  'rooms.chat': {
+    method: 'POST',
+    path: (r) => `/v1/rooms/${pathSegment(payloadString(r, 'room_code', 'roomCode'))}/messages`,
+  },
+  'rooms.announcement': {
+    method: 'POST',
+    path: (r) => `/v1/rooms/${pathSegment(payloadString(r, 'room_code', 'roomCode'))}/messages`,
+  },
+  'activity.claim': { method: 'POST', path: () => '/v1/activity/claim' },
   'matchmaking.join': { method: 'POST', path: () => '/v1/matchmaking/join' },
   'matchmaking.ticket': {
     method: 'GET',
-    path: (r) => `/v1/matchmaking/tickets/${payloadString(r, 'ticket_id', 'ticketId')}`,
+    path: (r) => `/v1/matchmaking/tickets/${pathSegment(payloadString(r, 'ticket_id', 'ticketId'))}`,
   },
   'matchmaking.cancel': {
     method: 'POST',
-    path: (r) => `/v1/matchmaking/tickets/${payloadString(r, 'ticket_id', 'ticketId')}/cancel`,
+    path: (r) => `/v1/matchmaking/tickets/${pathSegment(payloadString(r, 'ticket_id', 'ticketId'))}/cancel`,
+  },
+  'match.ready': {
+    method: 'POST',
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/ready`,
   },
   'battle.allocation': {
     method: 'GET',
-    path: (r) => `/v1/battles/${payloadString(r, 'match_id', 'matchId')}/allocation`,
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/battle-allocation`,
   },
   'battle.ticket': {
-    method: 'GET',
-    path: (r) => `/v1/battles/${payloadString(r, 'match_id', 'matchId')}/ticket`,
+    method: 'POST',
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/battle-ticket`,
   },
-  'replay.get': { method: 'GET', path: (r) => `/v1/replays/${payloadString(r, 'replay_id', 'replayId')}` },
+  'match.input': {
+    method: 'POST',
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/input`,
+  },
+  'match.snapshot': {
+    method: 'GET',
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/snapshot`,
+  },
+  'match.events': {
+    method: 'GET',
+    path: (r) =>
+      `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/events` +
+      queryString(r, 'after', 'limit'),
+  },
+  'match.mode_action': {
+    method: 'POST',
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/mode-action`,
+  },
+  'match.disconnect': {
+    method: 'POST',
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/disconnect`,
+  },
+  'match.reconnect': {
+    method: 'POST',
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/reconnect`,
+  },
+  'match.settle': {
+    method: 'POST',
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/settle`,
+  },
+  'match.rematch': {
+    method: 'POST',
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/rematch`,
+  },
+  'replay.get': { method: 'GET', path: (r) => `/v1/replays/${pathSegment(payloadString(r, 'replay_id', 'replayId'))}` },
 };
 
 /** Configuration for {@link WsLobbyTransport}. */
