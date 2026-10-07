@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>HUD probe</title>
+<style>
+  html, body { margin: 0; background: #12101c; }
+</style>
+</head>
+<body>
+<script src="../engine/libs/laya.core.js"></script>
+<script src="../engine/libs/laya.webgl_2D.js"></script>
+<script src="../engine/libs/laya.opengl_2D.js"></script>
+<script src="../engine/libs/laya.device.js"></script>
+<script src="../engine/libs/laya.ui.js"></script>
+<script src="../engine/libs/laya.ani.js"></script>
+<script type="module">
+  const theme = await import('../dist/platform/laya/view/theme.js');
+  const { drawHudBar } = await import('../dist/platform/laya/view/hud.js');
+
+  const W = 960, H = 140;
+  const Laya = window.Laya;
+  await Laya.init({ designWidth: W, designHeight: H, scaleMode: 'showall', screenMode: 'none' });
+
+  const root = new Laya.Sprite();
+  Laya.stage.addChild(root);
+
+  // Ruler: a line every 10px so text position can be read off directly.
+  const ruler = new Laya.Sprite();
+  for (let i = 0; i <= H; i += 10) {
+    const major = i % 50 === 0;
+    ruler.graphics.drawLine(0, i, major ? 60 : 24, i, major ? '#ff5555' : '#555577', 1);
+  }
+  root.addChild(ruler);
+
+  const g = new Laya.Sprite();
+  g.pos(80, 0);
+  root.addChild(g);
+  drawHudBar(g.graphics, 0, 0, W - 160, H, {
+    localHpRatio: 0.7, rivalHpRatio: 1, bossMaxHp: 6000, localHp: 4200, rivalHp: 6000,
+    damageDealt: 1800, tick: 270, stateName: 'Running', patternId: 'laser_curtain',
+    bullets: 48, connectionLabel: 'server', metricsLine: 'snaps 42 · err 3',
+  });
+
+  window.__PROBE_READY__ = true;
+</script>
+</body>
+</html>

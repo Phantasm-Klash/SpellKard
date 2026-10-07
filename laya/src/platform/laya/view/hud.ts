@@ -23,6 +23,8 @@
  * NOTE: `platform/laya/` only. Never import from `core/`.
  */
 
+import { formatMatchCountdown } from '../../../core/game/match_clock';
+import { BOSS_RACE_TICK_RATE_HZ } from '../../../core/sim/boss_race';
 import * as theme from './theme';
 import { VectorPainter, fade } from './sprites';
 
@@ -52,6 +54,14 @@ export interface HudState {
   connectionLabel: string;
   /** Pre-formatted metrics footer line. */
   metricsLine: string;
+  /**
+   * Match tick limit, used for the countdown. `0` (the default) hides the
+   * countdown — callers that do not know the server's `--max-ticks` leave it
+   * unset rather than guessing.
+   */
+  tickLimit?: number;
+  /** Tick rate, needed to render the countdown as a clock. Defaults to 60. */
+  tickRateHz?: number;
 }
 
 /** Height of an HP bar track. */
@@ -177,10 +187,12 @@ function drawHpPanel(
 }
 
 /**
- * Centre badge: match state, pattern id and bullet count.
+ * Centre badge: match state, countdown, pattern id and bullet count, with a
+ * race bar pinned to the bottom edge.
  *
- * `y` / `height` describe the badge box; its three text rows are pinned to the
- * top, the middle and the bottom so the badge reads well at any height.
+ * `y` / `height` describe the badge box. Rows are pinned top / middle / bottom
+ * so the badge keeps its shape at any height; the race bar then sits on the
+ * bottom inner edge, above the footer strip.
  */
 function drawStatusBadge(g: Laya.Graphics, x: number, y: number, width: number, height: number, opts: HudState): void {
   if (width <= 0 || height <= 0) {
@@ -188,18 +200,79 @@ function drawStatusBadge(g: Laya.Graphics, x: number, y: number, width: number, 
   }
   VectorPainter.roundedPanel(g, x, y, width, height, theme.RADIUS_SM, theme.COLOR_PANEL, theme.COLOR_PANEL_BORDER, 1);
   const cx = x + width / 2;
-
-  // Top row: state.
-  const stateSize = theme.FONT_SIZE_BODY;
-  g.fillText(`◆ ${opts.stateName}`, cx, baselineOf(y + theme.SPACE_SM, stateSize), theme.font(stateSize, true), theme.COLOR_TITLE, 'center');
-
-  // Middle row: pattern id, centred on the badge box.
   const captionSize = theme.FONT_SIZE_CAPTION;
-  g.fillText(opts.patternId, cx, baselineOf(y + height / 2 - captionSize / 2, captionSize), theme.font(captionSize), theme.COLOR_INFO, 'center');
+  const stateSize = theme.FONT_SIZE_BODY;
+  const raceBarHeight = theme.SPACE_XS;
 
-  // Bottom row: bullet count.
-  const bulletsTop = y + height - theme.SPACE_SM - captionSize;
-  g.fillText(`BULLETS ${opts.bullets}`, cx, baselineOf(bulletsTop, captionSize), theme.font(captionSize), theme.COLOR_HUD_DIM, 'center');
+  // Rows are stacked top-down with a fixed gutter, then the whole block is
+  // centred in the badge. Anchoring rows to the box edges individually made
+  // `patternId` collide with the race bar once the badge grew tall enough to
+  // hold all four rows.
+  const rows = [stateSize, captionSize, captionSize];
+  const blockHeight = rows.reduce((sum, size) => sum + size, 0) + theme.SPACE_XS * 2 + theme.SPACE_SM + raceBarHeight;
+  let cursor = y + Math.max(theme.SPACE_SM, (height - blockHeight) / 2);
+
+  // Row 1: state, with the countdown right-aligned beside it when known.
+  const countdown = formatCountdown(opts);
+  if (countdown === '') {
+    g.fillText(`◆ ${opts.stateName}`, cx, baselineOf(cursor, stateSize), theme.font(stateSize, true), theme.COLOR_TITLE, 'center');
+  } else {
+    g.fillText(`◆ ${opts.stateName}`, cx - theme.SPACE_MD, baselineOf(cursor, stateSize), theme.font(stateSize, true), theme.COLOR_TITLE, 'center');
+    g.fillText(countdown, x + width - theme.SPACE_SM, baselineOf(cursor + (stateSize - captionSize), captionSize), theme.font(captionSize, true), theme.COLOR_INFO, 'right');
+  }
+  cursor += stateSize + theme.SPACE_XS;
+
+  // Row 2: active pattern id.
+  g.fillText(opts.patternId, cx, baselineOf(cursor, captionSize), theme.font(captionSize), theme.COLOR_INFO, 'center');
+  cursor += captionSize + theme.SPACE_XS;
+
+  // Row 3: bullets in flight.
+  g.fillText(`BULLETS ${opts.bullets}`, cx, baselineOf(cursor, captionSize), theme.font(captionSize), theme.COLOR_HUD_DIM, 'center');
+  cursor += captionSize + theme.SPACE_SM;
+
+  // Row 4: two-sided race bar.
+  const raceBarWidth = width - theme.SPACE_MD * 2;
+  if (raceBarWidth > 0 && cursor + raceBarHeight <= y + height) {
+    drawRaceBar(g, x + theme.SPACE_MD, cursor, raceBarWidth, raceBarHeight, opts);
+  }
+}
+
+/**
+ * Two-sided HP bar: local Boss HP fills from the left, rival HP from the right,
+ * meeting where their remaining totals are equal. The longer side is simply the
+ * player closer to winning, which reads faster than two separate bars.
+ */
+function drawRaceBar(
+  g: Laya.Graphics,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  opts: HudState,
+): void {
+  const local = Math.max(0, Math.min(1, opts.localHpRatio));
+  const rival = Math.max(0, Math.min(1, opts.rivalHpRatio));
+  const total = local + rival;
+  // With both Bosses at full HP the split is even; as the rival drops, the
+  // local share grows.
+  const localShare = total <= 0 ? 0.5 : local / total;
+
+  g.drawRect(x, y, width, height, theme.COLOR_HP_BACK, null);
+  const split = Math.round(width * localShare);
+  g.drawRect(x, y, split, height, theme.COLOR_SUCCESS, null);
+  g.drawRect(x + split, y, width - split, height, theme.COLOR_DANGER, null);
+  // Centre marker so the even split is visible at a glance.
+  const mid = x + Math.round(width / 2);
+  g.drawLine(mid, y - 2, mid, y + height + 2, fade(theme.COLOR_VOID, 0.5), 1);
+}
+
+/**
+ * Renders the remaining match time, or `''` when the caller did not supply a
+ * tick limit (`0` means "unknown"). The formatting itself lives in `core/` so
+ * it is unit-tested without a rendering engine; see `game/match_clock`.
+ */
+function formatCountdown(opts: HudState): string {
+  return formatMatchCountdown(opts.tick, opts.tickLimit ?? 0, opts.tickRateHz ?? BOSS_RACE_TICK_RATE_HZ);
 }
 
 /**
@@ -207,8 +280,9 @@ function drawStatusBadge(g: Laya.Graphics, x: number, y: number, width: number, 
  * `BossRaceView.render(frame, hudLines)` can keep accepting string arrays.
  */
 export function formatHudLines(state: HudState): string[] {
+  const countdown = formatCountdown(state);
   return [
-    `${state.connectionLabel} · tick ${state.tick} · ${state.stateName} · pattern ${state.patternId}`,
+    `${state.connectionLabel} · tick ${state.tick}${countdown === '' ? '' : ` · ${countdown}`} · ${state.stateName} · pattern ${state.patternId}`,
     `Boss HP ${state.localHp}/${state.bossMaxHp} · damage ${state.damageDealt} · rival HP ${state.rivalHp}`,
     `bullets ${state.bullets}`,
     state.metricsLine,
