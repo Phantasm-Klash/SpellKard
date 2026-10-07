@@ -151,6 +151,23 @@ export interface InventoryView {
   serverAuthoritative: boolean;
 }
 
+export interface DeckRecordView {
+  deckId: string;
+  name: string;
+  format: string;
+  rulesetVersion: string;
+  cardIds: string[];
+  active: boolean;
+}
+
+export interface DeckListView {
+  userId: string;
+  activeDeckId: string;
+  rulesetVersion: string;
+  decks: DeckRecordView[];
+  serverAuthoritative: boolean;
+}
+
 /** Gensoulkyo matchmaking queue ticket (`matchmaking.join` / `.ticket` / `.cancel`). */
 export interface MatchmakingTicketView {
   ticketId: string;
@@ -343,6 +360,32 @@ export class LobbyClient {
       userId: stringField(payload, 'user_id', 'userId'),
       rulesetVersion: stringField(payload, 'ruleset_version', 'rulesetVersion'),
       items,
+      serverAuthoritative: booleanField(payload, 'server_authoritative', 'serverAuthoritative'),
+    };
+  }
+
+  /** `decks.list` — server-owned saved deck projection. */
+  async fetchDecks(): Promise<DeckListView | null> {
+    const response = await this.call('decks.list');
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    const decks = Array.isArray(payload.decks)
+      ? payload.decks.filter(isRecord).map((deck) => ({
+          deckId: stringField(deck, 'deck_id', 'deckId'),
+          name: stringField(deck, 'name'),
+          format: stringField(deck, 'format'),
+          rulesetVersion: stringField(deck, 'ruleset_version', 'rulesetVersion'),
+          cardIds: stringArrayField(deck, 'card_ids', 'cardIds'),
+          active: booleanField(deck, 'active'),
+        }))
+      : [];
+    return {
+      userId: stringField(payload, 'user_id', 'userId'),
+      activeDeckId: stringField(payload, 'active_deck_id', 'activeDeckId'),
+      rulesetVersion: stringField(payload, 'ruleset_version', 'rulesetVersion'),
+      decks,
       serverAuthoritative: booleanField(payload, 'server_authoritative', 'serverAuthoritative'),
     };
   }
