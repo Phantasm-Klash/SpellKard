@@ -81,6 +81,36 @@ test('maps direct Nakama errors without treating them as client success', async 
   expectEqual(result.message, 'envelope required');
 });
 
+test('wraps authenticated business bodies only when an envelope producer is supplied', async () => {
+  const bodies: unknown[] = [];
+  const http: HttpClient = {
+    async request(_method, _path, body): Promise<HttpResponseLike> {
+      bodies.push(body);
+      return response({ ok: true });
+    },
+  };
+  const transport = new NakamaLobbyTransport(http, {
+    sessionToken: 'nakama-session',
+    businessEnvelope: (request, body) => ({
+      version: 'business-v0-scaffold',
+      seq: 1,
+      timestamp_ms: 1_791_341_000_000,
+      nonce: `nonce-${request.id}`,
+      op_code: request.id,
+      key_id: 'caller-owned-key',
+      auth_tag: 'caller-owned-tag',
+      ciphertext_mode: 'caller-owned-mode',
+      body_hash: JSON.stringify(body),
+    }),
+  });
+  await transport.call({ id: 'inventory.get', payload: { page: 1 } });
+
+  expectEqual(
+    bodies[0],
+    '{"business_envelope":{"version":"business-v0-scaffold","seq":1,"timestamp_ms":1791341000000,"nonce":"nonce-inventory.get","op_code":"inventory.get","key_id":"caller-owned-key","auth_tag":"caller-owned-tag","ciphertext_mode":"caller-owned-mode","body_hash":"{\\"page\\":1}"},"body":{"page":1}}',
+  );
+});
+
 test('uses Nakama RPC routes for business operations instead of legacy REST paths', async () => {
   const paths: string[] = [];
   const http: HttpClient = {

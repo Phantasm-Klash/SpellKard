@@ -626,10 +626,19 @@ export class NakamaLobbyTransport implements LobbyTransport {
     } else if ((this.options.httpKey ?? '') !== '') {
       headers.Authorization = `Basic ${encodeBasicAuth(`${this.options.httpKey ?? ''}:`)}`;
     }
+    const body = request.payload ?? {};
+    const envelope = this.options.businessEnvelope?.(request, body) ?? null;
+    const wirePayload =
+      envelope === null
+        ? body
+        : {
+            business_envelope: envelope,
+            body,
+          };
     const response = await this.http.request(
       'POST',
       `/v2/rpc/${encodeURIComponent(rpcId)}?unwrap=true`,
-      JSON.stringify(request.payload ?? {}),
+      JSON.stringify(wirePayload),
       headers,
     );
     const result = nakamaResponse(response);
@@ -652,7 +661,19 @@ export interface NakamaLobbyTransportOptions {
   httpKey?: string;
   /** Optional existing Nakama session token, useful after a cold restart. */
   sessionToken?: string;
+  /**
+   * Optional business-envelope producer. The producer owns versioning, nonce,
+   * body hashing and authentication-tag policy; returning null leaves the
+   * payload unwrapped. This is intentionally an injection point rather than a
+   * client-side fake signer.
+   */
+  businessEnvelope?: NakamaBusinessEnvelopeFactory;
 }
+
+export type NakamaBusinessEnvelopeFactory = (
+  request: LobbyRpcRequest,
+  body: Record<string, unknown>,
+) => Record<string, unknown> | null;
 
 function nakamaResponse(response: HttpResponseLike): LobbyRpcResponse {
   const body = response.body;
