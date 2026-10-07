@@ -14,9 +14,12 @@ import { BOSS_RACE_DEFAULT_BOSS_HP, BOSS_RACE_DEFAULT_MAX_TICKS, BOSS_RACE_TICK_
 import { LayaInput } from './laya_input';
 import { LayaTimer } from './laya_timer';
 import { BattleScene } from './scenes/battle_scene';
+import { CheckinScene } from './scenes/checkin_scene';
+import { InventoryScene } from './scenes/inventory_scene';
 import { LobbyScene } from './scenes/lobby_scene';
 import { ResultScene } from './scenes/result_scene';
 import { RoomScene } from './scenes/room_scene';
+import { ShopScene } from './scenes/shop_scene';
 import type { ClientScene } from './scenes/scene';
 import { FetchHttpClient } from '../web/web_http_client';
 
@@ -49,6 +52,9 @@ export class SpellKardApp {
   private readonly roomScene: RoomScene;
   private readonly battleScene: BattleScene;
   private readonly resultScene: ResultScene;
+  private readonly checkinScene: CheckinScene;
+  private readonly shopScene: ShopScene;
+  private readonly inventoryScene: InventoryScene;
   private activeScene: ClientScene | null = null;
   private activeScreen = '';
 
@@ -106,6 +112,11 @@ export class SpellKardApp {
       flow: this.flow,
       localPlayerId,
     });
+    // Lobby business screens: check-in, shop and inventory. All three read the
+    // same `LobbyFlow` snapshot, so wiring is just construction + the switch.
+    this.checkinScene = new CheckinScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
+    this.shopScene = new ShopScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
+    this.inventoryScene = new InventoryScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
 
     this.flow.onChange((snapshot) => this.onFlowChange(snapshot));
     this.battleClient.onResult((result) => {
@@ -129,7 +140,15 @@ export class SpellKardApp {
   }
 
   private allScenes(): ClientScene[] {
-    return [this.lobbyScene, this.roomScene, this.battleScene, this.resultScene];
+    return [
+      this.lobbyScene,
+      this.roomScene,
+      this.battleScene,
+      this.resultScene,
+      this.checkinScene,
+      this.shopScene,
+      this.inventoryScene,
+    ];
   }
 
   private onFlowChange(snapshot: LobbyFlowSnapshot): void {
@@ -148,6 +167,15 @@ export class SpellKardApp {
         break;
       case LobbyScreen.Result:
         this.resultScene.applySnapshot(snapshot);
+        break;
+      case LobbyScreen.Checkin:
+        this.checkinScene.applySnapshot(snapshot);
+        break;
+      case LobbyScreen.Shop:
+        this.shopScene.applySnapshot(snapshot);
+        break;
+      case LobbyScreen.Inventory:
+        this.inventoryScene.applySnapshot(snapshot);
         break;
       case LobbyScreen.Battle:
         break;
@@ -193,9 +221,15 @@ export class SpellKardApp {
     }
     this.activeScene?.onExit();
     const next = this.sceneFor(key);
-    next.onEnter();
+    // Mark the target active *before* `onEnter()` runs. `onEnter()` may kick off
+    // a reload that loops back through the flow (`flow.openCheckin()` →
+    // `setScreen` → `onFlowChange` → `switchTo`). With the active screen still
+    // pointing at the previous entry, that re-entrant call would not short
+    // circuit and the two would recurse until the stack overflows. Updating the
+    // fields first turns the re-entrant call into the no-op it should be.
     this.activeScene = next;
     this.activeScreen = key;
+    next.onEnter();
   }
 
   private sceneFor(screen: LobbyScreen): ClientScene {
@@ -206,6 +240,12 @@ export class SpellKardApp {
         return this.battleScene;
       case LobbyScreen.Result:
         return this.resultScene;
+      case LobbyScreen.Checkin:
+        return this.checkinScene;
+      case LobbyScreen.Shop:
+        return this.shopScene;
+      case LobbyScreen.Inventory:
+        return this.inventoryScene;
       default:
         return this.lobbyScene;
     }
@@ -230,6 +270,9 @@ export class SpellKardApp {
     room: RoomScene;
     battle: BattleScene;
     result: ResultScene;
+    checkin: CheckinScene;
+    shop: ShopScene;
+    inventory: InventoryScene;
     flow: LobbyFlow;
     switchTo: (screen: LobbyScreen) => void;
   } {
@@ -238,6 +281,9 @@ export class SpellKardApp {
       room: this.roomScene,
       battle: this.battleScene,
       result: this.resultScene,
+      checkin: this.checkinScene,
+      shop: this.shopScene,
+      inventory: this.inventoryScene,
       flow: this.flow,
       switchTo: (screen: LobbyScreen) => this.switchTo(screen),
     };

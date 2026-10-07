@@ -81,10 +81,18 @@ export class ResultScene implements ClientScene {
 
     // --- two-column data band ---
     // The title band is short and the action button is pinned to the bottom, so
-    // the stat cards are pushed down by two `SPACE_XL` steps: with one step they
-    // clustered at the top and left a dead half-screen below.
-    this.cardY = headlineY + theme.FONT_SIZE_TITLE * 1.2 + theme.SPACE_SM + theme.SPACE_XL * 2;
+    // the stat cards are pushed down to sit in the middle of the taller portrait
+    // stage instead of clustering at the top. A fixed two-step offset worked at
+    // 960x720; at 720x1280 it left the cards stranded high, so the offset grows
+    // with the stage and the cards end up roughly centred.
+    const headlineBottom = headlineY + theme.FONT_SIZE_TITLE * 1.2 + theme.SPACE_SM;
+    const actionTop = height - margin - theme.BUTTON_HEIGHT;
     this.cardHeight = CARD_HEIGHT;
+    const idealTop = headlineBottom + theme.SPACE_XL;
+    const idealBottom = actionTop - theme.SPACE_XL * 2;
+    this.cardY = Math.max(idealTop, Math.round((height - this.cardHeight) / 2));
+    // Guard against a short stage: never let the cards run into the button.
+    this.cardY = Math.min(this.cardY, Math.max(idealTop, idealBottom - this.cardHeight));
     const gap = theme.SPACE_MD;
     const columnWidth = Math.floor((contentWidth - gap) / 2);
 

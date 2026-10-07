@@ -14,6 +14,7 @@ import './match_clock.test';
 import './kcp_loopback.test';
 import './matchmaking.test';
 import './lobby_ws_protocol.test';
+import './checkin_shop.test';
 import './native_udp_datagram.test';
 
 import { runAll } from './harness';

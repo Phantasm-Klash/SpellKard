@@ -41,12 +41,18 @@ export interface BrowserRuntimeConfig {
 declare global {
   interface Window {
     PHANTASM_KLASH_CONFIG?: Partial<BrowserRuntimeConfig>;
+    /** Set only when the page is opened with `?debug=1`, for local inspection. */
+    __PK_APP__?: SpellKardApp;
+    __PK_SCENES__?: unknown;
   }
 }
 
 const DEFAULT_CONFIG: BrowserRuntimeConfig = {
-  stageWidth: 960,
-  stageHeight: 720,
+  // Portrait 9:16. The battle playfield is a 3:2 portrait block (720x1080)
+  // anchored at the top; the 720x200 status bar fills the remainder and is
+  // itself wider than 16:9 (18:5). See `BattleScene` for the split.
+  stageWidth: 720,
+  stageHeight: 1280,
   lobbyHttpBase: '',
   lobbyWsUrl: '',
   relayUrl: '',
@@ -161,5 +167,11 @@ export async function bootstrap(config: BrowserRuntimeConfig = resolveRuntimeCon
     alignV: 'middle',
     backgroundColor: config.backgroundColor,
   });
-  return startClient(config);
+  const app = startClient(config);
+  // Local inspection hook: only present when the page is opened with `?debug=1`.
+  if (new URLSearchParams(window.location.search).get('debug') === '1') {
+    window.__PK_APP__ = app;
+    window.__PK_SCENES__ = app.debugScenes();
+  }
+  return app;
 }

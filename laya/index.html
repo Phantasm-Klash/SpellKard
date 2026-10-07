@@ -40,8 +40,12 @@
       // default (same origin, no server) the lobby screen still renders and the
       // sign-in call simply reports a transport error.
       window.PHANTASM_KLASH_CONFIG = {
-        stageWidth: 960,
-        stageHeight: 720,
+        // Portrait 9:16 stage (720x1280). The battle area is a 3:2 portrait
+        // block (720x1080) pinned to the top; the 720x200 status bar sits
+        // below it, so the status bar's own aspect ratio (18:5) is wider than
+        // 16:9. The window is scaled to fit (Laya `showall`), not fixed.
+        stageWidth: 720,
+        stageHeight: 1280,
         lobbyHttpBase: '',
         lobbyWsUrl: '',
         relayUrl: '',

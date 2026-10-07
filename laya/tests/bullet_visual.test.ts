@@ -21,7 +21,21 @@ import { expect, expectClose, expectEqual, suite, test } from './harness';
 /** width == full arena width ⇒ scale 1.0, so milli-units map 1:1 to pixels. */
 const LAYOUT: PlayfieldLayout = { width: 240000, height: 180000 };
 
-const VALID_CLASSES: readonly BulletVisualClass[] = ['orb', 'arrow', 'capsule', 'stream'];
+const VALID_CLASSES: readonly BulletVisualClass[] = ['linear', 'curve', 'orbit', 'homing', 'spread'];
+
+/** The intended trajectory family for each pattern — the source of truth here. */
+const EXPECTED_FAMILIES: ReadonlyArray<readonly [string, BulletVisualClass]> = [
+  ['ring', 'linear'],
+  ['gap_ring', 'linear'],
+  ['n_way', 'linear'],
+  ['aimed', 'linear'],
+  ['seeded_arc', 'curve'],
+  ['sine_stream', 'curve'],
+  ['spiral', 'orbit'],
+  ['blossom', 'orbit'],
+  ['homing', 'homing'],
+  ['laser_curtain', 'spread'],
+];
 
 function bullet(overrides: Partial<BossRaceBullet>): BossRaceBullet {
   return {
@@ -99,14 +113,18 @@ test('interpolateFrames preserves angleRad while lerping position', () => {
   expectClose(item.position.x, 120000 + 1500, 1e-6, 'position should be halfway');
 });
 
-test('the classifier assigns every simulated pattern id to a known family', () => {
+test('the classifier assigns every simulated pattern id to a trajectory family', () => {
+  const families = new Set<BulletVisualClass>();
   for (const patternId of BOSS_RACE_PATTERN_IDS) {
     const family = classifyPattern(patternId);
     expect(
       VALID_CLASSES.includes(family),
-      `pattern ${patternId} mapped to unexpected family ${family}`,
+      `pattern ${patternId} mapped to unexpected trajectory family ${family}`,
     );
+    families.add(family);
   }
+  // Every family must be used, so no branch of the renderer is dead code.
+  expectEqual(families.size, VALID_CLASSES.length, 'all trajectory families should be exercised');
   // The classifier's own list must cover exactly the simulation's list.
   expectEqual(knownPatternIds().length, BOSS_RACE_PATTERN_IDS.length, 'known pattern count');
   for (const patternId of knownPatternIds()) {
@@ -117,25 +135,29 @@ test('the classifier assigns every simulated pattern id to a known family', () =
   }
 });
 
-test('pattern families are visually distinct (all four families are used)', () => {
-  const families = new Set(BOSS_RACE_PATTERN_IDS.map((id) => classifyPattern(id)));
-  expectEqual(families.size, VALID_CLASSES.length, 'all visual families should be exercised');
+test('every pattern maps to its intended family (none falls through to the default)', () => {
+  // Asserted per-pattern: a missing key would fall back to 'linear' and, for the
+  // non-linear patterns, be caught here rather than masked by a count check.
+  for (const [patternId, expected] of EXPECTED_FAMILIES) {
+    expectEqual(classifyPattern(patternId), expected, `family for ${patternId}`);
+  }
+  // Belt and braces: the expected table covers exactly the simulated ids.
+  expectEqual(EXPECTED_FAMILIES.length, BOSS_RACE_PATTERN_IDS.length, 'expected-family table size');
 });
 
-test('representative patterns map to their intended families', () => {
-  expectEqual(classifyPattern('ring'), 'orb');
-  expectEqual(classifyPattern('gap_ring'), 'orb');
-  expectEqual(classifyPattern('n_way'), 'orb');
-  expectEqual(classifyPattern('blossom'), 'orb');
-  expectEqual(classifyPattern('aimed'), 'arrow');
-  expectEqual(classifyPattern('homing'), 'arrow');
-  expectEqual(classifyPattern('laser_curtain'), 'capsule');
-  expectEqual(classifyPattern('spiral'), 'stream');
-  expectEqual(classifyPattern('sine_stream'), 'stream');
-  expectEqual(classifyPattern('seeded_arc'), 'stream');
+test('no simulated pattern relies on the classification fallback', () => {
+  // A pattern whose id is unknown to the map silently becomes 'linear'. Guard
+  // against a real linear pattern hiding a typo in the map by checking the
+  // non-linear ones explicitly resolve to their family.
+  for (const [patternId, expected] of EXPECTED_FAMILIES) {
+    if (expected === 'linear') {
+      continue;
+    }
+    expectEqual(classifyPattern(patternId), expected, `${patternId} must not fall back`);
+  }
 });
 
-test('unknown pattern ids fall back to the neutral orb family', () => {
-  expectEqual(classifyPattern('does_not_exist'), 'orb');
-  expectEqual(classifyPattern(''), 'orb');
+test('unknown pattern ids fall back to the neutral linear family', () => {
+  expectEqual(classifyPattern('does_not_exist'), 'linear');
+  expectEqual(classifyPattern(''), 'linear');
 });

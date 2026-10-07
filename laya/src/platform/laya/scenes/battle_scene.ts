@@ -45,11 +45,25 @@ export interface BattleSceneOptions {
 }
 
 /**
- * Height reserved for the HUD strip below the playfield. Tall enough for the
- * structured HUD's label / bar / value / damage rows plus the footer line, with
- * padding — see `drawHudBar`.
+ * Height reserved for the status bar below the playfield.
+ *
+ * Portrait layout: the stage is 720x1280. The playfield keeps a 3:2 portrait
+ * aspect (720x1080), so the status bar that fills the rest is
+ * `1280 - 1080 = 200` px tall and 720 px wide — an 18:5 band, wider than 16:9,
+ * which is exactly the "status bar no narrower than 16:9" requirement. The bar
+ * is laid out in three columns (see `drawHudBar`).
  */
-const HUD_HEIGHT = 108;
+const HUD_HEIGHT = 200;
+
+/** The playfield keeps this width:height ratio (2:3, i.e. 3:2 standing up). */
+const PLAYFIELD_ASPECT = 3 / 2;
+
+/** Playfield size for a stage of `width` x `height`: full width, 3:2 tall. */
+function playfieldLayout(width: number, height: number): { width: number; height: number } {
+  const maxHeight = Math.max(0, height - HUD_HEIGHT);
+  const idealHeight = width * PLAYFIELD_ASPECT;
+  return { width, height: Math.min(maxHeight, idealHeight) };
+}
 
 export class BattleScene implements ClientScene {
   readonly root: Laya.Sprite;
@@ -69,8 +83,9 @@ export class BattleScene implements ClientScene {
     this.root.visible = false;
 
     this.view = new BossRaceView({
-      layout: { width: options.width, height: options.height - HUD_HEIGHT },
+      layout: playfieldLayout(options.width, options.height),
       hudHeight: HUD_HEIGHT,
+      hudWidth: options.width,
     });
     this.root.addChild(this.view.root);
 
@@ -158,8 +173,13 @@ export class BattleScene implements ClientScene {
     if (source === null) {
       return;
     }
+    // The playfield is a 3:2 portrait rectangle anchored at the top; the status
+    // bar owns the rest of the stage. `buildBossRaceFrame` scales the milli-unit
+    // arena uniformly from the playfield width, so only the playfield geometry
+    // is passed here — the status bar is sized in `drawHudBar` instead.
+    const layout = playfieldLayout(this.options.width, this.options.height);
     this.frame = buildBossRaceFrame(source, {
-      layout: { width: this.options.width, height: this.options.height - HUD_HEIGHT },
+      layout,
       localPlayerId: this.options.localPlayerId(),
       bossMaxHp: this.options.bossMaxHp,
     });
@@ -177,13 +197,17 @@ export class BattleScene implements ClientScene {
     const opponent = snapshot.players.find((player) => player.playerId !== this.options.localPlayerId());
     const maxHp = this.options.bossMaxHp > 0 ? this.options.bossMaxHp : 1;
     const hashTotal = metrics.hashMatches + metrics.hashMismatches;
+    const damageDealt = local?.damageDealt ?? 0;
     return {
       localHpRatio: Math.max(0, Math.min(1, (local?.bossCurrentHp ?? 0) / maxHp)),
       rivalHpRatio: Math.max(0, Math.min(1, (opponent?.bossCurrentHp ?? 0) / maxHp)),
       bossMaxHp: this.options.bossMaxHp,
       localHp: local?.bossCurrentHp ?? 0,
       rivalHp: opponent?.bossCurrentHp ?? 0,
-      damageDealt: local?.damageDealt ?? 0,
+      damageDealt,
+      score: damageDealt,
+      ultCooldownRatio: this.ultCooldownRatio(snapshot.tick),
+      ultReady: this.ultCooldownRatio(snapshot.tick) <= 0,
       tick: snapshot.tick,
       stateName: BossRaceState[snapshot.state] ?? String(snapshot.state),
       patternId: patternFor(snapshot.tick),
@@ -193,6 +217,22 @@ export class BattleScene implements ClientScene {
       tickLimit: this.options.matchTickLimit,
       tickRateHz: this.options.tickRateHz,
     };
+  }
+
+  /**
+   * PLACEHOLDER ultimate-cooldown fraction (0 = ready, 1 = just fired).
+   *
+   * There is no ultimate ability in the simulation or the wire protocol yet, so
+   * this is derived from the tick alone to give the status bar a live-moving
+   * demo value: a fixed-length charge cycle that free-runs off the tick clock.
+   * Replace this with the real server-provided cooldown once the ability lands;
+   * the HUD already degrades gracefully when the value is absent.
+   */
+  private ultCooldownRatio(tick: number): number {
+    const period = this.options.tickRateHz ?? 60;
+    const cycle = Math.max(1, period * 8);
+    const phase = ((tick % cycle) + cycle) % cycle;
+    return phase / cycle;
   }
 
   /**

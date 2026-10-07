@@ -10,10 +10,13 @@
 import type {
   BattleAllocationView,
   BattleTicketView,
+  CheckinView,
+  InventoryView,
   LobbyClient,
   MatchmakingTicketView,
   RoomView,
   SessionState,
+  ShopView,
 } from '../net/lobby_client';
 
 export enum LobbyScreen {
@@ -23,6 +26,9 @@ export enum LobbyScreen {
   Matching = 'matching',
   Battle = 'battle',
   Result = 'result',
+  Checkin = 'checkin',
+  Shop = 'shop',
+  Inventory = 'inventory',
   Error = 'error',
 }
 
@@ -56,6 +62,12 @@ export interface LobbyFlowSnapshot {
   matchmaking: MatchmakingTicketView | null;
   match: MatchStartInfo | null;
   result: MatchResultInfo | null;
+  /** 7-day check-in cycle, loaded while the check-in screen is open. */
+  checkin: CheckinView | null;
+  /** Shop listings + wallet, loaded while the shop screen is open. */
+  shop: ShopView | null;
+  /** Owned card stacks, loaded while the inventory screen is open. */
+  inventory: InventoryView | null;
   lastError: string;
 }
 
@@ -83,11 +95,18 @@ export class LobbyFlow {
   private statusText = 'Not connected';
   private match: MatchStartInfo | null = null;
   private result: MatchResultInfo | null = null;
+  private checkin: CheckinView | null = null;
+  private shop: ShopView | null = null;
+  private inventory: InventoryView | null = null;
   private lastError = '';
   private readonly listeners: LobbyFlowListener[] = [];
 
-  constructor(private readonly client: LobbyClient) {
-    this.client.onEvent((event) => {
+  /** The underlying client, exposed for secondary reads (decks, chests, …). */
+  readonly client: LobbyClient;
+
+  constructor(client: LobbyClient) {
+    this.client = client;
+    client.onEvent((event) => {
       switch (event.kind) {
         case 'room_state':
           this.statusText = `Room ${event.room.roomCode}: ${event.room.players.length} player(s)`;
@@ -143,6 +162,9 @@ export class LobbyFlow {
       matchmaking: this.client.matchmakingTicket,
       match: this.match,
       result: this.result,
+      checkin: this.checkin,
+      shop: this.shop,
+      inventory: this.inventory,
       lastError: this.lastError,
     };
   }
@@ -303,5 +325,85 @@ export class LobbyFlow {
     this.result = info;
     this.statusText = `Winner: ${info.winnerPlayerId}`;
     this.setScreen(LobbyScreen.Result);
+  }
+
+  // --- check-in / shop / inventory -----------------------------------------
+
+  /** Opens the check-in screen and loads the 7-day cycle. */
+  async openCheckin(): Promise<boolean> {
+    this.statusText = 'Loading check-in…';
+    this.setScreen(LobbyScreen.Checkin);
+    const view = await this.client.fetchCheckin();
+    if (view === null) {
+      this.fail(`Check-in load failed: ${this.client.lastError}`);
+      return false;
+    }
+    this.checkin = view;
+    this.lastError = '';
+    this.statusText = `Check-in: ${view.streak}-day streak`;
+    this.notify();
+    return true;
+  }
+
+  /** Claims today's check-in reward and refreshes the cycle. */
+  async claimCheckin(): Promise<boolean> {
+    const claim = await this.client.claimCheckin();
+    if (claim === null) {
+      this.fail(`Check-in claim failed: ${this.client.lastError}`);
+      return false;
+    }
+    this.lastError = '';
+    this.statusText = `Claimed day ${claim.day} · streak ${claim.streak}`;
+    this.notify();
+    // Re-read the cycle so the claimed day flips to `claimed` and the next day
+    // becomes `claimable` — the claim response does not carry the day list.
+    await this.openCheckin();
+    return true;
+  }
+
+  /** Opens the shop and loads the listings plus the wallet. */
+  async openShop(): Promise<boolean> {
+    this.statusText = 'Loading shop…';
+    this.setScreen(LobbyScreen.Shop);
+    const view = await this.client.fetchShop();
+    if (view === null) {
+      this.fail(`Shop load failed: ${this.client.lastError}`);
+      return false;
+    }
+    this.shop = view;
+    this.lastError = '';
+    this.statusText = `Shop: ${view.items.length} item(s)`;
+    this.notify();
+    return true;
+  }
+
+  /** Buys `count` of an item and refreshes the shop. */
+  async purchaseItem(itemId: string, count = 1): Promise<boolean> {
+    const purchase = await this.client.purchaseShopItem(itemId, count);
+    if (purchase === null) {
+      this.fail(`Purchase failed: ${this.client.lastError}`);
+      return false;
+    }
+    this.lastError = '';
+    this.statusText = `Bought ${purchase.count}× ${purchase.itemId}`;
+    this.notify();
+    await this.openShop();
+    return true;
+  }
+
+  /** Opens the inventory screen and loads the owned card stacks. */
+  async openInventory(): Promise<boolean> {
+    this.statusText = 'Loading inventory…';
+    this.setScreen(LobbyScreen.Inventory);
+    const view = await this.client.fetchInventory();
+    if (view === null) {
+      this.fail(`Inventory load failed: ${this.client.lastError}`);
+      return false;
+    }
+    this.inventory = view;
+    this.lastError = '';
+    this.statusText = `Inventory: ${view.items.length} stack(s)`;
+    this.notify();
+    return true;
   }
 }

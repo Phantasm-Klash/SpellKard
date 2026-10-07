@@ -28,14 +28,23 @@ const BOSS_RADIUS_RIVAL = 16;
 const PLAYER_RADIUS = 4;
 
 export interface BossRaceViewOptions {
+  /** Playfield size in pixels (the 3:2 portrait battle area). */
   layout: PlayfieldLayout;
+  /** Height of the status bar below the playfield. */
   hudHeight?: number;
+  /**
+   * Width of the status bar. Defaults to the playfield width. The status bar is
+   * a stage-wide band, so it may be wider than the playfield once the playfield
+   * stops filling the stage.
+   */
+  hudWidth?: number;
 }
 
 export class BossRaceView {
   readonly root: Laya.Sprite;
 
   private readonly layout: PlayfieldLayout;
+  private readonly hudWidth: number;
   private readonly hudHeight: number;
   private readonly playfield: Laya.Sprite;
   private readonly bulletLayer: Laya.Sprite;
@@ -49,13 +58,15 @@ export class BossRaceView {
 
   constructor(options: BossRaceViewOptions) {
     this.layout = options.layout;
+    this.hudWidth = options.hudWidth ?? options.layout.width;
     this.hudHeight = options.hudHeight ?? 72;
+    const stageWidth = Math.max(this.layout.width, this.hudWidth);
 
     this.root = new Laya.Sprite();
-    this.root.size(this.layout.width, this.layout.height + this.hudHeight);
+    this.root.size(stageWidth, this.layout.height + this.hudHeight);
 
     const background = new Laya.Sprite();
-    background.graphics.drawRect(0, 0, this.layout.width, this.layout.height + this.hudHeight, COLOR_BACKGROUND);
+    background.graphics.drawRect(0, 0, stageWidth, this.layout.height + this.hudHeight, COLOR_BACKGROUND);
     this.root.addChild(background);
 
     this.playfield = new Laya.Sprite();
@@ -79,7 +90,7 @@ export class BossRaceView {
     this.hud.fontSize = 14;
     this.hud.color = COLOR_HUD;
     this.hud.leading = 4;
-    this.hud.width = this.layout.width - 16;
+    this.hud.width = this.hudWidth - 16;
     this.hud.wordWrap = true;
     this.root.addChild(this.hud);
   }
@@ -103,7 +114,7 @@ export class BossRaceView {
       this.hud.visible = false;
       this.hudLayer.visible = true;
       this.hudLayer.graphics.clear();
-      drawHudBar(this.hudLayer.graphics, 0, 0, this.layout.width, this.hudHeight, hudState);
+      drawHudBar(this.hudLayer.graphics, 0, 0, this.hudWidth, this.hudHeight, hudState);
     } else {
       this.hudLayer.visible = false;
       this.hud.text = hudLines.join('\n');

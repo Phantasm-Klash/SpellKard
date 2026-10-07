@@ -19,7 +19,11 @@
 
 import * as theme from './theme';
 
-/** Facing direction in radians, 0 = +x, clockwise (screen +y is down). */
+/**
+ * Facing direction in radians. The vector helpers below treat `0` as `+x` and
+ * grow clockwise (`+y` is screen-down). Player headings use the portrait
+ * convention instead — see `drawPlayer` in `arena.ts`: there `0` is straight up.
+ */
 export interface Facing {
   angleRad: number;
 }
