@@ -2531,6 +2531,12 @@ func _dispatch_ui_action(row: Dictionary) -> Dictionary:
 			preview_status["performance_budget_status"] = String(row.get("performance_budget_status", ""))
 			preview_status["local_hash_authority"] = String(row.get("local_hash_authority", "local_practice_verification_only"))
 			preview_status["online_result_authority"] = String(row.get("online_result_authority", "server_settlement_required"))
+			preview_status["launch_contract_kind"] = String(row.get("launch_contract_kind", "boss_practice_launch_contract"))
+			preview_status["launch_status"] = String(row.get("launch_status", "ready_local_preview" if preview_ok else "blocked_local"))
+			preview_status["local_launch_allowed"] = bool(row.get("local_launch_allowed", preview_ok))
+			preview_status["launch_target_screen"] = String(row.get("launch_target_screen", row.get("local_practice_target_screen", "practice")))
+			preview_status["local_practice_allowed_fields"] = row.get("local_practice_allowed_fields", [])
+			preview_status["client_forbidden_result_fields"] = row.get("client_forbidden_result_fields", [])
 			preview_status["screen"] = String(ui_screen_model.current_screen if ui_screen_model != null else "")
 			preview_status["client_result_authoritative"] = false
 			return _set_ui_action_result(preview_ok, action, preview_status)
