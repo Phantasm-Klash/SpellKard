@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  spk_udp — LayaNative Windows extension project (Release|x64).
+
+  Builds `spk_udp.dll` and drops it (plus the descriptor) straight into
+  `laya/layaide/build-templates/windows/release/`, which the LayaAir IDE merges
+  into the published Windows client directory. This mirrors the official
+  `LayaAir-Steam` sample (layabox/LayaAir-Steam, native/LayaSteam).
+
+  Point LAYANATIVE_SDK_ROOT at the Windows Build Support module:
+
+    <support-package>\project\Runtime\x64\release
+
+  which must contain include\jsvm\JSVM.h, include\extension\LayaExtension.h and
+  lib\conch.lib. `npm run fetch:windows` downloads the module into
+  `laya/native/windows/sdk` and prints the path (that directory is gitignored).
+
+  Toolset v145 / stdcpp20 / MultiThreaded match the official templates.
+-->
+<Project DefaultTargets="Build" ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>18.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{2f7b1c9a-6d34-4f6e-9a21-5c0d8e3b71af}</ProjectGuid>
+    <RootNamespace>spk_udp</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+    <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <PropertyGroup>
+    <LayaNativeSDKRoot Condition="'$(LayaNativeSDKRoot)'==''">$(LAYANATIVE_SDK_ROOT)</LayaNativeSDKRoot>
+    <LayaNativeSDKRoot Condition="'$(LayaNativeSDKRoot)'=='' and Exists('$(ProjectDir)..\..\windows\sdk\project\Runtime\x64\release\include\jsvm\JSVM.h')">$(ProjectDir)..\..\windows\sdk\project\Runtime\x64\release</LayaNativeSDKRoot>
+    <OutDir>$(ProjectDir)..\..\..\layaide\build-templates\windows\release\</OutDir>
+    <IntDir>$(ProjectDir)build\$(Configuration)\</IntDir>
+    <TargetName>spk_udp</TargetName>
+    <TargetExt>.dll</TargetExt>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;USING_CONCH_SHARED;JS_V8;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(LayaNativeSDKRoot)\include;$(ProjectDir)..\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalOptions>/utf-8 /wd4251 /wd4275 /wd4828 %(AdditionalOptions)</AdditionalOptions>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <AdditionalDependencies>conch.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(LayaNativeSDKRoot)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <ImportLibrary>$(IntDir)$(TargetName).lib</ImportLibrary>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ClCompile Include="..\src\main.cpp" />
+    <ClCompile Include="..\src\udp_socket.cpp" />
+    <ClInclude Include="..\src\udp_socket.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\..\layaide\build-templates\windows\release\spk_udp.layaext.json" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+  <Target Name="ValidateDependencies" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(LayaNativeSDKRoot)\include\jsvm\JSVM.h')" Text="Set LAYANATIVE_SDK_ROOT to the Windows Build Support runtime dir (…\project\Runtime\x64\release), or run `npm run fetch:windows`." />
+    <Error Condition="!Exists('$(LayaNativeSDKRoot)\include\extension\LayaExtension.h')" Text="LayaExtension.h was not found under LAYANATIVE_SDK_ROOT\include\extension." />
+    <Error Condition="!Exists('$(LayaNativeSDKRoot)\lib\conch.lib')" Text="conch.lib was not found under LAYANATIVE_SDK_ROOT\lib." />
+  </Target>
+</Project>

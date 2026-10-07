@@ -1,0 +1,19 @@
+node_modules/
+dist/
+dist-windows/
+.test-build/
+*.tsbuildinfo
+.DS_Store
+
+# LayaAir release archive cache used by tools/fetch_engine.mjs.
+# engine/libs/*.js IS committed so the scaffold runs offline.
+engine/.cache/
+
+# LayaAir Windows Build Support module (~159 MB download, ~476 MB extracted),
+# fetched by tools/fetch_windows_support.mjs. Never commit the runtime.
+native/windows/.cache/
+native/windows/sdk/
+
+# MSVC intermediate/output directories for the spk_udp extension.
+native/udp_ext/windows/build/
+*.vcxproj.user

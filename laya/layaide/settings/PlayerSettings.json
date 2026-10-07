@@ -1,0 +1,8 @@
+{
+  "modules": {
+    "laya.ui": true
+  },
+  "addons": {
+    "laya.ui": "ui2"
+  }
+}

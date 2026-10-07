@@ -1,0 +1,18 @@
+# LayaAir IDE generated / local state — mirrors the official project template.
+.DS_Store
+/library/
+/local/
+/temp/
+/release/
+/node_modules/
+/packages/
+/bin/js/bundles
+
+# Engine type declarations are copied in by the IDE (or by
+# `npm run fetch:engine-types`); they are not hand-maintained here.
+/engine/types/*.d.ts
+
+# Windows extension build output (the DLL lands in build-templates/, the
+# descriptor there IS committed).
+/native/windows/**/build/
+*.vcxproj.user

@@ -1,0 +1,4 @@
+# Windows batch scripts must keep CRLF line endings: cmd.exe mis-parses
+# LF-only .bat files (it drops leading characters at line boundaries).
+*.bat text eol=crlf
+*.cmd text eol=crlf

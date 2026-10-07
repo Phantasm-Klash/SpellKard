@@ -1,0 +1,25 @@
+{
+  "name": "spellkard-laya-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Phantasm Klash (SpellKard) LayaAir 3 TypeScript client: lobby (Gensoulkyo WS/HTTP) + boss-race battle (PhK-BattleServer KCP/UDP).",
+  "license": "SEE LICENSE IN ../LICENSE",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:full": "tsc -p tsconfig.full.json --noEmit",
+    "build:core": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.browser.json && node tools/fix_esm_imports.mjs",
+    "serve": "node dev/serve.mjs",
+    "dev": "npm run build && node dev/serve.mjs",
+    "test": "tsc -p tsconfig.test.json && node .test-build/tests/run.js",
+    "fetch:engine": "node tools/fetch_engine.mjs",
+    "fetch:windows": "node tools/fetch_windows_support.mjs",
+    "assemble:windows": "node tools/assemble_windows_client.mjs",
+    "gen:protocol": "node tools/gen_protocol.mjs",
+    "ide:check": "node layaide/tools/check_project.mjs",
+    "check": "npm run typecheck && npm run test && npm run ide:check"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
