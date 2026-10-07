@@ -138,6 +138,19 @@ export interface MatchResultView {
   settledAtMs: number;
 }
 
+export interface CardInventoryEntryView {
+  cardId: string;
+  copies: number;
+  level: number;
+}
+
+export interface InventoryView {
+  userId: string;
+  rulesetVersion: string;
+  items: CardInventoryEntryView[];
+  serverAuthoritative: boolean;
+}
+
 /** Gensoulkyo matchmaking queue ticket (`matchmaking.join` / `.ticket` / `.cancel`). */
 export interface MatchmakingTicketView {
   ticketId: string;
@@ -310,6 +323,28 @@ export class LobbyClient {
           : base.unlockedCharacterIds,
     };
     return this.session;
+  }
+
+  /** `inventory.get` — server-owned card inventory projection. */
+  async fetchInventory(): Promise<InventoryView | null> {
+    const response = await this.call('inventory.get');
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    const items = Array.isArray(payload.items)
+      ? payload.items.filter(isRecord).map((item) => ({
+          cardId: stringField(item, 'card_id', 'cardId'),
+          copies: numberField(item, 'copies'),
+          level: numberField(item, 'level'),
+        }))
+      : [];
+    return {
+      userId: stringField(payload, 'user_id', 'userId'),
+      rulesetVersion: stringField(payload, 'ruleset_version', 'rulesetVersion'),
+      items,
+      serverAuthoritative: booleanField(payload, 'server_authoritative', 'serverAuthoritative'),
+    };
   }
 
   /** `rooms.create` / `POST /v1/rooms/create`. */
