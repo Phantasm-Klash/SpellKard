@@ -32,6 +32,15 @@ export interface BattleSceneOptions {
   /** Lazily read: the player id is only known after lobby sign-in. */
   localPlayerId: () => string;
   bossMaxHp: number;
+  /**
+   * Server-side tick cap, used for the HUD countdown. Optional: when omitted
+   * the countdown row is hidden rather than showing a made-up value. The battle
+   * server runs with `--max-ticks 7200` by default, so callers that know that
+   * figure should pass it.
+   */
+  matchTickLimit?: number;
+  /** Tick rate for the countdown clock. Defaults to the simulation's 60Hz. */
+  tickRateHz?: number;
   onMatchEnd?: (winnerPlayerId: string) => void;
 }
 
@@ -181,6 +190,8 @@ export class BattleScene implements ClientScene {
       bullets: snapshot.bullets.length,
       connectionLabel: this.authoritative === null ? 'predicted' : 'server',
       metricsLine: `snaps ${metrics.snapshotsReceived} · err ${metrics.averagePositionErrorMilli.toFixed(0)} · hash ${metrics.hashMatches}/${hashTotal} · snap ${metrics.hardSnaps}`,
+      tickLimit: this.options.matchTickLimit,
+      tickRateHz: this.options.tickRateHz,
     };
   }
 

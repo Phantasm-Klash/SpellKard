@@ -28,6 +28,12 @@ export const BOSS_RACE_MAX_BULLETS_PER_PLAYER = 384;
 export const BOSS_RACE_MAX_PLAYERS = 2;
 export const BOSS_RACE_MIN_PLAYERS = 2;
 export const BOSS_RACE_PATTERN_COUNT = 10;
+/**
+ * Default tick cap, matching the battle server's `--max-ticks 7200` (two
+ * minutes at 60Hz). The client uses this only to render a countdown; the server
+ * still decides when a match is timed out.
+ */
+export const BOSS_RACE_DEFAULT_MAX_TICKS = 7200;
 
 export const ARENA_HALF_WIDTH_MILLI = 120000;
 export const ARENA_HALF_HEIGHT_MILLI = 90000;

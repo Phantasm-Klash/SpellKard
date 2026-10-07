@@ -16,7 +16,7 @@ import {
 } from '../../core/net/lobby_client';
 import type { DatagramFactory, Logger, SocketFactory, TimerLike } from '../../core/net/transport';
 import { LobbyFlow, LobbyScreen, type LobbyFlowSnapshot } from '../../core/game/lobby_flow';
-import { BOSS_RACE_DEFAULT_BOSS_HP } from '../../core/sim/boss_race';
+import { BOSS_RACE_DEFAULT_BOSS_HP, BOSS_RACE_DEFAULT_MAX_TICKS, BOSS_RACE_TICK_RATE_HZ } from '../../core/sim/boss_race';
 import { LayaInput } from './laya_input';
 import { LayaTimer } from './laya_timer';
 import { BattleScene } from './scenes/battle_scene';
@@ -116,6 +116,11 @@ export class SpellKardApp {
       timer: this.timer,
       localPlayerId,
       bossMaxHp: BOSS_RACE_DEFAULT_BOSS_HP,
+      // Mirrors the battle server's default `--max-ticks` (see the
+      // phk-battle-agent systemd unit). Used only for the HUD countdown; the
+      // server remains authoritative on when the match actually ends.
+      matchTickLimit: BOSS_RACE_DEFAULT_MAX_TICKS,
+      tickRateHz: BOSS_RACE_TICK_RATE_HZ,
       onMatchEnd: (winnerPlayerId) => this.onMatchEnd(winnerPlayerId),
     });
     this.resultScene = new ResultScene({
@@ -237,5 +242,27 @@ export class SpellKardApp {
     this.input.destroy();
     this.battleClient.close();
     this.lobbyClient.close();
+  }
+
+  /**
+   * Debug-only scene accessors, used by the local screenshot harness to drive
+   * each screen without a live lobby server. Not part of the runtime flow.
+   */
+  debugScenes(): {
+    lobby: LobbyScene;
+    room: RoomScene;
+    battle: BattleScene;
+    result: ResultScene;
+    flow: LobbyFlow;
+    switchTo: (screen: LobbyScreen) => void;
+  } {
+    return {
+      lobby: this.lobbyScene,
+      room: this.roomScene,
+      battle: this.battleScene,
+      result: this.resultScene,
+      flow: this.flow,
+      switchTo: (screen: LobbyScreen) => this.switchTo(screen),
+    };
   }
 }
