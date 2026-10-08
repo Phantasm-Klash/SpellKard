@@ -45,31 +45,51 @@ export interface BattleSceneOptions {
 }
 
 /**
- * Height reserved for the status bar below the playfield.
- *
- * Portrait layout: the stage is 720x1280. The playfield keeps a 3:2 portrait
- * aspect (720x1080), so the status bar that fills the rest is
- * `1280 - 1080 = 200` px tall and 720 px wide — an 18:5 band, wider than 16:9,
- * which is exactly the "status bar no narrower than 16:9" requirement. The bar
- * is laid out in three columns (see `drawHudBar`).
+ * The status panel is a vertical strip pinned to the right of the stage; the
+ * playfield keeps its 2:3 portrait ratio and fills the full stage height, so
+ * the panel gets exactly the width that is left over. Nothing is letterboxed
+ * vertically and the two panes tile the stage edge to edge.
  */
-const HUD_HEIGHT = 200;
-
-/** The playfield keeps this width:height ratio (2:3, i.e. 3:2 standing up). */
 const PLAYFIELD_ASPECT = 3 / 2;
 
-/** Playfield size for a stage of `width` x `height`: full width, 3:2 tall. */
-function playfieldLayout(width: number, height: number): { width: number; height: number } {
-  const maxHeight = Math.max(0, height - HUD_HEIGHT);
-  const idealHeight = width * PLAYFIELD_ASPECT;
-  return { width, height: Math.min(maxHeight, idealHeight) };
+/** Geometry for a stage of `width` x `height`. */
+function battleLayout(width: number, height: number): {
+  playfield: { width: number; height: number };
+  playfieldX: number;
+  playfieldY: number;
+  hudX: number;
+  hudWidth: number;
+  hudHeight: number;
+} {
+  // The playfield owns the full stage height at its fixed 2:3 ratio; the panel
+  // takes the remainder. Clamp the playfield so a very wide stage still leaves
+  // the panel a readable width.
+  const idealPlayfieldWidth = Math.round(height / PLAYFIELD_ASPECT);
+  const playfieldWidth = Math.min(idealPlayfieldWidth, Math.max(0, width - MIN_HUD_WIDTH));
+  const playfieldHeight = Math.round(playfieldWidth * PLAYFIELD_ASPECT);
+  const hudWidth = Math.max(0, width - playfieldWidth);
+  return {
+    playfield: { width: playfieldWidth, height: playfieldHeight },
+    playfieldX: 0,
+    playfieldY: Math.round((height - playfieldHeight) / 2),
+    hudX: playfieldWidth,
+    hudWidth,
+    hudHeight: height,
+  };
 }
+
+/**
+ * Minimum width the status panel may shrink to. Below this the cards stop
+ * reading, so the playfield yields width rather than the panel.
+ */
+const MIN_HUD_WIDTH = 240;
 
 export class BattleScene implements ClientScene {
   readonly root: Laya.Sprite;
 
   private readonly view: BossRaceView;
   private readonly options: BattleSceneOptions;
+  private readonly geometry: ReturnType<typeof battleLayout>;
   private authoritative: BossRaceSnapshot | null = null;
   private tickHandle = 0;
   private running = false;
@@ -78,14 +98,20 @@ export class BattleScene implements ClientScene {
 
   constructor(options: BattleSceneOptions) {
     this.options = options;
+    this.geometry = battleLayout(options.width, options.height);
     this.root = new Laya.Sprite();
     this.root.size(options.width, options.height);
     this.root.visible = false;
 
     this.view = new BossRaceView({
-      layout: playfieldLayout(options.width, options.height),
-      hudHeight: HUD_HEIGHT,
-      hudWidth: options.width,
+      layout: this.geometry.playfield,
+      playfieldX: this.geometry.playfieldX,
+      playfieldY: this.geometry.playfieldY,
+      hudWidth: this.geometry.hudWidth,
+      hudHeight: this.geometry.hudHeight,
+      hudX: this.geometry.hudX,
+      stageWidth: options.width,
+      stageHeight: options.height,
     });
     this.root.addChild(this.view.root);
 
@@ -173,13 +199,12 @@ export class BattleScene implements ClientScene {
     if (source === null) {
       return;
     }
-    // The playfield is a 3:2 portrait rectangle anchored at the top; the status
-    // bar owns the rest of the stage. `buildBossRaceFrame` scales the milli-unit
-    // arena uniformly from the playfield width, so only the playfield geometry
-    // is passed here — the status bar is sized in `drawHudBar` instead.
-    const layout = playfieldLayout(this.options.width, this.options.height);
+    // The playfield is a 2:3 portrait rectangle on the left; the status panel is
+    // the vertical strip on the right. `buildBossRaceFrame` scales the milli-
+    // unit arena uniformly from the playfield width, so only the playfield
+    // geometry is passed here — the panel is sized in `drawHudBar` instead.
     this.frame = buildBossRaceFrame(source, {
-      layout,
+      layout: this.geometry.playfield,
       localPlayerId: this.options.localPlayerId(),
       bossMaxHp: this.options.bossMaxHp,
     });

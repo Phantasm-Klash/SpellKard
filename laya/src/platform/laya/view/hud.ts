@@ -1,14 +1,19 @@
 /**
- * Battle status bar rendering.
+ * Battle status panel rendering.
  *
  * Two entry points share one state shape:
  *
- *  - `drawHudBar` upgrades the old plain-text HUD into a structured status bar.
- *    Under the portrait layout it is a stage-wide band below the 3:2 playfield
- *    (`720x200`), laid out as **three columns**:
- *      left   — score + ultimate-cooldown meter
- *      centre — both Boss HP panels with the status badge between them
- *      right  — connection / tick and the reconciliation metrics
+ *  - `drawHudBar` upgrades the old plain-text HUD into a structured status
+ *    panel. It is a **vertical side panel to the right of the playfield**
+ *    (narrow strip, full stage height), stacked top-to-bottom as rows of
+ *    cards:
+ *      title   — SCORE (large value) + the ULT cooldown meter
+ *      HP      — YOU / RIVAL boss HP panels with the value readouts
+ *      status  — match state, countdown, pattern and bullet count, race bar
+ *      link    — connection / tick and the reconciliation metrics footer
+ *    The panel is a single column, so every row is full panel width and the
+ *    cards simply stack; the row pitch is derived from the available height so
+ *    the stack fills the strip without overlap.
  *    Bars and rules are drawn with `Graphics`; only the numeric labels go
  *    through `fillText`.
  *  - `formatHudLines` is the pure-text fallback that reproduces the previous
@@ -87,20 +92,24 @@ export interface HudState {
 
 /** Height of an HP bar track. */
 const BAR_HEIGHT = 10;
-/** Height of the ULT cooldown meter in the left column. */
+/** Height of the ULT cooldown meter in the panel. */
 const ULT_BAR_HEIGHT = 12;
 /**
- * Side-column width. The status bar is stage-wide (720 px) and roomy, so the
- * left "score / ultimate" column and the right "link / sync" column each take a
- * fixed share; the centre HP block then gets the remainder — and because the
- * side columns are narrower than a third, the boss HP panels stay comfortably
- * wide. Clamped so a narrow bar still leaves the centre at least half.
+ * Vertical gap bounds between stacked cards in the side panel. The gap starts
+ * at the minimum and absorbs any slack the flex growth does not take.
  */
-const SIDE_COLUMN_WIDTH = 152;
-/** Horizontal gutter between the three status-bar columns. */
-const COLUMN_GAP = theme.SPACE_LG;
-/** Vertical row pitch inside a column (line height + one `SPACE_XS`). */
-const ROW_PITCH = theme.SPACE_SM;
+const PANEL_GAP_MIN = theme.SPACE_MD;
+/**
+ * Upper bound on how much a single card may grow to fill the strip. Cards grow
+ * together, so this keeps a tall strip from turning one card into a hollow box.
+ */
+const MAX_CARD_GROWTH = 140;
+/**
+ * Fixed gap *inside* a composite card (between the two HP panels and between an
+ * HP panel and its DMG readout). This one does not flex — it is part of the
+ * card's own measured height.
+ */
+const CARD_INNER_GAP = theme.SPACE_SM;
 /**
  * Converts a row top into the `y` that `Graphics.fillText` expects.
  *
@@ -118,51 +127,57 @@ function baselineOf(rowTop: number, _fontSize: number): number {
   return rowTop;
 }
 
-/** Structure of the status bar: side padding, panel inset and centre widths. */
+/** Structure of the side panel: outer padding, the usable inner box, and scale. */
 interface HudLayout {
   pad: number;
+  /** Inner left edge (x of every card). */
   innerX: number;
+  /** Inner top edge (y of the first card). */
   innerY: number;
+  /** Width shared by every card. */
   innerW: number;
+  /** Total vertical space the cards must fit in. */
   innerH: number;
-  leftX: number;
-  leftW: number;
-  centerX: number;
-  centerW: number;
-  rightX: number;
-  rightW: number;
-}
-
-function measureHud(x: number, y: number, width: number, height: number): HudLayout {
-  const pad = theme.SPACE_SM;
-  const innerX = x + pad;
-  const innerY = y + pad;
-  const innerW = width - pad * 2;
-  const innerH = height - pad * 2;
-
-  // The side columns are fixed and clamped so a narrow bar still leaves the
-  // centre at least half the remaining width.
-  const leftW = Math.min(SIDE_COLUMN_WIDTH, Math.max(0, (innerW - COLUMN_GAP * 2) * 0.28));
-  const rightW = leftW;
-  const centerW = Math.max(0, innerW - leftW * 2 - COLUMN_GAP * 2);
-  return {
-    pad,
-    innerX,
-    innerY,
-    innerW,
-    innerH,
-    leftX: innerX,
-    leftW,
-    centerX: innerX + leftW + COLUMN_GAP,
-    centerW,
-    rightX: innerX + innerW - rightW,
-    rightW,
-  };
+  /**
+   * Content scale for the panel. The strip is a full stage tall, so at 1x the
+   * cards would be a short cluster with a large void beneath; scaling the type
+   * and bars up makes the panel fill the height with legible content instead of
+   * stretching hollow boxes. Clamped so a very tall or very short strip still
+   * looks sane.
+   */
+  scale: number;
 }
 
 /**
- * Draws the full status bar into `g`, laid out inside the `(x, y, width,
- * height)` box — the band under the playfield.
+ * Reference panel height at which the content sits at its natural size. The
+ * scale is derived from the actual height over this, so the same code adapts
+ * from a compact strip to a full-height one.
+ */
+const HUD_REFERENCE_HEIGHT = 720;
+const HUD_MIN_SCALE = 1;
+const HUD_MAX_SCALE = 1.8;
+
+function measureHud(x: number, y: number, width: number, height: number): HudLayout {
+  const pad = theme.SPACE_SM;
+  const scale = Math.max(HUD_MIN_SCALE, Math.min(HUD_MAX_SCALE, height / HUD_REFERENCE_HEIGHT));
+  return {
+    pad,
+    innerX: x + pad,
+    innerY: y + pad,
+    innerW: Math.max(0, width - pad * 2),
+    innerH: Math.max(0, height - pad * 2),
+    scale,
+  };
+}
+
+/** Scales a base font size by the panel's content scale. */
+function fs(layout: HudLayout, base: number): number {
+  return Math.round(base * layout.scale);
+}
+
+/**
+ * Draws the full status panel into `g`, filling the `(x, y, width, height)`
+ * box — the vertical strip to the right of the playfield.
  */
 export function drawHudBar(
   g: Laya.Graphics,
@@ -181,127 +196,227 @@ export function drawHudBar(
 
   const layout = measureHud(x, y, width, height);
 
-  // --- left column: score + ultimate cooldown ---
-  drawScorePanel(g, layout, opts);
-  drawUltPanel(g, layout, opts);
+  // The strip is tall (a full stage height) while the cards' natural content is
+  // short, so the stack would leave a dead zone beneath. Instead of leaving it
+  // empty, hand the slack back to the cards: each grows by an equal share and
+  // centres its content, so the panel fills top-to-bottom. The per-card growth
+  // is capped so a very tall strip does not stretch a card into a hollow box.
+  //
+  // The footer height is measured from its actual rows (the metrics line wraps
+  // to a variable number of rows), not a fixed guess — otherwise a long metrics
+  // line pushes the footer up into the last card.
+  const footerH = infoFooterHeight(layout, opts);
+  const present = (['score', 'ult', 'hp', 'status'] as const).filter(
+    (kind) => cardHeight(kind, layout, opts) > 0,
+  );
+  const natural = present.reduce((sum, kind) => sum + cardHeight(kind, layout, opts), 0);
+  const gaps = Math.max(1, present.length - 1);
+  const slack = Math.max(0, layout.innerH - natural - footerH - PANEL_GAP_MIN * (gaps + 1));
+  const growth = Math.min(MAX_CARD_GROWTH, slack / present.length);
+  const gap = PANEL_GAP_MIN + Math.max(0, (slack - growth * present.length) / gaps);
 
-  // --- centre column: YOU / RIVAL HP panels with the status badge between ---
-  drawCenterColumn(g, layout, opts);
+  const h = (kind: 'score' | 'ult' | 'hp' | 'status'): number =>
+    cardHeight(kind, layout, opts) > 0 ? cardHeight(kind, layout, opts) + growth : 0;
 
-  // --- right column: connection, tick and reconciliation metrics ---
-  drawInfoColumn(g, layout, opts);
+  let cursor = layout.innerY;
+  cursor += drawScoreCard(g, layout, cursor, h('score'), opts) + gap;
+  cursor += drawUltCard(g, layout, cursor, h('ult'), opts) + gap;
+  cursor += drawHpStack(g, layout, cursor, h('hp'), opts) + gap;
+  drawStatusCard(g, layout, cursor, h('status'), opts);
+  drawInfoFooter(g, layout, opts);
+}
 
-  // Hairline rules between the columns so the three zones read as separate.
-  const ruleTop = y + layout.pad;
-  const ruleBottom = y + height - layout.pad;
-  g.drawLine(layout.centerX - COLUMN_GAP / 2, ruleTop, layout.centerX - COLUMN_GAP / 2, ruleBottom, fade(theme.COLOR_DIVIDER, 0.35), 1);
-  g.drawLine(layout.rightX - COLUMN_GAP / 2, ruleTop, layout.rightX - COLUMN_GAP / 2, ruleBottom, fade(theme.COLOR_DIVIDER, 0.35), 1);
+/** A card's natural (un-grown) height at the panel's current scale. */
+function cardHeight(kind: 'score' | 'ult' | 'hp' | 'status', layout: HudLayout, opts: HudState): number {
+  const s = layout.scale;
+  switch (kind) {
+    case 'score':
+      return (theme.SPACE_SM + theme.FONT_SIZE_CAPTION + theme.SPACE_XS + theme.FONT_SIZE_HEADING + theme.SPACE_SM) * s;
+    case 'ult':
+      if (!hasUlt(opts)) {
+        return 0;
+      }
+      return (theme.SPACE_SM + theme.FONT_SIZE_CAPTION + theme.SPACE_XS + ULT_BAR_HEIGHT + theme.SPACE_SM) * s;
+    case 'hp':
+      // Two HP panels (local + rival), the inner gap, and the DMG readout row.
+      return hpPanelHeight(layout) * 2 + CARD_INNER_GAP + theme.SPACE_XS + fs(layout, theme.FONT_SIZE_CAPTION) + theme.SPACE_SM * 2;
+    case 'status':
+      return statusCardHeight(layout);
+  }
+}
+
+function hasUlt(opts: HudState): boolean {
+  return opts.ultCooldownRatio !== undefined && Number.isFinite(opts.ultCooldownRatio);
+}
+
+function hpPanelHeight(layout: HudLayout): number {
+  return fs(layout, theme.FONT_SIZE_LABEL) + theme.SPACE_XS + Math.round(BAR_HEIGHT * layout.scale) + theme.SPACE_XS + fs(layout, theme.FONT_SIZE_CAPTION);
 }
 
 /**
- * Left column, top half: the running score.
+ * Score card (top of the panel): the running score as a large value.
  *
  * `opts.score` is preferred but optional, so callers that only have
  * `damageDealt` (the whole HUD before this change) still show a number.
  */
-function drawScorePanel(g: Laya.Graphics, layout: HudLayout, opts: HudState): void {
+function drawScoreCard(g: Laya.Graphics, layout: HudLayout, y: number, h: number, opts: HudState): number {
+  if (h <= 0) {
+    return 0;
+  }
   const score = opts.score ?? opts.damageDealt;
-  VectorPainter.roundedPanel(
-    g,
-    layout.leftX,
-    layout.innerY,
-    layout.leftW,
-    layout.innerH / 2 - theme.SPACE_SM / 2,
-    theme.RADIUS_SM,
-    theme.COLOR_PANEL,
-    theme.COLOR_PANEL_BORDER,
-    1,
-  );
-  const size = theme.FONT_SIZE_CAPTION;
-  g.fillText('SCORE', layout.leftX + theme.SPACE_SM, baselineOf(layout.innerY + theme.SPACE_SM, size), theme.font(size, true), theme.COLOR_TEXT_MUTED);
+  VectorPainter.roundedPanel(g, layout.innerX, y, layout.innerW, h, theme.RADIUS_SM, theme.COLOR_PANEL, theme.COLOR_PANEL_BORDER, 1);
+
+  const captionSize = fs(layout, theme.FONT_SIZE_CAPTION);
+  const valueSize = fs(layout, theme.FONT_SIZE_HEADING);
+  // Centre the label + value pair in the (possibly grown) card.
+  const contentH = captionSize + theme.SPACE_XS + valueSize;
+  const top = y + Math.max(theme.SPACE_SM, (h - contentH) / 2);
+  g.fillText('SCORE', layout.innerX + theme.SPACE_SM, baselineOf(top, captionSize), theme.font(captionSize, true), theme.COLOR_TEXT_MUTED);
   g.fillText(
     String(score),
-    layout.leftX + layout.leftW - theme.SPACE_SM,
-    baselineOf(layout.innerY + theme.SPACE_SM + size + theme.SPACE_XS, theme.FONT_SIZE_HEADING),
-    theme.font(theme.FONT_SIZE_HEADING, true),
+    layout.innerX + layout.innerW - theme.SPACE_SM,
+    baselineOf(top + captionSize + theme.SPACE_XS, valueSize),
+    theme.font(valueSize, true),
     theme.COLOR_ACCENT,
     'right',
   );
+  return h;
 }
 
 /**
- * Left column, bottom half: the ultimate-cooldown meter.
+ * Ultimate-cooldown card.
  *
  * Graceful degradation: when `ultCooldownRatio` is absent or not finite the
- * whole block is skipped, so a caller with no ultimate ability yet gets a clean
- * gap rather than a stale bar.
+ * whole card is skipped, so a caller with no ultimate ability yet gets no gap.
  */
-function drawUltPanel(g: Laya.Graphics, layout: HudLayout, opts: HudState): void {
-  const ratio = opts.ultCooldownRatio;
-  if (ratio === undefined || !Number.isFinite(ratio)) {
-    return;
+function drawUltCard(g: Laya.Graphics, layout: HudLayout, y: number, h: number, opts: HudState): number {
+  if (h <= 0 || !hasUlt(opts)) {
+    return 0;
   }
-  const clamped = Math.max(0, Math.min(1, ratio));
+  const clamped = Math.max(0, Math.min(1, opts.ultCooldownRatio as number));
   const ready = opts.ultReady ?? clamped <= 0;
-  const panelH = layout.innerH / 2 - theme.SPACE_SM / 2;
-  const panelY = layout.innerY + layout.innerH / 2 + theme.SPACE_SM / 2;
-  VectorPainter.roundedPanel(g, layout.leftX, panelY, layout.leftW, panelH, theme.RADIUS_SM, theme.COLOR_PANEL, theme.COLOR_PANEL_BORDER, 1);
+  VectorPainter.roundedPanel(g, layout.innerX, y, layout.innerW, h, theme.RADIUS_SM, theme.COLOR_PANEL, theme.COLOR_PANEL_BORDER, 1);
 
-  const size = theme.FONT_SIZE_CAPTION;
+  const size = fs(layout, theme.FONT_SIZE_CAPTION);
+  const barH = Math.round(ULT_BAR_HEIGHT * layout.scale);
+  const contentH = size + theme.SPACE_XS + barH;
+  const top = y + Math.max(theme.SPACE_SM, (h - contentH) / 2);
   const label = ready ? 'ULT READY' : 'ULT';
-  g.fillText(label, layout.leftX + theme.SPACE_SM, baselineOf(panelY + theme.SPACE_SM, size), theme.font(size, true), ready ? theme.COLOR_SUCCESS : theme.COLOR_TEXT_MUTED);
+  g.fillText(label, layout.innerX + theme.SPACE_SM, baselineOf(top, size), theme.font(size, true), ready ? theme.COLOR_SUCCESS : theme.COLOR_TEXT_MUTED);
   if (!ready) {
     const pct = `${Math.round((1 - clamped) * 100)}%`;
-    g.fillText(pct, layout.leftX + layout.leftW - theme.SPACE_SM, baselineOf(panelY + theme.SPACE_SM, size), theme.font(size), theme.COLOR_INFO, 'right');
+    g.fillText(pct, layout.innerX + layout.innerW - theme.SPACE_SM, baselineOf(top, size), theme.font(size), theme.COLOR_INFO, 'right');
   }
 
   // The bar fills with "charge remaining": full track = just fired.
-  const barY = panelY + theme.SPACE_SM + size + theme.SPACE_XS;
-  const barW = layout.leftW - theme.SPACE_SM * 2;
-  VectorPainter.progressBar(g, layout.leftX + theme.SPACE_SM, barY, barW, ULT_BAR_HEIGHT, 1 - clamped, ready ? theme.COLOR_ACCENT : theme.COLOR_INFO);
+  const barY = top + size + theme.SPACE_XS;
+  const barW = layout.innerW - theme.SPACE_SM * 2;
+  VectorPainter.progressBar(g, layout.innerX + theme.SPACE_SM, barY, barW, barH, 1 - clamped, ready ? theme.COLOR_ACCENT : theme.COLOR_INFO);
+  return h;
 }
 
-/** Centre column: the two HP panels plus the badge wedged between them. */
-function drawCenterColumn(g: Laya.Graphics, layout: HudLayout, opts: HudState): void {
-  const panelW = Math.min(layout.centerW * 0.28, 200);
-  const badgeW = Math.max(0, layout.centerW - panelW * 2 - theme.SPACE_MD * 2);
-
-  drawHpPanel(g, layout.centerX, layout.innerY, panelW, theme.COLOR_SUCCESS, 'YOU', opts.localHp, opts.bossMaxHp, opts.localHpRatio);
-  drawHpPanel(g, layout.centerX + layout.centerW - panelW, layout.innerY, panelW, theme.COLOR_DANGER, 'RIVAL', opts.rivalHp, opts.bossMaxHp, opts.rivalHpRatio);
-
-  if (badgeW > 0) {
-    drawStatusBadge(g, layout.centerX + panelW + theme.SPACE_MD, layout.innerY + theme.SPACE_SM, badgeW, layout.innerH - theme.SPACE_SM * 2, opts);
+/** Both Boss HP panels, stacked (local above rival), then the DMG readout. */
+function drawHpStack(g: Laya.Graphics, layout: HudLayout, y: number, h: number, opts: HudState): number {
+  if (h <= 0) {
+    return 0;
   }
+  VectorPainter.roundedPanel(g, layout.innerX, y, layout.innerW, h, theme.RADIUS_SM, theme.COLOR_PANEL, theme.COLOR_PANEL_BORDER, 1);
 
-  // Damage readout under the local panel, where it cannot collide with the badge.
-  const caption = theme.FONT_SIZE_CAPTION;
-  const valueRowTop = layout.innerY + theme.FONT_SIZE_LABEL + theme.SPACE_XS + BAR_HEIGHT + theme.SPACE_XS;
-  g.fillText(`DMG ${opts.damageDealt}`, layout.centerX, baselineOf(valueRowTop + caption + theme.SPACE_XS, caption), theme.font(caption), theme.COLOR_ACCENT);
+  const insetX = layout.innerX + theme.SPACE_SM;
+  const insetW = layout.innerW - theme.SPACE_SM * 2;
+  // Two HP panels plus the DMG readout, centred in the (possibly grown) card.
+  const panelH = hpPanelHeight(layout);
+  const caption = fs(layout, theme.FONT_SIZE_CAPTION);
+  const contentH = panelH * 2 + CARD_INNER_GAP + theme.SPACE_XS + caption;
+  const top = y + Math.max(theme.SPACE_SM, (h - contentH) / 2);
+
+  drawHpPanel(g, layout, insetX, top, insetW, theme.COLOR_SUCCESS, 'YOU', opts.localHp, opts.bossMaxHp, opts.localHpRatio);
+  drawHpPanel(g, layout, insetX, top + panelH + CARD_INNER_GAP, insetW, theme.COLOR_DANGER, 'RIVAL', opts.rivalHp, opts.bossMaxHp, opts.rivalHpRatio);
+
+  // Damage readout under the rival panel, right-aligned so it reads as a score.
+  const dmgRowTop = top + panelH * 2 + CARD_INNER_GAP + theme.SPACE_XS;
+  g.fillText(`DMG ${opts.damageDealt}`, layout.innerX + layout.innerW - theme.SPACE_SM, baselineOf(dmgRowTop, caption), theme.font(caption), theme.COLOR_ACCENT, 'right');
+  return h;
 }
 
-/** Right column: connection / tick caption plus the metrics footer. */
-function drawInfoColumn(g: Laya.Graphics, layout: HudLayout, opts: HudState): void {
-  if (layout.rightW <= 0) {
-    return;
-  }
-  const caption = theme.FONT_SIZE_CAPTION;
-  let rowTop = layout.innerY + theme.SPACE_XS;
-  g.fillText('LINK', layout.rightX, baselineOf(rowTop, caption), theme.font(caption, true), theme.COLOR_TEXT_MUTED);
-  rowTop += caption + ROW_PITCH;
-  g.fillText(opts.connectionLabel, layout.rightX, baselineOf(rowTop, caption), theme.font(theme.FONT_SIZE_LABEL, true), opts.connectionLabel === 'server' ? theme.COLOR_SUCCESS : theme.COLOR_WARNING);
-  rowTop += theme.FONT_SIZE_LABEL + ROW_PITCH;
-  g.fillText(`tick ${opts.tick}`, layout.rightX, baselineOf(rowTop, caption), theme.font(caption), theme.COLOR_HUD_DIM);
-  rowTop += caption + theme.SPACE_MD;
+/** Height of the status card: state row, pattern, bullets, race bar. */
+function statusCardHeight(layout: HudLayout): number {
+  const stateSize = fs(layout, theme.FONT_SIZE_BODY);
+  const captionSize = fs(layout, theme.FONT_SIZE_CAPTION);
+  const raceBarHeight = Math.round(theme.SPACE_XS * layout.scale);
+  // state + (countdown shares the row) + pattern + bullets + race bar
+  return theme.SPACE_SM + stateSize + theme.SPACE_XS + captionSize + theme.SPACE_XS + captionSize + theme.SPACE_SM + raceBarHeight + theme.SPACE_SM;
+}
 
-  g.fillText('SYNC', layout.rightX, baselineOf(rowTop, caption), theme.font(caption, true), theme.COLOR_TEXT_MUTED);
-  rowTop += caption + theme.SPACE_XS;
+/**
+ * Status card: match state, countdown, pattern id and bullet count, with a
+ * two-sided race bar pinned to the bottom inner edge.
+ */
+function drawStatusCard(g: Laya.Graphics, layout: HudLayout, y: number, h: number, opts: HudState): number {
+  if (h <= 0) {
+    return 0;
+  }
+  VectorPainter.roundedPanel(g, layout.innerX, y, layout.innerW, h, theme.RADIUS_SM, theme.COLOR_PANEL, theme.COLOR_PANEL_BORDER, 1);
+
+  const captionSize = fs(layout, theme.FONT_SIZE_CAPTION);
+  const stateSize = fs(layout, theme.FONT_SIZE_BODY);
+  const raceBarHeight = Math.round(theme.SPACE_XS * layout.scale);
+  const cx = layout.innerX + layout.innerW / 2;
+  // Centre the text block; the race bar is pinned to the bottom inner edge.
+  const textH = stateSize + theme.SPACE_XS + captionSize + theme.SPACE_XS + captionSize;
+  let cursor = y + Math.max(theme.SPACE_SM, (h - textH - theme.SPACE_SM - raceBarHeight) / 2);
+
+  // Row 1: state (with the countdown pinned to the right when known).
+  const countdown = formatCountdown(opts);
+  if (countdown === '') {
+    g.fillText(`◆ ${opts.stateName}`, cx, baselineOf(cursor, stateSize), theme.font(stateSize, true), theme.COLOR_TITLE, 'center');
+  } else {
+    g.fillText(`◆ ${opts.stateName}`, layout.innerX + theme.SPACE_SM, baselineOf(cursor, stateSize), theme.font(stateSize, true), theme.COLOR_TITLE);
+    g.fillText(countdown, layout.innerX + layout.innerW - theme.SPACE_SM, baselineOf(cursor + (stateSize - captionSize), captionSize), theme.font(captionSize, true), theme.COLOR_INFO, 'right');
+  }
+  cursor += stateSize + theme.SPACE_XS;
+
+  // Row 2: active pattern id.
+  g.fillText(opts.patternId, cx, baselineOf(cursor, captionSize), theme.font(captionSize), theme.COLOR_INFO, 'center');
+  cursor += captionSize + theme.SPACE_XS;
+
+  // Row 3: bullets in flight.
+  g.fillText(`BULLETS ${opts.bullets}`, cx, baselineOf(cursor, captionSize), theme.font(captionSize), theme.COLOR_HUD_DIM, 'center');
+
+  // Row 4: two-sided race bar, pinned near the bottom inner edge.
+  const raceBarWidth = layout.innerW - theme.SPACE_MD * 2;
+  const raceBarY = y + h - theme.SPACE_SM - raceBarHeight;
+  if (raceBarWidth > 0 && raceBarY > cursor + captionSize) {
+    drawRaceBar(g, layout.innerX + theme.SPACE_MD, raceBarY, raceBarWidth, raceBarHeight, opts);
+  }
+  return h;
+}
+
+/** The footer's rows, shared by its height measurement and its drawing. */
+function infoFooterRows(layout: HudLayout, opts: HudState): string[] {
+  const caption = fs(layout, theme.FONT_SIZE_CAPTION);
+  const rows: string[] = [`LINK ${opts.connectionLabel} · tick ${opts.tick}`];
   if (opts.metricsLine !== '') {
-    // The metrics line is long on purpose (it is the network-health summary);
-    // wrap it to the column width by splitting on the `·` separators.
-    for (const segment of wrapSegments(opts.metricsLine, layout.rightW)) {
-      g.fillText(segment, layout.rightX, baselineOf(rowTop, caption), theme.font(caption), theme.COLOR_HUD_DIM);
-      rowTop += caption + theme.SPACE_XS;
-    }
+    rows.push(...wrapSegments(`SYNC ${opts.metricsLine}`, layout.innerW - theme.SPACE_SM * 2, caption));
+  }
+  return rows;
+}
+
+/** Exact height the footer will occupy, so the cards can reserve it. */
+function infoFooterHeight(layout: HudLayout, opts: HudState): number {
+  const rowH = fs(layout, theme.FONT_SIZE_CAPTION) + theme.SPACE_XS;
+  return infoFooterRows(layout, opts).length * rowH;
+}
+
+/** Connection / tick caption plus the metrics footer, pinned to the bottom. */
+function drawInfoFooter(g: Laya.Graphics, layout: HudLayout, opts: HudState): void {
+  const caption = fs(layout, theme.FONT_SIZE_CAPTION);
+  const rows = infoFooterRows(layout, opts);
+  // Measure bottom-up so the block hugs the bottom edge of the strip.
+  let cursor = layout.innerY + layout.innerH - rows.length * (caption + theme.SPACE_XS);
+  for (const row of rows) {
+    g.fillText(row, layout.innerX, baselineOf(cursor, caption), theme.font(caption), theme.COLOR_HUD_DIM);
+    cursor += caption + theme.SPACE_XS;
   }
 }
 
@@ -313,6 +428,7 @@ function drawInfoColumn(g: Laya.Graphics, layout: HudLayout, opts: HudState): vo
  */
 function drawHpPanel(
   g: Laya.Graphics,
+  layout: HudLayout,
   x: number,
   y: number,
   width: number,
@@ -326,8 +442,9 @@ function drawHpPanel(
     return;
   }
   const clamped = Math.max(0, Math.min(1, ratio));
-  const labelSize = theme.FONT_SIZE_LABEL;
-  const captionSize = theme.FONT_SIZE_CAPTION;
+  const labelSize = fs(layout, theme.FONT_SIZE_LABEL);
+  const captionSize = fs(layout, theme.FONT_SIZE_CAPTION);
+  const barH = Math.round(BAR_HEIGHT * layout.scale);
 
   // Row 1: label.
   g.fillText(label, x, baselineOf(y, labelSize), theme.font(labelSize, true), accent);
@@ -335,63 +452,15 @@ function drawHpPanel(
   // Row 2: bar track.
   const barY = y + labelSize + theme.SPACE_XS;
   const fill = clamped <= 0.3 ? theme.COLOR_HP_BAR_LOW : theme.COLOR_HP_BAR;
-  VectorPainter.progressBar(g, x, barY, width, BAR_HEIGHT, clamped, fill);
+  VectorPainter.progressBar(g, x, barY, width, barH, clamped, fill);
   for (let i = 1; i < 4; i += 1) {
     const tx = x + (width * i) / 4;
-    g.drawLine(tx, barY, tx, barY + BAR_HEIGHT, fade(theme.COLOR_VOID, 0.3), 1);
+    g.drawLine(tx, barY, tx, barY + barH, fade(theme.COLOR_VOID, 0.3), 1);
   }
 
   // Row 3: value.
   const valueTop = barY + BAR_HEIGHT + theme.SPACE_XS;
   g.fillText(`${current}/${max}`, x, baselineOf(valueTop, captionSize), theme.font(captionSize), theme.COLOR_HUD);
-}
-
-/**
- * Centre badge: match state, countdown, pattern id and bullet count, with a
- * race bar pinned to the bottom edge.
- *
- * `y` / `height` describe the badge box. Rows are stacked top-down, then the
- * whole block is centred in the badge; the race bar sits on the bottom inner
- * edge above the footer. A short badge drops the race bar rather than
- * overflowing.
- */
-function drawStatusBadge(g: Laya.Graphics, x: number, y: number, width: number, height: number, opts: HudState): void {
-  if (width <= 0 || height <= 0) {
-    return;
-  }
-  VectorPainter.roundedPanel(g, x, y, width, height, theme.RADIUS_SM, theme.COLOR_PANEL, theme.COLOR_PANEL_BORDER, 1);
-  const cx = x + width / 2;
-  const captionSize = theme.FONT_SIZE_CAPTION;
-  const stateSize = theme.FONT_SIZE_BODY;
-  const raceBarHeight = theme.SPACE_XS;
-
-  const rows = [stateSize, captionSize, captionSize];
-  const blockHeight = rows.reduce((sum, size) => sum + size, 0) + theme.SPACE_XS * 2 + theme.SPACE_SM + raceBarHeight;
-  let cursor = y + Math.max(theme.SPACE_SM, (height - blockHeight) / 2);
-
-  // Row 1: state, with the countdown right-aligned beside it when known.
-  const countdown = formatCountdown(opts);
-  if (countdown === '') {
-    g.fillText(`◆ ${opts.stateName}`, cx, baselineOf(cursor, stateSize), theme.font(stateSize, true), theme.COLOR_TITLE, 'center');
-  } else {
-    g.fillText(`◆ ${opts.stateName}`, cx - theme.SPACE_MD, baselineOf(cursor, stateSize), theme.font(stateSize, true), theme.COLOR_TITLE, 'center');
-    g.fillText(countdown, x + width - theme.SPACE_SM, baselineOf(cursor + (stateSize - captionSize), captionSize), theme.font(captionSize, true), theme.COLOR_INFO, 'right');
-  }
-  cursor += stateSize + theme.SPACE_XS;
-
-  // Row 2: active pattern id.
-  g.fillText(opts.patternId, cx, baselineOf(cursor, captionSize), theme.font(captionSize), theme.COLOR_INFO, 'center');
-  cursor += captionSize + theme.SPACE_XS;
-
-  // Row 3: bullets in flight.
-  g.fillText(`BULLETS ${opts.bullets}`, cx, baselineOf(cursor, captionSize), theme.font(captionSize), theme.COLOR_HUD_DIM, 'center');
-  cursor += captionSize + theme.SPACE_SM;
-
-  // Row 4: two-sided race bar.
-  const raceBarWidth = width - theme.SPACE_MD * 2;
-  if (raceBarWidth > 0 && cursor + raceBarHeight <= y + height) {
-    drawRaceBar(g, x + theme.SPACE_MD, cursor, raceBarWidth, raceBarHeight, opts);
-  }
 }
 
 /**
@@ -425,16 +494,17 @@ function drawRaceBar(
 
 /**
  * Greedy word-wrap for the metrics line, split on the `·` separators the line
- * already uses. The right column is narrow, so an unwrapped line would run off
- * the bar.
+ * already uses. The panel is narrow, so an unwrapped line would run off the
+ * strip. `fontSize` is the size the row will actually be drawn at, so the
+ * character-width estimate stays honest as the panel scales.
  */
-function wrapSegments(line: string, maxWidth: number): string[] {
+function wrapSegments(line: string, maxWidth: number, fontSize: number): string[] {
   const parts = line.split(' · ');
   const rows: string[] = [];
   let current = '';
   for (const part of parts) {
     const candidate = current === '' ? part : `${current} · ${part}`;
-    if (current !== '' && candidate.length * theme.FONT_SIZE_CAPTION * 0.55 > maxWidth) {
+    if (current !== '' && candidate.length * fontSize * 0.55 > maxWidth) {
       rows.push(current);
       current = part;
     } else {

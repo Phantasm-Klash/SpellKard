@@ -48,11 +48,11 @@ declare global {
 }
 
 const DEFAULT_CONFIG: BrowserRuntimeConfig = {
-  // Portrait 9:16. The battle playfield is a 3:2 portrait block (720x1080)
-  // anchored at the top; the 720x200 status bar fills the remainder and is
-  // itself wider than 16:9 (18:5). See `BattleScene` for the split.
-  stageWidth: 720,
-  stageHeight: 1280,
+  // Stage is 3:4 (900x1200). The battle playfield is a 3:2 portrait block on
+  // the left; the status panel is a vertical strip to its right, as tall as the
+  // stage. See `BattleScene` for the split.
+  stageWidth: 900,
+  stageHeight: 1200,
   lobbyHttpBase: '',
   lobbyWsUrl: '',
   relayUrl: '',
