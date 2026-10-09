@@ -120,6 +120,7 @@ http://127.0.0.1:8080/?lobbyHttpBase=https://lobby.example&lobbyWsUrl=wss://lobb
 | `lobbyNakamaHttpBase` | Nakama RPC base. Empty = reuse `lobbyHttpBase` when `lobbyTransport=nakama_rpc` |
 | `lobbyTransport` | `legacy_http` (default) or `nakama_rpc`; ignored when `lobbyWsUrl` is set |
 | `nakamaHttpKey` | Nakama runtime HTTP key from `window.PHANTASM_KLASH_CONFIG`; never put credentials in URL query strings |
+| `sessionStore` | Optional host-provided `LobbySessionStore` backed by platform-secure storage; omitted = in-memory session only |
 | `lobbyWsUrl` | Lobby WS url (e.g. `ws://host:7350/v1/lobby/ws`). Empty = use the selected HTTP transport |
 | `relayUrl` | WebSocket relay that tunnels battle KCP datagrams (e.g. `ws://host:7350/v1/battle/relay`). Empty = offline battle |
 | `battleTransport` | `auto` (default) / `relay` / `udp`. `udp` uses the native `spk_udp` extension |
@@ -137,6 +138,11 @@ key. The transport posts JSON-string RPC payloads to
 to the returned Bearer session token. It does not manufacture the authenticated
 business envelope; callers must provide that envelope until the shared client
 envelope builder is enabled.
+
+Session resume is opt-in through a host-provided `sessionStore` implementing
+`load`, `save`, and `clear`. The client does not write bearer tokens to browser
+`localStorage` or `sessionStorage`; without a secure host adapter, sessions stay
+in memory and a page reload requires login again.
 
 ### Lobby WebSocket protocol
 

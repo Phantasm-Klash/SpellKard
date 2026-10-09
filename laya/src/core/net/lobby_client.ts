@@ -51,6 +51,8 @@ export interface LobbyRpcRequest {
 export interface LobbyTransport {
   call(request: LobbyRpcRequest): Promise<LobbyRpcResponse>;
   close(): void;
+  /** Synchronizes an already-authenticated session with transports that use headers. */
+  setSessionToken?(token: string): void;
 }
 
 export interface HttpResponseLike {
@@ -73,6 +75,11 @@ export interface LobbyClientConfig {
   clientBuild?: string;
   platform?: string;
   deviceId?: string;
+  /**
+   * Host-owned session storage. Implementations should use platform-secure
+   * storage; the client never serializes request sequence or business state.
+   */
+  sessionStore?: LobbySessionStore;
 }
 
 export interface SessionState {
@@ -83,6 +90,12 @@ export interface SessionState {
   characterId: string;
   rulesetVersion: string;
   unlockedCharacterIds: string[];
+}
+
+export interface LobbySessionStore {
+  load(): SessionState | null;
+  save(session: SessionState): void;
+  clear(): void;
 }
 
 export interface RoomPlayerView {
@@ -358,6 +371,7 @@ export class LobbyClient {
   private readonly clientBuild: string;
   private readonly platform: string;
   private readonly deviceId: string;
+  private readonly sessionStore?: LobbySessionStore;
   private readonly listeners: LobbyEventListener[] = [];
   private sequence = 0;
 
@@ -375,6 +389,11 @@ export class LobbyClient {
     this.clientBuild = config.clientBuild ?? '0.1.0-draft';
     this.platform = config.platform ?? 'web';
     this.deviceId = config.deviceId ?? '';
+    this.sessionStore = config.sessionStore;
+    this.session = this.restoreSession();
+    if (this.session !== null) {
+      this.setTransportSessionToken(this.session.sessionToken);
+    }
   }
 
   onEvent(listener: LobbyEventListener): () => void {
@@ -401,6 +420,23 @@ export class LobbyClient {
     this.emit(event);
   }
 
+  /** Clears local session and all server-derived lobby state. */
+  clearSession(): void {
+    this.session = null;
+    this.room = null;
+    this.allocation = null;
+    this.ticket = null;
+    this.matchmakingTicket = null;
+    this.sequence = 0;
+    this.lastResponse = null;
+    this.setTransportSessionToken('');
+    try {
+      this.sessionStore?.clear();
+    } catch {
+      // A storage failure must not leave an in-memory bearer active.
+    }
+  }
+
   private nextCid(): string {
     this.sequence += 1;
     return `c${this.sequence}`;
@@ -418,7 +454,7 @@ export class LobbyClient {
     if (this.deviceId !== '') {
       request.device_id = this.deviceId;
     }
-    if (this.session !== null) {
+    if (this.session !== null && id !== 'auth.anonymous') {
       request.session_id = this.session.sessionToken;
       request.user_id = this.session.userId;
     }
@@ -441,6 +477,8 @@ export class LobbyClient {
 
   /** `auth.anonymous` / `POST /v1/auth/anonymous`. */
   async loginAnonymous(displayName = 'Player'): Promise<SessionState | null> {
+    // Explicit re-authentication must not reuse a stale restored identity.
+    this.clearSession();
     const response = await this.call('auth.anonymous', {
       device_id: this.deviceId,
       display_name: displayName,
@@ -466,6 +504,8 @@ export class LobbyClient {
       rulesetVersion: stringField(payload, 'ruleset_version', 'rulesetVersion'),
       unlockedCharacterIds: stringArrayField(payload, 'unlocked_character_ids', 'unlockedCharacterIds'),
     };
+    this.setTransportSessionToken(token);
+    this.persistSession();
     return this.session;
   }
 
@@ -502,7 +542,43 @@ export class LobbyClient {
           ? stringArrayField(payload, 'unlocked_character_ids', 'unlockedCharacterIds')
           : base.unlockedCharacterIds,
     };
+    this.setTransportSessionToken(this.session.sessionToken);
+    this.persistSession();
     return this.session;
+  }
+
+  private setTransportSessionToken(token: string): void {
+    this.transport.setSessionToken?.(token);
+  }
+
+  private persistSession(): void {
+    if (this.sessionStore === undefined || this.session === null) {
+      return;
+    }
+    try {
+      this.sessionStore.save(cloneSession(this.session));
+    } catch {
+      this.logger.warn('lobby session persistence failed');
+    }
+  }
+
+  private restoreSession(): SessionState | null {
+    if (this.sessionStore === undefined) {
+      return null;
+    }
+    try {
+      const stored = this.sessionStore.load();
+      if (stored === null) {
+        return null;
+      }
+      if (!isSessionState(stored)) {
+        this.sessionStore.clear();
+        return null;
+      }
+      return cloneSession(stored);
+    } catch {
+      return null;
+    }
   }
 
   /** `rooms.create` / `POST /v1/rooms/create`. */
@@ -991,7 +1067,7 @@ export class LobbyClient {
  * without touching this class.
  */
 export class HttpLobbyTransport implements LobbyTransport {
-  constructor(private readonly http: HttpClient, private readonly bearer = '') {}
+  constructor(private readonly http: HttpClient, private bearer = '') {}
 
   async call(request: LobbyRpcRequest): Promise<LobbyRpcResponse> {
     const route = REST_ROUTES[request.id];
@@ -1014,6 +1090,10 @@ export class HttpLobbyTransport implements LobbyTransport {
 
   close(): void {
     // HTTP is stateless; nothing to release.
+  }
+
+  setSessionToken(token: string): void {
+    this.bearer = token;
   }
 }
 
@@ -1082,6 +1162,10 @@ export class NakamaLobbyTransport implements LobbyTransport {
 
   close(): void {
     // HTTP is stateless; nothing to release.
+  }
+
+  setSessionToken(token: string): void {
+    this.sessionToken = token;
   }
 }
 
@@ -1393,6 +1477,10 @@ export class WsLobbyTransport implements LobbyTransport {
     this.rejectAll('lobby_ws_closed');
   }
 
+  setSessionToken(token: string): void {
+    this.fallback?.setSessionToken?.(token);
+  }
+
   /** Builds the `lobby.proto` payload for a routed operation. */
   private buildRequestPayload(id: string, request: LobbyRpcRequest): Record<string, unknown> {
     const payload = request.payload ?? {};
@@ -1656,6 +1744,28 @@ export function matchResultView(payload: unknown): MatchResultView {
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isSessionState(value: unknown): value is SessionState {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.sessionToken === 'string' &&
+    value.sessionToken !== '' &&
+    typeof value.userId === 'string' &&
+    value.userId !== '' &&
+    typeof value.playerId === 'string' &&
+    typeof value.displayName === 'string' &&
+    typeof value.characterId === 'string' &&
+    typeof value.rulesetVersion === 'string' &&
+    Array.isArray(value.unlockedCharacterIds) &&
+    value.unlockedCharacterIds.every((id) => typeof id === 'string')
+  );
+}
+
+function cloneSession(session: SessionState): SessionState {
+  return { ...session, unlockedCharacterIds: [...session.unlockedCharacterIds] };
 }
 
 export function stringField(source: Record<string, unknown>, ...keys: string[]): string {
