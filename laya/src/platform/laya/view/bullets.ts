@@ -2,10 +2,13 @@
  * Vector rendering of the ten Boss-race bullet patterns.
  *
  * The simulation exposes only a `patternId`; this module turns that string into
- * a *visually distinguishable* silhouette so the curtain is readable at a
- * glance (you can tell an aimed dart from a ring pellet from a laser). The
- * shape family comes from `core/game/bullet_visual.classifyPattern`, keeping
- * the pattern→family decision unit-testable and engine-free.
+ * a silhouette whose **motion is readable at a glance** — a straight pellet
+ * looks like it will not turn, a curving shot trails an arc, an orbiting one
+ * carries a spinning companion, a homing one wears a lock ring, and a spread
+ * shot reads as an opening fan. The trajectory family comes from
+ * `core/game/bullet_visual.classifyPattern` (`linear` / `curve` / `orbit` /
+ * `homing` / `spread`), keeping the pattern→family decision unit-testable and
+ * engine-free.
  *
  * Design rules
  * ------------
@@ -15,7 +18,11 @@
  *  - **Palette from `theme`.** Local bullets use the cyan family, rivals the
  *    pink one; danger/homing accents use `COLOR_DANGER`.
  *  - **`VectorPainter` first.** Shapes are composed from the shared painters
- *    (`orb`, `arrowHeadShaded`, `capsule`, `star`) instead of ad-hoc geometry.
+ *    (`orb`, `arrowHeadShaded`, `capsule`, `star`, `polygon`) instead of
+ *    ad-hoc geometry.
+ *  - **One look per trajectory.** All four `linear` patterns share the clean
+ *    pellet-and-head art so the *trajectory* (not the pattern name) drives the
+ *    visual language.
  *
  * The graphics passed in is the bullet sprite's own, already cleared, and the
  * bullet sits at its local origin `(0, 0)`.
@@ -49,7 +56,7 @@ function paletteFor(ownerIsLocal: boolean): BulletPalette {
  * @param patternId    one of `BOSS_RACE_PATTERN_IDS`
  * @param radius       pixel radius (already scaled by the playfield transform)
  * @param ownerIsLocal local bullets use the cyan family, rivals the pink one
- * @param angleRad     travel direction in radians; ignored by `orb`
+ * @param angleRad     travel direction in radians; ignored by `spread`'s beams
  * @param tick         animation clock (cheap wobble/pulse, keeps draws pure)
  */
 export function drawBullet(
@@ -66,150 +73,187 @@ export function drawBullet(
   // Guard against `NaN` when a velocity is momentarily zero.
   const angle = Number.isFinite(angleRad) ? angleRad : 0;
   const palette = paletteFor(ownerIsLocal);
-  const variant: BulletVisualClass = classifyPattern(patternId);
+  const family: BulletVisualClass = classifyPattern(patternId);
 
-  switch (variant) {
-    case 'arrow':
-      drawArrow(g, patternId, radius, palette, angle, tick);
+  switch (family) {
+    case 'curve':
+      drawCurve(g, radius, palette, angle, tick);
       return;
-    case 'capsule':
-      drawCapsule(g, radius, palette, angle, tick);
+    case 'orbit':
+      drawOrbit(g, radius, palette, tick);
       return;
-    case 'stream':
-      drawStream(g, radius, palette, angle, tick);
+    case 'homing':
+      drawHoming(g, radius, palette, angle, tick);
       return;
-    case 'orb':
+    case 'spread':
+      drawSpread(g, radius, palette, angle, tick);
+      return;
+    case 'linear':
     default:
-      drawOrb(g, patternId, radius, palette, tick);
+      drawLinear(g, radius, palette, angle);
       return;
   }
 }
 
 // --- families -------------------------------------------------------------
+//
+// Each family is keyed on *how the shot moves*, so all patterns in a family
+// share one motion language:
+//
+//   linear  clean pellet, no trail — "heads straight, never turns"
+//   curve   pellet + arc of trail points bent off the tangent heading
+//   orbit   pellet + a companion bead and ring circling the body
+//   homing  pellet inside a danger-coloured lock ring
+//   spread  a long, opening beam, so it reads as a fan not a ray
 
-/** Round bullets: `orb`, with a per-pattern silhouette twist. */
-function drawOrb(
+/** Straight shots: a clean, self-contained pellet with no motion trail. */
+function drawLinear(
   g: Laya.Graphics,
-  patternId: string,
   radius: number,
   palette: BulletPalette,
-  tick: number,
+  angle: number,
 ): void {
-  // Cheap 8-step phase drives a subtle breathing ring, so even identical rings
-  // feel alive without introducing any state.
-  const phase = (tick % 8) / 8;
-
-  if (patternId === 'blossom') {
-    // Blossom: a six-petal star around a small orb core, slowly rotating.
-    const spin = (tick % 64) / 64 * Math.PI * 2;
-    VectorPainter.star(g, 0, 0, 6, radius * 1.35, radius * 0.6, spin, palette.body);
-    VectorPainter.orb(g, 0, 0, radius * 0.6, palette.body, palette.core, 0.25);
-    return;
-  }
-
-  if (patternId === 'gap_ring') {
-    // Gap ring: an orb with an open ring around it, so the "gap" reads clearly.
-    VectorPainter.orb(g, 0, 0, radius * 0.72, palette.body, palette.core, 0.3);
-    const ringRadius = radius * (1.05 + phase * 0.15);
-    g.drawCircle(0, 0, ringRadius, null, fade(palette.body, 0.25), Math.max(1, radius * 0.22));
-    return;
-  }
-
-  if (patternId === 'n_way') {
-    // N-way: a slightly faceted round pellet — an octagon reads "spread shot".
-    VectorPainter.polygon(g, 0, 0, 8, radius * 1.05, Math.PI / 8, palette.body, palette.core, 1);
-    g.drawCircle(0, 0, radius * 0.5, palette.core);
-    return;
-  }
-
-  // ring (and any unknown fallback): a plain glowing orb with a pulsing outer
-  // ring so the classic ring curtain is unmistakable.
+  // A slim nose tick gives direction without implying a turn.
+  const tip = radius * 1.55;
+  g.drawLine(
+    Math.cos(angle) * radius * 0.35,
+    Math.sin(angle) * radius * 0.35,
+    Math.cos(angle) * tip,
+    Math.sin(angle) * tip,
+    fade(palette.body, 0.4),
+    Math.max(1, radius * 0.28),
+  );
   VectorPainter.orb(g, 0, 0, radius, palette.body, palette.core, 0.32);
-  const pulse = radius * (1.35 + phase * 0.35);
-  g.drawCircle(0, 0, pulse, null, fade(palette.body, 0.3), Math.max(1, radius * 0.18));
 }
 
-/** Directional darts: arrowheads that point down their travel axis. */
-function drawArrow(
+/**
+ * Curving shots: a pellet with a trail of beads along a bowing path. The trail
+ * offsets are rotated off the *tangent* heading by a growing angle, so the
+ * beads sit on an arc rather than a straight line — the visual cue that the
+ * heading is changing. The bow direction flips per tick, matching the
+ * oscillating `sine_stream`.
+ */
+function drawCurve(
   g: Laya.Graphics,
-  patternId: string,
   radius: number,
   palette: BulletPalette,
   angle: number,
   tick: number,
 ): void {
-  // Homing bullets get a danger-coloured tracking ring, so a live tracker is
-  // visually distinct from a straight aimed shot.
-  if (patternId === 'homing') {
-    const ringRadius = radius * 1.7;
-    const dashCount = 12;
-    // Rotate the dashed ring with tick so it reads as "locked on".
-    const spin = (tick % 24) / 24 * Math.PI * 2;
-    for (let i = 0; i < dashCount; i += 1) {
-      if (i % 2 === 1) {
-        continue;
-      }
-      const a0 = spin + (Math.PI * 2 * i) / dashCount;
-      const a1 = a0 + Math.PI / dashCount;
-      g.drawLine(
-        Math.cos(a0) * ringRadius,
-        Math.sin(a0) * ringRadius,
-        Math.cos(a1) * ringRadius,
-        Math.sin(a1) * ringRadius,
-        theme.COLOR_DANGER,
-        Math.max(1, radius * 0.22),
-      );
-    }
-    g.drawCircle(0, 0, radius * 1.35, null, fade(theme.COLOR_DANGER, 0.45), Math.max(1, radius * 0.15));
+  const sign = tick % 16 < 8 ? 1 : -1;
+  const back = angle + Math.PI;
+  const steps = 3;
+  for (let i = 1; i <= steps; i += 1) {
+    // Three trail points of decreasing size/opacity walking backward.
+    const bend = sign * i * 0.28;
+    const at = back + bend;
+    const d = radius * (1.0 + i * 0.85);
+    const alpha = 0.35 + i * 0.12;
+    const size = Math.max(0.7, radius * (0.5 - i * 0.09));
+    g.drawCircle(Math.cos(at) * d, Math.sin(at) * d, size, fade(palette.body, alpha));
   }
-  // The dart itself: shaded arrowhead with a bright nose, sized a bit larger
-  // than the collision radius so the pointing silhouette is obvious.
+  // Head, a touch smaller than the collision radius so the arc carries it.
+  VectorPainter.orb(g, 0, 0, radius * 0.85, palette.body, palette.core, 0.3);
+}
+
+/**
+ * Orbiting shots: the body stays put but a companion bead and a ring circle it,
+ * so the silhouette itself rotates. This reads as the emitter sweeping around
+ * (the helix / rose of `spiral` and `blossom`) rather than a shot that turns.
+ */
+function drawOrbit(
+  g: Laya.Graphics,
+  radius: number,
+  palette: BulletPalette,
+  tick: number,
+): void {
+  const spin = (tick % 48) / 48 * Math.PI * 2;
+  // Rotating ring around the body — a soft orbit trace.
+  const ringRadius = radius * 1.5;
+  const segs = 10;
+  for (let i = 0; i < segs; i += 1) {
+    if (i % 2 === 0) {
+      continue;
+    }
+    const a0 = spin + (Math.PI * 2 * i) / segs;
+    const a1 = a0 + Math.PI / segs;
+    g.drawLine(
+      Math.cos(a0) * ringRadius,
+      Math.sin(a0) * ringRadius,
+      Math.cos(a1) * ringRadius,
+      Math.sin(a1) * ringRadius,
+      fade(palette.body, 0.45),
+      Math.max(1, radius * 0.18),
+    );
+  }
+  // Companion bead circling the body, opposite a ring gap.
+  const beadA = spin + Math.PI;
+  g.drawCircle(
+    Math.cos(beadA) * ringRadius,
+    Math.sin(beadA) * ringRadius,
+    Math.max(0.8, radius * 0.38),
+    palette.core,
+  );
+  VectorPainter.orb(g, 0, 0, radius * 0.8, palette.body, palette.core, 0.3);
+}
+
+/** Homing shots: a pellet boxed in by a danger-coloured lock ring. */
+function drawHoming(
+  g: Laya.Graphics,
+  radius: number,
+  palette: BulletPalette,
+  angle: number,
+  tick: number,
+): void {
+  // Dashed danger ring, spun by tick so it reads as "locked on".
+  const ringRadius = radius * 1.7;
+  const dashCount = 12;
+  const spin = (tick % 24) / 24 * Math.PI * 2;
+  for (let i = 0; i < dashCount; i += 1) {
+    if (i % 2 === 1) {
+      continue;
+    }
+    const a0 = spin + (Math.PI * 2 * i) / dashCount;
+    const a1 = a0 + Math.PI / dashCount;
+    g.drawLine(
+      Math.cos(a0) * ringRadius,
+      Math.sin(a0) * ringRadius,
+      Math.cos(a1) * ringRadius,
+      Math.sin(a1) * ringRadius,
+      theme.COLOR_DANGER,
+      Math.max(1, radius * 0.22),
+    );
+  }
+  g.drawCircle(0, 0, radius * 1.35, null, fade(theme.COLOR_DANGER, 0.45), Math.max(1, radius * 0.15));
+  // The chase itself: a shaded arrowhead re-aiming along the (bending) heading.
   VectorPainter.arrowHeadShaded(g, 0, 0, radius * 1.5, angle, palette.body, palette.core);
 }
 
-/** Laser segments: capsules stretched along the travel axis. */
-function drawCapsule(
+/**
+ * Spread shots: a long, widening beam fanned outward from the boss. Drawn as a
+ * stretched capsule plus two flare wings at the far tip, so the shot reads as
+ * an opening curtain rather than a parallel ray.
+ */
+function drawSpread(
   g: Laya.Graphics,
   radius: number,
   palette: BulletPalette,
   angle: number,
   tick: number,
 ): void {
-  const width = radius * 2;
-  const length = radius * 4;
-  // A soft glow underlay, then the bright beam core, then a small hot centre.
-  VectorPainter.capsule(g, 0, 0, length * 1.12, angle, width * 1.5, fade(palette.body, 0.55));
+  const width = radius * 1.8;
+  const length = radius * 4.2;
+  // Soft glow underlay, bright beam body, then a hot centre line.
+  VectorPainter.capsule(g, 0, 0, length * 1.1, angle, width * 1.6, fade(palette.body, 0.55));
   VectorPainter.capsule(g, 0, 0, length, angle, width, palette.body);
-  VectorPainter.capsule(g, 0, 0, length * 0.55, angle, width * 0.4, palette.core);
-  // A tiny tick-driven muzzle flicker at the leading tip.
-  const flick = 0.85 + ((tick % 4) / 4) * 0.3;
-  g.drawCircle(
-    Math.cos(angle) * (length / 2) * flick,
-    Math.sin(angle) * (length / 2) * flick,
-    Math.max(0.8, radius * 0.3),
-    palette.core,
-  );
-}
-
-/** Streaking bullets: an orb plus a fading trail behind it. */
-function drawStream(
-  g: Laya.Graphics,
-  radius: number,
-  palette: BulletPalette,
-  angle: number,
-  tick: number,
-): void {
-  // Trail runs opposite the travel direction; two dots of decreasing size and
-  // opacity fake motion blur cheaply.
-  const back = angle + Math.PI;
-  const offset = radius * (1.6 + ((tick % 6) / 6) * 0.4);
-  const trailColor = fade(palette.body, 0.45);
-  const fadeColor = fade(palette.body, 0.72);
-  g.drawCircle(Math.cos(back) * offset, Math.sin(back) * offset, Math.max(0.8, radius * 0.55), trailColor);
-  g.drawCircle(Math.cos(back) * offset * 1.9, Math.sin(back) * offset * 1.9, Math.max(0.6, radius * 0.32), fadeColor);
-  // Head: a compact orb, a touch smaller than the collision radius so the
-  // streak rather than the dot carries the direction.
-  VectorPainter.orb(g, 0, 0, radius * 0.85, palette.body, palette.core, 0.3);
+  VectorPainter.capsule(g, 0, 0, length * 0.5, angle, width * 0.35, palette.core);
+  // Two flare wings at the leading tip, opening at ~40° — the "fan".
+  const tipX = Math.cos(angle) * (length / 2);
+  const tipY = Math.sin(angle) * (length / 2);
+  const spread = 0.7 + ((tick % 6) / 6) * 0.25;
+  const wing = Math.max(1, radius * 0.3);
+  g.drawLine(tipX, tipY, tipX + Math.cos(angle + spread) * radius * 1.7, tipY + Math.sin(angle + spread) * radius * 1.7, fade(palette.body, 0.5), wing);
+  g.drawLine(tipX, tipY, tipX + Math.cos(angle - spread) * radius * 1.7, tipY + Math.sin(angle - spread) * radius * 1.7, fade(palette.body, 0.5), wing);
 }
 
 // --- renderer seam --------------------------------------------------------

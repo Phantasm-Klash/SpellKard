@@ -28,15 +28,38 @@ const BOSS_RADIUS_RIVAL = 16;
 const PLAYER_RADIUS = 4;
 
 export interface BossRaceViewOptions {
+  /** Playfield size in pixels (the 2:3 portrait battle area). */
   layout: PlayfieldLayout;
+  /** Left edge of the playfield inside the stage. Defaults to 0. */
+  playfieldX?: number;
+  /** Top edge of the playfield inside the stage. Defaults to 0. */
+  playfieldY?: number;
+  /** Width of the status panel on the right. */
+  hudWidth?: number;
+  /** Height of the status panel on the right. */
   hudHeight?: number;
+  /** Left edge of the status panel inside the stage. Defaults to the playfield's right edge. */
+  hudX?: number;
+  /** Top edge of the status panel inside the stage. Defaults to 0 (stage top). */
+  hudY?: number;
+  /** Whole stage width; defaults to `playfieldX + layout.width + hudWidth`. */
+  stageWidth?: number;
+  /** Whole stage height; defaults to `playfieldY + layout.height`. */
+  stageHeight?: number;
 }
 
 export class BossRaceView {
   readonly root: Laya.Sprite;
 
   private readonly layout: PlayfieldLayout;
+  private readonly playfieldX: number;
+  private readonly playfieldY: number;
+  private readonly hudX: number;
+  private readonly hudY: number;
+  private readonly hudWidth: number;
   private readonly hudHeight: number;
+  private readonly stageWidth: number;
+  private readonly stageHeight: number;
   private readonly playfield: Laya.Sprite;
   private readonly bulletLayer: Laya.Sprite;
   private readonly actorLayer: Laya.Sprite;
@@ -49,37 +72,52 @@ export class BossRaceView {
 
   constructor(options: BossRaceViewOptions) {
     this.layout = options.layout;
+    this.playfieldX = options.playfieldX ?? 0;
+    this.playfieldY = options.playfieldY ?? 0;
+    this.hudX = options.hudX ?? this.playfieldX + this.layout.width;
+    this.hudY = options.hudY ?? 0;
+    this.hudWidth = options.hudWidth ?? this.layout.width;
     this.hudHeight = options.hudHeight ?? 72;
+    this.stageWidth = options.stageWidth ?? this.hudX + this.hudWidth;
+    this.stageHeight = options.stageHeight ?? Math.max(this.playfieldY + this.layout.height, this.hudHeight);
 
     this.root = new Laya.Sprite();
-    this.root.size(this.layout.width, this.layout.height + this.hudHeight);
+    this.root.size(this.stageWidth, this.stageHeight);
 
     const background = new Laya.Sprite();
-    background.graphics.drawRect(0, 0, this.layout.width, this.layout.height + this.hudHeight, COLOR_BACKGROUND);
+    background.graphics.drawRect(0, 0, this.stageWidth, this.stageHeight, COLOR_BACKGROUND);
     this.root.addChild(background);
 
     this.playfield = new Laya.Sprite();
-    this.playfield.pos(0, 0);
+    this.playfield.pos(this.playfieldX, this.playfieldY);
     drawPlayfield(this.playfield.graphics, this.layout.width, this.layout.height);
     this.root.addChild(this.playfield);
 
     this.bulletLayer = new Laya.Sprite();
+    this.bulletLayer.pos(this.playfieldX, this.playfieldY);
     this.actorLayer = new Laya.Sprite();
+    this.actorLayer.pos(this.playfieldX, this.playfieldY);
     this.root.addChild(this.bulletLayer);
     this.root.addChild(this.actorLayer);
 
-    // Structured HUD strip. It can render either as vector bars (`hudState`) or
-    // as a plain text block (`hudLines`); both target the same region.
+    // Structured HUD panel: a vertical strip to the right of the playfield. It
+    // can render either as vector cards (`hudState`) or as a plain text block
+    // (`hudLines`); both target the same region.
+    //
+    // The panel is a full-height strip: it starts at the top of the stage (not
+    // at `playfieldY`, which is the vertically-centred playfield's offset) and
+    // spans `hudHeight`, so it never runs off the bottom when the playfield is
+    // shorter than the stage.
     this.hudLayer = new Laya.Sprite();
-    this.hudLayer.pos(0, this.layout.height);
+    this.hudLayer.pos(this.hudX, this.hudY);
     this.root.addChild(this.hudLayer);
 
     this.hud = new Laya.Text();
-    this.hud.pos(8, this.layout.height + 8);
+    this.hud.pos(this.hudX + 8, this.hudY + 8);
     this.hud.fontSize = 14;
     this.hud.color = COLOR_HUD;
     this.hud.leading = 4;
-    this.hud.width = this.layout.width - 16;
+    this.hud.width = this.hudWidth - 16;
     this.hud.wordWrap = true;
     this.root.addChild(this.hud);
   }
@@ -103,8 +141,7 @@ export class BossRaceView {
       this.hud.visible = false;
       this.hudLayer.visible = true;
       this.hudLayer.graphics.clear();
-      drawHudBar(this.hudLayer.graphics, 0, 0, this.layout.width, this.hudHeight, hudState);
-    } else {
+      drawHudBar(this.hudLayer.graphics, 0, 0, this.hudWidth, this.hudHeight, hudState);    } else {
       this.hudLayer.visible = false;
       this.hud.text = hudLines.join('\n');
       this.hud.visible = true;

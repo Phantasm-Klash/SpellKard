@@ -9,7 +9,8 @@
  *  - `drawBoss` paints one Boss copy: orb body, tick-rotating rune ring, HP bar
  *    and a greyed-out defeat treatment.
  *  - `drawPlayer` paints one ship: an aimed arrowhead plus a hitbox pip, which
- *    turns into a focal ring while the player holds the focus key.
+ *    turns into a focal ring while the player holds the focus key. Ship
+ *    headings are measured from straight up (portrait framing), not from `+x`.
  *
  * Statelessness: every function is a pure function of its arguments, so calling
  * them twice with the same inputs yields identical command lists. All animation
@@ -188,8 +189,16 @@ export function drawBoss(
 }
 
 /**
- * Paints one player ship at the origin of the given `Graphics`, nose pointing
- * along `angleRad` (0 = +x, +y is screen-down).
+ * Paints one player ship at the origin of the given `Graphics`.
+ *
+ * Angle convention: `angleRad` is a **heading measured from straight up**,
+ * positive clockwise — `0` points at the top of the screen, `+Math.PI / 2` to
+ * the right, `-Math.PI / 2` to the left. That matches the game's portrait
+ * framing: with no facing information a ship noses up, not to the right.
+ *
+ * Internally the ship is drawn at `angleRad - Math.PI / 2`, because the vector
+ * helpers (`arrowHead`, `drawPoly` outlines) treat `0` as `+x` and screen `+y`
+ * grows downward, so straight up is `-Math.PI / 2` in their frame.
  *
  * Local ship: gold arrowhead + white outline + hitbox pip, plus a slow focal
  * ring when `isFocused`. Rival ships are drawn smaller and in the neutral
@@ -205,7 +214,8 @@ export function drawPlayer(
   if (radius <= 0) {
     return;
   }
-  const angle = Number.isFinite(angleRad) ? angleRad : 0;
+  const heading = Number.isFinite(angleRad) ? angleRad : 0;
+  const angle = heading - Math.PI / 2;
 
   if (!isLocal) {
     // Rival: a muted arrowhead, no glow.
@@ -235,7 +245,8 @@ export function drawPlayer(
 
   // Ship body: gold arrowhead with a shaded nose, plus a white outline ring.
   VectorPainter.arrowHeadShaded(g, 0, 0, size, angle, theme.COLOR_LOCAL_PLAYER, theme.COLOR_PLAYER);
-  // Outline traced as a thin triangle slightly larger than the body.
+  // Outline traced as a thin triangle slightly larger than the body. It reuses
+  // the same `angle` so the outline's tip stays aligned with the arrowhead's.
   g.drawPoly(
     0,
     0,

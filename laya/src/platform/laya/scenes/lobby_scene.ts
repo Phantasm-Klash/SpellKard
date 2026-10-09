@@ -42,6 +42,9 @@ export class LobbyScene implements ClientScene {
   private readonly joinQueueButton: ButtonHandle;
   private readonly refreshQueueButton: ButtonHandle;
   private readonly cancelQueueButton: ButtonHandle;
+  private readonly checkinButton: ButtonHandle;
+  private readonly shopButton: ButtonHandle;
+  private readonly inventoryButton: ButtonHandle;
   private roomCodeIndex = 0;
   private busy = false;
 
@@ -55,6 +58,13 @@ export class LobbyScene implements ClientScene {
     const margin = theme.SCREEN_MARGIN;
     const contentWidth = width - margin * 2;
 
+    // Portrait (720x1280) leaves a lot of vertical room below the action band,
+    // so the three bands are spread down the screen instead of hugging the top:
+    // the title stays at the margin, and the content + action bands are pushed
+    // apart by an extra `SPACE_XL` step. The action buttons remain stacked on
+    // the same `SPACE_*` rhythm as before.
+    const sectionGap = theme.SPACE_XL;
+
     // --- title band ---
     const subtitle = this.makeText('Phantasm Klash — Lobby', theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
     subtitle.y = margin;
@@ -63,7 +73,7 @@ export class LobbyScene implements ClientScene {
 
     // --- content band: profile + status card, then the room-code card ---
     const profileY = subtitle.y + theme.FONT_SIZE_TITLE + theme.SPACE_MD;
-    const profileHeight = 76;
+    const profileHeight = 96;
     this.root.addChild(createPanel(margin, profileY, contentWidth, profileHeight));
     this.profileText = this.makeText('Not signed in', theme.FONT_SIZE_LABEL, theme.COLOR_TEXT, false, margin + theme.SPACE_MD);
     this.profileText.y = profileY + theme.SPACE_SM;
@@ -73,28 +83,28 @@ export class LobbyScene implements ClientScene {
     this.root.addChild(this.profileText);
 
     this.statusText = this.makeText('', theme.FONT_SIZE_CAPTION, theme.COLOR_INFO, false, margin + theme.SPACE_MD);
-    this.statusText.y = profileY + 44;
+    this.statusText.y = profileY + profileHeight - theme.SPACE_LG;
     this.statusText.width = contentWidth - theme.SPACE_MD * 2;
     this.statusText.wordWrap = true;
     this.statusText.leading = 4;
     this.root.addChild(this.statusText);
 
-    const codeCardY = profileY + profileHeight + theme.SPACE_MD;
-    const codeCardHeight = 64;
+    const codeCardY = profileY + profileHeight + sectionGap;
+    const codeCardHeight = 96;
     this.root.addChild(createPanel(margin, codeCardY, contentWidth, codeCardHeight));
     const codeCaption = this.makeText('Room code', theme.FONT_SIZE_CAPTION, theme.COLOR_TEXT_MUTED, false, margin + theme.SPACE_MD);
-    codeCaption.y = codeCardY + theme.SPACE_XS;
+    codeCaption.y = codeCardY + theme.SPACE_SM;
     this.root.addChild(codeCaption);
     // Highlight frame around the code so it reads at a glance.
-    this.root.addChild(this.panelFrame(margin + theme.SPACE_MD, codeCardY + 22, 140, 30, theme.COLOR_ACCENT, theme.RADIUS_SM));
+    this.root.addChild(this.panelFrame(margin + theme.SPACE_MD, codeCardY + 34, 160, 40, theme.COLOR_ACCENT, theme.RADIUS_SM));
     this.roomCodeText = this.makeText('', theme.FONT_SIZE_HEADING, theme.COLOR_ACCENT, true, margin + theme.SPACE_MD + theme.SPACE_SM);
-    this.roomCodeText.y = codeCardY + 26;
+    this.roomCodeText.y = codeCardY + 40;
     this.root.addChild(this.roomCodeText);
 
     // --- action band ---
-    const actionsY = codeCardY + codeCardHeight + theme.SPACE_MD;
+    const actionsY = codeCardY + codeCardHeight + sectionGap;
     const buttonX = margin;
-    const step = theme.BUTTON_HEIGHT + theme.SPACE_SM;
+    const step = theme.BUTTON_HEIGHT + theme.SPACE_MD;
     let y = actionsY;
 
     this.signInButton = createButton('Sign in', buttonX, y, contentWidth, () => void this.signIn());
@@ -132,6 +142,20 @@ export class LobbyScene implements ClientScene {
 
     this.cancelQueueButton = createButton('Cancel matchmaking', buttonX, y, contentWidth, () => void this.cancelQueue());
     this.root.addChild(this.cancelQueueButton.sprite);
+    y += step;
+
+    // Business screens: check-in / shop / inventory. Appended after the queue
+    // block so the existing lobby layout above is untouched.
+    this.checkinButton = createButton('Check-in', buttonX, y, contentWidth, () => void this.openCheckin());
+    this.root.addChild(this.checkinButton.sprite);
+    y += step;
+
+    this.shopButton = createButton('Shop', buttonX, y, contentWidth, () => void this.openShop());
+    this.root.addChild(this.shopButton.sprite);
+    y += step;
+
+    this.inventoryButton = createButton('Inventory', buttonX, y, contentWidth, () => void this.openInventory());
+    this.root.addChild(this.inventoryButton.sprite);
 
     this.roomCodeIndex = 0;
     this.refresh();
@@ -181,6 +205,9 @@ export class LobbyScene implements ClientScene {
     this.joinQueueButton.setEnabled(signedIn && !queued && !this.busy);
     this.refreshQueueButton.setEnabled(queued && !this.busy);
     this.cancelQueueButton.setEnabled(queued && !this.busy);
+    this.checkinButton.setEnabled(signedIn && !this.busy);
+    this.shopButton.setEnabled(signedIn && !this.busy);
+    this.inventoryButton.setEnabled(signedIn && !this.busy);
   }
 
   private cycleRoomCode(): void {
@@ -210,6 +237,18 @@ export class LobbyScene implements ClientScene {
 
   private async cancelQueue(): Promise<void> {
     await this.run(() => this.options.flow.cancelMatchmaking());
+  }
+
+  private async openCheckin(): Promise<void> {
+    await this.run(() => this.options.flow.openCheckin());
+  }
+
+  private async openShop(): Promise<void> {
+    await this.run(() => this.options.flow.openShop());
+  }
+
+  private async openInventory(): Promise<void> {
+    await this.run(() => this.options.flow.openInventory());
   }
 
   /** Runs a flow action with the busy flag set and the screen refreshed after. */

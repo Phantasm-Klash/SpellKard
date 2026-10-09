@@ -18,9 +18,11 @@
   const theme = await import('../dist/platform/laya/view/theme.js');
   const { drawHudBar } = await import('../dist/platform/laya/view/hud.js');
 
-  const W = 960, H = 140;
+  // The status bar is 720 wide x 200 tall under the portrait layout; the
+  // ruler runs down the full height so every row top can be read off directly.
+  const W = 720, H = 200;
   const Laya = window.Laya;
-  await Laya.init({ designWidth: W, designHeight: H, scaleMode: 'showall', screenMode: 'none' });
+  await Laya.init({ designWidth: W + 160, designHeight: H, scaleMode: 'showall', screenMode: 'none' });
 
   const root = new Laya.Sprite();
   Laya.stage.addChild(root);
@@ -36,10 +38,11 @@
   const g = new Laya.Sprite();
   g.pos(80, 0);
   root.addChild(g);
-  drawHudBar(g.graphics, 0, 0, W - 160, H, {
+  drawHudBar(g.graphics, 0, 0, W, H, {
     localHpRatio: 0.7, rivalHpRatio: 1, bossMaxHp: 6000, localHp: 4200, rivalHp: 6000,
-    damageDealt: 1800, tick: 270, stateName: 'Running', patternId: 'laser_curtain',
-    bullets: 48, connectionLabel: 'server', metricsLine: 'snaps 42 · err 3',
+    damageDealt: 1800, score: 1800, ultCooldownRatio: 0.42, ultReady: false,
+    tick: 270, stateName: 'Running', patternId: 'laser_curtain',
+    bullets: 48, connectionLabel: 'server', metricsLine: 'snaps 42 · err 3 · hash 40/42 · snap 1',
   });
 
   window.__PROBE_READY__ = true;

@@ -138,17 +138,162 @@ export interface MatchResultView {
   settledAtMs: number;
 }
 
-export interface CardInventoryEntryView {
+/** Gensoulkyo matchmaking queue ticket (`matchmaking.join` / `.ticket` / `.cancel`). */
+export interface MatchmakingTicketView {
+  ticketId: string;
+  modeId: string;
+  /** Server-defined queue status: `queued`, `matched`, `cancelled`, … */
+  queueStatus: string;
+  /** Set once the queue finds a match for this ticket. */
+  matchId: string;
+  /** Set when the match is a room-code match instead of a queue match. */
+  roomCode: string;
+}
+
+// ---------------------------------------------------------------------------
+// Check-in / shop / inventory views
+//
+// Field names mirror `docs/checkin_shop_contract.md` (check-in + shop) and the
+// Gensoulkyo handlers `runtime/httpapi/handler.go` (inventory / decks / chests /
+// activity). They are kept snake-agnostic here: the client exposes camelCase
+// names while the payload accessors accept both spellings, same as the rest of
+// this file.
+// ---------------------------------------------------------------------------
+
+/**
+ * One day cell of the 7-day check-in cycle.
+ *
+ * `reward` is an open currency bag (`gold`, `ticket`, …); both it and the
+ * wallet are `Record<string, number>` because the server decides the currency
+ * set and the client only renders it.
+ */
+export interface CheckinDayView {
+  /** 1..7 within the cycle. */
+  day: number;
+  reward: Record<string, number>;
+  claimed: boolean;
+  /** True for exactly one day: the next claimable day when today is unclaimed. */
+  claimable: boolean;
+}
+
+/** `GET /v1/checkin`. */
+export interface CheckinView {
+  userId: string;
+  /** Natural-month cycle id, `YYYY-MM`. */
+  cycleId: string;
+  days: CheckinDayView[];
+  /** Consecutive check-in days; resets to 0 when a day is missed. */
+  streak: number;
+  /** 0 when everything in the cycle has been claimed. */
+  nextClaimableDay: number;
+  serverTimeMs: number;
+}
+
+/** `POST /v1/checkin/claim`. */
+export interface CheckinClaimView {
+  day: number;
+  reward: Record<string, number>;
+  wallet: Record<string, number>;
+  streak: number;
+  nextClaimableDay: number;
+  serverTimeMs: number;
+}
+
+/** One shop listing. */
+export interface ShopItemView {
+  itemId: string;
+  name: string;
+  description: string;
+  price: Record<string, number>;
+  /** What a purchase grants, e.g. `{ item: 'stamina_potion', count: 1 }`. */
+  grants: Record<string, unknown>;
+  /** `-1` means unlimited stock. */
+  stock: number;
+  /** Purchases already made this cycle (for the limit display). */
+  purchased: number;
+  /** Stock > 0 and the wallet covers the price. */
+  purchasable: boolean;
+}
+
+/** `GET /v1/shop`. */
+export interface ShopView {
+  /** Primary currency id the listings are priced in, e.g. `gold`. */
+  currency: string;
+  wallet: Record<string, number>;
+  items: ShopItemView[];
+  serverTimeMs: number;
+}
+
+/** `POST /v1/shop/purchase`. */
+export interface ShopPurchaseView {
+  itemId: string;
+  count: number;
+  spent: Record<string, number>;
+  wallet: Record<string, number>;
+  /** Full inventory level map after the purchase. */
+  inventory: Record<string, number>;
+  serverTimeMs: number;
+}
+
+/** One owned card stack (`CardInventoryEntry` in `runtime/core/types.go`). */
+export interface InventoryEntryView {
   cardId: string;
   copies: number;
   level: number;
+  firstObtainedAtMs: number;
 }
 
+/**
+ * `GET /v1/inventory`.
+ *
+ * Shape follows the server's `core.InventorySnapshot`; extra fields are kept
+ * verbatim in `raw` so a server-side schema extension cannot break the client.
+ */
 export interface InventoryView {
   userId: string;
   rulesetVersion: string;
-  items: CardInventoryEntryView[];
+  items: InventoryEntryView[];
   serverAuthoritative: boolean;
+  wallet: Record<string, number>;
+  serverTimeMs: number;
+  raw: Record<string, unknown>;
+}
+
+/** A chest pool available to open (`core.ChestPool`). */
+export interface ChestPoolView {
+  poolId: string;
+  name: string;
+  cost: Record<string, number>;
+  enabled: boolean;
+}
+
+/**
+ * `GET /v1/chests`.
+ *
+ * `ownedChests` maps pool id → owned count. The server also returns pity
+ * counters and the opening log; those are left in `raw` since nothing in the
+ * UI reads them yet.
+ */
+export interface ChestsView {
+  userId: string;
+  rulesetVersion: string;
+  wallet: Record<string, number>;
+  ownedChests: Record<string, number>;
+  pools: ChestPoolView[];
+  serverTimeMs: number;
+  raw: Record<string, unknown>;
+}
+
+/** `POST /v1/chests/open` result. */
+export interface ChestOpenResultView {
+  poolId: string;
+  count: number;
+  wallet: Record<string, number>;
+  ownedChests: Record<string, number>;
+  /** Card rewards: `cardId` → copies granted. */
+  results: Array<Record<string, unknown>>;
+  serverTimeMs: number;
+  raw: Record<string, unknown>;
 }
 
 export interface DeckRecordView {
@@ -160,24 +305,38 @@ export interface DeckRecordView {
   active: boolean;
 }
 
-export interface DeckListView {
+/**
+ * `GET /v1/decks` / `POST /v1/decks/save`.
+ *
+ * Kept as the server's `DeckRecord` shape; the UI currently only needs the
+ * active deck id and the deck list.
+ */
+export interface DecksView {
   userId: string;
   activeDeckId: string;
   rulesetVersion: string;
   decks: DeckRecordView[];
   serverAuthoritative: boolean;
+  serverTimeMs: number;
+  raw: Record<string, unknown>;
 }
 
-/** Gensoulkyo matchmaking queue ticket (`matchmaking.join` / `.ticket` / `.cancel`). */
-export interface MatchmakingTicketView {
-  ticketId: string;
-  modeId: string;
-  /** Server-defined queue status: `queued`, `matched`, `cancelled`, … */
-  queueStatus: string;
-  /** Set once the queue finds a match for this ticket. */
-  matchId: string;
-  /** Set when the match is a room-code match instead of a queue match. */
-  roomCode: string;
+/**
+ * `POST /v1/activity/claim`.
+ *
+ * Shape follows the server's `core.ActivityClaimResult`. Kept as a loose
+ * record because the activity centre is not wired to any UI yet.
+ */
+export interface ActivityClaimView {
+  duplicate: boolean;
+  reason: string;
+  claimKind: string;
+  claimId: string;
+  userId: string;
+  claimed: boolean;
+  rewardStatus: string;
+  settlementKey: string;
+  raw: Record<string, unknown>;
 }
 
 export type LobbyEvent =
@@ -340,54 +499,6 @@ export class LobbyClient {
           : base.unlockedCharacterIds,
     };
     return this.session;
-  }
-
-  /** `inventory.get` — server-owned card inventory projection. */
-  async fetchInventory(): Promise<InventoryView | null> {
-    const response = await this.call('inventory.get');
-    if (!response.ok || !isRecord(response.payload)) {
-      return null;
-    }
-    const payload = response.payload;
-    const items = Array.isArray(payload.items)
-      ? payload.items.filter(isRecord).map((item) => ({
-          cardId: stringField(item, 'card_id', 'cardId'),
-          copies: numberField(item, 'copies'),
-          level: numberField(item, 'level'),
-        }))
-      : [];
-    return {
-      userId: stringField(payload, 'user_id', 'userId'),
-      rulesetVersion: stringField(payload, 'ruleset_version', 'rulesetVersion'),
-      items,
-      serverAuthoritative: booleanField(payload, 'server_authoritative', 'serverAuthoritative'),
-    };
-  }
-
-  /** `decks.list` — server-owned saved deck projection. */
-  async fetchDecks(): Promise<DeckListView | null> {
-    const response = await this.call('decks.list');
-    if (!response.ok || !isRecord(response.payload)) {
-      return null;
-    }
-    const payload = response.payload;
-    const decks = Array.isArray(payload.decks)
-      ? payload.decks.filter(isRecord).map((deck) => ({
-          deckId: stringField(deck, 'deck_id', 'deckId'),
-          name: stringField(deck, 'name'),
-          format: stringField(deck, 'format'),
-          rulesetVersion: stringField(deck, 'ruleset_version', 'rulesetVersion'),
-          cardIds: stringArrayField(deck, 'card_ids', 'cardIds'),
-          active: booleanField(deck, 'active'),
-        }))
-      : [];
-    return {
-      userId: stringField(payload, 'user_id', 'userId'),
-      activeDeckId: stringField(payload, 'active_deck_id', 'activeDeckId'),
-      rulesetVersion: stringField(payload, 'ruleset_version', 'rulesetVersion'),
-      decks,
-      serverAuthoritative: booleanField(payload, 'server_authoritative', 'serverAuthoritative'),
-    };
   }
 
   /** `rooms.create` / `POST /v1/rooms/create`. */
@@ -555,6 +666,242 @@ export class LobbyClient {
       return null;
     }
     return response.payload;
+  }
+
+  /**
+   * `GET /v1/checkin` — the 7-day check-in cycle.
+   *
+   * The response carries its own `ok` flag but no envelope, so the raw payload
+   * *is* the view. `days` may repeat; the array is taken verbatim in server
+   * order (the server guarantees day 1..7).
+   */
+  async fetchCheckin(): Promise<CheckinView | null> {
+    const response = await this.call('checkin.get');
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    return {
+      userId: stringField(payload, 'user_id', 'userId'),
+      cycleId: stringField(payload, 'cycle_id', 'cycleId'),
+      days: Array.isArray(payload.days) ? payload.days.filter(isRecord).map((day) => checkinDayFromPayload(day)) : [],
+      streak: numberField(payload, 'streak'),
+      nextClaimableDay: numberField(payload, 'next_claimable_day', 'nextClaimableDay'),
+      serverTimeMs: numberField(payload, 'server_time_ms', 'serverTimeMs'),
+    };
+  }
+
+  /** `POST /v1/checkin/claim` — claim today's reward. */
+  async claimCheckin(): Promise<CheckinClaimView | null> {
+    const response = await this.call('checkin.claim');
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    return {
+      day: numberField(payload, 'day'),
+      reward: numberRecordField(payload, 'reward'),
+      wallet: numberRecordField(payload, 'wallet'),
+      streak: numberField(payload, 'streak'),
+      nextClaimableDay: numberField(payload, 'next_claimable_day', 'nextClaimableDay'),
+      serverTimeMs: numberField(payload, 'server_time_ms', 'serverTimeMs'),
+    };
+  }
+
+  /** `GET /v1/shop` — the shop listings plus the current wallet. */
+  async fetchShop(): Promise<ShopView | null> {
+    const response = await this.call('shop.get');
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    return {
+      currency: stringField(payload, 'currency') || 'gold',
+      wallet: numberRecordField(payload, 'wallet'),
+      items: Array.isArray(payload.items) ? payload.items.filter(isRecord).map((item) => shopItemFromPayload(item)) : [],
+      serverTimeMs: numberField(payload, 'server_time_ms', 'serverTimeMs'),
+    };
+  }
+
+  /** `POST /v1/shop/purchase` — buy `count` of an item. */
+  async purchaseShopItem(itemId: string, count = 1): Promise<ShopPurchaseView | null> {
+    if (itemId === '') {
+      this.lastError = 'shop_purchase_missing_item';
+      return null;
+    }
+    const response = await this.call('shop.purchase', { item_id: itemId, count });
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    return {
+      itemId: stringField(payload, 'item_id', 'itemId') || itemId,
+      count: numberField(payload, 'count') || count,
+      spent: numberRecordField(payload, 'spent'),
+      wallet: numberRecordField(payload, 'wallet'),
+      inventory: numberRecordField(payload, 'inventory'),
+      serverTimeMs: numberField(payload, 'server_time_ms', 'serverTimeMs'),
+    };
+  }
+
+  /** `GET /v1/inventory` — owned card stacks (`core.InventorySnapshot`). */
+  async fetchInventory(): Promise<InventoryView | null> {
+    const response = await this.call('inventory.get');
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    return {
+      userId: stringField(payload, 'user_id', 'userId'),
+      rulesetVersion: stringField(payload, 'ruleset_version', 'rulesetVersion'),
+      items: Array.isArray(payload.items)
+        ? payload.items.filter(isRecord).map((item) => ({
+            cardId: stringField(item, 'card_id', 'cardId'),
+            copies: numberField(item, 'copies'),
+            level: numberField(item, 'level'),
+            firstObtainedAtMs: timeFieldMs(item, 'first_obtained_at', 'firstObtainedAt'),
+          }))
+        : [],
+      serverAuthoritative: booleanField(payload, 'server_authoritative', 'serverAuthoritative'),
+      wallet: numberRecordField(payload, 'wallet'),
+      serverTimeMs: timeFieldMs(payload, 'server_time', 'serverTime'),
+      raw: payload,
+    };
+  }
+
+  /** `GET /v1/chests` — owned chests, pools and the wallet. */
+  async fetchChests(): Promise<ChestsView | null> {
+    const response = await this.call('chests.get');
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    return {
+      userId: stringField(payload, 'user_id', 'userId'),
+      rulesetVersion: stringField(payload, 'ruleset_version', 'rulesetVersion'),
+      wallet: numberRecordField(payload, 'wallet'),
+      ownedChests: numberRecordField(payload, 'owned_chests', 'ownedChests'),
+      pools: Array.isArray(payload.pools)
+        ? payload.pools.filter(isRecord).map((pool) => ({
+            poolId: stringField(pool, 'pool_id', 'poolId'),
+            name: stringField(pool, 'name'),
+            cost: numberRecordField(pool, 'cost'),
+            enabled: booleanField(pool, 'enabled'),
+          }))
+        : [],
+      serverTimeMs: timeFieldMs(payload, 'server_time', 'serverTime'),
+      raw: payload,
+    };
+  }
+
+  /**
+   * `POST /v1/chests/open` — open `count` of a pool.
+   *
+   * The server owns the roll: the client only sends `pool_id` and `count` and
+   * projects the returned rewards.
+   */
+  async openChest(poolId: string, count = 1): Promise<ChestOpenResultView | null> {
+    if (poolId === '') {
+      this.lastError = 'chest_open_missing_pool';
+      return null;
+    }
+    const response = await this.call('chests.open', { pool_id: poolId, count });
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    return {
+      poolId: stringField(payload, 'pool_id', 'poolId') || poolId,
+      count: numberField(payload, 'count') || count,
+      wallet: numberRecordField(payload, 'wallet'),
+      ownedChests: numberRecordField(payload, 'owned_chests', 'ownedChests'),
+      results: Array.isArray(payload.results) ? payload.results.filter(isRecord) : [],
+      serverTimeMs: timeFieldMs(payload, 'server_time', 'serverTime'),
+      raw: payload,
+    };
+  }
+
+  /** `GET /v1/decks` — saved decks and the active deck id. */
+  async fetchDecks(): Promise<DecksView | null> {
+    const response = await this.call('decks.list');
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    return {
+      userId: stringField(payload, 'user_id', 'userId'),
+      activeDeckId: stringField(payload, 'active_deck_id', 'activeDeckId'),
+      rulesetVersion: stringField(payload, 'ruleset_version', 'rulesetVersion'),
+      decks: Array.isArray(payload.decks)
+        ? payload.decks.filter(isRecord).map((deck) => ({
+            deckId: stringField(deck, 'deck_id', 'deckId'),
+            name: stringField(deck, 'name'),
+            format: stringField(deck, 'format'),
+            rulesetVersion: stringField(deck, 'ruleset_version', 'rulesetVersion'),
+            cardIds: stringArrayField(deck, 'card_ids', 'cardIds'),
+            active: booleanField(deck, 'active'),
+          }))
+        : [],
+      serverAuthoritative: booleanField(payload, 'server_authoritative', 'serverAuthoritative'),
+      serverTimeMs: timeFieldMs(payload, 'server_time', 'serverTime'),
+      raw: payload,
+    };
+  }
+
+  /** `POST /v1/decks/save` — create or update a deck. */
+  async saveDeck(deck: {
+    deckId?: string;
+    deck_id?: string;
+    name?: string;
+    format?: string;
+    cardIds?: string[];
+    card_ids?: string[];
+    active?: boolean;
+  }): Promise<DecksView | null> {
+    const response = await this.call('decks.save', {
+      deck_id: deck.deckId ?? deck.deck_id ?? '',
+      name: deck.name ?? '',
+      format: deck.format ?? '',
+      card_ids: deck.cardIds ?? deck.card_ids ?? [],
+      active: deck.active ?? false,
+    });
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    // `SaveDeckResponse` has no deck *list*, so refresh it explicitly; the save
+    // response only confirms the one deck plus the new active id.
+    const refreshed = await this.fetchDecks();
+    return refreshed;
+  }
+
+  /**
+   * `POST /v1/activity/claim` — claim an activity-centre reward.
+   *
+   * The server answers `{ ok: false, error_code: 'already_claimed' }` for a
+   * duplicate, so a claimed reward and a rejection are distinguishable through
+   * `lastError`.
+   */
+  async claimActivity(activityId: string): Promise<ActivityClaimView | null> {
+    if (activityId === '') {
+      this.lastError = 'activity_claim_missing_id';
+      return null;
+    }
+    const response = await this.call('activity.claim', { claim_kind: 'activity', claim_id: activityId });
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    return {
+      duplicate: booleanField(payload, 'duplicate'),
+      reason: stringField(payload, 'reason'),
+      claimKind: stringField(payload, 'claim_kind', 'claimKind'),
+      claimId: stringField(payload, 'claim_id', 'claimId'),
+      userId: stringField(payload, 'user_id', 'userId'),
+      claimed: booleanField(payload, 'claimed'),
+      rewardStatus: stringField(payload, 'reward_status', 'rewardStatus'),
+      settlementKey: stringField(payload, 'settlement_key', 'settlementKey'),
+      raw: payload,
+    };
   }
 
   /**
@@ -935,6 +1282,12 @@ const REST_ROUTES: Record<string, RestRoute> = {
     path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/rematch`,
   },
   'replay.get': { method: 'GET', path: (r) => `/v1/replays/${pathSegment(payloadString(r, 'replay_id', 'replayId'))}` },
+  // --- check-in / shop / inventory ---
+  'checkin.get': { method: 'GET', path: () => '/v1/checkin' },
+  'checkin.claim': { method: 'POST', path: () => '/v1/checkin/claim' },
+  'shop.get': { method: 'GET', path: () => '/v1/shop' },
+  'shop.purchase': { method: 'POST', path: () => '/v1/shop/purchase' },
+  'chests.get': { method: 'GET', path: () => '/v1/chests' },
 };
 
 /** Configuration for {@link WsLobbyTransport}. */
@@ -1197,6 +1550,51 @@ function numberRecordField(source: Record<string, unknown>, ...keys: string[]): 
     }
   }
   return {};
+}
+
+/** One check-in day cell; `reward` is an open currency bag. */
+function checkinDayFromPayload(payload: Record<string, unknown>): CheckinDayView {
+  return {
+    day: numberField(payload, 'day'),
+    reward: numberRecordField(payload, 'reward'),
+    claimed: booleanField(payload, 'claimed'),
+    claimable: booleanField(payload, 'claimable'),
+  };
+}
+
+/** One shop listing. */
+function shopItemFromPayload(payload: Record<string, unknown>): ShopItemView {
+  return {
+    itemId: stringField(payload, 'item_id', 'itemId'),
+    name: stringField(payload, 'name'),
+    description: stringField(payload, 'description'),
+    price: numberRecordField(payload, 'price'),
+    grants: isRecord(payload.grants) ? payload.grants : {},
+    stock: numberField(payload, 'stock'),
+    purchased: numberField(payload, 'purchased'),
+    purchasable: booleanField(payload, 'purchasable'),
+  };
+}
+
+/**
+ * Reads a Go `time.Time` JSON field as epoch milliseconds. Accepts either a
+ * pre-computed `*_ms` number or an RFC3339 string; returns 0 when absent or
+ * unparseable so callers can treat "unknown" uniformly.
+ */
+function timeFieldMs(source: Record<string, unknown>, ...keys: string[]): number {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'number') {
+      return value;
+    }
+    if (typeof value === 'string' && value !== '') {
+      const parsed = Date.parse(value);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
+  }
+  return 0;
 }
 
 /** `RoomStateMessage` payload → the client-facing room view. */

@@ -16,6 +16,7 @@ import './matchmaking.test';
 import './lobby_ws_protocol.test';
 import './lobby_business_surface.test';
 import './nakama_lobby_transport.test';
+import './checkin_shop.test';
 import './native_udp_datagram.test';
 
 import { runAll } from './harness';

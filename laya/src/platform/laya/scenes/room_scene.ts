@@ -79,16 +79,16 @@ export class RoomScene implements ClientScene {
 
     // --- room-code band: a framed, centred accent code so it reads at a glance ---
     const codeY = title.y + theme.FONT_SIZE_TITLE + theme.SPACE_MD;
-    const codeHeight = 96;
+    const codeHeight = 128;
     this.root.addChild(
       createPanel(margin, codeY, contentWidth, codeHeight, { fill: theme.COLOR_PANEL_DEEP, border: theme.COLOR_ACCENT }),
     );
-    const codeCaption = createCaption('Room code', contentWidth - theme.SPACE_MD * 2, codeY + theme.SPACE_SM);
+    const codeCaption = createCaption('Room code', contentWidth - theme.SPACE_MD * 2, codeY + theme.SPACE_MD);
     codeCaption.x = margin + theme.SPACE_MD;
     this.root.addChild(codeCaption);
     this.roomCodeText = this.makeText('—', theme.FONT_SIZE_TITLE, theme.COLOR_ACCENT, true, margin);
     this.roomCodeText.align = 'center';
-    this.roomCodeText.y = codeY + 28;
+    this.roomCodeText.y = codeY + 44;
     this.root.addChild(this.roomCodeText);
     this.roomMetaText = this.makeText('', theme.FONT_SIZE_CAPTION, theme.COLOR_TEXT_MUTED, false, margin);
     this.roomMetaText.align = 'center';
