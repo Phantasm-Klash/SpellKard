@@ -472,7 +472,11 @@ export class LobbyClient {
   /** `bootstrap` / `GET /v1/bootstrap`. */
   async bootstrap(knownRulesetVersion = ''): Promise<SessionState | null> {
     const response = await this.call('bootstrap', { known_ruleset_version: knownRulesetVersion });
-    if (!response.ok || !isRecord(response.payload)) {
+    if (!response.ok) {
+      return null;
+    }
+    if (!isRecord(response.payload)) {
+      this.lastError = 'bootstrap_invalid_payload';
       return null;
     }
     const payload = response.payload;
