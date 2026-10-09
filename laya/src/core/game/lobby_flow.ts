@@ -202,7 +202,12 @@ export class LobbyFlow {
     }
     this.statusText = 'Loading profile…';
     this.notify();
-    await this.client.bootstrap(session.rulesetVersion);
+    const bootstrapped = await this.client.bootstrap(session.rulesetVersion);
+    if (bootstrapped === null) {
+      this.setScreen(LobbyScreen.Login);
+      this.fail(`Bootstrap failed: ${this.client.lastError || 'bootstrap_invalid_payload'}`);
+      return false;
+    }
     this.statusText = `Signed in as ${this.client.session?.displayName ?? displayName}`;
     this.setScreen(LobbyScreen.Lobby);
     return true;
