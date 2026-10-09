@@ -19,6 +19,7 @@ import { RelayDatagramFactory } from '../web/ws_relay_datagram';
 import { SpellKardApp } from './app';
 import { LayaSocketFactory } from './laya_socket';
 import { LayaTimer } from './laya_timer';
+import type { LobbySessionStore } from '../../core/net/lobby_client';
 
 export interface BrowserRuntimeConfig {
   stageWidth: number;
@@ -31,6 +32,8 @@ export interface BrowserRuntimeConfig {
   lobbyTransport: 'legacy_http' | 'nakama_rpc';
   /** Nakama HTTP key. Set via runtime config, never a URL query parameter. */
   nakamaHttpKey: string;
+  /** Optional platform secure-store adapter for session resume. */
+  sessionStore?: LobbySessionStore;
   /** Nakama-style lobby WSS url. Empty = use the REST transport. */
   lobbyWsUrl: string;
   /** WebSocket relay that tunnels battle KCP datagrams. Empty = offline battle. */
@@ -109,6 +112,7 @@ export function resolveRuntimeConfig(search = window.location.search): BrowserRu
       fromWindow.lobbyTransport ?? DEFAULT_CONFIG.lobbyTransport,
     ),
     nakamaHttpKey: fromWindow.nakamaHttpKey ?? DEFAULT_CONFIG.nakamaHttpKey,
+    sessionStore: fromWindow.sessionStore,
     lobbyWsUrl: pickString(params.get('lobbyWsUrl'), fromWindow.lobbyWsUrl ?? DEFAULT_CONFIG.lobbyWsUrl),
     relayUrl: pickString(params.get('relayUrl'), fromWindow.relayUrl ?? DEFAULT_CONFIG.relayUrl),
     battleTransport: pickBattleTransport(
@@ -167,6 +171,7 @@ export function startClient(config: BrowserRuntimeConfig): SpellKardApp {
     lobbyNakamaHttpBase: config.lobbyNakamaHttpBase,
     lobbyTransport: config.lobbyTransport,
     nakamaHttpKey: config.nakamaHttpKey,
+    sessionStore: config.sessionStore,
     lobbyWsUrl: config.lobbyWsUrl,
     relayUrl: config.relayUrl,
     socketFactory: sockets,

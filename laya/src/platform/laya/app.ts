@@ -13,6 +13,7 @@ import {
   NakamaLobbyTransport,
   WsLobbyTransport,
   seedFromHex,
+  type LobbySessionStore,
 } from '../../core/net/lobby_client';
 import type { DatagramFactory, Logger, SocketFactory, TimerLike } from '../../core/net/transport';
 import { LobbyFlow, LobbyScreen, type LobbyFlowSnapshot } from '../../core/game/lobby_flow';
@@ -37,6 +38,8 @@ export interface ClientConfig {
   lobbyNakamaHttpBase?: string;
   /** Nakama runtime HTTP key used for anonymous RPC bootstrap. */
   nakamaHttpKey?: string;
+  /** Host-owned secure session storage; omitted sessions remain in memory only. */
+  sessionStore?: LobbySessionStore;
   /** Selects the business transport when no lobby WS URL is configured. */
   lobbyTransport?: 'legacy_http' | 'nakama_rpc';
   /** When empty, the lobby uses the REST transport instead of WebSocket. */
@@ -96,6 +99,7 @@ export class SpellKardApp {
       logger: config.logger,
       deviceId: config.deviceId,
       clientBuild: config.clientBuild,
+      sessionStore: config.sessionStore,
     });
     if (lobbyTransport instanceof WsLobbyTransport) {
       // Pushed room state / match start / match result arrive out-of-band.

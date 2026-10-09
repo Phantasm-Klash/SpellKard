@@ -195,7 +195,7 @@ export class LobbyFlow {
   async signIn(displayName = 'Player'): Promise<boolean> {
     this.statusText = 'Signing in…';
     this.notify();
-    const session = await this.client.loginAnonymous(displayName);
+    const session = this.client.session ?? (await this.client.loginAnonymous(displayName));
     if (session === null) {
       this.fail(`Login failed: ${this.client.lastError}`);
       return false;
@@ -204,6 +204,12 @@ export class LobbyFlow {
     this.notify();
     const bootstrapped = await this.client.bootstrap(session.rulesetVersion);
     if (bootstrapped === null) {
+      this.client.clearSession();
+      this.match = null;
+      this.result = null;
+      this.checkin = null;
+      this.shop = null;
+      this.inventory = null;
       this.setScreen(LobbyScreen.Login);
       this.fail(`Bootstrap failed: ${this.client.lastError || 'bootstrap_invalid_payload'}`);
       return false;
