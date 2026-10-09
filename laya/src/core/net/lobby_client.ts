@@ -43,6 +43,7 @@ export interface LobbyRpcRequest {
   cid?: string;
   session_id?: string;
   user_id?: string;
+  device_id?: string;
   display_name?: string;
   payload?: Record<string, unknown>;
 }
@@ -71,6 +72,7 @@ export interface LobbyClientConfig {
   logger?: Logger;
   clientBuild?: string;
   platform?: string;
+  deviceId?: string;
 }
 
 export interface SessionState {
@@ -251,6 +253,7 @@ export interface InventoryView {
   userId: string;
   rulesetVersion: string;
   items: InventoryEntryView[];
+  serverAuthoritative: boolean;
   wallet: Record<string, number>;
   serverTimeMs: number;
   raw: Record<string, unknown>;
@@ -293,6 +296,15 @@ export interface ChestOpenResultView {
   raw: Record<string, unknown>;
 }
 
+export interface DeckRecordView {
+  deckId: string;
+  name: string;
+  format: string;
+  rulesetVersion: string;
+  cardIds: string[];
+  active: boolean;
+}
+
 /**
  * `GET /v1/decks` / `POST /v1/decks/save`.
  *
@@ -303,7 +315,8 @@ export interface DecksView {
   userId: string;
   activeDeckId: string;
   rulesetVersion: string;
-  decks: Array<Record<string, unknown>>;
+  decks: DeckRecordView[];
+  serverAuthoritative: boolean;
   serverTimeMs: number;
   raw: Record<string, unknown>;
 }
@@ -344,6 +357,7 @@ export class LobbyClient {
   private readonly logger: Logger;
   private readonly clientBuild: string;
   private readonly platform: string;
+  private readonly deviceId: string;
   private readonly listeners: LobbyEventListener[] = [];
   private sequence = 0;
 
@@ -360,6 +374,7 @@ export class LobbyClient {
     this.logger = config.logger ?? nullLogger;
     this.clientBuild = config.clientBuild ?? '0.1.0-draft';
     this.platform = config.platform ?? 'web';
+    this.deviceId = config.deviceId ?? '';
   }
 
   onEvent(listener: LobbyEventListener): () => void {
@@ -400,6 +415,9 @@ export class LobbyClient {
       cid: this.nextCid(),
       payload,
     };
+    if (this.deviceId !== '') {
+      request.device_id = this.deviceId;
+    }
     if (this.session !== null) {
       request.session_id = this.session.sessionToken;
       request.user_id = this.session.userId;
@@ -424,6 +442,7 @@ export class LobbyClient {
   /** `auth.anonymous` / `POST /v1/auth/anonymous`. */
   async loginAnonymous(displayName = 'Player'): Promise<SessionState | null> {
     const response = await this.call('auth.anonymous', {
+      device_id: this.deviceId,
       display_name: displayName,
       platform: this.platform,
       client_build: this.clientBuild,
@@ -453,7 +472,11 @@ export class LobbyClient {
   /** `bootstrap` / `GET /v1/bootstrap`. */
   async bootstrap(knownRulesetVersion = ''): Promise<SessionState | null> {
     const response = await this.call('bootstrap', { known_ruleset_version: knownRulesetVersion });
-    if (!response.ok || !isRecord(response.payload)) {
+    if (!response.ok) {
+      return null;
+    }
+    if (!isRecord(response.payload)) {
+      this.lastError = 'bootstrap_invalid_payload';
       return null;
     }
     const payload = response.payload;
@@ -743,6 +766,7 @@ export class LobbyClient {
             firstObtainedAtMs: timeFieldMs(item, 'first_obtained_at', 'firstObtainedAt'),
           }))
         : [],
+      serverAuthoritative: booleanField(payload, 'server_authoritative', 'serverAuthoritative'),
       wallet: numberRecordField(payload, 'wallet'),
       serverTimeMs: timeFieldMs(payload, 'server_time', 'serverTime'),
       raw: payload,
@@ -812,7 +836,17 @@ export class LobbyClient {
       userId: stringField(payload, 'user_id', 'userId'),
       activeDeckId: stringField(payload, 'active_deck_id', 'activeDeckId'),
       rulesetVersion: stringField(payload, 'ruleset_version', 'rulesetVersion'),
-      decks: Array.isArray(payload.decks) ? payload.decks.filter(isRecord) : [],
+      decks: Array.isArray(payload.decks)
+        ? payload.decks.filter(isRecord).map((deck) => ({
+            deckId: stringField(deck, 'deck_id', 'deckId'),
+            name: stringField(deck, 'name'),
+            format: stringField(deck, 'format'),
+            rulesetVersion: stringField(deck, 'ruleset_version', 'rulesetVersion'),
+            cardIds: stringArrayField(deck, 'card_ids', 'cardIds'),
+            active: booleanField(deck, 'active'),
+          }))
+        : [],
+      serverAuthoritative: booleanField(payload, 'server_authoritative', 'serverAuthoritative'),
       serverTimeMs: timeFieldMs(payload, 'server_time', 'serverTime'),
       raw: payload,
     };
@@ -983,6 +1017,146 @@ export class HttpLobbyTransport implements LobbyTransport {
   }
 }
 
+/**
+ * Nakama HTTP RPC transport.
+ *
+ * Nakama's `/v2/rpc/<id>?unwrap=true` endpoint accepts a JSON string as its
+ * RPC payload. `HttpClient` implementations serialize their request body, so
+ * this transport deliberately passes `JSON.stringify(payload)` as the body;
+ * the platform adapter then performs the outer JSON serialization required on
+ * the wire. Auth uses the HTTP key until `auth.anonymous` returns a session
+ * token, after which the token is sent as a Bearer credential.
+ *
+ * This class does not create or alter the business envelope. Authenticated
+ * callers must provide the envelope fields in the request payload so the
+ * server-side replay and authority guard remains the single source of truth.
+ */
+export class NakamaLobbyTransport implements LobbyTransport {
+  private sessionToken: string;
+
+  constructor(
+    private readonly http: HttpClient,
+    private readonly options: NakamaLobbyTransportOptions = {},
+  ) {
+    this.sessionToken = options.sessionToken ?? '';
+  }
+
+  async call(request: LobbyRpcRequest): Promise<LobbyRpcResponse> {
+    const rpcId = request.id.trim();
+    if (rpcId === '') {
+      return { ok: false, status: 400, error_code: 'nakama_rpc_id_missing' };
+    }
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    };
+    if (this.sessionToken !== '') {
+      headers.Authorization = `Bearer ${this.sessionToken}`;
+    } else if ((this.options.httpKey ?? '') !== '') {
+      headers.Authorization = `Basic ${encodeBasicAuth(`${this.options.httpKey ?? ''}:`)}`;
+    }
+    const body = request.payload ?? {};
+    const envelope = this.options.businessEnvelope?.(request, body) ?? null;
+    const wirePayload =
+      envelope === null
+        ? body
+        : {
+            business_envelope: envelope,
+            body,
+          };
+    const response = await this.http.request(
+      'POST',
+      `/v2/rpc/${encodeURIComponent(rpcId)}?unwrap=true`,
+      JSON.stringify(wirePayload),
+      headers,
+    );
+    const result = nakamaResponse(response);
+    if (result.ok && rpcId === 'auth.anonymous' && isRecord(result.payload)) {
+      const token = stringField(result.payload, 'session_token', 'sessionToken');
+      if (token !== '') {
+        this.sessionToken = token;
+      }
+    }
+    return result;
+  }
+
+  close(): void {
+    // HTTP is stateless; nothing to release.
+  }
+}
+
+export interface NakamaLobbyTransportOptions {
+  /** Nakama runtime HTTP key used before an authenticated session exists. */
+  httpKey?: string;
+  /** Optional existing Nakama session token, useful after a cold restart. */
+  sessionToken?: string;
+  /**
+   * Optional business-envelope producer. The producer owns versioning, nonce,
+   * body hashing and authentication-tag policy; returning null leaves the
+   * payload unwrapped. This is intentionally an injection point rather than a
+   * client-side fake signer.
+   */
+  businessEnvelope?: NakamaBusinessEnvelopeFactory;
+}
+
+export type NakamaBusinessEnvelopeFactory = (
+  request: LobbyRpcRequest,
+  body: Record<string, unknown>,
+) => Record<string, unknown> | null;
+
+function nakamaResponse(response: HttpResponseLike): LobbyRpcResponse {
+  const body = response.body;
+  const statusOk = response.status >= 200 && response.status < 300;
+  if (!isRecord(body)) {
+    return {
+      ok: statusOk,
+      status: response.status,
+      error_code: statusOk ? undefined : `nakama_http_${response.status}`,
+      payload: statusOk ? body : undefined,
+    };
+  }
+  if (body.ok === false || !statusOk) {
+    return {
+      ok: false,
+      status: response.status,
+      error_code: stringField(body, 'error_code', 'errorCode', 'code') || `nakama_http_${response.status}`,
+      message: stringField(body, 'message'),
+      payload: body.payload,
+    };
+  }
+  return {
+    ok: statusOk,
+    status: response.status,
+    error_code: stringField(body, 'error_code', 'errorCode') || undefined,
+    message: stringField(body, 'message') || undefined,
+    // `unwrap=true` returns the operation payload directly. The fallback also
+    // accepts a wrapped response so local proxies remain compatible.
+    payload: body.payload ?? body,
+  };
+}
+
+function encodeBasicAuth(value: string): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let result = '';
+  let buffer = 0;
+  let bits = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    buffer = (buffer << 8) | value.charCodeAt(index);
+    bits += 8;
+    while (bits >= 6) {
+      bits -= 6;
+      result += alphabet[(buffer >> bits) & 0x3f];
+    }
+  }
+  if (bits > 0) {
+    result += alphabet[(buffer << (6 - bits)) & 0x3f];
+  }
+  while (result.length % 4 !== 0) {
+    result += '=';
+  }
+  return result;
+}
+
 interface RestRoute {
   method: 'GET' | 'POST';
   path: (request: LobbyRpcRequest) => string;
@@ -999,45 +1173,125 @@ function payloadString(request: LobbyRpcRequest, ...keys: string[]): string {
   return '';
 }
 
+function pathSegment(value: string): string {
+  return encodeURIComponent(value);
+}
+
+function queryString(request: LobbyRpcRequest, ...keys: string[]): string {
+  const payload = request.payload ?? {};
+  const params: string[] = [];
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === 'string' || typeof value === 'number') {
+      params.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+    }
+  }
+  return params.length === 0 ? '' : `?${params.join('&')}`;
+}
+
 const REST_ROUTES: Record<string, RestRoute> = {
   'auth.anonymous': { method: 'POST', path: () => '/v1/auth/anonymous' },
   bootstrap: { method: 'GET', path: () => '/v1/bootstrap' },
+  'inventory.get': { method: 'GET', path: () => '/v1/inventory' },
+  inventory: { method: 'GET', path: () => '/v1/inventory' },
+  'cards.upgrade': { method: 'POST', path: () => '/v1/cards/upgrade' },
+  'decks.list': { method: 'GET', path: () => '/v1/decks' },
+  decks: { method: 'GET', path: () => '/v1/decks' },
+  'decks.save': { method: 'POST', path: () => '/v1/decks/save' },
+  'chests.list': { method: 'GET', path: () => '/v1/chests' },
+  chests: { method: 'GET', path: () => '/v1/chests' },
+  'chests.open': { method: 'POST', path: () => '/v1/chests/open' },
+  'presence.heartbeat': { method: 'POST', path: () => '/v1/presence/heartbeat' },
   'rooms.create': { method: 'POST', path: () => '/v1/rooms/create' },
   'rooms.list': { method: 'GET', path: () => '/v1/rooms' },
-  'rooms.get': { method: 'GET', path: (r) => `/v1/rooms/${payloadString(r, 'room_code', 'roomCode')}` },
-  'rooms.rules': { method: 'GET', path: (r) => `/v1/rooms/${payloadString(r, 'room_code', 'roomCode')}/rules` },
-  'rooms.join': { method: 'POST', path: (r) => `/v1/rooms/${payloadString(r, 'room_code', 'roomCode')}/join` },
-  'rooms.leave': { method: 'POST', path: (r) => `/v1/rooms/${payloadString(r, 'room_code', 'roomCode')}/leave` },
-  'match.ready': { method: 'POST', path: (r) => `/v1/matches/${payloadString(r, 'match_id', 'matchId')}/ready` },
+  'rooms.get': { method: 'GET', path: (r) => `/v1/rooms/${pathSegment(payloadString(r, 'room_code', 'roomCode'))}` },
+  'rooms.rules': {
+    method: 'GET',
+    path: (r) => `/v1/rooms/${pathSegment(payloadString(r, 'room_code', 'roomCode'))}/rules`,
+  },
+  'rooms.join': {
+    method: 'POST',
+    path: (r) => `/v1/rooms/${pathSegment(payloadString(r, 'room_code', 'roomCode'))}/join`,
+  },
+  'rooms.leave': {
+    method: 'POST',
+    path: (r) => `/v1/rooms/${pathSegment(payloadString(r, 'room_code', 'roomCode'))}/leave`,
+  },
+  'rooms.messages': {
+    method: 'POST',
+    path: (r) => `/v1/rooms/${pathSegment(payloadString(r, 'room_code', 'roomCode'))}/messages`,
+  },
+  'rooms.chat': {
+    method: 'POST',
+    path: (r) => `/v1/rooms/${pathSegment(payloadString(r, 'room_code', 'roomCode'))}/messages`,
+  },
+  'rooms.announcement': {
+    method: 'POST',
+    path: (r) => `/v1/rooms/${pathSegment(payloadString(r, 'room_code', 'roomCode'))}/messages`,
+  },
+  'activity.claim': { method: 'POST', path: () => '/v1/activity/claim' },
   'matchmaking.join': { method: 'POST', path: () => '/v1/matchmaking/join' },
   'matchmaking.ticket': {
     method: 'GET',
-    path: (r) => `/v1/matchmaking/tickets/${payloadString(r, 'ticket_id', 'ticketId')}`,
+    path: (r) => `/v1/matchmaking/tickets/${pathSegment(payloadString(r, 'ticket_id', 'ticketId'))}`,
   },
   'matchmaking.cancel': {
     method: 'POST',
-    path: (r) => `/v1/matchmaking/tickets/${payloadString(r, 'ticket_id', 'ticketId')}/cancel`,
+    path: (r) => `/v1/matchmaking/tickets/${pathSegment(payloadString(r, 'ticket_id', 'ticketId'))}/cancel`,
+  },
+  'match.ready': {
+    method: 'POST',
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/ready`,
   },
   'battle.allocation': {
     method: 'GET',
-    path: (r) => `/v1/battles/${payloadString(r, 'match_id', 'matchId')}/allocation`,
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/battle-allocation`,
   },
   'battle.ticket': {
-    method: 'GET',
-    path: (r) => `/v1/battles/${payloadString(r, 'match_id', 'matchId')}/ticket`,
+    method: 'POST',
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/battle-ticket`,
   },
-  'replay.get': { method: 'GET', path: (r) => `/v1/replays/${payloadString(r, 'replay_id', 'replayId')}` },
+  'match.input': {
+    method: 'POST',
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/input`,
+  },
+  'match.snapshot': {
+    method: 'GET',
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/snapshot`,
+  },
+  'match.events': {
+    method: 'GET',
+    path: (r) =>
+      `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/events` +
+      queryString(r, 'after', 'limit'),
+  },
+  'match.mode_action': {
+    method: 'POST',
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/mode-action`,
+  },
+  'match.disconnect': {
+    method: 'POST',
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/disconnect`,
+  },
+  'match.reconnect': {
+    method: 'POST',
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/reconnect`,
+  },
+  'match.settle': {
+    method: 'POST',
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/settle`,
+  },
+  'match.rematch': {
+    method: 'POST',
+    path: (r) => `/v1/matches/${pathSegment(payloadString(r, 'match_id', 'matchId'))}/rematch`,
+  },
+  'replay.get': { method: 'GET', path: (r) => `/v1/replays/${pathSegment(payloadString(r, 'replay_id', 'replayId'))}` },
   // --- check-in / shop / inventory ---
   'checkin.get': { method: 'GET', path: () => '/v1/checkin' },
   'checkin.claim': { method: 'POST', path: () => '/v1/checkin/claim' },
   'shop.get': { method: 'GET', path: () => '/v1/shop' },
   'shop.purchase': { method: 'POST', path: () => '/v1/shop/purchase' },
-  'inventory.get': { method: 'GET', path: () => '/v1/inventory' },
   'chests.get': { method: 'GET', path: () => '/v1/chests' },
-  'chests.open': { method: 'POST', path: () => '/v1/chests/open' },
-  'decks.list': { method: 'GET', path: () => '/v1/decks' },
-  'decks.save': { method: 'POST', path: () => '/v1/decks/save' },
-  'activity.claim': { method: 'POST', path: () => '/v1/activity/claim' },
 };
 
 /** Configuration for {@link WsLobbyTransport}. */

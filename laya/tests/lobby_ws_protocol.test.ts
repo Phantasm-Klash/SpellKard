@@ -390,7 +390,7 @@ test('matchStartEvent / matchResultView map the proto payloads', () => {
   expectEqual(result.serverAuthoritative, true);
 });
 
-test('the REST transport is unchanged: matchmaking still maps to REST paths', async () => {
+test('the REST transport maps the business and match contract to Gensoulkyo paths', async () => {
   const seen: Array<{ method: string; path: string }> = [];
   const http: HttpClient = {
     async request(method, path): Promise<HttpResponseLike> {
@@ -398,7 +398,27 @@ test('the REST transport is unchanged: matchmaking still maps to REST paths', as
       return { status: 200, body: { ok: true, payload: {} } };
     },
   };
-  await new HttpLobbyTransport(http).call({ id: 'matchmaking.join', payload: { mode_id: 'mvp_boss_race' } });
-  expectEqual(seen[0]?.method, 'POST');
-  expectEqual(seen[0]?.path, '/v1/matchmaking/join');
+  const transport = new HttpLobbyTransport(http);
+  const cases: Array<[string, string, string, Record<string, unknown>]> = [
+    ['inventory.get', 'GET', '/v1/inventory', {}],
+    ['cards.upgrade', 'POST', '/v1/cards/upgrade', { card_id: 'focus_lens' }],
+    ['decks.list', 'GET', '/v1/decks', {}],
+    ['decks.save', 'POST', '/v1/decks/save', {}],
+    ['chests.list', 'GET', '/v1/chests', {}],
+    ['chests.open', 'POST', '/v1/chests/open', { pool_id: 'starter' }],
+    ['activity.claim', 'POST', '/v1/activity/claim', { claim_id: 'task-1' }],
+    ['rooms.rules', 'GET', '/v1/rooms/RACE01/rules', { room_code: 'RACE01' }],
+    ['matchmaking.join', 'POST', '/v1/matchmaking/join', { mode_id: 'mvp_boss_race' }],
+    ['battle.allocation', 'GET', '/v1/matches/M-1/battle-allocation', { match_id: 'M-1' }],
+    ['battle.ticket', 'POST', '/v1/matches/M-1/battle-ticket', { match_id: 'M-1' }],
+    ['match.events', 'GET', '/v1/matches/M-1/events?after=4&limit=8', { match_id: 'M-1', after: '4', limit: '8' }],
+    ['match.events', 'GET', '/v1/matches/M-1/events?limit=8', { match_id: 'M-1', limit: 8 }],
+    ['replay.get', 'GET', '/v1/replays/R-1', { replay_id: 'R-1' }],
+  ];
+  for (const [id, method, path, payload] of cases) {
+    await transport.call({ id, payload });
+    const request = seen[seen.length - 1];
+    expectEqual(request?.method, method, `${id} method`);
+    expectEqual(request?.path, path, `${id} path`);
+  }
 });

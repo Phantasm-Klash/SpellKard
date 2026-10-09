@@ -10,7 +10,7 @@
  * `index.html`) and can be overridden per-URL with query parameters, so the same
  * build can point at any Gensoulkyo / battle-server deployment:
  *
- *   index.html?lobbyHttpBase=https://lobby.example&lobbyWsUrl=wss://lobby.example/ws
+ *   index.html?lobbyTransport=nakama_rpc&lobbyNakamaHttpBase=https://lobby.example
  */
 
 import { OfflineDatagramFactory, type DatagramFactory, type Logger, type SocketFactory, type TimerLike } from '../../core/net/transport';
@@ -25,6 +25,12 @@ export interface BrowserRuntimeConfig {
   stageHeight: number;
   /** Gensoulkyo REST base, e.g. `https://lobby.example`. Empty = same origin. */
   lobbyHttpBase: string;
+  /** Nakama RPC base. Empty = reuse `lobbyHttpBase` when `nakama_rpc` is selected. */
+  lobbyNakamaHttpBase: string;
+  /** Selects legacy REST or Nakama RPC when no lobby WebSocket is configured. */
+  lobbyTransport: 'legacy_http' | 'nakama_rpc';
+  /** Nakama HTTP key. Set via runtime config, never a URL query parameter. */
+  nakamaHttpKey: string;
   /** Nakama-style lobby WSS url. Empty = use the REST transport. */
   lobbyWsUrl: string;
   /** WebSocket relay that tunnels battle KCP datagrams. Empty = offline battle. */
@@ -54,6 +60,9 @@ const DEFAULT_CONFIG: BrowserRuntimeConfig = {
   stageWidth: 900,
   stageHeight: 1200,
   lobbyHttpBase: '',
+  lobbyNakamaHttpBase: '',
+  lobbyTransport: 'legacy_http',
+  nakamaHttpKey: '',
   lobbyWsUrl: '',
   relayUrl: '',
   battleTransport: 'auto',
@@ -79,6 +88,10 @@ function pickBattleTransport(value: string | null, fallback: BrowserRuntimeConfi
   return fallback;
 }
 
+function pickLobbyTransport(value: string | null, fallback: BrowserRuntimeConfig['lobbyTransport']): BrowserRuntimeConfig['lobbyTransport'] {
+  return value === 'nakama_rpc' || value === 'legacy_http' ? value : fallback;
+}
+
 /** Merges `index.html` globals with URL query overrides. */
 export function resolveRuntimeConfig(search = window.location.search): BrowserRuntimeConfig {
   const fromWindow = window.PHANTASM_KLASH_CONFIG ?? {};
@@ -87,6 +100,15 @@ export function resolveRuntimeConfig(search = window.location.search): BrowserRu
     stageWidth: pickNumber(params.get('stageWidth'), fromWindow.stageWidth ?? DEFAULT_CONFIG.stageWidth),
     stageHeight: pickNumber(params.get('stageHeight'), fromWindow.stageHeight ?? DEFAULT_CONFIG.stageHeight),
     lobbyHttpBase: pickString(params.get('lobbyHttpBase'), fromWindow.lobbyHttpBase ?? DEFAULT_CONFIG.lobbyHttpBase),
+    lobbyNakamaHttpBase: pickString(
+      params.get('lobbyNakamaHttpBase'),
+      fromWindow.lobbyNakamaHttpBase ?? DEFAULT_CONFIG.lobbyNakamaHttpBase,
+    ),
+    lobbyTransport: pickLobbyTransport(
+      params.get('lobbyTransport'),
+      fromWindow.lobbyTransport ?? DEFAULT_CONFIG.lobbyTransport,
+    ),
+    nakamaHttpKey: fromWindow.nakamaHttpKey ?? DEFAULT_CONFIG.nakamaHttpKey,
     lobbyWsUrl: pickString(params.get('lobbyWsUrl'), fromWindow.lobbyWsUrl ?? DEFAULT_CONFIG.lobbyWsUrl),
     relayUrl: pickString(params.get('relayUrl'), fromWindow.relayUrl ?? DEFAULT_CONFIG.relayUrl),
     battleTransport: pickBattleTransport(
@@ -142,6 +164,9 @@ export function startClient(config: BrowserRuntimeConfig): SpellKardApp {
     stageWidth: config.stageWidth,
     stageHeight: config.stageHeight,
     lobbyHttpBase: config.lobbyHttpBase,
+    lobbyNakamaHttpBase: config.lobbyNakamaHttpBase,
+    lobbyTransport: config.lobbyTransport,
+    nakamaHttpKey: config.nakamaHttpKey,
     lobbyWsUrl: config.lobbyWsUrl,
     relayUrl: config.relayUrl,
     socketFactory: sockets,

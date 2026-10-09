@@ -117,7 +117,10 @@ http://127.0.0.1:8080/?lobbyHttpBase=https://lobby.example&lobbyWsUrl=wss://lobb
 | --- | --- |
 | `stageWidth` / `stageHeight` | Design resolution passed to `Laya.init` |
 | `lobbyHttpBase` | Gensoulkyo REST base. Empty = same origin |
-| `lobbyWsUrl` | Lobby WS url (e.g. `ws://host:7350/v1/lobby/ws`). Empty = use the REST transport |
+| `lobbyNakamaHttpBase` | Nakama RPC base. Empty = reuse `lobbyHttpBase` when `lobbyTransport=nakama_rpc` |
+| `lobbyTransport` | `legacy_http` (default) or `nakama_rpc`; ignored when `lobbyWsUrl` is set |
+| `nakamaHttpKey` | Nakama runtime HTTP key from `window.PHANTASM_KLASH_CONFIG`; never put credentials in URL query strings |
+| `lobbyWsUrl` | Lobby WS url (e.g. `ws://host:7350/v1/lobby/ws`). Empty = use the selected HTTP transport |
 | `relayUrl` | WebSocket relay that tunnels battle KCP datagrams (e.g. `ws://host:7350/v1/battle/relay`). Empty = offline battle |
 | `battleTransport` | `auto` (default) / `relay` / `udp`. `udp` uses the native `spk_udp` extension |
 | `backgroundColor` | Stage clear colour |
@@ -126,6 +129,14 @@ With the defaults (no server) the lobby still renders and sign-in simply
 reports a transport error; point `lobbyHttpBase` at a running Gensoulkyo to sign
 in for real. The battle channel only connects when `relayUrl` is set (web) or
 `spk_udp` is loaded (native).
+
+For a Nakama RPC deployment, set `lobbyTransport: "nakama_rpc"` and
+`lobbyNakamaHttpBase` in `window.PHANTASM_KLASH_CONFIG`, plus the runtime HTTP
+key. The transport posts JSON-string RPC payloads to
+`/v2/rpc/<rpc_id>?unwrap=true`, uses Basic auth for anonymous login, and switches
+to the returned Bearer session token. It does not manufacture the authenticated
+business envelope; callers must provide that envelope until the shared client
+envelope builder is enabled.
 
 ### Lobby WebSocket protocol
 
