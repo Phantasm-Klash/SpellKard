@@ -1,0 +1,201 @@
+{
+ "meta": {
+  "image": "ebullet_4.png",
+  "size": {
+   "w": 512,
+   "h": 512
+  },
+  "scale": 1,
+  "prefix": ""
+ },
+ "frames": {
+  "kou_01.png": {
+   "frame": {
+    "x": 0,
+    "y": 0,
+    "w": 64,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 64,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "kou_02.png": {
+   "frame": {
+    "x": 64,
+    "y": 0,
+    "w": 64,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 64,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "kou_03.png": {
+   "frame": {
+    "x": 192,
+    "y": 64,
+    "w": 64,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 64,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "kou_04.png": {
+   "frame": {
+    "x": 128,
+    "y": 64,
+    "w": 64,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 64,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "kou_05.png": {
+   "frame": {
+    "x": 64,
+    "y": 64,
+    "w": 64,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 64,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "kou_06.png": {
+   "frame": {
+    "x": 0,
+    "y": 64,
+    "w": 64,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 64,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "kou_07.png": {
+   "frame": {
+    "x": 192,
+    "y": 0,
+    "w": 64,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 64,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "kou_08.png": {
+   "frame": {
+    "x": 128,
+    "y": 0,
+    "w": 64,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 64,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "kou_09.png": {
+   "frame": {
+    "x": 256,
+    "y": 0,
+    "w": 64,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 64,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "sun_02.png": {
+   "frame": {
+    "x": 0,
+    "y": 128,
+    "w": 256,
+    "h": 256
+   },
+   "sourceSize": {
+    "w": 256,
+    "h": 256
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "moon_01.png": {
+   "frame": {
+    "x": 320,
+    "y": 0,
+    "w": 128,
+    "h": 128
+   },
+   "sourceSize": {
+    "w": 128,
+    "h": 128
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  }
+ },
+ "animations": []
+}

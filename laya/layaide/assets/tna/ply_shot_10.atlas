@@ -1,0 +1,133 @@
+{
+ "meta": {
+  "image": "ply_shot_10.png",
+  "size": {
+   "w": 512,
+   "h": 512
+  },
+  "scale": 1,
+  "prefix": ""
+ },
+ "frames": {
+  "player_10.png": {
+   "frame": {
+    "x": 0,
+    "y": 0,
+    "w": 32,
+    "h": 48
+   },
+   "sourceSize": {
+    "w": 32,
+    "h": 48
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_yukariA_11.png": {
+   "frame": {
+    "x": 64,
+    "y": 0,
+    "w": 48,
+    "h": 48
+   },
+   "sourceSize": {
+    "w": 48,
+    "h": 48
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_yukariA_12.png": {
+   "frame": {
+    "x": 0,
+    "y": 60,
+    "w": 16,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 16,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_yukariA_21.png": {
+   "frame": {
+    "x": 0,
+    "y": 48,
+    "w": 16,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 16,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_yukariB_11.png": {
+   "frame": {
+    "x": 0,
+    "y": 80,
+    "w": 6,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 6,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "mybomb_yukari_01.png": {
+   "frame": {
+    "x": 0,
+    "y": 128,
+    "w": 256,
+    "h": 256
+   },
+   "sourceSize": {
+    "w": 256,
+    "h": 256
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "mybomb_yukari_02.png": {
+   "frame": {
+    "x": 256,
+    "y": 0,
+    "w": 256,
+    "h": 256
+   },
+   "sourceSize": {
+    "w": 256,
+    "h": 256
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  }
+ },
+ "animations": []
+}

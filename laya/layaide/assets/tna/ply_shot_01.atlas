@@ -1,0 +1,99 @@
+{
+ "meta": {
+  "image": "ply_shot_01.png",
+  "size": {
+   "w": 256,
+   "h": 256
+  },
+  "scale": 1,
+  "prefix": ""
+ },
+ "frames": {
+  "player_01.png": {
+   "frame": {
+    "x": 0,
+    "y": 0,
+    "w": 32,
+    "h": 48
+   },
+   "sourceSize": {
+    "w": 32,
+    "h": 48
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_reimuA_11.png": {
+   "frame": {
+    "x": 48,
+    "y": 0,
+    "w": 16,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 16,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_reimuA_21.png": {
+   "frame": {
+    "x": 0,
+    "y": 80,
+    "w": 18,
+    "h": 22
+   },
+   "sourceSize": {
+    "w": 18,
+    "h": 22
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_reimuB_11.png": {
+   "frame": {
+    "x": 52,
+    "y": 17,
+    "w": 6,
+    "h": 56
+   },
+   "sourceSize": {
+    "w": 6,
+    "h": 56
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "mybomb_reimu_01.png": {
+   "frame": {
+    "x": 128,
+    "y": 0,
+    "w": 128,
+    "h": 128
+   },
+   "sourceSize": {
+    "w": 128,
+    "h": 128
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  }
+ },
+ "animations": []
+}

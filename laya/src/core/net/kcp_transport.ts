@@ -128,7 +128,16 @@ export class KcpSession {
       return;
     }
     // Copy out of the reusable write buffer before handing it to the channel.
-    this.datagram.send(data.subarray(0, length).slice());
+    const datagram = data.subarray(0, length).slice();
+    try {
+      this.datagram.send(datagram);
+    } catch (error) {
+      // A broken/offline channel must degrade to a dropped datagram. Letting
+      // this escape would unwind the KCP timer callback (`update` → `flush` →
+      // `output`) and stop the session from ever flushing again.
+      this.sendFailures += 1;
+      this.logger.warn(`kcp datagram send failed: ${String(error)}`);
+    }
   }
 }
 

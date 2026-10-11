@@ -17,6 +17,7 @@ import type { CheckinDayView } from '../../../core/net/lobby_client';
 import * as theme from '../view/theme';
 import { VectorPainter, mix } from '../view/sprites';
 import { createButtonEx, createCaption, createDivider, createPanel, type ButtonHandle } from './ui_kit';
+import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
 import type { ClientScene } from './scene';
 
 export interface CheckinSceneOptions {
@@ -40,6 +41,7 @@ interface DayCell {
 
 export class CheckinScene implements ClientScene {
   readonly root: Laya.Sprite;
+  readonly shortcutScope: ShortcutScope = 'checkin';
 
   private readonly streakText: Laya.Text;
   private readonly statusText: Laya.Text;
@@ -221,6 +223,28 @@ export class CheckinScene implements ClientScene {
     await this.options.flow.claimCheckin();
     this.busy = false;
     this.applySnapshot(this.options.flow.snapshot());
+  }
+
+  /**
+   * Handles a check-in shortcut. `ui.activate` fires the Claim button — only
+   * while it is enabled, the same guard a click has — and `ui.back` returns to
+   * the lobby. The day grid has no selection concept, so `ui.next` / `ui.prev`
+   * fall through to the app-level handlers.
+   */
+  handleShortcut(action: ShortcutAction, _event: Laya.KeyboardEventLike): boolean {
+    switch (action) {
+      case 'ui.activate':
+        if (!this.claimButton.sprite.mouseEnabled) {
+          return false;
+        }
+        void this.claim();
+        return true;
+      case 'ui.back':
+        this.options.flow.backToLobby();
+        return true;
+      default:
+        return false;
+    }
   }
 
   /** Concise text factory: one place that sets font, weight, alignment and x. */

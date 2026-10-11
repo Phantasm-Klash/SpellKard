@@ -15,16 +15,35 @@ export class LayaSocket implements SocketLike {
   private closedByUser = false;
 
   constructor(private readonly socket: Laya.Socket) {
-    socket.disableInput = false;
+    // Deliver raw frames straight from the MESSAGE event. With `disableInput`
+    // the engine hands over the exact frame (string / ArrayBuffer). Without it,
+    // `Socket._onMessage` *appends* every frame into one growing `input`
+    // ByteBuffer, and from the outside there is no way to tell which slice is
+    // the current frame — so every frame after the first fails to decode and its
+    // request hangs forever (auth succeeds, bootstrap never resolves).
+    socket.disableInput = true;
     socket.on(Laya.Event.OPEN, this, () => {
       this.opened = true;
       this.handlers.onOpen?.();
     });
-    socket.on(Laya.Event.MESSAGE, this, () => this.readMessage());
-    socket.on(Laya.Event.CLOSE, this, () => {
-      this.handlers.onClose?.(1000, 'closed');
+    socket.on(Laya.Event.MESSAGE, this, (data: unknown) =>
+      this.readMessage(data as string | ArrayBuffer),
+    );
+    socket.on(Laya.Event.CLOSE, this, (...args: unknown[]) => {
+      // Must clear `opened` here: `Laya.Socket.close()` nulls its internal
+      // `_socket`, and `Socket.send()` then dereferences null and *throws*. If we
+      // kept reporting `connected === true`, `WsLobbyTransport.call()` would skip
+      // its `lobby_ws_not_connected` guard and every later RPC would surface as a
+      // confusing `lobby_transport_error:<op>` instead of "session dropped".
+      this.opened = false;
+      const [code, reason] = args;
+      this.handlers.onClose?.(
+        typeof code === 'number' ? code : 1000,
+        typeof reason === 'string' ? reason : 'closed',
+      );
     });
     socket.on(Laya.Event.ERROR, this, () => {
+      this.opened = false;
       this.handlers.onError?.(new Error('laya socket error'));
     });
   }
@@ -59,15 +78,14 @@ export class LayaSocket implements SocketLike {
     this.handlers = handlers;
   }
 
-  private readMessage(): void {
-    const input = this.socket.input;
-    const length = input.length;
-    if (length <= 0) {
+  private readMessage(data: string | ArrayBuffer): void {
+    if (typeof data === 'string') {
+      this.handlers.onMessage?.(data);
       return;
     }
-    // LayaAir keeps the raw bytes on `input.buffer`; try UTF-8 first because the
-    // lobby RPC channel is JSON text, then fall back to raw bytes.
-    const raw = new Uint8Array(input.buffer);
+    // Binary frame: try UTF-8 first because the lobby RPC channel is JSON text,
+    // then fall back to the raw bytes.
+    const raw = new Uint8Array(data);
     const text = tryDecodeUtf8(raw);
     if (text !== null) {
       this.handlers.onMessage?.(text);

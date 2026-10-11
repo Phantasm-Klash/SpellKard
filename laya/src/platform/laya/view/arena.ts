@@ -37,20 +37,26 @@ const RETICLE_RADIUS_RATIO = 0.18;
  *
  * `drawLine`/`drawRect` have no per-command alpha, so low-contrast lines are
  * produced by blending the stroke colour toward `COLOR_VOID` via `fade`.
+ *
+ * @param drawBackdrop when false the gradient bands are skipped, because a real
+ *                     backdrop texture is painted underneath by the view; the
+ *                     grid, reticle and border are still drawn on top.
  */
-export function drawPlayfield(g: Laya.Graphics, width: number, height: number): void {
+export function drawPlayfield(g: Laya.Graphics, width: number, height: number, drawBackdrop = true): void {
   if (width <= 0 || height <= 0) {
     return;
   }
 
   // 1. Backdrop. LayaAir's `Graphics` has no gradient primitive, so the sky is
   //    approximated with discrete vertical bands that read as a gradient.
-  const bands = 8;
-  for (let i = 0; i < bands; i += 1) {
-    const t = i / (bands - 1);
-    const bandY = (height / bands) * i;
-    const bandH = height / bands + 1;
-    g.drawRect(0, bandY, width, bandH, mix(theme.COLOR_PLAYFIELD, theme.COLOR_VOID, t * 0.75));
+  if (drawBackdrop) {
+    const bands = 8;
+    for (let i = 0; i < bands; i += 1) {
+      const t = i / (bands - 1);
+      const bandY = (height / bands) * i;
+      const bandH = height / bands + 1;
+      g.drawRect(0, bandY, width, bandH, mix(theme.COLOR_PLAYFIELD, theme.COLOR_VOID, t * 0.75));
+    }
   }
 
   // 2. Faint square grid. Two passes (coarse + finer) give a sense of depth.

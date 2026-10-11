@@ -7,9 +7,10 @@
  * error, state-hash match, hard-snap count) stay meaningful.
  */
 
-import type { BattleClient } from '../../../core/net/battle_client';
+import type { BattleClient, BattleCorrectionMetrics } from '../../../core/net/battle_client';
 import { BattleConnectionState } from '../../../core/net/battle_client';
 import type { TimerLike } from '../../../core/net/transport';
+import { battleLayout, type BattleLayout } from '../../../core/game/battle_layout';
 import { buildBossRaceFrame, type BossRaceFrame } from '../../../core/game/boss_race_view_model';
 import { describeDirectionBits, encodeInput } from '../../../core/game/input';
 import type { BossRaceSnapshot } from '../../../core/sim/boss_race';
@@ -20,7 +21,11 @@ import {
 } from '../../../core/sim/boss_race';
 import type { LayaInput } from '../laya_input';
 import { BossRaceView } from '../view/boss_race_view';
+import { AtlasBulletRenderer } from '../view/bullets';
+import { sharedTnaFrameSource } from '../view/bullet_atlas';
 import type { HudState } from '../view/hud';
+import * as theme from '../view/theme';
+import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
 import type { ClientScene } from './scene';
 
 export interface BattleSceneOptions {
@@ -44,65 +49,38 @@ export interface BattleSceneOptions {
   onMatchEnd?: (winnerPlayerId: string) => void;
 }
 
-/**
- * The status panel is a vertical strip pinned to the right of the stage; the
- * playfield keeps its 2:3 portrait ratio and fills the full stage height, so
- * the panel gets exactly the width that is left over. Nothing is letterboxed
- * vertically and the two panes tile the stage edge to edge.
- */
-const PLAYFIELD_ASPECT = 3 / 2;
-
-/** Geometry for a stage of `width` x `height`. */
-function battleLayout(width: number, height: number): {
-  playfield: { width: number; height: number };
-  playfieldX: number;
-  playfieldY: number;
-  hudX: number;
-  hudWidth: number;
-  hudHeight: number;
-} {
-  // The playfield owns the full stage height at its fixed 2:3 ratio; the panel
-  // takes the remainder. Clamp the playfield so a very wide stage still leaves
-  // the panel a readable width.
-  const idealPlayfieldWidth = Math.round(height / PLAYFIELD_ASPECT);
-  const playfieldWidth = Math.min(idealPlayfieldWidth, Math.max(0, width - MIN_HUD_WIDTH));
-  const playfieldHeight = Math.round(playfieldWidth * PLAYFIELD_ASPECT);
-  const hudWidth = Math.max(0, width - playfieldWidth);
-  return {
-    playfield: { width: playfieldWidth, height: playfieldHeight },
-    playfieldX: 0,
-    playfieldY: Math.round((height - playfieldHeight) / 2),
-    hudX: playfieldWidth,
-    hudWidth,
-    hudHeight: height,
-  };
-}
-
-/**
- * Minimum width the status panel may shrink to. Below this the cards stop
- * reading, so the playfield yields width rather than the panel.
- */
-const MIN_HUD_WIDTH = 240;
-
 export class BattleScene implements ClientScene {
   readonly root: Laya.Sprite;
+  readonly shortcutScope: ShortcutScope = 'battle';
 
   private readonly view: BossRaceView;
   private readonly options: BattleSceneOptions;
-  private readonly geometry: ReturnType<typeof battleLayout>;
+  private geometry: BattleLayout;
+  // Shared with `BossRaceView`'s actor renderer so the 25 atlases are sliced
+  // once, not once per instance.
+  private readonly bulletAtlas = sharedTnaFrameSource();
+  private readonly bulletRenderer: AtlasBulletRenderer;
+  /** Full-stage banner shown while the tick loop is held by `battle.pause`. */
+  private readonly pauseOverlay: Laya.Text;
   private authoritative: BossRaceSnapshot | null = null;
   private tickHandle = 0;
   private running = false;
+  private paused = false;
   private frame: BossRaceFrame | null = null;
   private matchEnded = false;
 
   constructor(options: BattleSceneOptions) {
     this.options = options;
-    this.geometry = battleLayout(options.width, options.height);
+    const { width, height } = this.stageSize();
+    this.geometry = battleLayout(width, height);
     this.root = new Laya.Sprite();
-    this.root.size(options.width, options.height);
+    this.root.size(width, height);
     this.root.visible = false;
 
+    // Real 千夜追忆 art is authored for a 640-wide playfield; scale it to ours.
+    const artScale = this.geometry.playfield.width / 640;
+    this.bulletRenderer = new AtlasBulletRenderer(this.bulletAtlas, artScale);
+    void this.bulletAtlas.load();
     this.view = new BossRaceView({
       layout: this.geometry.playfield,
       playfieldX: this.geometry.playfieldX,
@@ -110,10 +88,25 @@ export class BattleScene implements ClientScene {
       hudWidth: this.geometry.hudWidth,
       hudHeight: this.geometry.hudHeight,
       hudX: this.geometry.hudX,
-      stageWidth: options.width,
-      stageHeight: options.height,
+      stageWidth: width,
+      stageHeight: height,
+      bulletRenderer: this.bulletRenderer,
     });
     this.root.addChild(this.view.root);
+
+    // The scene owns no HUD/status text of its own (the strip belongs to
+    // `BossRaceView`), so the paused state is surfaced with a full-stage banner
+    // layered above the playfield. Added after the view so it paints on top.
+    this.pauseOverlay = new Laya.Text();
+    this.pauseOverlay.text = 'PAUSED';
+    this.pauseOverlay.fontSize = theme.FONT_SIZE_TITLE;
+    this.pauseOverlay.bold = true;
+    this.pauseOverlay.color = theme.COLOR_ACCENT;
+    this.pauseOverlay.align = 'center';
+    this.pauseOverlay.valign = 'middle';
+    this.pauseOverlay.size(width, height);
+    this.pauseOverlay.visible = false;
+    this.root.addChild(this.pauseOverlay);
 
     this.options.battle.onSnapshot((snapshot) => {
       this.authoritative = snapshot;
@@ -122,22 +115,77 @@ export class BattleScene implements ClientScene {
         this.options.onMatchEnd?.(snapshot.winnerPlayerId);
       }
     });
+
+    // Apply the stage-sized layout once so the first frame already matches the
+    // window (the stage may differ from `options` on a resizable native window).
+    this.relayout(width, height);
   }
 
   onEnter(): void {
     this.root.visible = true;
+    // Re-register idempotently: `onEnter` can run again after an `onExit`.
+    Laya.stage.off(Laya.Event.RESIZE, this, this.onStageResize);
+    Laya.stage.on(Laya.Event.RESIZE, this, this.onStageResize);
+    // A battle always starts live; never carry a previous pause into it.
+    this.paused = false;
+    this.pauseOverlay.visible = false;
     this.start();
   }
 
   onExit(): void {
     this.root.visible = false;
+    Laya.stage.off(Laya.Event.RESIZE, this, this.onStageResize);
+    this.paused = false;
+    this.pauseOverlay.visible = false;
     this.stop();
   }
 
   destroy(): void {
+    Laya.stage.off(Laya.Event.RESIZE, this, this.onStageResize);
     this.stop();
     this.view.destroy();
     this.root.destroy(true);
+  }
+
+  /**
+   * Re-tiles the whole scene for a new stage size. Called once at construction
+   * and again on every `Laya.Event.RESIZE`, so the playfield, status panel and
+   * bullet art scale track the window instead of freezing at boot.
+   */
+  private relayout(width: number, height: number): void {
+    this.geometry = battleLayout(width, height);
+    this.root.size(width, height);
+    this.pauseOverlay.size(width, height);
+    this.view.relayout({
+      layout: this.geometry.playfield,
+      playfieldX: this.geometry.playfieldX,
+      playfieldY: this.geometry.playfieldY,
+      hudX: this.geometry.hudX,
+      hudWidth: this.geometry.hudWidth,
+      hudHeight: this.geometry.hudHeight,
+      stageWidth: width,
+      stageHeight: height,
+    });
+    // Real art is authored for a 640-wide playfield; keep it in step with ours.
+    this.bulletRenderer.setArtScale(this.geometry.playfield.width / 640);
+    this.renderFrame();
+  }
+
+  /**
+   * Current stage size in pixels, falling back to the boot-time options when the
+   * stage is not ready yet (width/height 0) or unavailable.
+   */
+  private stageSize(): { width: number; height: number } {
+    const stage: Laya.Stage | undefined = Laya.stage;
+    if (stage !== undefined && stage.width > 0 && stage.height > 0) {
+      return { width: stage.width, height: stage.height };
+    }
+    return { width: this.options.width, height: this.options.height };
+  }
+
+  private onStageResize(): void {
+    const { width, height } = this.stageSize();
+    this.relayout(width, height);
   }
 
   get currentFrame(): BossRaceFrame | null {
@@ -168,6 +216,34 @@ export class BattleScene implements ClientScene {
     }
     this.running = false;
     this.options.timer.clearInterval(this.tickHandle);
+  }
+
+  /**
+   * Handles a battle shortcut. `pause` holds the fixed-tick loop and shows the
+   * banner so the key has visible feedback; the other two battle actions have
+   * no control on this screen — there is no forfeit/back path and the HUD strip
+   * is owned by `BossRaceView` — so they fall through to the app-level handlers.
+   *
+   * Only the scene's own `start()`/`stop()` lifecycle is used: the simulation,
+   * input sampling and network code are left untouched.
+   */
+  handleShortcut(action: ShortcutAction, _event: Laya.KeyboardEventLike): boolean {
+    if (action !== 'battle.pause') {
+      return false;
+    }
+    this.setPaused(!this.paused);
+    return true;
+  }
+
+  /** Holds or resumes the tick loop and mirrors the state on the banner. */
+  private setPaused(paused: boolean): void {
+    this.paused = paused;
+    this.pauseOverlay.visible = paused;
+    if (paused) {
+      this.stop();
+    } else {
+      this.start();
+    }
   }
 
   /** One simulation tick: read input, send it, advance prediction, render. */
@@ -221,7 +297,6 @@ export class BattleScene implements ClientScene {
     const local = snapshot.players.find((player) => player.playerId === this.options.localPlayerId());
     const opponent = snapshot.players.find((player) => player.playerId !== this.options.localPlayerId());
     const maxHp = this.options.bossMaxHp > 0 ? this.options.bossMaxHp : 1;
-    const hashTotal = metrics.hashMatches + metrics.hashMismatches;
     const damageDealt = local?.damageDealt ?? 0;
     return {
       localHpRatio: Math.max(0, Math.min(1, (local?.bossCurrentHp ?? 0) / maxHp)),
@@ -238,7 +313,7 @@ export class BattleScene implements ClientScene {
       patternId: patternFor(snapshot.tick),
       bullets: snapshot.bullets.length,
       connectionLabel: this.authoritative === null ? 'predicted' : 'server',
-      metricsLine: `snaps ${metrics.snapshotsReceived} · err ${metrics.averagePositionErrorMilli.toFixed(0)} · hash ${metrics.hashMatches}/${hashTotal} · snap ${metrics.hardSnaps}`,
+      metricsLine: `snaps ${metrics.snapshotsReceived} · err ${metrics.averagePositionErrorMilli.toFixed(0)} · ${hashCell(metrics)} · snap ${metrics.hardSnaps}`,
       tickLimit: this.options.matchTickLimit,
       tickRateHz: this.options.tickRateHz,
     };
@@ -282,14 +357,34 @@ export class BattleScene implements ClientScene {
     const inputs = [describeDirectionBits(rawToBits(raw)), raw.shoot ? 'shoot' : '', raw.slow ? 'focus' : '']
       .filter((value) => value !== '')
       .join(' ');
-    const hashTotal = metrics.hashMatches + metrics.hashMismatches;
     return [
       row('BOSS', `HP ${local?.bossCurrentHp ?? '-'}/${this.options.bossMaxHp}`, `dmg ${local?.damageDealt ?? 0}`, `rival ${opponent?.bossCurrentHp ?? '-'}`),
       row('NET', source, `tick ${snapshot.tick}`, stateName, `pattern ${patternFor(snapshot.tick)}`),
       row('FP', `bullets ${snapshot.bullets.length}`, inputs),
-      row('SYNC', `snaps ${metrics.snapshotsReceived}`, `err ${metrics.averagePositionErrorMilli.toFixed(0)}`, `hash ${metrics.hashMatches}/${hashTotal}`, `snap ${metrics.hardSnaps}`),
+      row('SYNC', `snaps ${metrics.snapshotsReceived}`, `err ${metrics.averagePositionErrorMilli.toFixed(0)}`, hashCell(metrics), `snap ${metrics.hardSnaps}`),
     ];
   }
+}
+
+/**
+ * The SYNC row's state-hash cell.
+ *
+ * `hashComparable` counts the snapshots where the local bullet model is expected
+ * to reproduce the server's (see `BossRaceSimulation.hashComparable`). Since the
+ * real-danmaku library is now the server's own, that is every snapshot on the
+ * live ruleset, so the cell normally reports a real ratio. It only says why
+ * instead when the simulation was built with a provisional timeline
+ * (`config.realDanmakuIsProduction === false`) or is still on the legacy
+ * `mvp-boss-race-s0` scheduler — in which case a `0/n` would read as a desync
+ * even though the *players* agree exactly.
+ */
+function hashCell(metrics: BattleCorrectionMetrics): string {
+  if (metrics.hashComparable === 0) {
+    // Kept short on purpose: the SYNC strip is narrow and a longer label wraps
+    // into a line that still overflows the panel.
+    return 'hash n/a (provisional)';
+  }
+  return `hash ${metrics.hashMatches}/${metrics.hashComparable}`;
 }
 
 /** Joins HUD cells with a fixed gutter so columns line up across rows. */

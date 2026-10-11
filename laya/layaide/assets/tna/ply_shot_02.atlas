@@ -1,0 +1,184 @@
+{
+ "meta": {
+  "image": "ply_shot_02.png",
+  "size": {
+   "w": 512,
+   "h": 512
+  },
+  "scale": 1,
+  "prefix": ""
+ },
+ "frames": {
+  "player_02.png": {
+   "frame": {
+    "x": 0,
+    "y": 0,
+    "w": 32,
+    "h": 48
+   },
+   "sourceSize": {
+    "w": 32,
+    "h": 48
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_marisaA_11.png": {
+   "frame": {
+    "x": 0,
+    "y": 48,
+    "w": 14,
+    "h": 28
+   },
+   "sourceSize": {
+    "w": 14,
+    "h": 28
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_marisaA_21.png": {
+   "frame": {
+    "x": 48,
+    "y": 0,
+    "w": 16,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 16,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_marisaA_22.png": {
+   "frame": {
+    "x": 48,
+    "y": 64,
+    "w": 16,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 16,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_marisaA_23.png": {
+   "frame": {
+    "x": 64,
+    "y": 0,
+    "w": 16,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 16,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_marisaA_24.png": {
+   "frame": {
+    "x": 64,
+    "y": 64,
+    "w": 16,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 16,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_marisaB_11.png": {
+   "frame": {
+    "x": 0,
+    "y": 64,
+    "w": 16,
+    "h": 32
+   },
+   "sourceSize": {
+    "w": 16,
+    "h": 32
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_marisaB_21.png": {
+   "frame": {
+    "x": 0,
+    "y": 80,
+    "w": 32,
+    "h": 32
+   },
+   "sourceSize": {
+    "w": 32,
+    "h": 32
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "mybomb_marisa_01.png": {
+   "frame": {
+    "x": 256,
+    "y": 0,
+    "w": 256,
+    "h": 512
+   },
+   "sourceSize": {
+    "w": 256,
+    "h": 512
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "mybomb_marisa_02.png": {
+   "frame": {
+    "x": 0,
+    "y": 144,
+    "w": 256,
+    "h": 80
+   },
+   "sourceSize": {
+    "w": 256,
+    "h": 80
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  }
+ },
+ "animations": []
+}

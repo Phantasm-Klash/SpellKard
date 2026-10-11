@@ -1,0 +1,133 @@
+{
+ "meta": {
+  "image": "ply_shot_13.png",
+  "size": {
+   "w": 256,
+   "h": 256
+  },
+  "scale": 1,
+  "prefix": ""
+ },
+ "frames": {
+  "player_13.png": {
+   "frame": {
+    "x": 0,
+    "y": 0,
+    "w": 32,
+    "h": 48
+   },
+   "sourceSize": {
+    "w": 32,
+    "h": 48
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_yuyukoA_11.png": {
+   "frame": {
+    "x": 32,
+    "y": 0,
+    "w": 26,
+    "h": 24
+   },
+   "sourceSize": {
+    "w": 26,
+    "h": 24
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_yuyukoA_21.png": {
+   "frame": {
+    "x": 32,
+    "y": 32,
+    "w": 26,
+    "h": 24
+   },
+   "sourceSize": {
+    "w": 26,
+    "h": 24
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_yuyukoB_11.png": {
+   "frame": {
+    "x": 32,
+    "y": 64,
+    "w": 26,
+    "h": 24
+   },
+   "sourceSize": {
+    "w": 26,
+    "h": 24
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_yuyukoB_21.png": {
+   "frame": {
+    "x": 32,
+    "y": 32,
+    "w": 26,
+    "h": 24
+   },
+   "sourceSize": {
+    "w": 26,
+    "h": 24
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "mybomb_yuyuko_01.png": {
+   "frame": {
+    "x": 64,
+    "y": 0,
+    "w": 52,
+    "h": 48
+   },
+   "sourceSize": {
+    "w": 52,
+    "h": 48
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "mybomb_yuyuko_02.png": {
+   "frame": {
+    "x": 64,
+    "y": 64,
+    "w": 52,
+    "h": 48
+   },
+   "sourceSize": {
+    "w": 52,
+    "h": 48
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  }
+ },
+ "animations": []
+}

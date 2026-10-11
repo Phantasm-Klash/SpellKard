@@ -28,6 +28,31 @@ import {
   type VersionStamp,
 } from './lobby_protocol';
 
+/**
+ * Server error code for "the same account signed in on another device".
+ *
+ * Frozen contract shared with the lobby (`runtime/lobbyws`): the server drops
+ * the older session, pushes an `Error` frame with exactly this code to the
+ * superseded connection and then closes it.
+ */
+export const SESSION_REPLACED_CODE = 'session_replaced';
+
+/**
+ * Client-minted code for "the lobby no longer accepts our session".
+ *
+ * No server code maps onto this. When the superseded token is used over REST the
+ * lobby answers a bare `401`/`unauthorized` — and a lobby restart or a token
+ * that simply aged out produces the very same response, because
+ * `userBySessionLocked` only knows that the token is not in its index. The cases
+ * are indistinguishable on the wire, so the client must not claim the alarming
+ * one: a player whose session merely expired would otherwise be told their
+ * account had been signed in elsewhere, which reads as "you have been hacked".
+ *
+ * Both cases end the session and return to the login screen; only the wording
+ * differs.
+ */
+export const SESSION_EXPIRED_CODE = 'session_expired';
+
 /** Gensoulkyo `nakamaapi.Response`. */
 export interface LobbyRpcResponse {
   ok: boolean;
@@ -81,6 +106,18 @@ export interface SessionState {
   characterId: string;
   rulesetVersion: string;
   unlockedCharacterIds: string[];
+}
+
+/**
+ * Answer to `auth.emailCode`: how long the mailed code stays valid, and how long
+ * the same address must wait before another one can be requested. Both are
+ * seconds and both come from the server, so the form's countdown matches the
+ * server's own rate limit instead of guessing.
+ */
+export interface EmailCodeReceipt {
+  email: string;
+  expiresInSeconds: number;
+  resendInSeconds: number;
 }
 
 export interface RoomPlayerView {
@@ -328,9 +365,38 @@ export interface ActivityClaimView {
 
 export type LobbyEvent =
   | { kind: 'room_state'; room: RoomView }
-  | { kind: 'match_start'; matchId: string; serverSeedHex: string; endpoint: string; playerIds: string[] }
+  | {
+      kind: 'match_start';
+      matchId: string;
+      serverSeedHex: string;
+      endpoint: string;
+      playerIds: string[];
+      /**
+       * This client's own roster id (`p-<hash>`) for the match, taken from the
+       * signed battle ticket. The battle server only accepts `BattleInput`
+       * payloads whose `player_id` is on its roster, and the roster uses
+       * `player_id` values — never the lobby `user_id` — so this must be sent
+       * verbatim. Empty when the lobby omitted the ticket.
+       */
+      playerId: string;
+    }
   | { kind: 'match_result'; result: MatchResultView }
-  | { kind: 'transport_closed'; reason: string };
+  | { kind: 'transport_closed'; reason: string }
+  /**
+   * The lobby ended this session because the account signed in elsewhere. The
+   * server pushes this (an `Error` frame carrying {@link SESSION_REPLACED_CODE})
+   * and then closes the connection, so the listener must drop the local session
+   * and return to the login screen.
+   */
+  | { kind: 'session_replaced' }
+  /**
+   * The lobby stopped accepting our session without saying why: an
+   * authenticated REST call came back `401` with no
+   * {@link SESSION_REPLACED_CODE}. That is what an aged-out token, a restarted
+   * lobby and a superseded token all look like, so it is reported as an expiry
+   * rather than a takeover. Same recovery as {@link SESSION_REPLACED_CODE}.
+   */
+  | { kind: 'session_expired' };
 
 export type LobbyEventListener = (event: LobbyEvent) => void;
 
@@ -400,6 +466,10 @@ export class LobbyClient {
       cid: this.nextCid(),
       payload,
     };
+    // Whether this request goes out authenticated. A `401` only means "session
+    // lost" when we *were* authenticated — the login endpoints answer a wrong
+    // password with the same status, and that must stay a plain failure.
+    const hadSession = this.session !== null;
     if (this.session !== null) {
       request.session_id = this.session.sessionToken;
       request.user_id = this.session.userId;
@@ -410,6 +480,15 @@ export class LobbyClient {
       if (!response.ok) {
         this.lastError = response.error_code ?? `lobby_call_failed:${id}`;
         this.logger.warn(`lobby ${id} failed: ${this.lastError} (${response.message ?? ''})`);
+        const loss = sessionLossKind(response, hadSession);
+        if (loss !== null) {
+          // Symmetric with the WS push path: a REST call that used a token the
+          // server has since dropped lands in the same handling. An explicit
+          // `session_replaced` is trusted; a bare `401` is reported as an
+          // expiry because the wire cannot separate an aged-out token from a
+          // takeover.
+          this.emit({ kind: loss });
+        }
       } else {
         this.lastError = '';
       }
@@ -419,6 +498,38 @@ export class LobbyClient {
       this.logger.error(`lobby ${id} threw: ${String(error)}`);
       return { ok: false, status: 0, error_code: this.lastError };
     }
+  }
+
+  /**
+   * Maps an auth response payload onto `SessionState` and installs it as the
+   * active session.
+   *
+   * Shared by every auth flow (`auth.anonymous`, `auth.register`,
+   * `auth.login`) because they all answer with the same session envelope; the
+   * only per-flow difference is the display name to fall back on. Returns `null`
+   * (and sets `lastError`) when the payload is missing the session token or the
+   * user id, so a malformed response can never half-authenticate the client.
+   */
+  private sessionFromPayload(
+    payload: Record<string, unknown>,
+    fallbackDisplayName: string,
+  ): SessionState | null {
+    const token = stringField(payload, 'session_token', 'sessionToken');
+    const userId = stringField(payload, 'user_id', 'userId');
+    if (token === '' || userId === '') {
+      this.lastError = 'login_missing_session';
+      return null;
+    }
+    this.session = {
+      sessionToken: token,
+      userId,
+      playerId: stringField(payload, 'player_id', 'playerId'),
+      displayName: stringField(payload, 'display_name', 'displayName') || fallbackDisplayName,
+      characterId: stringField(payload, 'character_id', 'characterId'),
+      rulesetVersion: stringField(payload, 'ruleset_version', 'rulesetVersion'),
+      unlockedCharacterIds: stringArrayField(payload, 'unlocked_character_ids', 'unlockedCharacterIds'),
+    };
+    return this.session;
   }
 
   /** `auth.anonymous` / `POST /v1/auth/anonymous`. */
@@ -431,23 +542,126 @@ export class LobbyClient {
     if (!response.ok || !isRecord(response.payload)) {
       return null;
     }
-    const payload = response.payload;
-    const token = stringField(payload, 'session_token', 'sessionToken');
-    const userId = stringField(payload, 'user_id', 'userId');
-    if (token === '' || userId === '') {
-      this.lastError = 'login_missing_session';
+    return this.sessionFromPayload(response.payload, displayName);
+  }
+
+  /**
+   * `auth.register` / `POST /v1/auth/register`.
+   *
+   * Creates an e-mail/password account and signs it in: the server returns a
+   * session exactly like `auth.anonymous`, so the response mapping is shared.
+   * `code` is the e-mail verification code the server mailed after
+   * {@link requestEmailCode} — registration is refused without a valid one.
+   * `displayName` defaults to the username when the caller leaves it empty.
+   */
+  async registerAccount(
+    username: string,
+    email: string,
+    password: string,
+    code: string,
+    displayName = '',
+  ): Promise<SessionState | null> {
+    const user = username.trim();
+    const address = email.trim();
+    // Reject locally before spending a round-trip: the server would answer the
+    // same way, but the form can react without waiting for the network.
+    if (user === '') {
+      this.lastError = 'account_username_required';
       return null;
     }
-    this.session = {
-      sessionToken: token,
-      userId,
-      playerId: stringField(payload, 'player_id', 'playerId'),
-      displayName: stringField(payload, 'display_name', 'displayName') || displayName,
-      characterId: stringField(payload, 'character_id', 'characterId'),
-      rulesetVersion: stringField(payload, 'ruleset_version', 'rulesetVersion'),
-      unlockedCharacterIds: stringArrayField(payload, 'unlocked_character_ids', 'unlockedCharacterIds'),
+    if (address === '') {
+      this.lastError = 'account_email_required';
+      return null;
+    }
+    if (password === '') {
+      this.lastError = 'account_password_required';
+      return null;
+    }
+    if (code.trim() === '') {
+      this.lastError = 'verification_code_required';
+      return null;
+    }
+    const response = await this.call('auth.register', {
+      username: user,
+      email: address,
+      password,
+      code: code.trim(),
+      display_name: displayName,
+      platform: this.platform,
+      client_build: this.clientBuild,
+    });
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    return this.sessionFromPayload(response.payload, displayName || user);
+  }
+
+  /**
+   * `auth.emailCode` / `POST /v1/auth/email/code`.
+   *
+   * Asks the lobby to mail a registration verification code to `email`. The
+   * response carries the code's lifetime and the delay before the same address
+   * may ask again, so the form can run its countdown without guessing.
+   */
+  async requestEmailCode(email: string): Promise<EmailCodeReceipt | null> {
+    const address = email.trim();
+    if (address === '') {
+      this.lastError = 'account_email_required';
+      return null;
+    }
+    const response = await this.call('auth.emailCode', { email: address });
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    return {
+      email: stringField(payload, 'email') || address,
+      expiresInSeconds: numberField(payload, 'expires_in_seconds', 'expiresInSeconds'),
+      resendInSeconds: numberField(payload, 'resend_in_seconds', 'resendInSeconds'),
     };
-    return this.session;
+  }
+
+  /**
+   * `auth.login` / `POST /v1/auth/login`.
+   *
+   * Verifies an existing account's password and issues a fresh session token.
+   * The e-mail address is the sign-in identifier.
+   */
+  async loginAccount(email: string, password: string): Promise<SessionState | null> {
+    const address = email.trim();
+    if (address === '') {
+      this.lastError = 'account_email_required';
+      return null;
+    }
+    if (password === '') {
+      this.lastError = 'account_password_required';
+      return null;
+    }
+    const response = await this.call('auth.login', {
+      email: address,
+      password,
+      platform: this.platform,
+      client_build: this.clientBuild,
+    });
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    return this.sessionFromPayload(response.payload, address);
+  }
+
+  /**
+   * Local sign-out. There is no server round-trip: dropping the session token is
+   * enough because every lobby call is authorised per-request. Clears the session
+   * plus every piece of per-session state so a following sign-in starts clean.
+   */
+  logout(): void {
+    this.session = null;
+    this.room = null;
+    this.allocation = null;
+    this.ticket = null;
+    this.matchmakingTicket = null;
+    this.lastError = '';
+    this.lastResponse = null;
   }
 
   /** `bootstrap` / `GET /v1/bootstrap`. */
@@ -887,6 +1101,10 @@ export class LobbyClient {
     endpoint?: string;
     playerIds?: string[];
     player_ids?: string[];
+    playerId?: string;
+    player_id?: string;
+    signed_battle_ticket?: unknown;
+    signedBattleTicket?: unknown;
   }): boolean {
     const matchId = message.matchId ?? message.match_id ?? '';
     if (matchId === '') {
@@ -896,8 +1114,12 @@ export class LobbyClient {
     const seedHex = message.serverSeedHex ?? bytesToHex(message.serverSeed ?? message.server_seed ?? new Uint8Array(0));
     const endpoint = message.endpoint ?? '';
     const playerIds = message.playerIds ?? message.player_ids ?? [];
+    const playerId =
+      message.playerId ??
+      message.player_id ??
+      localPlayerIdFromMatchStart(message as Record<string, unknown>);
     this.matchmakingTicket = null;
-    this.emit({ kind: 'match_start', matchId, serverSeedHex: seedHex, endpoint, playerIds });
+    this.emit({ kind: 'match_start', matchId, serverSeedHex: seedHex, endpoint, playerIds, playerId });
     return true;
   }
 
@@ -947,6 +1169,31 @@ export class LobbyClient {
   }
 }
 
+/**
+ * Classifies a failed response as a lost session, or `null` for an ordinary
+ * failure.
+ *
+ * An explicit {@link SESSION_REPLACED_CODE} is authoritative on any transport:
+ * the lobby only ever emits it when it really did supersede the session. A bare
+ * `401` is only a session loss when the request carried a session — the login
+ * endpoints answer bad credentials with `401` too, and that must not be mistaken
+ * for a lost session — and even then it cannot be attributed to a takeover,
+ * because a superseded token, an expired token and a restarted lobby all answer
+ * `401`/`unauthorized`.
+ */
+function sessionLossKind(
+  response: LobbyRpcResponse,
+  hadSession: boolean,
+): 'session_replaced' | 'session_expired' | null {
+  if (response.error_code === SESSION_REPLACED_CODE) {
+    return 'session_replaced';
+  }
+  if (response.status === 401 && hadSession) {
+    return 'session_expired';
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Transports
 // ---------------------------------------------------------------------------
@@ -964,8 +1211,15 @@ export class HttpLobbyTransport implements LobbyTransport {
     const method = route?.method ?? 'POST';
     const path = route !== undefined ? route.path(request) : `/v1/rpc/${request.id}`;
     const headers: Record<string, string> = {};
-    if (this.bearer !== '') {
-      headers.Authorization = `Bearer ${this.bearer}`;
+    // The session is established at runtime (`auth.anonymous`), so the token is
+    // only known after the first call. `LobbyClient` stamps every request with
+    // the current `session_id`, so prefer it over the (usually empty) bearer the
+    // transport was constructed with — REST routes authenticate through the
+    // `Authorization: Bearer` header and otherwise fail with
+    // `unauthorized: missing session token`.
+    const bearer = request.session_id ?? this.bearer;
+    if (bearer !== undefined && bearer !== '') {
+      headers.Authorization = `Bearer ${bearer}`;
     }
     const response = await this.http.request(method, path, request.payload ?? {}, headers);
     const body = isRecord(response.body) ? response.body : {};
@@ -1001,6 +1255,10 @@ function payloadString(request: LobbyRpcRequest, ...keys: string[]): string {
 
 const REST_ROUTES: Record<string, RestRoute> = {
   'auth.anonymous': { method: 'POST', path: () => '/v1/auth/anonymous' },
+  'auth.register': { method: 'POST', path: () => '/v1/auth/register' },
+  'auth.login': { method: 'POST', path: () => '/v1/auth/login' },
+  'auth.logout': { method: 'POST', path: () => '/v1/auth/logout' },
+  'auth.emailCode': { method: 'POST', path: () => '/v1/auth/email/code' },
   bootstrap: { method: 'GET', path: () => '/v1/bootstrap' },
   'rooms.create': { method: 'POST', path: () => '/v1/rooms/create' },
   'rooms.list': { method: 'GET', path: () => '/v1/rooms' },
@@ -1018,13 +1276,17 @@ const REST_ROUTES: Record<string, RestRoute> = {
     method: 'POST',
     path: (r) => `/v1/matchmaking/tickets/${payloadString(r, 'ticket_id', 'ticketId')}/cancel`,
   },
+  // The battle allocation/ticket live under `/v1/matches/{id}/...` in
+  // `runtime/httpapi/handler.go` — there is no `/v1/battles/...` namespace, and
+  // `battle-ticket` is a POST. The older `/v1/battles/...` paths silently 404'd
+  // with `not_found: route not found`.
   'battle.allocation': {
     method: 'GET',
-    path: (r) => `/v1/battles/${payloadString(r, 'match_id', 'matchId')}/allocation`,
+    path: (r) => `/v1/matches/${payloadString(r, 'match_id', 'matchId')}/battle-allocation`,
   },
   'battle.ticket': {
-    method: 'GET',
-    path: (r) => `/v1/battles/${payloadString(r, 'match_id', 'matchId')}/ticket`,
+    method: 'POST',
+    path: (r) => `/v1/matches/${payloadString(r, 'match_id', 'matchId')}/battle-ticket`,
   },
   'replay.get': { method: 'GET', path: (r) => `/v1/replays/${payloadString(r, 'replay_id', 'replayId')}` },
   // --- check-in / shop / inventory ---
@@ -1060,6 +1322,13 @@ export interface WsLobbyTransportConfig {
   fallback?: LobbyTransport;
   /** Receives pushed `room_state` / `match_start` / `match_result` events. */
   onEvent?: (event: LobbyEvent) => void;
+  /**
+   * Builds a **fresh**, already-connecting socket so the transport can recover
+   * from a server/network drop. `Laya.Socket` cannot be revived once closed, so
+   * a real reconnect means a brand-new socket. When omitted the transport keeps
+   * its single-shot behaviour: a dropped connection is never retried.
+   */
+  reconnect?: () => SocketLike;
 }
 
 interface PendingLobbyCall {
@@ -1082,24 +1351,103 @@ export class WsLobbyTransport implements LobbyTransport {
   private readonly clientBuild: string;
   private readonly fallback: LobbyTransport | null;
   private readonly userId: string;
+  private readonly reconnect: (() => SocketLike) | null;
   private sequence = 0;
+  /** Set when the connection is known to be down (server close / network drop). */
   private closed = false;
+  /**
+   * Set by `close()`: an application-initiated shutdown is final. A disposed
+   * transport never reconnects, so signing out (or tearing the app down) cannot
+   * resurrect a dead lobby channel.
+   */
+  private disposed = false;
+  /** Resolver for the in-flight `reconnectSocket()`, cleared on open/error/close. */
+  private openResolver: ((ok: boolean) => void) | null = null;
+  /**
+   * The in-flight reconnect, shared by concurrent callers so two `call()`s that
+   * race a drop do not each build a socket (which would overwrite the first
+   * attempt's resolver and hang it).
+   */
+  private reconnectPromise: Promise<boolean> | null = null;
 
-  constructor(private readonly socket: SocketLike, config: WsLobbyTransportConfig = {}) {
+  constructor(private socket: SocketLike, config: WsLobbyTransportConfig = {}) {
     this.logger = config.logger ?? nullLogger;
     this.version = config.version ?? DEFAULT_VERSION_STAMP;
     this.platform = config.platform ?? 'web';
     this.clientBuild = config.clientBuild ?? '0.1.0-draft';
     this.fallback = config.fallback ?? null;
     this.userId = config.userId ?? '';
+    this.reconnect = config.reconnect ?? null;
     if (config.onEvent !== undefined) {
       this.listeners.push(config.onEvent);
     }
-    this.socket.setHandlers({
+    this.bindSocket(socket);
+  }
+
+  /**
+   * Wires the transport's handlers onto `socket`. Called once at construction
+   * and again for every reconnected socket, so a fresh socket behaves exactly
+   * like the original (same message routing, same close/error handling).
+   */
+  private bindSocket(socket: SocketLike): void {
+    this.socket = socket;
+    socket.setHandlers({
+      onOpen: () => this.handleOpen(),
       onMessage: (data) => this.handleMessage(data),
       onClose: (code, reason) => this.handleClose(code, reason),
-      onError: (error) => this.logger.error(`lobby ws error: ${error.message}`),
+      onError: (error) => this.handleError(error),
     });
+  }
+
+  private handleOpen(): void {
+    if (!this.disposed) {
+      this.closed = false;
+    }
+    const resolve = this.openResolver;
+    this.openResolver = null;
+    resolve?.(true);
+  }
+
+  private handleError(error: Error): void {
+    this.logger.error(`lobby ws error: ${error.message}`);
+    // A socket that errors before opening fails the pending reconnect attempt.
+    const resolve = this.openResolver;
+    this.openResolver = null;
+    resolve?.(false);
+  }
+
+  /**
+   * Builds a fresh socket through the configured factory and waits for it to
+   * open. Resolves `true` once connected, `false` if it errors or closes first
+   * (or no factory is configured). No timers: open/error/close are enough.
+   */
+  private reconnectSocket(): Promise<boolean> {
+    if (this.reconnect === null || this.disposed) {
+      return Promise.resolve(false);
+    }
+    if (this.reconnectPromise !== null) {
+      return this.reconnectPromise;
+    }
+    const factory = this.reconnect;
+    const attempt = new Promise<boolean>((resolve) => {
+      let socket: SocketLike;
+      try {
+        socket = factory();
+      } catch (error) {
+        this.logger.error(`lobby ws reconnect failed: ${error instanceof Error ? error.message : String(error)}`);
+        resolve(false);
+        return;
+      }
+      this.openResolver = resolve;
+      this.bindSocket(socket);
+    });
+    this.reconnectPromise = attempt;
+    void attempt.then(() => {
+      if (this.reconnectPromise === attempt) {
+        this.reconnectPromise = null;
+      }
+    });
+    return attempt;
   }
 
   /** Subscribe to pushed lobby events; returns an unsubscribe function. */
@@ -1113,16 +1461,25 @@ export class WsLobbyTransport implements LobbyTransport {
     };
   }
 
-  call(request: LobbyRpcRequest): Promise<LobbyRpcResponse> {
+  async call(request: LobbyRpcRequest): Promise<LobbyRpcResponse> {
     const route = LOBBY_WS_ROUTES[request.id];
     if (route === undefined) {
       if (this.fallback !== null) {
         return this.fallback.call(request);
       }
-      return Promise.resolve({ ok: false, status: 0, error_code: `lobby_ws_unsupported_op:${request.id}` });
+      return { ok: false, status: 0, error_code: `lobby_ws_unsupported_op:${request.id}` };
+    }
+    if (this.disposed) {
+      // `close()` was called: the channel is intentionally shut and stays shut.
+      return { ok: false, status: 0, error_code: 'lobby_ws_not_connected' };
     }
     if (this.closed || !this.socket.connected) {
-      return Promise.resolve({ ok: false, status: 0, error_code: 'lobby_ws_not_connected' });
+      // The connection dropped (server close / network). Try exactly one fresh
+      // socket before giving up — no retry loop.
+      const recovered = await this.reconnectSocket();
+      if (!recovered) {
+        return { ok: false, status: 0, error_code: 'lobby_ws_not_connected' };
+      }
     }
     const payload = this.buildRequestPayload(request.id, request);
     this.sequence += 1;
@@ -1134,6 +1491,7 @@ export class WsLobbyTransport implements LobbyTransport {
   }
 
   close(): void {
+    this.disposed = true;
     this.closed = true;
     this.socket.close();
     this.rejectAll('lobby_ws_closed');
@@ -1207,7 +1565,13 @@ export class WsLobbyTransport implements LobbyTransport {
       if (pending !== undefined) {
         pending.resolve({ ok: false, status: 0, error_code: status.code, message: status.message });
       } else {
+        // A proactive push (no call in flight) would otherwise be swallowed:
+        // surface it so a listener can react. `session_replaced` is the only
+        // one the app acts on today.
         this.logger.warn(`lobby ws error: ${status.code} ${status.message}`);
+      }
+      if (status.code === SESSION_REPLACED_CODE) {
+        this.emit({ kind: 'session_replaced' });
       }
       return;
     }
@@ -1242,6 +1606,10 @@ export class WsLobbyTransport implements LobbyTransport {
 
   private handleClose(code: number, reason: string): void {
     this.closed = true;
+    // A socket that closes before opening fails the pending reconnect attempt.
+    const resolve = this.openResolver;
+    this.openResolver = null;
+    resolve?.(false);
     this.rejectAll(`lobby_ws_closed:${code}:${reason}`);
     this.emit({ kind: 'transport_closed', reason: `${code}:${reason}` });
   }
@@ -1379,7 +1747,28 @@ export function matchStartEvent(payload: unknown): LobbyEvent {
     serverSeedHex: stringField(source, 'server_seed_hex', 'serverSeedHex') || hexField(source, 'server_seed', 'serverSeed'),
     endpoint: stringField(source, 'endpoint'),
     playerIds: stringArrayField(source, 'player_ids', 'playerIds'),
+    playerId: localPlayerIdFromMatchStart(source),
   };
+}
+
+/**
+ * Extracts this client's own roster id from a `MatchStartMessage`.
+ *
+ * The lobby attaches the signed battle ticket it minted for *this* connection,
+ * so `signed_battle_ticket.ticket.player_id` is authoritative. There is no other
+ * field on the message that maps the lobby `user_id` to the battle roster id.
+ */
+function localPlayerIdFromMatchStart(source: Record<string, unknown>): string {
+  const signed = isRecord(source.signed_battle_ticket)
+    ? source.signed_battle_ticket
+    : isRecord(source.signedBattleTicket)
+      ? source.signedBattleTicket
+      : null;
+  if (signed === null) {
+    return '';
+  }
+  const ticket = isRecord(signed.ticket) ? signed.ticket : null;
+  return ticket === null ? '' : stringField(ticket, 'player_id', 'playerId');
 }
 
 /** `MatchResultMessage` payload → the client-facing result view. */
@@ -1479,16 +1868,6 @@ export function hexToBytes(hex: string): Uint8Array {
     out[i] = Number.parseInt(clean.substr(i * 2, 2), 16) || 0;
   }
   return out;
-}
-
-/** Big-endian seed hex → the 32-bit seed the boss-race RNG consumes. */
-export function seedFromHex(hex: string): number {
-  const bytes = hexToBytes(hex);
-  let value = 0;
-  for (let i = 0; i < bytes.length; i += 1) {
-    value = (value * 256 + bytes[i]) % 2 ** 32;
-  }
-  return value >>> 0;
 }
 
 function decodeUtf8Loose(bytes: Uint8Array): string {

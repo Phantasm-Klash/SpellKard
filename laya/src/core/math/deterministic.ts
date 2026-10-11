@@ -15,6 +15,15 @@
  * `>>> 0`, matching the C++/GDScript `& 0xffffffff` masking.
  */
 
+import { normalizeBossRaceSeed, type BossRaceSeed } from './boss_race_seed';
+import { lerpF64, llround as llroundF64 } from './float_lib';
+
+/**
+ * Re-exported so there is exactly one `llround` in the codebase — see
+ * `core/math/float_lib`, the single source of the client's float semantics.
+ */
+export const llround = llroundF64;
+
 export const MASK_32 = 0xffffffff;
 export const TWO_PI = Math.PI * 2;
 
@@ -128,22 +137,25 @@ export function deterministicRange(
  *   material = seed ":" tick ":" pattern_index ":" spawn_index
  *   result   = Mix32(Fnv1a32(material) ^ seed)
  *
- * `seed` and `tick` are treated as unsigned 64-bit upstream; JS numbers stay
- * exact well past the practical tick range, and `seed` is folded to 32 bits for
- * the final XOR exactly like the C++ cast.
+ * `seed` and `tick` are treated as unsigned 64-bit upstream. `tick` stays exact
+ * as a JS number well past the practical range, but `seed` spans the whole uint64
+ * range, so it is carried as a {@link BossRaceSeed}: the **full decimal text**
+ * feeds the material (exactly like `std::to_string(match_seed)`) while only the
+ * final XOR narrows to the low 32 bits, matching the C++ cast.
  */
 export function bossRaceDeterministicU32(
-  seed: number,
+  seed: BossRaceSeed | number,
   tick: number,
   patternIndex: number,
   spawnIndex: number,
 ): number {
-  const material = `${Math.trunc(seed)}:${Math.trunc(tick)}:${Math.trunc(patternIndex)}:${Math.trunc(spawnIndex)}`;
-  return mix32((fnv1a32(material) ^ (seed >>> 0)) >>> 0);
+  const resolved = normalizeBossRaceSeed(seed);
+  const material = `${resolved.decimal}:${Math.trunc(tick)}:${Math.trunc(patternIndex)}:${Math.trunc(spawnIndex)}`;
+  return mix32((fnv1a32(material) ^ resolved.low32) >>> 0);
 }
 
 export function bossRaceDeterministicUnit(
-  seed: number,
+  seed: BossRaceSeed | number,
   tick: number,
   patternIndex: number,
   spawnIndex: number,
@@ -214,13 +226,9 @@ export function rotateToward(fromAngle: number, toAngle: number, maxStep: number
   return fromAngle + clamp(shortestAngleDelta(fromAngle, toAngle), -maxStep, maxStep);
 }
 
+/** Linear interpolation — delegates to the unified float library. */
 export function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
-
-/** `std::llround` equivalent: round half away from zero, then truncate. */
-export function llround(value: number): number {
-  return value >= 0 ? Math.round(value) : -Math.round(-value);
+  return lerpF64(a, b, t);
 }
 
 /**

@@ -61,6 +61,35 @@ export const COLOR_TEXT_MUTED = '#b9b1d9';
 export const COLOR_TEXT_DISABLED = '#8a83a8';
 export const COLOR_TITLE = '#ffe36e';
 
+// --- login screen ---
+/**
+ * Dark translucent wash painted over the login backdrop so the title and the
+ * form card stay readable no matter how busy the art underneath is.
+ *
+ * Kept at 0.50 (not higher): the card carries its own near-opaque fill
+ * (`COLOR_LOGIN_CARD`) and the fields an even darker one (`COLOR_FIELD_BG`), so
+ * in-card legibility does not depend on this layer — a heavier wash would just
+ * bury the (already pre-darkened) backdrop art.
+ */
+export const COLOR_LOGIN_SCRIM = '#0a071380';
+/** Semi-transparent fill of the login form card (kept darker than the scrim). */
+export const COLOR_LOGIN_CARD = '#160f26e6';
+/** Fill of an editable field; near-opaque so typed text is always legible. */
+export const COLOR_FIELD_BG = '#0f0a1cf2';
+/** Field outline at rest. */
+export const COLOR_FIELD_BORDER = '#5c4a86';
+/** Field outline while the field has keyboard focus (gold, like `COLOR_ACCENT`). */
+export const COLOR_FIELD_FOCUS = '#ffe36e';
+/** Soft halo drawn behind the Reimu portrait to lift it off the backdrop. */
+export const COLOR_PORTRAIT_GLOW = '#ff547055';
+
+// --- modal overlay ---
+/**
+ * Wash behind a modal panel (settings). Heavier than `COLOR_LOGIN_SCRIM`: a
+ * modal has to visually detach from the screen underneath, not merely dim it.
+ */
+export const COLOR_MODAL_SCRIM = '#07050ecc';
+
 // --- spacing scale (4px base) ---
 export const SPACE_XS = 4;
 export const SPACE_SM = 8;

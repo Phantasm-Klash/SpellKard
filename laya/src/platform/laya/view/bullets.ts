@@ -1,39 +1,42 @@
 /**
- * Vector rendering of the ten Boss-race bullet patterns.
+ * Bullet rendering: real atlas frames for the ported 千夜追忆 danmaku, with a
+ * vector fallback for legacy synthetic patterns and for when the atlas has not
+ * loaded (headless / offline).
  *
- * The simulation exposes only a `patternId`; this module turns that string into
- * a silhouette whose **motion is readable at a glance** — a straight pellet
- * looks like it will not turn, a curving shot trails an arc, an orbiting one
- * carries a spinning companion, a homing one wears a lock ring, and a spread
- * shot reads as an opening fan. The trajectory family comes from
- * `core/game/bullet_visual.classifyPattern` (`linear` / `curve` / `orbit` /
- * `homing` / `spread`), keeping the pattern→family decision unit-testable and
- * engine-free.
+ * Two renderers implement the `BulletRenderer` seam:
+ *
+ *  - `AtlasBulletRenderer` — looks up `bulletKind → {atlas, frame}` via
+ *    `core/game/bullet_visual` and blits the real sprite frame from a
+ *    `BulletFrameSource`. Frames are drawn with the playfield's art scale so the
+ *    original 640-wide art reads correctly on our portrait playfield.
+ *  - `VectorBulletRenderer` — the original pure-vector art, kept as the
+ *    fallback and for the legacy 10 synthetic patterns.
  *
  * Design rules
  * ------------
  *  - **Pure.** Every draw is a deterministic function of its arguments, so the
- *    same bullet redrawn (even across pooled sprites) looks identical. Animation
- *    is derived from `tick` only — no module-level counters or caches.
- *  - **Palette from `theme`.** Local bullets use the cyan family, rivals the
- *    pink one; danger/homing accents use `COLOR_DANGER`.
- *  - **`VectorPainter` first.** Shapes are composed from the shared painters
- *    (`orb`, `arrowHeadShaded`, `capsule`, `star`, `polygon`) instead of
- *    ad-hoc geometry.
- *  - **One look per trajectory.** All four `linear` patterns share the clean
- *    pellet-and-head art so the *trajectory* (not the pattern name) drives the
- *    visual language.
- *
- * The graphics passed in is the bullet sprite's own, already cleared, and the
- * bullet sits at its local origin `(0, 0)`.
+ *    same bullet redrawn (even across pooled sprites) looks identical.
+ *  - **Atlas first.** A bullet with a valid `bulletKind` whose frame is loaded
+ *    is always drawn as real art; the vector path is only a fallback.
+ *  - **Palette from `theme`.** Legacy local bullets use the cyan family, rivals
+ *    the pink one.
  *
  * NOTE: `platform/laya/` only. Never import from `core/` other than the
- *       engine-agnostic classifier.
+ *       engine-agnostic classifier/descriptor helpers.
  */
 
-import { classifyPattern, type BulletVisualClass } from '../../../core/game/bullet_visual';
+import {
+  animatedFrameFor,
+  classifyPattern,
+  describeBulletKind,
+  isRotatingSpecies,
+  spriteRotationDeg,
+  type BulletVisualClass,
+} from '../../../core/game/bullet_visual';
+import type { BulletMotionFamily } from '../../../core/sim/danmaku/bullet_motion';
+import type { BulletFrameSource } from './bullet_atlas';
 import * as theme from './theme';
-import { VectorPainter, fade, type BulletRenderer } from './sprites';
+import { VectorPainter, fade, type BulletDrawRequest, type BulletRenderer } from './sprites';
 
 /** Rival bullets whose owner is local vs. remote pick different palettes. */
 interface BulletPalette {
@@ -49,19 +52,38 @@ function paletteFor(ownerIsLocal: boolean): BulletPalette {
     : { body: theme.COLOR_OPPONENT_BULLET, core: theme.COLOR_OPPONENT_BULLET_CORE };
 }
 
+/** Real-danmaku motion family → the nearest vector silhouette family. */
+function motionFamilyVisualClass(family: string): BulletVisualClass {
+  switch (family as BulletMotionFamily) {
+    case 'sine':
+    case 'bounce':
+    case 'parametric':
+      return 'curve';
+    case 'homing':
+    case 'proximity':
+      return 'homing';
+    case 'split':
+      return 'spread';
+    default:
+      return 'linear';
+  }
+}
+
 /**
- * Draws a single bullet at the graphics origin.
+ * Draws a single bullet at the graphics origin using vector art.
  *
  * @param g            cleared graphics of the bullet sprite
- * @param patternId    one of `BOSS_RACE_PATTERN_IDS`
+ * @param patternId    legacy pattern id, or `''` for real danmaku
+ * @param family       motion family hint used when `patternId` is `''`
  * @param radius       pixel radius (already scaled by the playfield transform)
  * @param ownerIsLocal local bullets use the cyan family, rivals the pink one
- * @param angleRad     travel direction in radians; ignored by `spread`'s beams
+ * @param angleRad     travel direction in radians
  * @param tick         animation clock (cheap wobble/pulse, keeps draws pure)
  */
 export function drawBullet(
   g: Laya.Graphics,
   patternId: string,
+  family: string,
   radius: number,
   ownerIsLocal: boolean,
   angleRad: number,
@@ -70,12 +92,12 @@ export function drawBullet(
   if (!(radius > 0)) {
     return;
   }
-  // Guard against `NaN` when a velocity is momentarily zero.
   const angle = Number.isFinite(angleRad) ? angleRad : 0;
   const palette = paletteFor(ownerIsLocal);
-  const family: BulletVisualClass = classifyPattern(patternId);
+  const visualClass: BulletVisualClass =
+    patternId === '' ? motionFamilyVisualClass(family) : classifyPattern(patternId);
 
-  switch (family) {
+  switch (visualClass) {
     case 'curve':
       drawCurve(g, radius, palette, angle, tick);
       return;
@@ -96,24 +118,9 @@ export function drawBullet(
 }
 
 // --- families -------------------------------------------------------------
-//
-// Each family is keyed on *how the shot moves*, so all patterns in a family
-// share one motion language:
-//
-//   linear  clean pellet, no trail — "heads straight, never turns"
-//   curve   pellet + arc of trail points bent off the tangent heading
-//   orbit   pellet + a companion bead and ring circling the body
-//   homing  pellet inside a danger-coloured lock ring
-//   spread  a long, opening beam, so it reads as a fan not a ray
 
 /** Straight shots: a clean, self-contained pellet with no motion trail. */
-function drawLinear(
-  g: Laya.Graphics,
-  radius: number,
-  palette: BulletPalette,
-  angle: number,
-): void {
-  // A slim nose tick gives direction without implying a turn.
+function drawLinear(g: Laya.Graphics, radius: number, palette: BulletPalette, angle: number): void {
   const tip = radius * 1.55;
   g.drawLine(
     Math.cos(angle) * radius * 0.35,
@@ -126,13 +133,7 @@ function drawLinear(
   VectorPainter.orb(g, 0, 0, radius, palette.body, palette.core, 0.32);
 }
 
-/**
- * Curving shots: a pellet with a trail of beads along a bowing path. The trail
- * offsets are rotated off the *tangent* heading by a growing angle, so the
- * beads sit on an arc rather than a straight line — the visual cue that the
- * heading is changing. The bow direction flips per tick, matching the
- * oscillating `sine_stream`.
- */
+/** Curving shots: a pellet with a trail of beads along a bowing path. */
 function drawCurve(
   g: Laya.Graphics,
   radius: number,
@@ -144,7 +145,6 @@ function drawCurve(
   const back = angle + Math.PI;
   const steps = 3;
   for (let i = 1; i <= steps; i += 1) {
-    // Three trail points of decreasing size/opacity walking backward.
     const bend = sign * i * 0.28;
     const at = back + bend;
     const d = radius * (1.0 + i * 0.85);
@@ -152,23 +152,12 @@ function drawCurve(
     const size = Math.max(0.7, radius * (0.5 - i * 0.09));
     g.drawCircle(Math.cos(at) * d, Math.sin(at) * d, size, fade(palette.body, alpha));
   }
-  // Head, a touch smaller than the collision radius so the arc carries it.
   VectorPainter.orb(g, 0, 0, radius * 0.85, palette.body, palette.core, 0.3);
 }
 
-/**
- * Orbiting shots: the body stays put but a companion bead and a ring circle it,
- * so the silhouette itself rotates. This reads as the emitter sweeping around
- * (the helix / rose of `spiral` and `blossom`) rather than a shot that turns.
- */
-function drawOrbit(
-  g: Laya.Graphics,
-  radius: number,
-  palette: BulletPalette,
-  tick: number,
-): void {
-  const spin = (tick % 48) / 48 * Math.PI * 2;
-  // Rotating ring around the body — a soft orbit trace.
+/** Orbiting shots: the body stays put but a companion bead and ring circle it. */
+function drawOrbit(g: Laya.Graphics, radius: number, palette: BulletPalette, tick: number): void {
+  const spin = ((tick % 48) / 48) * Math.PI * 2;
   const ringRadius = radius * 1.5;
   const segs = 10;
   for (let i = 0; i < segs; i += 1) {
@@ -186,7 +175,6 @@ function drawOrbit(
       Math.max(1, radius * 0.18),
     );
   }
-  // Companion bead circling the body, opposite a ring gap.
   const beadA = spin + Math.PI;
   g.drawCircle(
     Math.cos(beadA) * ringRadius,
@@ -205,10 +193,9 @@ function drawHoming(
   angle: number,
   tick: number,
 ): void {
-  // Dashed danger ring, spun by tick so it reads as "locked on".
   const ringRadius = radius * 1.7;
   const dashCount = 12;
-  const spin = (tick % 24) / 24 * Math.PI * 2;
+  const spin = ((tick % 24) / 24) * Math.PI * 2;
   for (let i = 0; i < dashCount; i += 1) {
     if (i % 2 === 1) {
       continue;
@@ -225,15 +212,10 @@ function drawHoming(
     );
   }
   g.drawCircle(0, 0, radius * 1.35, null, fade(theme.COLOR_DANGER, 0.45), Math.max(1, radius * 0.15));
-  // The chase itself: a shaded arrowhead re-aiming along the (bending) heading.
   VectorPainter.arrowHeadShaded(g, 0, 0, radius * 1.5, angle, palette.body, palette.core);
 }
 
-/**
- * Spread shots: a long, widening beam fanned outward from the boss. Drawn as a
- * stretched capsule plus two flare wings at the far tip, so the shot reads as
- * an opening curtain rather than a parallel ray.
- */
+/** Spread shots: a long, widening beam fanned outward from the boss. */
 function drawSpread(
   g: Laya.Graphics,
   radius: number,
@@ -243,11 +225,9 @@ function drawSpread(
 ): void {
   const width = radius * 1.8;
   const length = radius * 4.2;
-  // Soft glow underlay, bright beam body, then a hot centre line.
   VectorPainter.capsule(g, 0, 0, length * 1.1, angle, width * 1.6, fade(palette.body, 0.55));
   VectorPainter.capsule(g, 0, 0, length, angle, width, palette.body);
   VectorPainter.capsule(g, 0, 0, length * 0.5, angle, width * 0.35, palette.core);
-  // Two flare wings at the leading tip, opening at ~40° — the "fan".
   const tipX = Math.cos(angle) * (length / 2);
   const tipY = Math.sin(angle) * (length / 2);
   const spread = 0.7 + ((tick % 6) / 6) * 0.25;
@@ -256,27 +236,100 @@ function drawSpread(
   g.drawLine(tipX, tipY, tipX + Math.cos(angle - spread) * radius * 1.7, tipY + Math.sin(angle - spread) * radius * 1.7, fade(palette.body, 0.5), wing);
 }
 
-// --- renderer seam --------------------------------------------------------
+// --- renderers ------------------------------------------------------------
 
-/**
- * `BulletRenderer` implementation backed by `drawBullet`. Kept as a class so a
- * future sprite-atlas renderer can be swapped in at the same call site.
- */
+/** Pure-vector renderer (legacy patterns + atlas fallback). */
 export class VectorBulletRenderer implements BulletRenderer {
-  draw(
-    g: Laya.Graphics,
-    patternId: string,
-    radius: number,
-    ownerIsLocal: boolean,
-    angleRad: number,
-    tick: number,
-  ): void {
-    drawBullet(g, patternId, radius, ownerIsLocal, angleRad, tick);
+  draw(sprite: Laya.Sprite, request: BulletDrawRequest): void {
+    sprite.texture = null;
+    sprite.rotation = 0;
+    sprite.scaleX = 1;
+    sprite.scaleY = 1;
+    const g = sprite.graphics;
+    g.clear();
+    drawBullet(
+      g,
+      request.patternId,
+      request.motionFamily,
+      request.radius,
+      request.ownerIsLocal,
+      request.angleRad,
+      request.tick,
+    );
   }
 }
 
-/** Shared stateless instance; the renderer holds no per-frame state. */
+/** Shared stateless instance; the vector renderer holds no per-frame state. */
 export const vectorBulletRenderer = new VectorBulletRenderer();
+
+/**
+ * Real-art renderer: blits the atlas frame for a bullet's `kEnemyBullet` value.
+ *
+ * Falls back to the vector renderer when the kind is unknown or the frame has
+ * not loaded, so a missing atlas degrades to the old look instead of a blank.
+ */
+export class AtlasBulletRenderer implements BulletRenderer {
+  private readonly fallback: BulletRenderer;
+
+  /**
+   * @param source   atlas frame lookup (Laya-backed in the app, stubbed in tests)
+   * @param artScale scale applied to native art; use `playfieldWidth / 640` so
+   *                 the original 640-wide art matches our playfield
+   * @param fallback renderer used when a frame is unavailable
+   */
+  constructor(
+    private readonly source: BulletFrameSource,
+    private artScale = 1,
+    fallback: BulletRenderer = vectorBulletRenderer,
+  ) {
+    this.fallback = fallback;
+  }
+
+  /**
+   * Updates the art scale after the playfield is resized. The caller passes
+   * `playfieldWidth / 640` again; the next `draw` picks up the new value.
+   */
+  setArtScale(scale: number): void {
+    this.artScale = scale;
+  }
+
+  draw(sprite: Laya.Sprite, request: BulletDrawRequest): void {
+    const descriptor = request.bulletKind > 0 ? describeBulletKind(request.bulletKind) : null;
+    if (descriptor === null) {
+      this.fallback.draw(sprite, request);
+      return;
+    }
+    const frameName = request.animate
+      ? animatedFrameFor(request.bulletKind, request.tick) || descriptor.frame
+      : descriptor.frame;
+    const texture = this.source.frame(descriptor.atlas, frameName);
+    if (texture === null) {
+      this.fallback.draw(sprite, request);
+      return;
+    }
+
+    sprite.graphics.clear();
+    sprite.texture = texture;
+    const sourceW = texture.sourceWidth || texture.width;
+    const sourceH = texture.sourceHeight || texture.height;
+    sprite.pivot(sourceW / 2, sourceH / 2);
+    sprite.scaleX = this.artScale;
+    sprite.scaleY = this.artScale;
+    // Directional species face their heading; round species stay upright.
+    sprite.rotation =
+      isRotatingSpecies(descriptor.species) && Number.isFinite(request.angleDeg)
+        ? spriteRotationDeg(request.angleDeg)
+        : 0;
+  }
+}
+
+/**
+ * Picks a renderer for the frame: atlas-backed when a frame source is given,
+ * otherwise the pure-vector fallback.
+ */
+export function createBulletRenderer(source?: BulletFrameSource, artScale = 1): BulletRenderer {
+  return source === undefined ? vectorBulletRenderer : new AtlasBulletRenderer(source, artScale);
+}
 
 /** Re-export so the view layer and tests can reach the classifier via one path. */
 export { classifyPattern };

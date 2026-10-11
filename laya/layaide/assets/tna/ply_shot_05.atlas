@@ -1,0 +1,133 @@
+{
+ "meta": {
+  "image": "ply_shot_05.png",
+  "size": {
+   "w": 256,
+   "h": 256
+  },
+  "scale": 1,
+  "prefix": ""
+ },
+ "frames": {
+  "player_05.png": {
+   "frame": {
+    "x": 0,
+    "y": 0,
+    "w": 32,
+    "h": 48
+   },
+   "sourceSize": {
+    "w": 32,
+    "h": 48
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_reisenA_11.png": {
+   "frame": {
+    "x": 0,
+    "y": 48,
+    "w": 9,
+    "h": 27
+   },
+   "sourceSize": {
+    "w": 9,
+    "h": 27
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_reisenA_21.png": {
+   "frame": {
+    "x": 0,
+    "y": 64,
+    "w": 15,
+    "h": 47
+   },
+   "sourceSize": {
+    "w": 15,
+    "h": 47
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_reisenB_11.png": {
+   "frame": {
+    "x": 0,
+    "y": 80,
+    "w": 30,
+    "h": 35
+   },
+   "sourceSize": {
+    "w": 30,
+    "h": 35
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "mybomb_reisen_01.png": {
+   "frame": {
+    "x": 16,
+    "y": 144,
+    "w": 48,
+    "h": 48
+   },
+   "sourceSize": {
+    "w": 48,
+    "h": 48
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "mybomb_reisen_02.png": {
+   "frame": {
+    "x": 80,
+    "y": 144,
+    "w": 80,
+    "h": 80
+   },
+   "sourceSize": {
+    "w": 80,
+    "h": 80
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "mybomb_reisen_03.png": {
+   "frame": {
+    "x": 80,
+    "y": 0,
+    "w": 112,
+    "h": 112
+   },
+   "sourceSize": {
+    "w": 112,
+    "h": 112
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  }
+ },
+ "animations": []
+}

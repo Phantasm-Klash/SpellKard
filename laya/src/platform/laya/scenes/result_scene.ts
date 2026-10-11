@@ -18,6 +18,7 @@ import {
   createPanel,
   type ButtonHandle,
 } from './ui_kit';
+import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
 import type { ClientScene } from './scene';
 
 export interface ResultSceneOptions {
@@ -38,6 +39,7 @@ const CARD_HEIGHT = 196;
 
 export class ResultScene implements ClientScene {
   readonly root: Laya.Sprite;
+  readonly shortcutScope: ShortcutScope = 'result';
 
   private readonly width: number;
   private readonly headline: Laya.Text;
@@ -143,6 +145,19 @@ export class ResultScene implements ClientScene {
 
   destroy(): void {
     this.root.destroy(true);
+  }
+
+  /**
+   * Handles a result shortcut. The screen has a single action — Back to lobby —
+   * so both confirm (`ui.activate`) and back (`ui.back`) run it, exactly like
+   * its button. There is no list to navigate.
+   */
+  handleShortcut(action: ShortcutAction, _event: Laya.KeyboardEventLike): boolean {
+    if (action === 'ui.activate' || action === 'ui.back') {
+      this.options.flow.backToLobby();
+      return true;
+    }
+    return false;
   }
 
   applySnapshot(snapshot: LobbyFlowSnapshot): void {

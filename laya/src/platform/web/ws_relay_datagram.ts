@@ -7,14 +7,14 @@
  * assigned battle server over UDP, and relays the reply back as a binary frame.
  * Text frames on the same socket remain the lobby RPC channel.
  *
- * The relay URL and handshake below are the client side of that contract. The
- * server-side relay endpoint is not implemented in Gensoulkyo yet (it currently
- * exposes only the RPC/WSS business dispatcher), so this class is the integration
- * seam for the web path — it is fully functional against any relay that follows
- * the same framing.
+ * The relay URL and handshake below are the client side of that contract.
+ * Gensoulkyo implements the server side at `/v1/battle/relay`
+ * (`runtime/lobbyws/server.go` `HandleRelay`): it dials the match's battle-server
+ * UDP socket and pipes raw binary frames in both directions. The only query
+ * parameter it requires is `match_id`; the rest are advisory.
  */
 
-import type { DatagramFactory, DatagramHandlers, DatagramLike, SocketFactory, SocketLike } from '../../core/net/transport';
+import type { DatagramFactory, DatagramHandlers, DatagramLike, DatagramSessionContext, SocketFactory, SocketLike } from '../../core/net/transport';
 
 export interface RelaySessionDescriptor {
   /** e.g. `wss://lobby.example/v1/battle/relay`. */
@@ -27,13 +27,19 @@ export interface RelaySessionDescriptor {
 }
 
 export function buildRelayUrl(descriptor: RelaySessionDescriptor): string {
-  const query = [
-    `match_id=${encodeURIComponent(descriptor.matchId)}`,
-    `player_id=${encodeURIComponent(descriptor.playerId)}`,
-    `battle_server_id=${encodeURIComponent(descriptor.battleServerId)}`,
-    `ticket_id=${encodeURIComponent(descriptor.ticketId)}`,
-  ].join('&');
-  return `${descriptor.relayUrl}?${query}`;
+  const pairs: Array<[string, string]> = [
+    ['match_id', descriptor.matchId],
+    ['player_id', descriptor.playerId],
+    ['battle_server_id', descriptor.battleServerId],
+    ['ticket_id', descriptor.ticketId],
+  ];
+  // `match_id` is mandatory server-side; the rest are omitted when unknown so the
+  // URL stays stable and the server never sees empty-valued hints.
+  const query = pairs
+    .filter(([, value]) => value !== '')
+    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+    .join('&');
+  return query === '' ? descriptor.relayUrl : `${descriptor.relayUrl}?${query}`;
 }
 
 /**
@@ -96,11 +102,11 @@ export class WsRelayDatagramFactory {
 }
 
 /**
- * `DatagramFactory` adapter so the browser bootstrap can hand the battle client
- * a relay-backed datagram channel. `open(endpoint)` treats the endpoint as the
- * relay base URL when no explicit `relayUrl` was configured; the session is
- * identified server-side by the KCP `conv` (see `BattleClient`), so the
- * descriptor carries no per-match ids here.
+ * `DatagramFactory` adapter so the bootstrap can hand the battle client a
+ * relay-backed datagram channel. `open(endpoint, session)` treats `endpoint` as
+ * the relay base URL when no explicit `relayUrl` was configured, and forwards the
+ * match identity from `session` so the lobby can route to the right battle
+ * server.
  */
 export class RelayDatagramFactory implements DatagramFactory {
   constructor(
@@ -108,13 +114,13 @@ export class RelayDatagramFactory implements DatagramFactory {
     private readonly relayUrl = '',
   ) {}
 
-  open(endpoint: string): DatagramLike {
+  open(endpoint: string, session: DatagramSessionContext = {}): DatagramLike {
     const descriptor: RelaySessionDescriptor = {
       relayUrl: this.relayUrl !== '' ? this.relayUrl : endpoint,
-      matchId: '',
-      playerId: '',
-      battleServerId: '',
-      ticketId: '',
+      matchId: session.matchId ?? '',
+      playerId: session.playerId ?? '',
+      battleServerId: session.battleServerId ?? '',
+      ticketId: session.ticketId ?? '',
     };
     return new WsRelayDatagramFactory((url) => this.sockets.connect(url), descriptor).open();
   }

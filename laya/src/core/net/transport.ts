@@ -43,8 +43,22 @@ export interface DatagramLike {
   setHandlers(handlers: DatagramHandlers): void;
 }
 
+/**
+ * Per-match routing hints handed to a `DatagramFactory` when it opens a channel.
+ *
+ * A raw UDP socket only needs `endpoint`, but a relayed channel needs to tell
+ * the server *which* match it belongs to (the lobby relay resolves the match to
+ * a battle-server UDP socket and cannot infer it from the KCP `conv`).
+ */
+export interface DatagramSessionContext {
+  matchId?: string;
+  playerId?: string;
+  battleServerId?: string;
+  ticketId?: string;
+}
+
 export interface DatagramFactory {
-  open(endpoint: string): DatagramLike;
+  open(endpoint: string, session?: DatagramSessionContext): DatagramLike;
 }
 
 /** Timer/clock abstraction so the KCP update loop is testable and injectable. */
@@ -97,8 +111,15 @@ export class OfflineDatagram implements DatagramLike {
 
   readonly closed = false;
 
+  /**
+   * Silently drop. This channel backs the offline / native-fallback battle path,
+   * and the KCP layer above calls `send()` on every flush. Throwing here would
+   * unwind `KcpSession.send()` → `BattleClient.flushInputQueue()` and abort the
+   * caller's tick before the local prediction is fed, so an unconnectable
+   * channel would freeze the entire input chain instead of degrading.
+   */
   send(): void {
-    throw new Error('OfflineDatagram: not connected');
+    // No peer to deliver to; the datagram is dropped.
   }
 
   close(): void {

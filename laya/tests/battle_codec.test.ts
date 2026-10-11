@@ -124,6 +124,57 @@ test('decodeBossRaceSnapshot parses the server JSON snapshot payload', () => {
   expectEqual(snapshot!.bullets.length, 1);
   expectEqual(snapshot!.bullets[0].patternId, 'gap_ring');
   expectEqual(snapshot!.bullets[0].vyMilli, 0);
+  // A server that predates the real-danmaku extensions sends no kind at all;
+  // "absent" must stay distinguishable from "kind 0" so the renderer falls back
+  // to the generic bullet instead of inventing a sprite.
+  expectEqual(snapshot!.bullets[0].bulletKind, undefined);
+  expectEqual(snapshot!.bullets[0].motionFunc, undefined);
+});
+
+test('decodeBossRaceSnapshot carries the real-danmaku bullet kind and motion func', () => {
+  const json = JSON.stringify({
+    tick: 90,
+    state: 'running',
+    winner_player_id: '',
+    winner_tick: 0,
+    state_hash: 'cafebabecafebabe',
+    players: [],
+    bullets: [
+      {
+        bullet_id: 'b7',
+        owner_player_id: 'p1',
+        x_milli: 0,
+        y_milli: -60000,
+        vx_milli: 3000,
+        vy_milli: 0,
+        radius_milli: 4000,
+        bullet_kind: 9,
+        motion_func: 1,
+        pattern_id: 'kusabi_gap_ring',
+      },
+      {
+        bullet_id: 'b8',
+        owner_player_id: 'p1',
+        x_milli: 0,
+        y_milli: -60000,
+        vx_milli: 0,
+        vy_milli: 3000,
+        radius_milli: 4000,
+        bullet_kind: 174,
+        motion_func: 25,
+        pattern_id: 'heart_sine_speed',
+      },
+    ],
+  });
+  const payload = concat(new Uint8Array([BattlePayloadType.SNAPSHOT]), utf8(json));
+  const snapshot = decodeBossRaceSnapshot(payload);
+  expect(snapshot !== null, 'snapshot should decode');
+  expectEqual(snapshot!.bullets.length, 2);
+  expectEqual(snapshot!.bullets[0].bulletKind, 9);
+  expectEqual(snapshot!.bullets[0].motionFunc, 1);
+  expectEqual(snapshot!.bullets[1].bulletKind, 174);
+  expectEqual(snapshot!.bullets[1].motionFunc, 25);
+  expectEqual(snapshot!.bullets[1].patternId, 'heart_sine_speed');
 });
 
 test('decodeBattleResult parses the server JSON result payload', () => {

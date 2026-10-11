@@ -15,7 +15,18 @@ import type { BossRaceBullet, BossRaceSnapshot } from '../src/core/sim/boss_race
 import { BOSS_RACE_PATTERN_IDS, BossRaceState } from '../src/core/sim/boss_race';
 import { buildBossRaceFrame, interpolateFrames } from '../src/core/game/boss_race_view_model';
 import type { PlayfieldLayout } from '../src/core/game/boss_race_view_model';
-import { classifyPattern, knownPatternIds, type BulletVisualClass } from '../src/core/game/bullet_visual';
+import {
+  animatedFrameFor,
+  classifyPattern,
+  describeBulletKind,
+  isRotatingSpecies,
+  knownBulletKinds,
+  knownPatternIds,
+  speciesFrames,
+  spriteRotationDeg,
+  type BulletVisualClass,
+} from '../src/core/game/bullet_visual';
+import { BULLET_KIND_COUNT } from '../src/core/sim/danmaku/bullet_kind';
 import { expect, expectClose, expectEqual, suite, test } from './harness';
 
 /** width == full arena width ⇒ scale 1.0, so milli-units map 1:1 to pixels. */
@@ -160,4 +171,79 @@ test('no simulated pattern relies on the classification fallback', () => {
 test('unknown pattern ids fall back to the neutral linear family', () => {
   expectEqual(classifyPattern('does_not_exist'), 'linear');
   expectEqual(classifyPattern(''), 'linear');
+});
+
+// --- real-danmaku (kEnemyBullet) descriptor --------------------------------
+
+suite('real danmaku visual descriptor');
+
+test('the classifier knows exactly the 216 kEnemyBullet values', () => {
+  expectEqual(knownBulletKinds().length, BULLET_KIND_COUNT);
+  expectEqual(knownBulletKinds()[0], 9);
+  expectEqual(knownBulletKinds()[knownBulletKinds().length - 1], 224);
+});
+
+test('a kind resolves to its atlas frame and species', () => {
+  const descriptor = describeBulletKind(9);
+  expect(descriptor !== null, 'kind 9 should resolve');
+  expectEqual(descriptor!.atlas, 'bulletlist01');
+  expectEqual(descriptor!.frame, 'kusabi_01.png');
+  expectEqual(descriptor!.species, 'kusabi');
+  expectEqual(descriptor!.motionFamily, 'unknown', 'no motion func ⇒ unknown family');
+});
+
+test('a motion func refines the descriptor family', () => {
+  expectEqual(describeBulletKind(36, 0)!.motionFamily, 'init_linear');
+  expectEqual(describeBulletKind(36, 25)!.motionFamily, 'sine');
+  expectEqual(describeBulletKind(36, 2)!.motionFamily, 'homing');
+});
+
+test('out-of-range kinds do not resolve', () => {
+  expectEqual(describeBulletKind(8), null);
+  expectEqual(describeBulletKind(0), null);
+  expectEqual(describeBulletKind(999), null);
+});
+
+test('species frame lists are contiguous and complete', () => {
+  const kusabi = speciesFrames('kusabi');
+  expectEqual(kusabi.length, 9);
+  expectEqual(kusabi[0], 'kusabi_01.png');
+  expectEqual(kusabi[8], 'kusabi_09.png');
+  // The multi-word species prefix must survive the frame-prefix parser.
+  expectEqual(describeBulletKind(206)!.species, 'en_01');
+});
+
+test('animatedFrameFor cycles within a species and is a no-op for singletons', () => {
+  // kusabi has 9 frames; at 8 fps the frame advances every 60/8 = 7.5 ticks.
+  expectEqual(animatedFrameFor(9, 0), 'kusabi_01.png');
+  expectEqual(animatedFrameFor(9, 7), 'kusabi_01.png');
+  expectEqual(animatedFrameFor(9, 8), 'kusabi_02.png');
+  expectEqual(animatedFrameFor(9, 60), 'kusabi_09.png');
+  // 9 frames at 8 fps ⇒ the cycle wraps after 9 * 7.5 = 67.5 ticks.
+  expectEqual(animatedFrameFor(9, 68), 'kusabi_01.png');
+  // unzan (224) has a single frame, so the frame never changes.
+  expectEqual(animatedFrameFor(224, 100), 'unzan_01.png');
+});
+
+test('directional species rotate; round species do not', () => {
+  expect(isRotatingSpecies('arrow'), 'arrow should rotate');
+  expect(isRotatingSpecies('knife'), 'knife should rotate');
+  expect(!isRotatingSpecies('ring'), 'ring should stay upright');
+  expect(!isRotatingSpecies('stama'), 'stama should stay upright');
+  expectEqual(spriteRotationDeg(90), 360);
+});
+
+test('buildBossRaceFrame carries the real-danmaku fields through', () => {
+  const frame = frameFor([
+    bullet({ bulletId: 'tna', bulletKind: 36, motionFunc: 25, angleDeg: 90, vxMilli: 0, vyMilli: 1000 }),
+    bullet({ bulletId: 'legacy', patternId: 'ring' }),
+  ]);
+  const byId = new Map(frame.bullets.map((b) => [b.bulletId, b]));
+  const tna = byId.get('tna')!;
+  expectEqual(tna.bulletKind, 36);
+  expectEqual(tna.motionFamily, 'sine');
+  expectClose(tna.angleDeg, 90, 1e-9, 'server heading preserved');
+  const legacy = byId.get('legacy')!;
+  expectEqual(legacy.bulletKind, -1);
+  expectEqual(legacy.motionFamily, 'unknown');
 });

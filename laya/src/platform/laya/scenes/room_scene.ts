@@ -25,6 +25,7 @@ import {
   type BadgeHandle,
   type ButtonHandle,
 } from './ui_kit';
+import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
 import type { ClientScene } from './scene';
 
 export interface RoomSceneOptions {
@@ -50,6 +51,7 @@ const CARD_BADGE_RESERVE = 96;
 
 export class RoomScene implements ClientScene {
   readonly root: Laya.Sprite;
+  readonly shortcutScope: ShortcutScope = 'room';
 
   private readonly width: number;
   private readonly roomCodeText: Laya.Text;
@@ -244,6 +246,31 @@ export class RoomScene implements ClientScene {
     this.busy = true;
     await this.options.flow.leaveRoom();
     this.busy = false;
+  }
+
+  /**
+   * Handles a room shortcut. `room.ready` / `ui.activate` fire the Ready button
+   * and `room.leave` / `ui.back` fire the Leave button — the same flow calls
+   * their clicks make. The roster has no selection concept, so the generic
+   * list-navigation actions fall through to the app-level handlers.
+   */
+  handleShortcut(action: ShortcutAction, _event: Laya.KeyboardEventLike): boolean {
+    switch (action) {
+      case 'room.ready':
+      case 'ui.activate':
+        // A disabled button ignores clicks; a keyboard activation must too.
+        if (!this.readyButton.sprite.mouseEnabled) {
+          return false;
+        }
+        void this.ready();
+        return true;
+      case 'room.leave':
+      case 'ui.back':
+        void this.leave();
+        return true;
+      default:
+        return false;
+    }
   }
 
   /** Concise text factory: one place that sets font, weight, alignment and x. */

@@ -54,6 +54,8 @@ export interface ButtonHandle {
   setText(text: string): void;
   /** Optional visual tone; defaults to 'primary'. Never required by old callers. */
   setVariant?(variant: ButtonVariant): void;
+  /** Resizes the button in place: repaints the frame and re-hits the new box. */
+  setSize(width: number, height: number): void;
 }
 
 export type ButtonVariant = 'primary' | 'ghost' | 'danger';
@@ -208,14 +210,25 @@ function createButtonInternal(
   text: string,
   x: number,
   y: number,
-  width: number,
+  initialWidth: number,
   onClick: () => void,
   variant: ButtonVariant,
-  height: number,
+  initialHeight: number,
 ): ButtonHandle {
+  // Mutable so `setSize` can resize an existing handle instead of the caller
+  // having to tear it down and rebuild it (which used to lose hover/pressed
+  // state and re-parent the sprite on every stage resize).
+  let width = initialWidth;
+  let height = initialHeight;
+
   const sprite = new Laya.Sprite();
   sprite.pos(x, y);
   sprite.mouseEnabled = true;
+  // Laya hittests a Sprite against its width/height (or an explicit hitArea).
+  // Drawing into `graphics` does NOT update those, so without this the button
+  // has a 0x0 hit area and never receives CLICK even though mouseEnabled is
+  // true — every button in the UI was unclickable.
+  sprite.size(width, height);
 
   const label = new Laya.Text();
   label.text = text;
@@ -316,6 +329,18 @@ function createButtonInternal(
     },
     setText(value: string): void {
       label.text = value;
+    },
+    setSize(nextWidth: number, nextHeight: number): void {
+      width = nextWidth;
+      height = nextHeight;
+      // The sprite's size is the hit area, the label's size is the text box:
+      // both must track the new box or the button paints one size and reacts at
+      // another.
+      sprite.size(width, height);
+      label.width = width;
+      label.height = height;
+      label.pos(0, 0);
+      redraw();
     },
   };
 }

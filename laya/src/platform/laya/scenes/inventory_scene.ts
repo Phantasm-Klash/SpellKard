@@ -17,6 +17,7 @@ import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow
 import type { ChestPoolView, InventoryEntryView } from '../../../core/net/lobby_client';
 import * as theme from '../view/theme';
 import { createButtonEx, createCaption, createDivider, createPanel, type ButtonHandle } from './ui_kit';
+import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
 import type { ClientScene } from './scene';
 
 export interface InventorySceneOptions {
@@ -36,6 +37,7 @@ const MAX_ROWS = 6;
 
 export class InventoryScene implements ClientScene {
   readonly root: Laya.Sprite;
+  readonly shortcutScope: ShortcutScope = 'inventory';
 
   private readonly width: number;
   private readonly statusText: Laya.Text;
@@ -279,6 +281,20 @@ export class InventoryScene implements ClientScene {
     label.fontSize = theme.FONT_SIZE_CAPTION;
     label.y = y;
     return label;
+  }
+
+  /**
+   * Handles an inventory shortcut. Only `ui.back` maps onto an existing
+   * control; the "Open" action lives on each chest row's own button and neither
+   * list has a selection, so confirm (`ui.activate`) and navigation fall through
+   * to the app-level handlers.
+   */
+  handleShortcut(action: ShortcutAction, _event: Laya.KeyboardEventLike): boolean {
+    if (action === 'ui.back') {
+      this.options.flow.backToLobby();
+      return true;
+    }
+    return false;
   }
 
   /** Concise text factory: one place that sets font, weight and x. */

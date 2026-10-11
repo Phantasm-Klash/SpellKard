@@ -16,6 +16,7 @@ import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow
 import type { ShopItemView } from '../../../core/net/lobby_client';
 import * as theme from '../view/theme';
 import { createButtonEx, createCaption, createDivider, createPanel, type ButtonHandle } from './ui_kit';
+import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
 import type { ClientScene } from './scene';
 
 export interface ShopSceneOptions {
@@ -31,6 +32,7 @@ const BUY_BUTTON_WIDTH = 88;
 
 export class ShopScene implements ClientScene {
   readonly root: Laya.Sprite;
+  readonly shortcutScope: ShortcutScope = 'shop';
 
   private readonly width: number;
   private readonly walletText: Laya.Text;
@@ -220,6 +222,20 @@ export class ShopScene implements ClientScene {
     await this.options.flow.purchaseItem(itemId, 1);
     this.busy = false;
     this.applySnapshot(this.options.flow.snapshot());
+  }
+
+  /**
+   * Handles a shop shortcut. Only `ui.back` maps onto an existing control; the
+   * buy action lives on each row's own button and the list has no selection, so
+   * there is nothing honest for confirm (`ui.activate`) or navigation to drive
+   * and those fall through to the app-level handlers.
+   */
+  handleShortcut(action: ShortcutAction, _event: Laya.KeyboardEventLike): boolean {
+    if (action === 'ui.back') {
+      this.options.flow.backToLobby();
+      return true;
+    }
+    return false;
   }
 
   /** Concise text factory: one place that sets font, weight and x. */

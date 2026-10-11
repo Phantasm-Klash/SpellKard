@@ -8,6 +8,7 @@
 
 import {
   HttpLobbyTransport,
+  LobbyClient,
   WsLobbyTransport,
   matchResultView,
   matchStartEvent,
@@ -375,6 +376,8 @@ test('matchStartEvent / matchResultView map the proto payloads', () => {
     serverSeedHex: 'ff',
     endpoint: 'host:9000',
     playerIds: ['p-1'],
+    // No signed ticket on this payload: the roster id stays unknown.
+    playerId: '',
   });
   const result = matchResultView({
     match_id: 'M-1',
@@ -390,6 +393,54 @@ test('matchStartEvent / matchResultView map the proto payloads', () => {
   expectEqual(result.serverAuthoritative, true);
 });
 
+test('matchStartEvent reads this client roster id out of the signed battle ticket', () => {
+  // Regression: the battle server rejects every `BattleInput` whose `player_id`
+  // is not on its roster (`p-<hash>`), and the only place the lobby reveals this
+  // client's own roster id is the signed ticket attached to `match_start`. Losing
+  // it here silently produced a connected-but-silent battle channel.
+  const event = matchStartEvent({
+    match_id: 'match_000029',
+    server_seed_hex: '7bb2ad30c34aa4be',
+    endpoint: '127.0.0.1:44532',
+    player_ids: ['p-ff8b53fb', 'p-c5a1030f'],
+    signed_battle_ticket: {
+      ticket: {
+        ticket_id: 'T-1',
+        match_id: 'match_000029',
+        user_id: 'dev-probe-relay-0001',
+        player_id: 'p-ff8b53fb',
+        mode_id: 'mvp_boss_race',
+      },
+      signature_alg: 'ED25519',
+      key_id: 'k1',
+      signature: '00',
+    },
+  });
+  expectEqual(event.kind, 'match_start');
+  if (event.kind !== 'match_start') {
+    return;
+  }
+  expectEqual(event.playerId, 'p-ff8b53fb');
+  expectDeepEqual(event.playerIds, ['p-ff8b53fb', 'p-c5a1030f']);
+});
+
+test('applyMatchStart forwards the roster id from the signed ticket', () => {
+  const client = new LobbyClient({ transport: new WsLobbyTransport(new FakeSocket()) });
+  const seen: string[] = [];
+  client.onEvent((event) => {
+    if (event.kind === 'match_start') {
+      seen.push(event.playerId);
+    }
+  });
+  client.applyMatchStart({
+    match_id: 'M-2',
+    endpoint: 'host:9000',
+    signed_battle_ticket: { ticket: { player_id: 'p-abc123' } },
+  });
+  client.applyMatchStart({ match_id: 'M-3', endpoint: 'host:9001', player_id: 'p-direct' });
+  expectDeepEqual(seen, ['p-abc123', 'p-direct']);
+});
+
 test('the REST transport is unchanged: matchmaking still maps to REST paths', async () => {
   const seen: Array<{ method: string; path: string }> = [];
   const http: HttpClient = {
@@ -401,4 +452,45 @@ test('the REST transport is unchanged: matchmaking still maps to REST paths', as
   await new HttpLobbyTransport(http).call({ id: 'matchmaking.join', payload: { mode_id: 'mvp_boss_race' } });
   expectEqual(seen[0]?.method, 'POST');
   expectEqual(seen[0]?.path, '/v1/matchmaking/join');
+});
+
+test('the REST transport authenticates with the runtime session token', async () => {
+  const headers: Array<Record<string, string> | undefined> = [];
+  const http: HttpClient = {
+    async request(_method, _path, _body, sent): Promise<HttpResponseLike> {
+      headers.push(sent);
+      return { status: 200, body: { ok: true, payload: {} } };
+    },
+  };
+  const transport = new HttpLobbyTransport(http);
+
+  // No session yet: the anonymous auth call must stay unauthenticated.
+  await transport.call({ id: 'auth.anonymous', payload: {} });
+  expectEqual(headers[0]?.Authorization ?? '', '');
+
+  // Afterwards every call carries the token the client stamps onto the request.
+  // Without this the server answers `unauthorized: missing session token`.
+  await transport.call({ id: 'match.ready', session_id: 'ws-abc', payload: { match_id: 'M-1' } });
+  expectEqual(headers[1]?.Authorization, 'Bearer ws-abc');
+
+  // An explicit constructor bearer is still honoured when no session is present.
+  await new HttpLobbyTransport(http, 'static-key').call({ id: 'bootstrap', payload: {} });
+  expectEqual(headers[2]?.Authorization, 'Bearer static-key');
+});
+
+test('battle allocation/ticket map to the routes runtime/httpapi actually serves', async () => {
+  const seen: Array<{ method: string; path: string }> = [];
+  const http: HttpClient = {
+    async request(method, path): Promise<HttpResponseLike> {
+      seen.push({ method, path });
+      return { status: 200, body: { ok: true, payload: {} } };
+    },
+  };
+  const transport = new HttpLobbyTransport(http);
+  await transport.call({ id: 'battle.allocation', payload: { match_id: 'match_000080' } });
+  await transport.call({ id: 'battle.ticket', payload: { match_id: 'match_000080' } });
+  expectEqual(seen[0]?.method, 'GET');
+  expectEqual(seen[0]?.path, '/v1/matches/match_000080/battle-allocation');
+  expectEqual(seen[1]?.method, 'POST');
+  expectEqual(seen[1]?.path, '/v1/matches/match_000080/battle-ticket');
 });

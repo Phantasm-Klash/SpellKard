@@ -1,0 +1,116 @@
+{
+ "meta": {
+  "image": "ply_shot_12.png",
+  "size": {
+   "w": 256,
+   "h": 256
+  },
+  "scale": 1,
+  "prefix": ""
+ },
+ "frames": {
+  "player_12.png": {
+   "frame": {
+    "x": 0,
+    "y": 0,
+    "w": 48,
+    "h": 48
+   },
+   "sourceSize": {
+    "w": 48,
+    "h": 48
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_remiliaA_11.png": {
+   "frame": {
+    "x": 0,
+    "y": 48,
+    "w": 7,
+    "h": 48
+   },
+   "sourceSize": {
+    "w": 7,
+    "h": 48
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_remiliaA_21.png": {
+   "frame": {
+    "x": 48,
+    "y": 0,
+    "w": 32,
+    "h": 16
+   },
+   "sourceSize": {
+    "w": 32,
+    "h": 16
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_remiliaB_11.png": {
+   "frame": {
+    "x": 0,
+    "y": 64,
+    "w": 7,
+    "h": 48
+   },
+   "sourceSize": {
+    "w": 7,
+    "h": 48
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_remiliaB_21.png": {
+   "frame": {
+    "x": 64,
+    "y": 0,
+    "w": 32,
+    "h": 16
+   },
+   "sourceSize": {
+    "w": 32,
+    "h": 16
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "mybomb_remillia_01.png": {
+   "frame": {
+    "x": 0,
+    "y": 128,
+    "w": 96,
+    "h": 52
+   },
+   "sourceSize": {
+    "w": 96,
+    "h": 52
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  }
+ },
+ "animations": []
+}

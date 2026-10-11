@@ -19,6 +19,8 @@ import {
   BOSS_ORIGIN_X_MILLI,
   BOSS_ORIGIN_Y_MILLI,
 } from '../sim/boss_race';
+import { bulletMotionFamily, type BulletMotionFamily } from '../sim/danmaku/bullet_motion';
+import { clamp01, lerpF64, RAD_TO_DEG } from '../math/float_lib';
 
 export interface PlayfieldLayout {
   /** Playfield width in pixels. */
@@ -45,6 +47,15 @@ export interface BulletRenderItem {
   angleRad: number;
   /** Bullets owned by the local player's Boss copy vs. the opponent's. */
   ownerIsLocal: boolean;
+  /**
+   * `kEnemyBullet` value when the bullet comes from the real-danmaku (TNA)
+   * timeline, else `-1` (legacy synthetic pattern).
+   */
+  bulletKind: number;
+  /** Real-danmaku motion family, or `'unknown'` for legacy/pattern bullets. */
+  motionFamily: BulletMotionFamily;
+  /** Travel heading in degrees (real-danmaku bullets only), else `NaN`. */
+  angleDeg: number;
 }
 
 export interface PlayerRenderItem {
@@ -166,6 +177,10 @@ export function buildBossRaceFrame(
     // is actually moving, which the simulation guarantees.
     angleRad: Math.atan2(bullet.vyMilli, bullet.vxMilli),
     ownerIsLocal: bullet.ownerPlayerId === options.localPlayerId,
+    bulletKind: bullet.bulletKind ?? -1,
+    motionFamily: bullet.motionFunc !== undefined ? bulletMotionFamily(bullet.motionFunc) : 'unknown',
+    // Same conversion as the simulation layer, from the one float library.
+    angleDeg: bullet.angleDeg ?? Math.atan2(bullet.vyMilli, bullet.vxMilli) * RAD_TO_DEG,
   }));
 
   return {
@@ -185,19 +200,23 @@ export function buildBossRaceFrame(
 /**
  * Applies snapshot interpolation for smooth rendering between server ticks.
  * `alpha` is the 0..1 fraction between `previous` and `current`.
+ *
+ * ★ 插值走 `core/math/float_lib`：补帧算术必须与模拟层同一套浮点语义，否则
+ * 「补出来的中间帧」会相对服务端权威位置系统性偏移（就是「客户端插帧和渲染和
+ * 服务端面板不匹配」）。这里只做端点之间的线性插值，不做任何取整。
  */
 export function interpolateFrames(
   previous: BossRaceFrame,
   current: BossRaceFrame,
   alpha: number,
 ): BossRaceFrame {
-  const t = Math.max(0, Math.min(1, alpha));
+  const t = clamp01(alpha);
   if (t >= 1 || previous.players.length !== current.players.length) {
     return current;
   }
   const lerpPoint = (a: RenderPoint, b: RenderPoint): RenderPoint => ({
-    x: a.x + (b.x - a.x) * t,
-    y: a.y + (b.y - a.y) * t,
+    x: lerpF64(a.x, b.x, t),
+    y: lerpF64(a.y, b.y, t),
   });
   const players: PlayerRenderItem[] = current.players.map((player, index) => {
     const before = previous.players[index];

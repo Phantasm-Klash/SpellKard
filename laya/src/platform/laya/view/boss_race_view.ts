@@ -2,20 +2,25 @@
  * LayaAir rendering of a `BossRaceFrame`.
  *
  * Draws the portrait playfield, both Boss copies, the local player's ship and the
- * bullet curtain. Rendering is intentionally vector-based (`Graphics`) so the
- * client has no binary asset dependency yet; sprite atlases can replace the
- * draw calls later without touching the frame model.
+ * bullet curtain. Actors and the backdrop prefer the real TNA art
+ * (`AtlasActorRenderer` + a backdrop texture) and fall back to the vector
+ * `Graphics` look per-actor whenever a frame has not loaded.
  *
  * This is a thin adapter: all coordinates and colour decisions come from
  * `core/game/boss_race_view_model`; the actual shapes live in the sibling
- * `arena` (field + actors), `bullets` (curtain) and `hud` (status strip)
- * modules, so this file stays a layer-ordering skeleton with object pools.
+ * `arena` (field + vector actors), `actors` (real-art actors), `bullets`
+ * (curtain) and `hud` (status strip) modules, so this file stays a
+ * layer-ordering skeleton with object pools.
  */
 
 import type { BossRaceFrame, PlayfieldLayout, RenderPoint } from '../../../core/game/boss_race_view_model';
-import { drawBoss, drawPlayfield, drawPlayer } from './arena';
+import { TNA_BACKGROUND_IMAGE } from '../../../core/game/tna_actor_frames';
+import { AtlasActorRenderer, type ActorSpriteRenderer } from './actors';
+import { drawPlayfield } from './arena';
+import { sharedTnaFrameSource } from './bullet_atlas';
 import { vectorBulletRenderer } from './bullets';
 import { drawHudBar, type HudState } from './hud';
+import type { BulletRenderer } from './sprites';
 import * as theme from './theme';
 
 const COLOR_BACKGROUND = theme.COLOR_BACKGROUND;
@@ -46,32 +51,55 @@ export interface BossRaceViewOptions {
   stageWidth?: number;
   /** Whole stage height; defaults to `playfieldY + layout.height`. */
   stageHeight?: number;
+  /** Bullet renderer; defaults to the pure-vector fallback. */
+  bulletRenderer?: BulletRenderer;
+  /** Animate species frames locally (opt-in; server frame index is authoritative). */
+  animateBulletFrames?: boolean;
+  /**
+   * Actor renderer for the Boss copies and player ships. Defaults to real TNA
+   * atlas art with the vector renderer as per-actor fallback.
+   */
+  actorRenderer?: ActorSpriteRenderer;
+  /**
+   * Playfield backdrop texture. When omitted the view tries the shared TNA
+   * backdrop image and keeps the vector playfield if it is unavailable.
+   */
+  backgroundTexture?: Laya.Texture;
 }
 
 export class BossRaceView {
   readonly root: Laya.Sprite;
 
-  private readonly layout: PlayfieldLayout;
-  private readonly playfieldX: number;
-  private readonly playfieldY: number;
-  private readonly hudX: number;
-  private readonly hudY: number;
-  private readonly hudWidth: number;
-  private readonly hudHeight: number;
-  private readonly stageWidth: number;
-  private readonly stageHeight: number;
+  // Mutable so `relayout` can re-tile the view when the stage is resized.
+  private layout: PlayfieldLayout;
+  private playfieldX: number;
+  private playfieldY: number;
+  private hudX: number;
+  private hudY: number;
+  private hudWidth: number;
+  private hudHeight: number;
+  private stageWidth: number;
+  private stageHeight: number;
+  private readonly background: Laya.Sprite;
   private readonly playfield: Laya.Sprite;
+  private readonly backdrop: Laya.Sprite;
   private readonly bulletLayer: Laya.Sprite;
   private readonly actorLayer: Laya.Sprite;
   private readonly hudLayer: Laya.Sprite;
   private readonly hud: Laya.Text;
   private readonly bulletPool: Laya.Sprite[] = [];
   private readonly actorPool: Laya.Sprite[] = [];
+  private readonly bulletRenderer: BulletRenderer;
+  private readonly actorRenderer: ActorSpriteRenderer;
+  private readonly animateBulletFrames: boolean;
+  private backgroundTexture: Laya.Texture | null;
   private activeBullets = 0;
   private activeActors = 0;
 
   constructor(options: BossRaceViewOptions) {
     this.layout = options.layout;
+    this.bulletRenderer = options.bulletRenderer ?? vectorBulletRenderer;
+    this.animateBulletFrames = options.animateBulletFrames ?? false;
     this.playfieldX = options.playfieldX ?? 0;
     this.playfieldY = options.playfieldY ?? 0;
     this.hudX = options.hudX ?? this.playfieldX + this.layout.width;
@@ -80,17 +108,30 @@ export class BossRaceView {
     this.hudHeight = options.hudHeight ?? 72;
     this.stageWidth = options.stageWidth ?? this.hudX + this.hudWidth;
     this.stageHeight = options.stageHeight ?? Math.max(this.playfieldY + this.layout.height, this.hudHeight);
+    this.backgroundTexture = options.backgroundTexture ?? null;
+
+    // Real TNA art (Boss / player / backdrop) with vector fallback. The shared
+    // source is only created when a caller has not supplied its own renderer or
+    // backdrop, so tests can drive the view without a Laya loader.
+    const source = options.actorRenderer === undefined || this.backgroundTexture === null ? sharedTnaFrameSource() : null;
+    this.actorRenderer = options.actorRenderer ?? new AtlasActorRenderer(source!);
 
     this.root = new Laya.Sprite();
     this.root.size(this.stageWidth, this.stageHeight);
 
-    const background = new Laya.Sprite();
-    background.graphics.drawRect(0, 0, this.stageWidth, this.stageHeight, COLOR_BACKGROUND);
-    this.root.addChild(background);
+    this.background = new Laya.Sprite();
+    this.background.graphics.drawRect(0, 0, this.stageWidth, this.stageHeight, COLOR_BACKGROUND);
+    this.root.addChild(this.background);
+
+    // Backdrop image (real art) sits between the solid stage colour and the
+    // playfield grid; the grid/reticle/border are still drawn on top.
+    this.backdrop = new Laya.Sprite();
+    this.backdrop.pos(this.playfieldX, this.playfieldY);
+    this.root.addChild(this.backdrop);
 
     this.playfield = new Laya.Sprite();
     this.playfield.pos(this.playfieldX, this.playfieldY);
-    drawPlayfield(this.playfield.graphics, this.layout.width, this.layout.height);
+    this.redrawPlayfield();
     this.root.addChild(this.playfield);
 
     this.bulletLayer = new Laya.Sprite();
@@ -120,10 +161,107 @@ export class BossRaceView {
     this.hud.width = this.hudWidth - 16;
     this.hud.wordWrap = true;
     this.root.addChild(this.hud);
+
+    if (source !== null) {
+      // Fire-and-forget: the backdrop swaps in as soon as the image resolves;
+      // actor frames are picked up by the per-frame lookups automatically.
+      void source.load().then(() => {
+        if (this.backgroundTexture === null) {
+          const texture = source.image(TNA_BACKGROUND_IMAGE);
+          if (texture !== null) {
+            this.backgroundTexture = texture;
+            this.redrawPlayfield();
+          }
+        }
+      });
+    }
+  }
+
+  /** Repaints the playfield grid, skipping the gradient when a backdrop covers it. */
+  private redrawPlayfield(): void {
+    this.playfield.graphics.clear();
+    drawPlayfield(this.playfield.graphics, this.layout.width, this.layout.height, this.backgroundTexture === null);
+    this.backdrop.graphics.clear();
+    this.backdrop.texture = null;
+    this.backdrop.scaleX = 1;
+    this.backdrop.scaleY = 1;
+    if (this.backgroundTexture !== null) {
+      const texW = this.backgroundTexture.width || 1;
+      const texH = this.backgroundTexture.height || 1;
+      this.backdrop.texture = this.backgroundTexture;
+      // Stretch to fill the playfield exactly so the image never spills into
+      // the HUD strip; the art is a seamless starfield, so the stretch is fine.
+      this.backdrop.scaleX = this.layout.width / texW;
+      this.backdrop.scaleY = this.layout.height / texH;
+    }
   }
 
   get playfieldHeight(): number {
     return this.layout.height;
+  }
+
+  /**
+   * Re-tiles the view after the stage has been resized.
+   *
+   * Only the geometry fields passed here are overwritten; anything omitted keeps
+   * its current value. The object pools (bullets / actors) are deliberately left
+   * alone — they position purely from frame coordinates in `render`, so a resize
+   * only needs the layers re-placed and the playfield/backdrop repainted.
+   *
+   * Must be called after the constructor has built `root`.
+   */
+  relayout(options: {
+    layout?: PlayfieldLayout;
+    playfieldX?: number;
+    playfieldY?: number;
+    hudX?: number;
+    hudY?: number;
+    hudWidth?: number;
+    hudHeight?: number;
+    stageWidth?: number;
+    stageHeight?: number;
+  }): void {
+    if (options.layout !== undefined) {
+      this.layout = options.layout;
+    }
+    if (options.playfieldX !== undefined) {
+      this.playfieldX = options.playfieldX;
+    }
+    if (options.playfieldY !== undefined) {
+      this.playfieldY = options.playfieldY;
+    }
+    if (options.hudX !== undefined) {
+      this.hudX = options.hudX;
+    }
+    if (options.hudY !== undefined) {
+      this.hudY = options.hudY;
+    }
+    if (options.hudWidth !== undefined) {
+      this.hudWidth = options.hudWidth;
+    }
+    if (options.hudHeight !== undefined) {
+      this.hudHeight = options.hudHeight;
+    }
+    if (options.stageWidth !== undefined) {
+      this.stageWidth = options.stageWidth;
+    }
+    if (options.stageHeight !== undefined) {
+      this.stageHeight = options.stageHeight;
+    }
+
+    this.root.size(this.stageWidth, this.stageHeight);
+    this.background.graphics.clear();
+    this.background.graphics.drawRect(0, 0, this.stageWidth, this.stageHeight, COLOR_BACKGROUND);
+
+    this.backdrop.pos(this.playfieldX, this.playfieldY);
+    this.playfield.pos(this.playfieldX, this.playfieldY);
+    this.bulletLayer.pos(this.playfieldX, this.playfieldY);
+    this.actorLayer.pos(this.playfieldX, this.playfieldY);
+    this.hudLayer.pos(this.hudX, this.hudY);
+    this.hud.pos(this.hudX + 8, this.hudY + 8);
+    this.hud.width = this.hudWidth - 16;
+
+    this.redrawPlayfield();
   }
 
   /**
@@ -158,17 +296,19 @@ export class BossRaceView {
       const sprite = this.bulletSprite(this.activeBullets);
       sprite.visible = true;
       sprite.pos(bullet.position.x, bullet.position.y);
-      sprite.graphics.clear();
-      // Pattern-specific vector art (orb / arrow / laser / streak); `angleRad`
-      // orients the directional families and `tick` drives the animation.
-      vectorBulletRenderer.draw(
-        sprite.graphics,
-        bullet.patternId,
-        bullet.radius,
-        bullet.ownerIsLocal,
-        bullet.angleRad,
-        frame.tick,
-      );
+      // The renderer owns the sprite's art: the atlas renderer sets a texture
+      // (and pivot/scale/rotation); the vector renderer clears and redraws.
+      this.bulletRenderer.draw(sprite, {
+        bulletKind: bullet.bulletKind,
+        patternId: bullet.bulletKind > 0 ? '' : bullet.patternId,
+        radius: bullet.radius,
+        ownerIsLocal: bullet.ownerIsLocal,
+        angleRad: bullet.angleRad,
+        angleDeg: bullet.angleDeg,
+        motionFamily: bullet.motionFamily,
+        tick: frame.tick,
+        animate: this.animateBulletFrames,
+      });
       this.activeBullets += 1;
     }
     for (let i = this.activeBullets; i < this.bulletPool.length; i += 1) {
@@ -190,9 +330,8 @@ export class BossRaceView {
       const sprite = this.actorSprite(this.activeActors);
       sprite.visible = true;
       sprite.pos(player.position.x, player.position.y);
-      sprite.graphics.clear();
       // `PlayerRenderItem` carries no facing yet, so ships default to +x.
-      drawPlayer(sprite.graphics, PLAYER_RADIUS, player.isLocal, false, 0);
+      this.actorRenderer.drawPlayer(sprite, PLAYER_RADIUS, player.isLocal, false, 0);
       this.activeActors += 1;
     }
     for (let i = this.activeActors; i < this.actorPool.length; i += 1) {
@@ -204,8 +343,14 @@ export class BossRaceView {
     const sprite = this.actorSprite(this.activeActors);
     sprite.visible = true;
     sprite.pos(position.x, position.y);
-    sprite.graphics.clear();
-    drawBoss(sprite.graphics, isLocal ? BOSS_RADIUS_LOCAL : BOSS_RADIUS_RIVAL, hpRatio, defeated, isLocal, tick);
+    this.actorRenderer.drawBoss(
+      sprite,
+      isLocal ? BOSS_RADIUS_LOCAL : BOSS_RADIUS_RIVAL,
+      hpRatio,
+      defeated,
+      isLocal,
+      tick,
+    );
     this.activeActors += 1;
   }
 

@@ -195,26 +195,37 @@ function hex2(value: number): string {
 // --- replaceable renderer seam -------------------------------------------------
 
 /**
- * Draws a single bullet into a sprite's graphics. Implementations receive the
- * already-cleared graphics and the pixel-space position (sprite origin).
+ * Everything a bullet renderer needs for one draw. Kept as a plain object so
+ * both the vector renderer and the atlas-frame renderer share one call site.
+ */
+export interface BulletDrawRequest {
+  /** `kEnemyBullet` value (9..224) for real danmaku, else `-1` (legacy). */
+  bulletKind: number;
+  /** Legacy synthetic pattern id (`ring`, `spiral`, …); `''` for real danmaku. */
+  patternId: string;
+  /** Pixel radius (already scaled by the playfield transform). */
+  radius: number;
+  /** Local bullets vs. rivals pick different palettes / tints. */
+  ownerIsLocal: boolean;
+  /** Travel direction in radians (may be `NaN` when unavailable). */
+  angleRad: number;
+  /** Travel heading in degrees (real-danmaku bullets). */
+  angleDeg: number;
+  /** Motion family from the danmaku mirror. */
+  motionFamily: string;
+  /** Current tick, for cheap animation without extra state. */
+  tick: number;
+  /** When true, locally animate the species frames instead of the server frame. */
+  animate?: boolean;
+}
+
+/**
+ * Draws a single bullet into a sprite. Implementations receive the pooled
+ * sprite (already positioned at the playfield-space bullet centre) and may set
+ * either `sprite.texture` (atlas renderer) or `sprite.graphics` (vector).
  */
 export interface BulletRenderer {
-  /**
-   * @param g            cleared graphics of the bullet sprite
-   * @param patternId    one of `BOSS_RACE_PATTERN_IDS`
-   * @param radius       pixel radius
-   * @param ownerIsLocal local bullets use the cyan family, rivals the pink one
-   * @param angleRad     travel direction (may be NaN when unavailable)
-   * @param tick         current tick, for cheap animation without extra state
-   */
-  draw(
-    g: Laya.Graphics,
-    patternId: string,
-    radius: number,
-    ownerIsLocal: boolean,
-    angleRad: number,
-    tick: number,
-  ): void;
+  draw(sprite: Laya.Sprite, request: BulletDrawRequest): void;
 }
 
 /** Draws an actor (Boss copy or player ship) in pixel space. */

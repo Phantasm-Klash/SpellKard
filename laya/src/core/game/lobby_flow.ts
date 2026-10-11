@@ -18,6 +18,8 @@ import type {
   SessionState,
   ShopView,
 } from '../net/lobby_client';
+import { SESSION_EXPIRED_CODE, SESSION_REPLACED_CODE } from '../net/lobby_client';
+import { describeAuthError } from './auth_messages';
 
 export enum LobbyScreen {
   Login = 'login',
@@ -32,11 +34,28 @@ export enum LobbyScreen {
   Error = 'error',
 }
 
+/**
+ * Default mode id used when creating a room or joining matchmaking.
+ *
+ * Must match an entry in the lobby's `ModeConfigs` registry
+ * (`Gensoulkyo/runtime/core/types.go`), otherwise `rooms.create` fails with
+ * `mode_invalid`. That registry ships: `certification` (2p), `pvp_duel` (2p),
+ * `battle_royale` (5-10p), `world_boss` (4-8p), `instance_boss` and — since it
+ * was added for the MVP — `mvp_boss_race` (2p, the mode this client plays).
+ *
+ * If you point the client at an *older* lobby binary that predates the
+ * `mvp_boss_race` registration, rooms.create will fail with `mode_invalid`;
+ * switch this to `pvp_duel` as a temporary fallback in that case.
+ */
+export const DEFAULT_MODE_ID = 'mvp_boss_race';
+
 export interface MatchStartInfo {
   matchId: string;
   serverSeedHex: string;
   endpoint: string;
   playerIds: string[];
+  /** This client's battle roster id (`p-<hash>`); empty if the lobby omitted it. */
+  playerId: string;
   modeId: string;
   rulesetVersion: string;
 }
@@ -68,8 +87,32 @@ export interface LobbyFlowSnapshot {
   shop: ShopView | null;
   /** Owned card stacks, loaded while the inventory screen is open. */
   inventory: InventoryView | null;
+  /** Which form the login screen shows. */
+  authMode: AuthMode;
+  /** Username echoed back into the form after a failed attempt ('' initially). */
+  authUsername: string;
+  /**
+   * E-mail address echoed back into the form. It is the sign-in identifier, so
+   * the form keeps it after a failure just like the username.
+   */
+  authEmail: string;
   lastError: string;
+  /** Raw lobby error code behind `lastError` (`''` when there is none). */
+  authErrorCode: string;
+  /**
+   * True right after the lobby ended this session — either because the account
+   * signed in on another device (`authErrorCode === 'session_replaced'`) or
+   * because the session stopped being accepted without the server saying why
+   * (`authErrorCode === 'session_expired'`). Cleared by any sign-in/out or
+   * auth-mode change, exactly like `authErrorCode`. Lets the UI distinguish
+   * "the session ended underneath us" from a generic failure without parsing
+   * the error string.
+   */
+  sessionLost: boolean;
 }
+
+/** Which form the login screen renders. */
+export type AuthMode = 'login' | 'register';
 
 export type LobbyFlowListener = (snapshot: LobbyFlowSnapshot) => void;
 
@@ -98,7 +141,12 @@ export class LobbyFlow {
   private checkin: CheckinView | null = null;
   private shop: ShopView | null = null;
   private inventory: InventoryView | null = null;
+  private authMode: AuthMode = 'login';
+  private authUsername = '';
+  private authEmail = '';
+  private authErrorCode = '';
   private lastError = '';
+  private sessionLost = false;
   private readonly listeners: LobbyFlowListener[] = [];
 
   /** The underlying client, exposed for secondary reads (decks, chests, …). */
@@ -122,7 +170,8 @@ export class LobbyFlow {
             serverSeedHex: event.serverSeedHex,
             endpoint: event.endpoint,
             playerIds: event.playerIds,
-            modeId: this.client.room?.modeId ?? 'mvp_boss_race',
+            playerId: event.playerId,
+            modeId: this.client.room?.modeId ?? DEFAULT_MODE_ID,
             rulesetVersion: this.client.session?.rulesetVersion ?? '',
           };
           this.statusText = `Match ${event.matchId} starting`;
@@ -136,6 +185,12 @@ export class LobbyFlow {
         case 'transport_closed':
           this.statusText = `Lobby transport closed: ${event.reason}`;
           this.notify();
+          break;
+        case 'session_replaced':
+          this.handleSessionLost(SESSION_REPLACED_CODE);
+          break;
+        case 'session_expired':
+          this.handleSessionLost(SESSION_EXPIRED_CODE);
           break;
       }
     });
@@ -165,7 +220,12 @@ export class LobbyFlow {
       checkin: this.checkin,
       shop: this.shop,
       inventory: this.inventory,
+      authMode: this.authMode,
+      authUsername: this.authUsername,
+      authEmail: this.authEmail,
       lastError: this.lastError,
+      authErrorCode: this.authErrorCode,
+      sessionLost: this.sessionLost,
     };
   }
 
@@ -197,18 +257,219 @@ export class LobbyFlow {
     this.notify();
     const session = await this.client.loginAnonymous(displayName);
     if (session === null) {
+      this.authErrorCode = '';
       this.fail(`Login failed: ${this.client.lastError}`);
       return false;
     }
     this.statusText = 'Loading profile…';
     this.notify();
     await this.client.bootstrap(session.rulesetVersion);
+    if (this.sessionLost) {
+      // The session ended while the profile was loading: the event handler has
+      // already cleared it and returned to the login screen — do not land on
+      // the lobby.
+      return false;
+    }
     this.statusText = `Signed in as ${this.client.session?.displayName ?? displayName}`;
+    this.authErrorCode = '';
+    this.sessionLost = false;
     this.setScreen(LobbyScreen.Lobby);
     return true;
   }
 
-  async createRoom(roomCode: string, modeId = 'mvp_boss_race'): Promise<boolean> {
+  /** Flips the login screen between sign-in and sign-up. */
+  setAuthMode(mode: AuthMode): void {
+    this.authMode = mode;
+    this.lastError = '';
+    this.authErrorCode = '';
+    this.sessionLost = false;
+    this.notify();
+  }
+
+  /**
+   * Account sign-in (`auth.login`). Loads the profile and lands on the lobby.
+   * Rejects empty credentials locally so the form can show the reason without
+   * a round-trip. The e-mail address is the sign-in identifier.
+   */
+  async signInWithAccount(email: string, password: string): Promise<boolean> {
+    const address = email.trim();
+    if (address === '' || password === '') {
+      this.authErrorCode = '';
+      this.fail('Enter your e-mail and password');
+      return false;
+    }
+    // Echo the address back so the form keeps it after a failed attempt.
+    this.authEmail = address;
+    this.statusText = 'Signing in…';
+    this.notify();
+    const session = await this.client.loginAccount(address, password);
+    if (session === null) {
+      // Keep `client.lastError` as the raw code; only the player-facing text is
+      // translated, so callers that inspect the code still see it verbatim.
+      const code = this.client.lastError;
+      this.authErrorCode = code;
+      this.fail(code !== '' ? describeAuthError(code) : 'Sign-in failed');
+      return false;
+    }
+    this.statusText = 'Loading profile…';
+    this.notify();
+    await this.client.bootstrap(session.rulesetVersion);
+    if (this.sessionLost) {
+      // The session ended while the profile was loading — stay on the login
+      // screen.
+      return false;
+    }
+    this.statusText = `Signed in as ${this.client.session?.displayName || address}`;
+    this.lastError = '';
+    this.authErrorCode = '';
+    this.sessionLost = false;
+    this.setScreen(LobbyScreen.Lobby);
+    return true;
+  }
+
+  /**
+   * Asks the lobby to mail a registration verification code (`auth.emailCode`).
+   *
+   * Returns the delay the caller must observe before offering "send again"
+   * (`resendInSeconds`, 0 when the send failed). The address is echoed back so a
+   * failure does not clear what the player typed.
+   */
+  async requestEmailCode(email: string): Promise<{ ok: boolean; resendInSeconds: number }> {
+    const address = email.trim();
+    if (address === '') {
+      this.authErrorCode = '';
+      this.fail('Enter your e-mail address');
+      return { ok: false, resendInSeconds: 0 };
+    }
+    this.authEmail = address;
+    this.statusText = 'Sending verification code…';
+    this.notify();
+    const receipt = await this.client.requestEmailCode(address);
+    if (receipt === null) {
+      const code = this.client.lastError;
+      this.authErrorCode = code;
+      this.fail(code !== '' ? describeAuthError(code) : 'Could not send the code');
+      return { ok: false, resendInSeconds: 0 };
+    }
+    this.lastError = '';
+    this.authErrorCode = '';
+    this.statusText = `Verification code sent to ${receipt.email}`;
+    this.notify();
+    return { ok: true, resendInSeconds: receipt.resendInSeconds };
+  }
+
+  /**
+   * Creates an account (`auth.register`) and signs it in. The server verifies
+   * the e-mailed `code` before it creates anything, so a missing or stale code
+   * comes back as a normal coded failure. The server returns a session
+   * directly, so no separate sign-in step is needed.
+   */
+  async registerAccount(
+    username: string,
+    email: string,
+    password: string,
+    code: string,
+    displayName = '',
+  ): Promise<boolean> {
+    const user = username.trim();
+    const address = email.trim();
+    if (user === '' || address === '' || password === '') {
+      this.authErrorCode = '';
+      this.fail('Enter a username, e-mail and password');
+      return false;
+    }
+    if (code.trim() === '') {
+      this.authErrorCode = 'verification_code_required';
+      this.fail(describeAuthError('verification_code_required'));
+      return false;
+    }
+    this.authUsername = user;
+    this.authEmail = address;
+    this.statusText = 'Creating account…';
+    this.notify();
+    // An empty display name falls back to the username so the account is never
+    // nameless in the lobby.
+    const session = await this.client.registerAccount(
+      user,
+      address,
+      password,
+      code.trim(),
+      displayName.trim() || user,
+    );
+    if (session === null) {
+      // As in `signInWithAccount`: translate only the player-facing text.
+      const failure = this.client.lastError;
+      this.authErrorCode = failure;
+      this.fail(failure !== '' ? describeAuthError(failure) : 'Sign-up failed');
+      return false;
+    }
+    this.statusText = 'Loading profile…';
+    this.notify();
+    await this.client.bootstrap(session.rulesetVersion);
+    if (this.sessionLost) {
+      // The session ended while the profile was loading — stay on the login
+      // screen.
+      return false;
+    }
+    this.statusText = `Account created — signed in as ${this.client.session?.displayName || user}`;
+    this.lastError = '';
+    this.authErrorCode = '';
+    this.sessionLost = false;
+    this.setScreen(LobbyScreen.Lobby);
+    return true;
+  }
+
+  /** Drops the local session and returns to the login screen. */
+  signOut(): void {
+    this.client.logout();
+    this.match = null;
+    this.result = null;
+    this.checkin = null;
+    this.shop = null;
+    this.inventory = null;
+    this.authMode = 'login';
+    this.authUsername = '';
+    this.lastError = '';
+    this.authErrorCode = '';
+    this.sessionLost = false;
+    this.statusText = 'Signed out';
+    this.setScreen(LobbyScreen.Login);
+  }
+
+  /** Returns to the login screen without clearing the session. */
+  showLogin(): void {
+    this.authMode = 'login';
+    this.lastError = '';
+    this.authErrorCode = '';
+    this.sessionLost = false;
+    this.setScreen(LobbyScreen.Login);
+  }
+
+  /**
+   * Handles the lobby ending this session. `code` is either
+   * {@link SESSION_REPLACED_CODE} (the account signed in elsewhere and the
+   * server said so explicitly) or {@link SESSION_EXPIRED_CODE} (the lobby
+   * stopped accepting the session without saying why). Reuses the sign-out
+   * teardown, then surfaces the reason on the login screen so the player knows
+   * why they were sent back.
+   *
+   * Idempotent: the WS push and a REST `401` can both report the same loss, and
+   * the flag is cleared by `signOut()`/`showLogin()`, so the second report is a
+   * no-op.
+   */
+  private handleSessionLost(code: string): void {
+    if (this.sessionLost) {
+      return;
+    }
+    this.signOut();
+    this.sessionLost = true;
+    this.authErrorCode = code;
+    this.lastError = describeAuthError(code);
+    this.statusText = this.lastError;
+    this.notify();
+  }
+
+  async createRoom(roomCode: string, modeId = DEFAULT_MODE_ID): Promise<boolean> {
     this.statusText = `Creating room ${roomCode}…`;
     this.notify();
     const room = await this.client.createRoom(roomCode, modeId);
@@ -243,7 +504,7 @@ export class LobbyFlow {
    * screen — the server, not the client, decides when a match is found, so the
    * status text shows the ticket until a `match_start` event arrives.
    */
-  async joinMatchmaking(modeId = 'mvp_boss_race'): Promise<boolean> {
+  async joinMatchmaking(modeId = DEFAULT_MODE_ID): Promise<boolean> {
     this.statusText = 'Joining matchmaking queue…';
     this.notify();
     const ticket = await this.client.joinMatchmaking(modeId);
@@ -294,13 +555,24 @@ export class LobbyFlow {
   async ready(): Promise<boolean> {
     this.statusText = 'Ready — waiting for match…';
     this.setScreen(LobbyScreen.Matching);
-    const ok = await this.client.readyMatch(this.match?.matchId ?? '');
+    const matchId = this.match?.matchId ?? '';
+    if (matchId === '') {
+      // No match exists yet: the lobby creates it (and pushes `match_start`)
+      // once the room fills, so there is nothing to acknowledge here. Ready is
+      // purely a local "I'm set" signal at this point.
+      this.statusText = 'Ready — waiting for players…';
+      this.notify();
+      return true;
+    }
+    const ok = await this.client.readyMatch(matchId);
     if (!ok) {
       this.fail(`Ready failed: ${this.client.lastError}`);
       return false;
     }
-    await this.client.fetchBattleAllocation();
-    await this.client.fetchBattleTicket();
+    // Best effort: `match_start` already carries the endpoint and roster id, so
+    // these only refine what we know. A failure must not abort the transition.
+    await this.client.fetchBattleAllocation(matchId);
+    await this.client.fetchBattleTicket(matchId);
     this.notify();
     return true;
   }

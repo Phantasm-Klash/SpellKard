@@ -1,0 +1,116 @@
+{
+ "meta": {
+  "image": "ply_shot_09.png",
+  "size": {
+   "w": 512,
+   "h": 512
+  },
+  "scale": 1,
+  "prefix": ""
+ },
+ "frames": {
+  "player_09.png": {
+   "frame": {
+    "x": 0,
+    "y": 0,
+    "w": 32,
+    "h": 48
+   },
+   "sourceSize": {
+    "w": 32,
+    "h": 48
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_cirnoA_11.png": {
+   "frame": {
+    "x": 0,
+    "y": 48,
+    "w": 8,
+    "h": 44
+   },
+   "sourceSize": {
+    "w": 8,
+    "h": 44
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_cirnoB_11.png": {
+   "frame": {
+    "x": 0,
+    "y": 64,
+    "w": 10,
+    "h": 54
+   },
+   "sourceSize": {
+    "w": 10,
+    "h": 54
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_cirnoB_21.png": {
+   "frame": {
+    "x": 0,
+    "y": 80,
+    "w": 6,
+    "h": 32
+   },
+   "sourceSize": {
+    "w": 6,
+    "h": 32
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "mybomb_cirno_01.png": {
+   "frame": {
+    "x": 80,
+    "y": 0,
+    "w": 256,
+    "h": 256
+   },
+   "sourceSize": {
+    "w": 256,
+    "h": 256
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "mybomb_cirno_02.png": {
+   "frame": {
+    "x": 80,
+    "y": 256,
+    "w": 256,
+    "h": 256
+   },
+   "sourceSize": {
+    "w": 256,
+    "h": 256
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  }
+ },
+ "animations": []
+}

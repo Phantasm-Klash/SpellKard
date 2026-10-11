@@ -1,0 +1,82 @@
+{
+ "meta": {
+  "image": "ply_shot_08.png",
+  "size": {
+   "w": 512,
+   "h": 512
+  },
+  "scale": 1,
+  "prefix": ""
+ },
+ "frames": {
+  "player_08.png": {
+   "frame": {
+    "x": 0,
+    "y": 0,
+    "w": 32,
+    "h": 48
+   },
+   "sourceSize": {
+    "w": 32,
+    "h": 48
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_seijaA_11.png": {
+   "frame": {
+    "x": 0,
+    "y": 48,
+    "w": 10,
+    "h": 34
+   },
+   "sourceSize": {
+    "w": 10,
+    "h": 34
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_seijaB_11.png": {
+   "frame": {
+    "x": 0,
+    "y": 64,
+    "w": 10,
+    "h": 34
+   },
+   "sourceSize": {
+    "w": 10,
+    "h": 34
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "mybomb_seija_01.png": {
+   "frame": {
+    "x": 64,
+    "y": 48,
+    "w": 400,
+    "h": 400
+   },
+   "sourceSize": {
+    "w": 400,
+    "h": 400
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  }
+ },
+ "animations": []
+}

@@ -35,6 +35,14 @@ export * from './net/battle_client';
 
 export * from './sim/boss_race';
 
+export * from './settings';
+
+export * from './render/upscaler';
+
+export * from './input/shortcuts';
+
+export * from './text/caret';
+
 export * from './game/input';
 export * from './game/boss_race_view_model';
 export * from './game/bullet_visual';

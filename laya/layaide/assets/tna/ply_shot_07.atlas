@@ -1,0 +1,116 @@
+{
+ "meta": {
+  "image": "ply_shot_07.png",
+  "size": {
+   "w": 512,
+   "h": 512
+  },
+  "scale": 1,
+  "prefix": ""
+ },
+ "frames": {
+  "player_07.png": {
+   "frame": {
+    "x": 0,
+    "y": 0,
+    "w": 32,
+    "h": 48
+   },
+   "sourceSize": {
+    "w": 32,
+    "h": 48
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_ayaA_11.png": {
+   "frame": {
+    "x": 0,
+    "y": 48,
+    "w": 20,
+    "h": 48
+   },
+   "sourceSize": {
+    "w": 20,
+    "h": 48
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_ayaA_21.png": {
+   "frame": {
+    "x": 0,
+    "y": 80,
+    "w": 20,
+    "h": 48
+   },
+   "sourceSize": {
+    "w": 20,
+    "h": 48
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_ayaB_11.png": {
+   "frame": {
+    "x": 48,
+    "y": 48,
+    "w": 16,
+    "h": 32
+   },
+   "sourceSize": {
+    "w": 16,
+    "h": 32
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_ayaB_21.png": {
+   "frame": {
+    "x": 48,
+    "y": 0,
+    "w": 44,
+    "h": 54
+   },
+   "sourceSize": {
+    "w": 44,
+    "h": 54
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "mybomb_aya_01.png": {
+   "frame": {
+    "x": 16,
+    "y": 128,
+    "w": 224,
+    "h": 224
+   },
+   "sourceSize": {
+    "w": 224,
+    "h": 224
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  }
+ },
+ "animations": []
+}

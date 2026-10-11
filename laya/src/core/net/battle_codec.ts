@@ -348,6 +348,12 @@ export function decodeBossRaceSnapshot(payload: Uint8Array): BossRaceSnapshot | 
         vyMilli: numberAt(bullet, 'vy_milli'),
         radiusMilli: numberAt(bullet, 'radius_milli'),
         patternId: stringAt(bullet, 'pattern_id'),
+        // ★ The reverse-engineered danmaku extensions. Without these the renderer
+        // can only draw a generic bullet — `describeBulletKind` needs the
+        // `kEnemyBullet` value to pick the real atlas frame, and the motion func
+        // number to pick the orientation family.
+        bulletKind: optionalNumberAt(bullet, 'bullet_kind'),
+        motionFunc: optionalNumberAt(bullet, 'motion_func'),
       }),
     ),
   };
@@ -439,4 +445,22 @@ export function numberAt(source: Record<string, unknown>, key: string): number {
     return Number(value);
   }
   return 0;
+}
+
+/**
+ * Like {@link numberAt} but distinguishes "absent" from "zero".
+ *
+ * The real-danmaku extensions (`bullet_kind`, `motion_func`) are optional on the
+ * wire so a battle server that predates them still decodes; `undefined` here is
+ * what lets the renderer tell "this server never sent a kind" apart from "the
+ * server sent kind 0" and fall back to the generic bullet.
+ */
+export function optionalNumberAt(
+  source: Record<string, unknown>,
+  key: string,
+): number | undefined {
+  if (!(key in source) || source[key] === null || source[key] === undefined) {
+    return undefined;
+  }
+  return numberAt(source, key);
 }

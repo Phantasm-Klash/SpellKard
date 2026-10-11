@@ -1,0 +1,184 @@
+{
+ "meta": {
+  "image": "ply_shot_03.png",
+  "size": {
+   "w": 256,
+   "h": 256
+  },
+  "scale": 1,
+  "prefix": ""
+ },
+ "frames": {
+  "player_03.png": {
+   "frame": {
+    "x": 0,
+    "y": 0,
+    "w": 32,
+    "h": 48
+   },
+   "sourceSize": {
+    "w": 32,
+    "h": 48
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_sanaeA_11.png": {
+   "frame": {
+    "x": 64,
+    "y": 0,
+    "w": 22,
+    "h": 54
+   },
+   "sourceSize": {
+    "w": 22,
+    "h": 54
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_sanaeA_12.png": {
+   "frame": {
+    "x": 86,
+    "y": 0,
+    "w": 18,
+    "h": 54
+   },
+   "sourceSize": {
+    "w": 18,
+    "h": 54
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_sanaeA_13.png": {
+   "frame": {
+    "x": 104,
+    "y": 0,
+    "w": 22,
+    "h": 54
+   },
+   "sourceSize": {
+    "w": 22,
+    "h": 54
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_sanaeA_14.png": {
+   "frame": {
+    "x": 64,
+    "y": 64,
+    "w": 18,
+    "h": 54
+   },
+   "sourceSize": {
+    "w": 18,
+    "h": 54
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_sanaeA_15.png": {
+   "frame": {
+    "x": 82,
+    "y": 64,
+    "w": 22,
+    "h": 54
+   },
+   "sourceSize": {
+    "w": 22,
+    "h": 54
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_sanaeA_16.png": {
+   "frame": {
+    "x": 104,
+    "y": 64,
+    "w": 18,
+    "h": 54
+   },
+   "sourceSize": {
+    "w": 18,
+    "h": 54
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "myshot_sanaeA_21.png": {
+   "frame": {
+    "x": 0,
+    "y": 48,
+    "w": 16,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 16,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "myshot_sanaeB_11.png": {
+   "frame": {
+    "x": 0,
+    "y": 64,
+    "w": 22,
+    "h": 26
+   },
+   "sourceSize": {
+    "w": 22,
+    "h": 26
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": true
+  },
+  "mybomb_sanae_01.png": {
+   "frame": {
+    "x": 64,
+    "y": 128,
+    "w": 64,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 64,
+    "h": 64
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  }
+ },
+ "animations": []
+}

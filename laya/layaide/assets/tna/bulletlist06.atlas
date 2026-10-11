@@ -1,0 +1,48 @@
+{
+ "meta": {
+  "image": "ebullet_6.png",
+  "size": {
+   "w": 512,
+   "h": 512
+  },
+  "scale": 1,
+  "prefix": ""
+ },
+ "frames": {
+  "master_spark_01.png": {
+   "frame": {
+    "x": 0,
+    "y": 0,
+    "w": 256,
+    "h": 490
+   },
+   "sourceSize": {
+    "w": 256,
+    "h": 490
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  },
+  "unzan_01.png": {
+   "frame": {
+    "x": 256,
+    "y": 0,
+    "w": 256,
+    "h": 416
+   },
+   "sourceSize": {
+    "w": 256,
+    "h": 416
+   },
+   "offset": {
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false
+  }
+ },
+ "animations": []
+}
