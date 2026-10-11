@@ -6,7 +6,8 @@
   "atlas_count": 25,
   "kind_count": 216,
   "player_count": 14,
-  "clamped_count": 4
+  "clamped_count": 4,
+  "background_count": 1
  },
  "atlases": {
   "bulletlist01": {
@@ -9073,5 +9074,8 @@
   "player/player_11.png",
   "player/player_12.png",
   "player/player_13.png"
+ ],
+ "backgrounds": [
+  "bg_01_01.png"
  ]
 }
