@@ -242,13 +242,24 @@ export interface PurgeCandidate {
 /**
  * Deterministically picks which in-radius bullets a `bullet_purge` removes.
  *
- * Mirrors the server's rule ("删除自己半径内、按 `deterministicUnit` 确定性随机
- * 选取的 `PurgeCount` 颗弹幕"): every eligible bullet gets a `deterministicUnit`
- * drawn from the **Godot-convention** stream (`core/math/deterministic`, the
- * `deterministicUnit(seed,tick,patternId,index)` the spec names), and the
- * `count` smallest units win. The index is the bullet's position in the passed
- * list, so the caller must pass bullets in the same order the server iterates
- * them (the snapshot order) for the two sides to agree.
+ * Mirrors the server's canonical rule (agreed with the lobby's card-effects
+ * implementation):
+ *
+ *  1. Order **every** bullet by `bulletId` ascending (byte-wise, i.e. the
+ *     server's `sortedBulletIDs`). The full snapshot's `bullets` already come in
+ *     this order, but this sorts defensively so the caller's input order never
+ *     changes the result.
+ *  2. Score each bullet by its index `p` in that canonical order:
+ *     `deterministicUnit(seed, tick, streamId, p)` (the Godot-convention
+ *     `core/math/deterministic` stream the spec names; `streamId` is the card id,
+ *     `'bullet_purge'`).
+ *  3. Keep the candidates within `radiusMilli` of the origin.
+ *  4. Sort the survivors by `(unit asc, bulletId asc)` and take the first
+ *     `count`.
+ *
+ * Because the index is taken over the canonical full-bullet order, the caller
+ * must pass the **full** bullet set for the two sides to agree; a subset shifts
+ * every later index.
  *
  * @param radiusMilli clear radius, already converted to milli units
  */
@@ -263,9 +274,10 @@ export function selectPurgeTargets(
   streamId: string,
 ): string[] {
   const radiusSq = radiusMilli * radiusMilli;
+  const canonical = bullets.slice().sort((left, right) => compareIds(left.bulletId, right.bulletId));
   const eligible: { bulletId: string; unit: number }[] = [];
-  for (let index = 0; index < bullets.length; index += 1) {
-    const bullet = bullets[index];
+  for (let index = 0; index < canonical.length; index += 1) {
+    const bullet = canonical[index];
     const dx = bullet.xMilli - originXMilli;
     const dy = bullet.yMilli - originYMilli;
     if (dx * dx + dy * dy > radiusSq) {
@@ -273,9 +285,20 @@ export function selectPurgeTargets(
     }
     eligible.push({ bulletId: bullet.bulletId, unit: deterministicUnit(seed, tick, streamId, index) });
   }
-  eligible.sort((left, right) => (left.unit !== right.unit ? left.unit - right.unit : left.bulletId.localeCompare(right.bulletId)));
+  eligible.sort((left, right) => (left.unit !== right.unit ? left.unit - right.unit : compareIds(left.bulletId, right.bulletId)));
   const limit = Math.max(0, Math.trunc(count));
   return eligible.slice(0, limit).map((entry) => entry.bulletId);
+}
+
+/**
+ * Byte-wise string order for bullet ids, matching Go's `sort.Strings`.
+ *
+ * JS compares UTF-16 code units, which is the same order as UTF-8 bytes for the
+ * ASCII ids the server mints; `localeCompare` is deliberately avoided because a
+ * locale-aware collation would disagree on punctuation (`-`, `_`) and case.
+ */
+function compareIds(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 /** The aim vector of an `opponent_pattern` curtain, in radians (`atan2`). */

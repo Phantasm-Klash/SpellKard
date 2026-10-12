@@ -27,7 +27,43 @@ import {
   selectPurgeTargets,
   type PurgeCandidate,
 } from '../src/core/sim/card_effects';
+import { deterministicUnit } from '../src/core/math/deterministic';
 import { expect, expectDeepEqual, expectEqual, suite, test } from './harness';
+
+/** Byte-wise id order, matching the server's `sort.Strings`. */
+function byId(left: { bulletId: string }, right: { bulletId: string }): number {
+  return left.bulletId < right.bulletId ? -1 : left.bulletId > right.bulletId ? 1 : 0;
+}
+
+/**
+ * Independent reference for the canonical purge pick: score every bullet by its
+ * index in the `bulletId`-sorted order, keep the in-radius ones, take the
+ * `count` smallest units. Mirrors the lobby's algorithm without calling the
+ * client helper, so the two must agree.
+ */
+function referencePurge(
+  bullets: readonly PurgeCandidate[],
+  radiusMilli: number,
+  count: number,
+  seed: number,
+  tick: number,
+): string[] {
+  const radiusSq = radiusMilli * radiusMilli;
+  const scored = bullets
+    .slice()
+    .sort(byId)
+    .map((bullet, index) => ({
+      bulletId: bullet.bulletId,
+      unit: deterministicUnit(seed, tick, 'bullet_purge', index),
+      dx: bullet.xMilli,
+      dy: bullet.yMilli,
+    }));
+  return scored
+    .filter((entry) => entry.dx * entry.dx + entry.dy * entry.dy <= radiusSq)
+    .sort((left, right) => (left.unit !== right.unit ? left.unit - right.unit : left.bulletId < right.bulletId ? -1 : 1))
+    .slice(0, count)
+    .map((entry) => entry.bulletId);
+}
 
 suite('card effects: effect-kind vocabulary');
 
@@ -158,6 +194,33 @@ test('a count above the eligible population returns every eligible bullet', () =
   ];
   const picked = selectPurgeTargets(bullets, 0, 0, 120000, 99, 1, 1, 'bullet_purge');
   expectDeepEqual(picked.slice().sort(), ['a', 'b']);
+});
+
+test('the index basis is the bulletId-sorted canonical order, not the input order', () => {
+  const bullets: PurgeCandidate[] = [
+    { bulletId: 'c', xMilli: 1000, yMilli: 0 },
+    { bulletId: 'a', xMilli: 2000, yMilli: 0 },
+    { bulletId: 'd', xMilli: 3000, yMilli: 0 },
+    { bulletId: 'b', xMilli: 4000, yMilli: 0 },
+  ];
+  const scrambled = selectPurgeTargets(bullets, 0, 0, 120000, 2, 11, 500, 'bullet_purge');
+  const preSorted = selectPurgeTargets(
+    bullets.slice().sort(byId),
+    0,
+    0,
+    120000,
+    2,
+    11,
+    500,
+    'bullet_purge',
+  );
+  expectDeepEqual(scrambled, preSorted, 'input order must not change the pick');
+  expectDeepEqual(
+    scrambled,
+    referencePurge(bullets, 120000, 2, 11, 500),
+    'the pick must match an independent canonical-index recompute',
+  );
+  expectEqual(scrambled.length, 2);
 });
 
 suite('card effects: opponent aim + invulnerability window');
