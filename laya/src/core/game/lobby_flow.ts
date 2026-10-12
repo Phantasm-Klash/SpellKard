@@ -255,7 +255,7 @@ export class LobbyFlow {
   async signIn(displayName = 'Player'): Promise<boolean> {
     this.statusText = 'Signing in…';
     this.notify();
-    const session = await this.client.loginAnonymous(displayName);
+    const session = this.client.session ?? (await this.client.loginAnonymous(displayName));
     if (session === null) {
       this.authErrorCode = '';
       this.fail(`Login failed: ${this.client.lastError}`);
@@ -263,7 +263,18 @@ export class LobbyFlow {
     }
     this.statusText = 'Loading profile…';
     this.notify();
-    await this.client.bootstrap(session.rulesetVersion);
+    const bootstrapped = await this.client.bootstrap(session.rulesetVersion);
+    if (bootstrapped === null) {
+      this.client.clearSession();
+      this.match = null;
+      this.result = null;
+      this.checkin = null;
+      this.shop = null;
+      this.inventory = null;
+      this.setScreen(LobbyScreen.Login);
+      this.fail(`Bootstrap failed: ${this.client.lastError || 'bootstrap_invalid_payload'}`);
+      return false;
+    }
     if (this.sessionLost) {
       // The session ended while the profile was loading: the event handler has
       // already cleared it and returned to the login screen — do not land on

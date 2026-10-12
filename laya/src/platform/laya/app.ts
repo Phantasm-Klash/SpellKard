@@ -8,7 +8,13 @@
 
 import { bossRaceSeedFromHex } from '../../core/math/boss_race_seed';
 import { BattleClient } from '../../core/net/battle_client';
-import { HttpLobbyTransport, LobbyClient, WsLobbyTransport } from '../../core/net/lobby_client';
+import {
+  HttpLobbyTransport,
+  LobbyClient,
+  NakamaLobbyTransport,
+  WsLobbyTransport,
+  type LobbySessionStore,
+} from '../../core/net/lobby_client';
 import type { DatagramFactory, Logger, SocketFactory, TimerLike } from '../../core/net/transport';
 import { DEFAULT_MODE_ID, LobbyFlow, LobbyScreen, type LobbyFlowSnapshot } from '../../core/game/lobby_flow';
 import { BOSS_RACE_DEFAULT_BOSS_HP, BOSS_RACE_DEFAULT_MAX_TICKS, BOSS_RACE_TICK_RATE_HZ } from '../../core/sim/boss_race';
@@ -38,6 +44,14 @@ export interface ClientConfig {
   stageWidth: number;
   stageHeight: number;
   lobbyHttpBase: string;
+  /** Optional Nakama base URL; defaults to `lobbyHttpBase` when selected. */
+  lobbyNakamaHttpBase?: string;
+  /** Nakama runtime HTTP key used for anonymous RPC bootstrap. */
+  nakamaHttpKey?: string;
+  /** Host-owned secure session storage; omitted sessions remain in memory only. */
+  sessionStore?: LobbySessionStore;
+  /** Selects the business transport when no lobby WS URL is configured. */
+  lobbyTransport?: 'legacy_http' | 'nakama_rpc';
   /** When empty, the lobby uses the REST transport instead of WebSocket. */
   lobbyWsUrl: string;
   relayUrl: string;
@@ -108,8 +122,11 @@ export class SpellKardApp {
       this.fpsOverlay.setVisible(next.display.showFps);
     });
 
-
     const httpTransport = new HttpLobbyTransport(new LayaHttpClient(config.lobbyHttpBase));
+    const nakamaTransport = new NakamaLobbyTransport(
+      new LayaHttpClient(config.lobbyNakamaHttpBase ?? config.lobbyHttpBase),
+      { httpKey: config.nakamaHttpKey },
+    );
     const lobbyTransport =
       config.lobbyWsUrl !== ''
         ? new WsLobbyTransport(config.socketFactory.connect(config.lobbyWsUrl), {
@@ -122,9 +139,17 @@ export class SpellKardApp {
             // `Laya.Socket` cannot be revived once closed. One attempt per call.
             reconnect: () => config.socketFactory.connect(config.lobbyWsUrl),
           })
-        : httpTransport;
+        : config.lobbyTransport === 'nakama_rpc'
+          ? nakamaTransport
+          : httpTransport;
 
-    this.lobbyClient = new LobbyClient({ transport: lobbyTransport, logger: config.logger });
+    this.lobbyClient = new LobbyClient({
+      transport: lobbyTransport,
+      logger: config.logger,
+      deviceId: config.deviceId,
+      clientBuild: config.clientBuild,
+      sessionStore: config.sessionStore,
+    });
     if (lobbyTransport instanceof WsLobbyTransport) {
       // Pushed room state / match start / match result arrive out-of-band.
       lobbyTransport.onEvent((event) => this.lobbyClient.dispatchEvent(event));

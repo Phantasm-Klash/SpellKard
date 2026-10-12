@@ -147,6 +147,47 @@ test('LobbyFlow drives the queue and reports it on the lobby screen', async () =
   expectEqual(describeMatchmakingQueue(flow.snapshot()), 'Matchmaking queue: idle');
 });
 
+test('LobbyFlow enters the lobby only after login and bootstrap both succeed', async () => {
+  const transport = new ScriptedTransport((request) =>
+    request.id === 'auth.anonymous'
+      ? ok({
+          user_id: 'u-1',
+          session_token: 'session-1',
+          player_id: 'p-1',
+          display_name: 'Player',
+          ruleset_version: 'ruleset-local-s0',
+        })
+      : ok({
+          profile: { user_id: 'u-1', player_id: 'p-1', display_name: 'Player' },
+          ruleset_version: 'ruleset-local-s0',
+        }),
+  );
+  const flow = new LobbyFlow(new LobbyClient({ transport }));
+
+  expectEqual(await flow.signIn('Player'), true);
+  expectEqual(flow.currentScreen, LobbyScreen.Lobby);
+  expectEqual(transport.calls.map((request) => request.id).join(','), 'auth.anonymous,bootstrap');
+});
+
+test('LobbyFlow stays out of the lobby when bootstrap fails after login', async () => {
+  const transport = new ScriptedTransport((request) =>
+    request.id === 'auth.anonymous'
+      ? ok({
+          user_id: 'u-1',
+          session_token: 'session-1',
+          player_id: 'p-1',
+          ruleset_version: 'ruleset-local-s0',
+        })
+      : { ok: false, status: 409, error_code: 'version_mismatch' },
+  );
+  const flow = new LobbyFlow(new LobbyClient({ transport }));
+
+  expectEqual(await flow.signIn('Player'), false);
+  expectEqual(flow.currentScreen, LobbyScreen.Login);
+  expectEqual(flow.snapshot().lastError, 'Bootstrap failed: version_mismatch');
+  expectEqual(transport.calls.map((request) => request.id).join(','), 'auth.anonymous,bootstrap');
+});
+
 test('LobbyFlow reports a missing queue instead of calling cancel', async () => {
   const transport = new ScriptedTransport(() => ok({}));
   const flow = new LobbyFlow(new LobbyClient({ transport }));
