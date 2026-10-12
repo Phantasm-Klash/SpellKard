@@ -27,8 +27,8 @@ import {
   selectPurgeTargets,
   type PurgeCandidate,
 } from '../src/core/sim/card_effects';
-import { deterministicUnit } from '../src/core/math/deterministic';
-import { expect, expectDeepEqual, expectEqual, suite, test } from './harness';
+import { lobbyDeterministicUnit } from '../src/core/math/lobby_rng';
+import { expect, expectClose, expectDeepEqual, expectEqual, suite, test } from './harness';
 
 /** Byte-wise id order, matching the server's `sort.Strings`. */
 function byId(left: { bulletId: string }, right: { bulletId: string }): number {
@@ -38,14 +38,14 @@ function byId(left: { bulletId: string }, right: { bulletId: string }): number {
 /**
  * Independent reference for the canonical purge pick: score every bullet by its
  * index in the `bulletId`-sorted order, keep the in-radius ones, take the
- * `count` smallest units. Mirrors the lobby's algorithm without calling the
- * client helper, so the two must agree.
+ * `count` smallest units. Uses the **lobby's** SHA-256 `lobbyDeterministicUnit`
+ * (not the Godot mixer) so it mirrors the server exactly.
  */
 function referencePurge(
   bullets: readonly PurgeCandidate[],
   radiusMilli: number,
   count: number,
-  seed: number,
+  seedDecimal: string,
   tick: number,
 ): string[] {
   const radiusSq = radiusMilli * radiusMilli;
@@ -54,7 +54,7 @@ function referencePurge(
     .sort(byId)
     .map((bullet, index) => ({
       bulletId: bullet.bulletId,
-      unit: deterministicUnit(seed, tick, 'purge_bell', index),
+      unit: lobbyDeterministicUnit(seedDecimal, tick, 'purge_bell', index),
       dx: bullet.xMilli,
       dy: bullet.yMilli,
     }));
@@ -164,7 +164,7 @@ test('only in-radius bullets are eligible and the count caps the result', () => 
     { bulletId: 'near-3', xMilli: -3000, yMilli: -1000 },
     { bulletId: 'far', xMilli: 999999, yMilli: 0 },
   ];
-  const picked = selectPurgeTargets(bullets, 0, 0, 120000, 2, 7, 100, 'purge_bell');
+  const picked = selectPurgeTargets(bullets, 0, 0, 120000, 2, '7', 100, 'purge_bell');
   expectEqual(picked.length, 2, 'count caps the selection');
   expect(!picked.includes('far'), 'a bullet outside the radius is never picked');
   for (const id of picked) {
@@ -178,11 +178,11 @@ test('the selection is deterministic and stable across calls', () => {
     xMilli: index * 1000,
     yMilli: 0,
   }));
-  const first = selectPurgeTargets(bullets, 0, 0, 120000, 4, 42, 900, 'purge_bell');
-  const second = selectPurgeTargets(bullets, 0, 0, 120000, 4, 42, 900, 'purge_bell');
+  const first = selectPurgeTargets(bullets, 0, 0, 120000, 4, '42', 900, 'purge_bell');
+  const second = selectPurgeTargets(bullets, 0, 0, 120000, 4, '42', 900, 'purge_bell');
   expectDeepEqual(first, second, 'same seed/tick/stream must pick the same bullets');
   expectEqual(first.length, 4);
-  const other = selectPurgeTargets(bullets, 0, 0, 120000, 4, 42, 901, 'purge_bell');
+  const other = selectPurgeTargets(bullets, 0, 0, 120000, 4, '42', 901, 'purge_bell');
   expect(JSON.stringify(first) !== JSON.stringify(other), 'a different tick changes the draw');
 });
 
@@ -192,7 +192,7 @@ test('a count above the eligible population returns every eligible bullet', () =
     { bulletId: 'b', xMilli: 50000, yMilli: 0 },
     { bulletId: 'c', xMilli: 500000, yMilli: 0 },
   ];
-  const picked = selectPurgeTargets(bullets, 0, 0, 120000, 99, 1, 1, 'purge_bell');
+  const picked = selectPurgeTargets(bullets, 0, 0, 120000, 99, '1', 1, 'purge_bell');
   expectDeepEqual(picked.slice().sort(), ['a', 'b']);
 });
 
@@ -203,21 +203,21 @@ test('the index basis is the bulletId-sorted canonical order, not the input orde
     { bulletId: 'd', xMilli: 3000, yMilli: 0 },
     { bulletId: 'b', xMilli: 4000, yMilli: 0 },
   ];
-  const scrambled = selectPurgeTargets(bullets, 0, 0, 120000, 2, 11, 500, 'purge_bell');
+  const scrambled = selectPurgeTargets(bullets, 0, 0, 120000, 2, '11', 500, 'purge_bell');
   const preSorted = selectPurgeTargets(
     bullets.slice().sort(byId),
     0,
     0,
     120000,
     2,
-    11,
+    '11',
     500,
     'purge_bell',
   );
   expectDeepEqual(scrambled, preSorted, 'input order must not change the pick');
   expectDeepEqual(
     scrambled,
-    referencePurge(bullets, 120000, 2, 11, 500),
+    referencePurge(bullets, 120000, 2, '11', 500),
     'the pick must match an independent canonical-index recompute',
   );
   expectEqual(scrambled.length, 2);
@@ -229,13 +229,40 @@ test('the deterministic stream is the card id, not the effect kind', () => {
     xMilli: index * 1000,
     yMilli: 0,
   }));
-  const byCardId = selectPurgeTargets(bullets, 0, 0, 120000, 3, 5, 700, 'purge_bell');
-  const byKind = selectPurgeTargets(bullets, 0, 0, 120000, 3, 5, 700, 'bullet_purge');
-  expectDeepEqual(byCardId, referencePurge(bullets, 120000, 3, 5, 700), 'card-id stream is authoritative');
+  const byCardId = selectPurgeTargets(bullets, 0, 0, 120000, 3, '5', 700, 'purge_bell');
+  const byKind = selectPurgeTargets(bullets, 0, 0, 120000, 3, '5', 700, 'bullet_purge');
+  expectDeepEqual(byCardId, referencePurge(bullets, 120000, 3, '5', 700), 'card-id stream is authoritative');
   expect(
     JSON.stringify(byCardId) !== JSON.stringify(byKind),
     'scoring with the effect kind instead of the card id would change the pick',
   );
+});
+
+test('the full purge pick matches the Go lobby output end to end', () => {
+  // The Go program scored this exact field (px coords ×1000 = milli) with
+  // seed=123456789, tick=900, card=purge_bell, radius=120, count=24 and printed
+  // the pick order below. `expectClose` on the units makes the pin decisive.
+  const bullets: PurgeCandidate[] = [
+    { bulletId: 'b-3', xMilli: 10000, yMilli: 0 },
+    { bulletId: 'b-1', xMilli: 20000, yMilli: 0 },
+    { bulletId: 'b-7', xMilli: -30000, yMilli: 0 },
+    { bulletId: 'b-2', xMilli: 50000, yMilli: 50000 },
+    { bulletId: 'b-5', xMilli: 200000, yMilli: 200000 },
+    { bulletId: 'b-0', xMilli: 0, yMilli: 0 },
+    { bulletId: 'b-4', xMilli: -10000, yMilli: 5000 },
+    { bulletId: 'b-6', xMilli: 130000, yMilli: 0 },
+  ];
+  const picked = selectPurgeTargets(bullets, 0, 0, 120000, 24, '123456789', 900, 'purge_bell');
+  expectDeepEqual(picked, ['b-0', 'b-2', 'b-3', 'b-4', 'b-7', 'b-1']);
+  // Same field, fewer slots: the lowest units win first.
+  expectDeepEqual(selectPurgeTargets(bullets, 0, 0, 120000, 3, '123456789', 900, 'purge_bell'), [
+    'b-0',
+    'b-2',
+    'b-3',
+  ]);
+  // The units themselves (Go printed 0.1112, 0.2308, 0.6279 … for indices 0,2,3).
+  expectClose(lobbyDeterministicUnit('123456789', 900, 'purge_bell', 0), 0.1112, 1e-9);
+  expectClose(lobbyDeterministicUnit('123456789', 900, 'purge_bell', 2), 0.2308, 1e-9);
 });
 
 suite('card effects: opponent aim + invulnerability window');

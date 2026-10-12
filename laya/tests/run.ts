@@ -28,6 +28,7 @@ import './lobby_business_surface.test';
 import './nakama_lobby_transport.test';
 import './checkin_shop.test';
 import './card_effects.test';
+import './lobby_rng.test';
 import './records_view.test';
 import './native_udp_datagram.test';
 import './native_window.test';

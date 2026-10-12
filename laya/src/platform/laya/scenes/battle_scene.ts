@@ -59,11 +59,18 @@ export interface BattleSceneOptions {
   /** Tick rate for the countdown clock. Defaults to the simulation's 60Hz. */
   tickRateHz?: number;
   /**
-   * Seed fed to the deterministic bullet-purge selection. The server derives it
-   * from the match seed; the scene only needs a stable value so the locally
-   * hidden bullets are the same ones on every render. Defaults to 0.
+   * Explicit override for the purge RNG seed, as decimal text. Intended for
+   * tests and offline demos; in a real match the seed comes from
+   * {@link serverSeedDecimal}. When neither is set the purge hides nothing
+   * (the deterministic pick is unknowable), never a silent `0`.
    */
-  cardEffectSeed?: number;
+  cardEffectSeed?: string;
+  /**
+   * Lazily read lobby match seed (`match.ServerSeed`) as decimal text, e.g.
+   * `bossRaceSeedFromHex(hex).decimal`. Lazy because the seed only arrives with
+   * `match_start` / the battle allocation, after sign-in.
+   */
+  serverSeedDecimal?: () => string;
   onMatchEnd?: (winnerPlayerId: string) => void;
 }
 
@@ -353,12 +360,20 @@ export class BattleScene implements ClientScene {
    * Picks the bullets a purge hides, from the **milli-unit** snapshot bullets so
    * the radius is compared in the server's own unit space. The choice is
    * deterministic (see `selectPurgeTargets`) so a repaint never flickers; the
-   * deterministic stream is the **card id**, matching the server's
+   * deterministic stream is the **card id** and the seed is the lobby match seed
+   * (`match.ServerSeed` as decimal text), matching the server's
    * `deterministicUnit(seed, tick, cardID, i)`.
+   *
+   * With no seed available (before `match_start`) nothing is hidden rather than
+   * falling back to a made-up seed, which would purge an arbitrary set.
    */
   private resolvePurgeTargets(cardId: string, radiusPx: number, count: number): Set<string> {
     const snapshot = this.authoritative ?? this.options.battle.simulationRef?.snapshot() ?? null;
     if (snapshot === null || radiusPx <= 0 || count <= 0) {
+      return new Set<string>();
+    }
+    const seedDecimal = this.options.cardEffectSeed ?? this.options.serverSeedDecimal?.() ?? '';
+    if (seedDecimal === '') {
       return new Set<string>();
     }
     const localId = this.options.localPlayerId();
@@ -372,7 +387,7 @@ export class BattleScene implements ClientScene {
       local.yMilli,
       purgeRadiusMilli(radiusPx),
       count,
-      this.options.cardEffectSeed ?? 0,
+      seedDecimal,
       snapshot.tick,
       cardId,
     );

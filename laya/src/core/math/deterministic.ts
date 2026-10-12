@@ -11,6 +11,13 @@
  *    (`PhK-BattleServer/src/boss_race.cpp`). The battle client MUST use this
  *    one so client-side prediction matches the server exactly.
  *
+ * ★ A third, **unrelated** function is also called `deterministicUnit`:
+ * `Gensoulkyo/runtime/core/simulation.go`'s SHA-256-based one, used by the Go
+ * lobby (card effects, synthetic danmaku). It shares the name and argument shape
+ * with {@link deterministicUnit} here but produces different output for the same
+ * input. Do not substitute one for the other — the lobby mirror lives in
+ * `core/math/lobby_rng.ts` (`lobbyDeterministicUnit`).
+ *
  * All arithmetic is done with 32-bit unsigned semantics via `Math.imul` and
  * `>>> 0`, matching the C++/GDScript `& 0xffffffff` masking.
  */

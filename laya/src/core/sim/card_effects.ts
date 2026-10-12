@@ -15,7 +15,7 @@
  * unit-testable and reusable by any renderer.
  */
 
-import { deterministicUnit } from '../math/deterministic';
+import { lobbyDeterministicUnit } from '../math/lobby_rng';
 import { MILLI_PER_PIXEL } from '../math/float_lib';
 
 /**
@@ -250,10 +250,11 @@ export interface PurgeCandidate {
  *     this order, but this sorts defensively so the caller's input order never
  *     changes the result.
  *  2. Score each bullet by its index `p` in that canonical order:
- *     `deterministicUnit(seed, tick, cardId, p)` (the Godot-convention
- *     `core/math/deterministic` stream the spec names:
- *     `deterministicUnit(match.ServerSeed, tick, cardID, i)`). The third
- *     argument is the **card id** (`'purge_bell'`), not the effect kind.
+ *     `deterministicUnit(seed, tick, cardID, p)`. ★ That is the **lobby's**
+ *     SHA-256 function (`core/math/lobby_rng.ts`), NOT the battle server's
+ *     same-named Godot mixer (`core/math/deterministic.ts`) — the two agree on
+ *     neither argument meaning nor output. The third argument is the **card id**
+ *     (`'purge_bell'`), not the effect kind.
  *  3. Keep the candidates within `radiusMilli` of the origin.
  *  4. Sort the survivors by `(unit asc, bulletId asc)` and take the first
  *     `count`.
@@ -263,6 +264,8 @@ export interface PurgeCandidate {
  * every later index.
  *
  * @param radiusMilli clear radius, already converted to milli units
+ * @param seedDecimal the lobby match seed as decimal text
+ *                    (`bossRaceSeedFromHex(hex).decimal`)
  * @param cardId the purge card's id, used as the deterministic stream
  */
 export function selectPurgeTargets(
@@ -271,7 +274,7 @@ export function selectPurgeTargets(
   originYMilli: number,
   radiusMilli: number,
   count: number,
-  seed: number,
+  seedDecimal: string,
   tick: number,
   cardId: string,
 ): string[] {
@@ -285,7 +288,7 @@ export function selectPurgeTargets(
     if (dx * dx + dy * dy > radiusSq) {
       continue;
     }
-    eligible.push({ bulletId: bullet.bulletId, unit: deterministicUnit(seed, tick, cardId, index) });
+    eligible.push({ bulletId: bullet.bulletId, unit: lobbyDeterministicUnit(seedDecimal, tick, cardId, index) });
   }
   eligible.sort((left, right) => (left.unit !== right.unit ? left.unit - right.unit : compareIds(left.bulletId, right.bulletId)));
   const limit = Math.max(0, Math.trunc(count));

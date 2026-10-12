@@ -7,6 +7,7 @@
 
 export * from './math/deterministic';
 export * from './math/hash64';
+export * from './math/lobby_rng';
 
 export * from './protocol/types';
 export * from './protocol/codec';

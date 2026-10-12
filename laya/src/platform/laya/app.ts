@@ -214,6 +214,17 @@ export class SpellKardApp {
       // server remains authoritative on when the match actually ends.
       matchTickLimit: BOSS_RACE_DEFAULT_MAX_TICKS,
       tickRateHz: BOSS_RACE_TICK_RATE_HZ,
+      // The purge RNG needs the lobby match seed (`match.ServerSeed`) as exact
+      // decimal text — the same `seedFrom(matchID)` the server hashes. Read it
+      // lazily: it only arrives with `match_start` / the battle allocation.
+      // `bossRaceSeedFromHex` keeps the full 64-bit width; an empty hex yields
+      // `''` (not `0`) so the scene hides nothing instead of purging a made-up
+      // set.
+      serverSeedDecimal: () => {
+        const hex =
+          this.flow.snapshot().match?.serverSeedHex ?? this.lobbyClient.allocation?.serverSeedHex ?? '';
+        return hex === '' ? '' : bossRaceSeedFromHex(hex).decimal;
+      },
       onMatchEnd: (winnerPlayerId) => this.onMatchEnd(winnerPlayerId),
     });
     this.resultScene = new ResultScene({
