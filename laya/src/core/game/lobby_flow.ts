@@ -14,6 +14,7 @@ import type {
   InventoryView,
   LobbyClient,
   MatchmakingTicketView,
+  RecordsView,
   RoomView,
   SessionState,
   ShopView,
@@ -31,6 +32,7 @@ export enum LobbyScreen {
   Checkin = 'checkin',
   Shop = 'shop',
   Inventory = 'inventory',
+  Records = 'records',
   Error = 'error',
 }
 
@@ -87,6 +89,8 @@ export interface LobbyFlowSnapshot {
   shop: ShopView | null;
   /** Owned card stacks, loaded while the inventory screen is open. */
   inventory: InventoryView | null;
+  /** Personal records dashboard, loaded while the records screen is open. */
+  records: RecordsView | null;
   /** Which form the login screen shows. */
   authMode: AuthMode;
   /** Username echoed back into the form after a failed attempt ('' initially). */
@@ -141,6 +145,7 @@ export class LobbyFlow {
   private checkin: CheckinView | null = null;
   private shop: ShopView | null = null;
   private inventory: InventoryView | null = null;
+  private records: RecordsView | null = null;
   private authMode: AuthMode = 'login';
   private authUsername = '';
   private authEmail = '';
@@ -220,6 +225,7 @@ export class LobbyFlow {
       checkin: this.checkin,
       shop: this.shop,
       inventory: this.inventory,
+      records: this.records,
       authMode: this.authMode,
       authUsername: this.authUsername,
       authEmail: this.authEmail,
@@ -271,6 +277,7 @@ export class LobbyFlow {
       this.checkin = null;
       this.shop = null;
       this.inventory = null;
+      this.records = null;
       this.setScreen(LobbyScreen.Login);
       this.fail(`Bootstrap failed: ${this.client.lastError || 'bootstrap_invalid_payload'}`);
       return false;
@@ -686,6 +693,22 @@ export class LobbyFlow {
     this.inventory = view;
     this.lastError = '';
     this.statusText = `Inventory: ${view.items.length} stack(s)`;
+    this.notify();
+    return true;
+  }
+
+  /** Opens the records screen and loads the personal record dashboard. */
+  async openRecords(): Promise<boolean> {
+    this.statusText = 'Loading records…';
+    this.setScreen(LobbyScreen.Records);
+    const view = await this.client.fetchRecords();
+    if (view === null) {
+      this.fail(`Records load failed: ${this.client.lastError}`);
+      return false;
+    }
+    this.records = view;
+    this.lastError = '';
+    this.statusText = `Records: ${view.wins}W-${view.losses}L-${view.draws}D`;
     this.notify();
     return true;
   }

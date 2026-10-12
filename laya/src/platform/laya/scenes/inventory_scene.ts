@@ -15,6 +15,7 @@
 
 import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow';
 import type { ChestPoolView, InventoryEntryView } from '../../../core/net/lobby_client';
+import { cardEffectDefinition, describeCardEffect, rarityLabel } from '../../../core/sim/card_effects';
 import * as theme from '../view/theme';
 import { createButtonEx, createCaption, createDivider, createPanel, type ButtonHandle } from './ui_kit';
 import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
@@ -152,7 +153,7 @@ export class InventoryScene implements ClientScene {
       row.size(contentWidth, ITEM_ROW_HEIGHT);
       row.addChild(createPanel(0, 0, contentWidth, ITEM_ROW_HEIGHT, { fill: theme.COLOR_PANEL_DEEP }));
       const label = this.makeText(
-        item.cardId || '—',
+        describeInventoryCard(item.cardId),
         contentWidth - theme.SPACE_MD * 2 - 160,
         theme.COLOR_TEXT,
         false,
@@ -163,7 +164,7 @@ export class InventoryScene implements ClientScene {
       label.overflow = 'hidden';
       row.addChild(label);
       const meta = this.makeText(
-        `Lv ${item.level} · ×${item.copies}`,
+        describeInventoryMeta(item),
         contentWidth - theme.SPACE_MD * 2,
         theme.COLOR_ACCENT,
         true,
@@ -316,4 +317,23 @@ export function formatCost(cost: Record<string, number>): string {
     .filter(([, amount]) => amount !== 0)
     .map(([currency, amount]) => `${amount} ${currency}`);
   return parts.length === 0 ? 'free' : parts.join(' · ');
+}
+
+/**
+ * Card-stack label: for a card the client has a definition for (the four new
+ * cards), append the one-line effect summary; otherwise just the raw id.
+ */
+export function describeInventoryCard(cardId: string): string {
+  if (cardId === '') {
+    return '—';
+  }
+  const summary = describeCardEffect(cardId);
+  return summary === '' ? cardId : `${cardId} · ${summary}`;
+}
+
+/** Card-stack meta line: rarity (when known) plus level and copy count. */
+export function describeInventoryMeta(entry: InventoryEntryView): string {
+  const definition = cardEffectDefinition(entry.cardId);
+  const base = `Lv ${entry.level} · ×${entry.copies}`;
+  return definition === null ? base : `${rarityLabel(definition.rarity)} · ${base}`;
 }

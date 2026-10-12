@@ -394,6 +394,89 @@ export interface ActivityClaimView {
   raw: Record<string, unknown>;
 }
 
+// ---------------------------------------------------------------------------
+// Card effects + personal records
+//
+// Field names mirror `card_records_spec.md` §1.3 (card snapshots) and §2.3
+// (`RecordsView`). The client exposes camelCase names while the payload
+// accessors accept both spellings, same as the rest of this file.
+// ---------------------------------------------------------------------------
+
+/**
+ * One live card effect on the field, mirroring the lobby's `ActiveCardSnapshot`.
+ *
+ * The four extra fields are optional and only meaningful for their own effect:
+ * `patternId` for `opponent_pattern`, `purgeRadius`/`purgeCount` for
+ * `bullet_purge`, and `targetUserId` for an effect aimed at another player.
+ */
+export interface ActiveCardSnapshot {
+  cardId: string;
+  effectKind: string;
+  /** Ticks the effect still has to run; `0` for one-shot effects. */
+  remainingTicks: number;
+  /** Total ticks the effect was granted for. */
+  durationTicks: number;
+  /** Curtain pattern id (`opponent_pattern`). */
+  patternId?: string;
+  /** Clear radius in playfield pixels (`bullet_purge`). */
+  purgeRadius?: number;
+  /** Bullets removed by the purge (`bullet_purge`). */
+  purgeCount?: number;
+  /** The player an effect is aimed at (`opponent_pattern`). */
+  targetUserId?: string;
+}
+
+/** One finished match, mirroring the lobby's `MatchHistoryEntry`. */
+export interface MatchHistoryEntryView {
+  matchId: string;
+  modeId: string;
+  stageId: string;
+  /** `win` | `loss` | `draw`. */
+  result: string;
+  score: number;
+  rankDelta: number;
+  opponentId: string;
+  grazeCount: number;
+  hitCount: number;
+  damageDealt: number;
+  cardPlays: number;
+  durationTicks: number;
+  endedAtMs: number;
+}
+
+/**
+ * `GET /v1/records` — the player's personal record dashboard, mirroring the
+ * lobby's `RecordsView`. `recent` is newest-first and capped at 20 server-side.
+ */
+export interface RecordsView {
+  ok: boolean;
+  userId: string;
+  displayName: string;
+  gold: number;
+  tickets: number;
+  /** Ranked points, i.e. `Certification.RankScore`. */
+  points: number;
+  ratingCode: string;
+  seasonId: string;
+  matchesPlayed: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  winRate: number;
+  bestScore: number;
+  averageScore: number;
+  totalGraze: number;
+  totalHits: number;
+  totalDamageDealt: number;
+  totalCardPlays: number;
+  deckCount: number;
+  cardCount: number;
+  recent: MatchHistoryEntryView[];
+  serverTimeMs: number;
+  serverAuthoritative: boolean;
+  clientResultAuthoritative: boolean;
+}
+
 export type LobbyEvent =
   | { kind: 'room_state'; room: RoomView }
   | {
@@ -1210,6 +1293,49 @@ export class LobbyClient {
   }
 
   /**
+   * `records.get` / `GET /v1/records` — the player's personal record dashboard.
+   *
+   * The response is the `RecordsView` itself (`ok` included), so the raw payload
+   * *is* the view; `recent` is taken verbatim in server order (newest first).
+   */
+  async fetchRecords(): Promise<RecordsView | null> {
+    const response = await this.call('records.get');
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    return {
+      ok: booleanField(payload, 'ok'),
+      userId: stringField(payload, 'user_id', 'userId'),
+      displayName: stringField(payload, 'display_name', 'displayName'),
+      gold: numberField(payload, 'gold'),
+      tickets: numberField(payload, 'tickets'),
+      points: numberField(payload, 'points'),
+      ratingCode: stringField(payload, 'rating_code', 'ratingCode'),
+      seasonId: stringField(payload, 'season_id', 'seasonId'),
+      matchesPlayed: numberField(payload, 'matches_played', 'matchesPlayed'),
+      wins: numberField(payload, 'wins'),
+      losses: numberField(payload, 'losses'),
+      draws: numberField(payload, 'draws'),
+      winRate: numberField(payload, 'win_rate', 'winRate'),
+      bestScore: numberField(payload, 'best_score', 'bestScore'),
+      averageScore: numberField(payload, 'average_score', 'averageScore'),
+      totalGraze: numberField(payload, 'total_graze', 'totalGraze'),
+      totalHits: numberField(payload, 'total_hits', 'totalHits'),
+      totalDamageDealt: numberField(payload, 'total_damage_dealt', 'totalDamageDealt'),
+      totalCardPlays: numberField(payload, 'total_card_plays', 'totalCardPlays'),
+      deckCount: numberField(payload, 'deck_count', 'deckCount'),
+      cardCount: numberField(payload, 'card_count', 'cardCount'),
+      recent: Array.isArray(payload.recent)
+        ? payload.recent.filter(isRecord).map((entry) => matchHistoryEntryFromPayload(entry))
+        : [],
+      serverTimeMs: timeFieldMs(payload, 'server_time', 'serverTime', 'server_time_ms', 'serverTimeMs'),
+      serverAuthoritative: booleanField(payload, 'server_authoritative', 'serverAuthoritative'),
+      clientResultAuthoritative: booleanField(payload, 'client_result_authoritative', 'clientResultAuthoritative'),
+    };
+  }
+
+  /**
    * Applies a `MatchStartMessage` (proto or JSON-shaped) delivered over the lobby
    * transport, and notifies listeners so the app can switch to the battle scene.
    */
@@ -1649,6 +1775,7 @@ const REST_ROUTES: Record<string, RestRoute> = {
   'shop.get': { method: 'GET', path: () => '/v1/shop' },
   'shop.purchase': { method: 'POST', path: () => '/v1/shop/purchase' },
   'chests.get': { method: 'GET', path: () => '/v1/chests' },
+  'records.get': { method: 'GET', path: () => '/v1/records' },
 };
 
 /** Configuration for {@link WsLobbyTransport}. */
@@ -2045,6 +2172,50 @@ function shopItemFromPayload(payload: Record<string, unknown>): ShopItemView {
     purchased: numberField(payload, 'purchased'),
     purchasable: booleanField(payload, 'purchasable'),
   };
+}
+
+/** One finished match, newest-first in `RecordsView.recent`. */
+function matchHistoryEntryFromPayload(payload: Record<string, unknown>): MatchHistoryEntryView {
+  return {
+    matchId: stringField(payload, 'match_id', 'matchId'),
+    modeId: stringField(payload, 'mode_id', 'modeId'),
+    stageId: stringField(payload, 'stage_id', 'stageId'),
+    result: stringField(payload, 'result'),
+    score: numberField(payload, 'score'),
+    rankDelta: numberField(payload, 'rank_delta', 'rankDelta'),
+    opponentId: stringField(payload, 'opponent_id', 'opponentId'),
+    grazeCount: numberField(payload, 'graze_count', 'grazeCount'),
+    hitCount: numberField(payload, 'hit_count', 'hitCount'),
+    damageDealt: numberField(payload, 'damage_dealt', 'damageDealt'),
+    cardPlays: numberField(payload, 'card_plays', 'cardPlays'),
+    durationTicks: numberField(payload, 'duration_ticks', 'durationTicks'),
+    endedAtMs: timeFieldMs(payload, 'ended_at', 'endedAt', 'ended_at_ms', 'endedAtMs'),
+  };
+}
+
+/** One live card effect; extra fields are only set when the wire carries them. */
+export function activeCardSnapshotFromPayload(payload: Record<string, unknown>): ActiveCardSnapshot {
+  const snapshot: ActiveCardSnapshot = {
+    cardId: stringField(payload, 'card_id', 'cardId'),
+    effectKind: stringField(payload, 'effect_kind', 'effectKind'),
+    remainingTicks: numberField(payload, 'remaining_ticks', 'remainingTicks'),
+    durationTicks: numberField(payload, 'duration_ticks', 'durationTicks'),
+  };
+  const patternId = stringField(payload, 'pattern_id', 'patternId');
+  if (patternId !== '') {
+    snapshot.patternId = patternId;
+  }
+  const targetUserId = stringField(payload, 'target_user_id', 'targetUserId');
+  if (targetUserId !== '') {
+    snapshot.targetUserId = targetUserId;
+  }
+  if ('purge_radius' in payload || 'purgeRadius' in payload) {
+    snapshot.purgeRadius = numberField(payload, 'purge_radius', 'purgeRadius');
+  }
+  if ('purge_count' in payload || 'purgeCount' in payload) {
+    snapshot.purgeCount = numberField(payload, 'purge_count', 'purgeCount');
+  }
+  return snapshot;
 }
 
 /**

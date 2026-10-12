@@ -34,6 +34,7 @@ export * from './net/battle_crypto';
 export * from './net/battle_client';
 
 export * from './sim/boss_race';
+export * from './sim/card_effects';
 
 export * from './settings';
 

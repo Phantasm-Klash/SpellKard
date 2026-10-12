@@ -5,12 +5,12 @@
  * The lobby is two levels inside a single scene, switched by `page` and grouped
  * visibility rather than separate screens:
  *
- *   - `menu` — the main menu: five buttons (Sign in/Sign out / Play / Check-in /
- *     Shop / Inventory) plus the shared profile card. The first button is
- *     context-sensitive: it reads `Sign in` (and opens the login screen) while
- *     signed out, and `Sign out` while signed in. Switching accounts is
+ *   - `menu` — the main menu: six buttons (Sign in/Sign out / Play / Check-in /
+ *     Shop / Inventory / Records) plus the shared profile card. The first button
+ *     is context-sensitive: it reads `Sign in` (and opens the login screen)
+ *     while signed out, and `Sign out` while signed in. Switching accounts is
  *     deliberately *not* a separate entry — `Sign out` already lands on the
- *     login form, and the menu stays at five buttons on purpose.
+ *     login form, and the menu stays at six buttons on purpose.
  *   - `play` — the play sub-page: the room-code card, create/join room, and the
  *     matchmaking queue controls, plus a Back button that returns to the menu.
  *
@@ -102,6 +102,7 @@ export class LobbyScene implements ClientScene {
   private readonly checkinButton: ButtonHandle;
   private readonly shopButton: ButtonHandle;
   private readonly inventoryButton: ButtonHandle;
+  private readonly recordsButton: ButtonHandle;
   /** Gold ring painted over the keyboard-highlighted button (shared overlay). */
   private readonly menuFocusRing: Laya.Sprite;
   /** Sprites shown only on the main menu. */
@@ -179,11 +180,11 @@ export class LobbyScene implements ClientScene {
     const contentY = profileY + profileHeight + sectionGap;
     const buttonX = margin;
 
-    // --- menu page: five buttons ---
+    // --- menu page: six buttons ---
     let y = contentY;
     // Context-sensitive: "Sign in" opens the login screen while signed out;
     // "Sign out" drops the session while signed in (see `refresh`). One button
-    // covers both so the menu never grows past five entries.
+    // covers both so the menu never grows past six entries.
     this.signInButton = createButton('Sign in', buttonX, y, contentWidth, () => this.onAccountButton());
     this.addToPage(this.menuSprites, this.signInButton.sprite);
     y += step;
@@ -202,6 +203,10 @@ export class LobbyScene implements ClientScene {
 
     this.inventoryButton = createButton('Inventory', buttonX, y, contentWidth, () => void this.openInventory());
     this.addToPage(this.menuSprites, this.inventoryButton.sprite);
+    y += step;
+
+    this.recordsButton = createButton('Records', buttonX, y, contentWidth, () => void this.openRecords());
+    this.addToPage(this.menuSprites, this.recordsButton.sprite);
 
     // --- play page: room-code card, then the room + queue actions ---
     const codeCardHeight = 96;
@@ -356,6 +361,7 @@ export class LobbyScene implements ClientScene {
         { handle: this.checkinButton, activate: () => void this.openCheckin() },
         { handle: this.shopButton, activate: () => this.openShop() },
         { handle: this.inventoryButton, activate: () => void this.openInventory() },
+        { handle: this.recordsButton, activate: () => void this.openRecords() },
       ];
     }
     return [
@@ -644,6 +650,7 @@ export class LobbyScene implements ClientScene {
     this.checkinButton.setEnabled(signedIn && !this.busy);
     this.shopButton.setEnabled(signedIn && !this.busy);
     this.inventoryButton.setEnabled(signedIn && !this.busy);
+    this.recordsButton.setEnabled(signedIn && !this.busy);
   }
 
   private cycleRoomCode(): void {
@@ -694,6 +701,10 @@ export class LobbyScene implements ClientScene {
 
   private async openInventory(): Promise<void> {
     await this.run(() => this.options.flow.openInventory());
+  }
+
+  private async openRecords(): Promise<void> {
+    await this.run(() => this.options.flow.openRecords());
   }
 
   /** Runs a flow action with the busy flag set and the screen refreshed after. */

@@ -35,6 +35,7 @@ export const SHORTCUT_SCOPES = [
   'checkin',
   'shop',
   'inventory',
+  'records',
   'settings',
 ] as const;
 export type ShortcutScope = (typeof SHORTCUT_SCOPES)[number];
@@ -431,6 +432,9 @@ export const DEFAULT_BINDINGS: readonly ShortcutBinding[] = [
   { action: 'ui.prev', scope: 'inventory', chord: { key: 'arrowup' }, label: 'Previous entry' },
   { action: 'ui.activate', scope: 'inventory', chord: { key: 'enter' }, label: 'Use' },
   { action: 'ui.back', scope: 'inventory', chord: { key: 'escape' }, label: 'Back' },
+  { action: 'ui.next', scope: 'records', chord: { key: 'arrowdown' }, label: 'Next entry' },
+  { action: 'ui.prev', scope: 'records', chord: { key: 'arrowup' }, label: 'Previous entry' },
+  { action: 'ui.back', scope: 'records', chord: { key: 'escape' }, label: 'Back' },
   { action: 'ui.activate', scope: 'result', chord: { key: 'enter' }, label: 'Continue' },
   { action: 'ui.back', scope: 'result', chord: { key: 'escape' }, label: 'Back to the lobby' },
 

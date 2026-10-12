@@ -34,6 +34,7 @@ import { CheckinScene } from './scenes/checkin_scene';
 import { InventoryScene } from './scenes/inventory_scene';
 import { LobbyScene } from './scenes/lobby_scene';
 import { LoginScene } from './scenes/login_scene';
+import { RecordsScene } from './scenes/records_scene';
 import { ResultScene } from './scenes/result_scene';
 import { RoomScene } from './scenes/room_scene';
 import { ShopScene } from './scenes/shop_scene';
@@ -89,6 +90,7 @@ export class SpellKardApp {
   private readonly checkinScene: CheckinScene;
   private readonly shopScene: ShopScene;
   private readonly inventoryScene: InventoryScene;
+  private readonly recordsScene: RecordsScene;
   /**
    * The single keyboard dispatcher. Screens never subscribe to raw key events;
    * they implement `ShortcutCapable` and `app.ts` routes actions to whichever
@@ -225,6 +227,7 @@ export class SpellKardApp {
     this.checkinScene = new CheckinScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
     this.shopScene = new ShopScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
     this.inventoryScene = new InventoryScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
+    this.recordsScene = new RecordsScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
 
     this.flow.onChange((snapshot) => this.onFlowChange(snapshot));
     this.battleClient.onResult((result) => {
@@ -332,6 +335,7 @@ export class SpellKardApp {
       this.checkinScene,
       this.shopScene,
       this.inventoryScene,
+      this.recordsScene,
     ];
   }
 
@@ -362,6 +366,9 @@ export class SpellKardApp {
         break;
       case LobbyScreen.Inventory:
         this.inventoryScene.applySnapshot(snapshot);
+        break;
+      case LobbyScreen.Records:
+        this.recordsScene.applySnapshot(snapshot);
         break;
       case LobbyScreen.Battle:
         break;
@@ -441,6 +448,8 @@ export class SpellKardApp {
         return this.shopScene;
       case LobbyScreen.Inventory:
         return this.inventoryScene;
+      case LobbyScreen.Records:
+        return this.recordsScene;
       default:
         return this.lobbyScene;
     }
@@ -472,6 +481,7 @@ export class SpellKardApp {
     checkin: CheckinScene;
     shop: ShopScene;
     inventory: InventoryScene;
+    records: RecordsScene;
     flow: LobbyFlow;
     /** Shared settings store, so the harness can drive values directly. */
     settings: SettingsStore;
@@ -496,6 +506,7 @@ export class SpellKardApp {
       checkin: this.checkinScene,
       shop: this.shopScene,
       inventory: this.inventoryScene,
+      records: this.recordsScene,
       flow: this.flow,
       settings: this.settings,
       shortcuts: this.shortcuts,

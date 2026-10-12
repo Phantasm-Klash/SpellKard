@@ -27,6 +27,8 @@ import './lobby_session.test';
 import './lobby_business_surface.test';
 import './nakama_lobby_transport.test';
 import './checkin_shop.test';
+import './card_effects.test';
+import './records_view.test';
 import './native_udp_datagram.test';
 import './native_window.test';
 import './laya_http_client.test';
