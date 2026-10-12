@@ -54,7 +54,7 @@ function referencePurge(
     .sort(byId)
     .map((bullet, index) => ({
       bulletId: bullet.bulletId,
-      unit: deterministicUnit(seed, tick, 'bullet_purge', index),
+      unit: deterministicUnit(seed, tick, 'purge_bell', index),
       dx: bullet.xMilli,
       dy: bullet.yMilli,
     }));
@@ -164,7 +164,7 @@ test('only in-radius bullets are eligible and the count caps the result', () => 
     { bulletId: 'near-3', xMilli: -3000, yMilli: -1000 },
     { bulletId: 'far', xMilli: 999999, yMilli: 0 },
   ];
-  const picked = selectPurgeTargets(bullets, 0, 0, 120000, 2, 7, 100, 'bullet_purge');
+  const picked = selectPurgeTargets(bullets, 0, 0, 120000, 2, 7, 100, 'purge_bell');
   expectEqual(picked.length, 2, 'count caps the selection');
   expect(!picked.includes('far'), 'a bullet outside the radius is never picked');
   for (const id of picked) {
@@ -178,11 +178,11 @@ test('the selection is deterministic and stable across calls', () => {
     xMilli: index * 1000,
     yMilli: 0,
   }));
-  const first = selectPurgeTargets(bullets, 0, 0, 120000, 4, 42, 900, 'bullet_purge');
-  const second = selectPurgeTargets(bullets, 0, 0, 120000, 4, 42, 900, 'bullet_purge');
+  const first = selectPurgeTargets(bullets, 0, 0, 120000, 4, 42, 900, 'purge_bell');
+  const second = selectPurgeTargets(bullets, 0, 0, 120000, 4, 42, 900, 'purge_bell');
   expectDeepEqual(first, second, 'same seed/tick/stream must pick the same bullets');
   expectEqual(first.length, 4);
-  const other = selectPurgeTargets(bullets, 0, 0, 120000, 4, 42, 901, 'bullet_purge');
+  const other = selectPurgeTargets(bullets, 0, 0, 120000, 4, 42, 901, 'purge_bell');
   expect(JSON.stringify(first) !== JSON.stringify(other), 'a different tick changes the draw');
 });
 
@@ -192,7 +192,7 @@ test('a count above the eligible population returns every eligible bullet', () =
     { bulletId: 'b', xMilli: 50000, yMilli: 0 },
     { bulletId: 'c', xMilli: 500000, yMilli: 0 },
   ];
-  const picked = selectPurgeTargets(bullets, 0, 0, 120000, 99, 1, 1, 'bullet_purge');
+  const picked = selectPurgeTargets(bullets, 0, 0, 120000, 99, 1, 1, 'purge_bell');
   expectDeepEqual(picked.slice().sort(), ['a', 'b']);
 });
 
@@ -203,7 +203,7 @@ test('the index basis is the bulletId-sorted canonical order, not the input orde
     { bulletId: 'd', xMilli: 3000, yMilli: 0 },
     { bulletId: 'b', xMilli: 4000, yMilli: 0 },
   ];
-  const scrambled = selectPurgeTargets(bullets, 0, 0, 120000, 2, 11, 500, 'bullet_purge');
+  const scrambled = selectPurgeTargets(bullets, 0, 0, 120000, 2, 11, 500, 'purge_bell');
   const preSorted = selectPurgeTargets(
     bullets.slice().sort(byId),
     0,
@@ -212,7 +212,7 @@ test('the index basis is the bulletId-sorted canonical order, not the input orde
     2,
     11,
     500,
-    'bullet_purge',
+    'purge_bell',
   );
   expectDeepEqual(scrambled, preSorted, 'input order must not change the pick');
   expectDeepEqual(
@@ -221,6 +221,21 @@ test('the index basis is the bulletId-sorted canonical order, not the input orde
     'the pick must match an independent canonical-index recompute',
   );
   expectEqual(scrambled.length, 2);
+});
+
+test('the deterministic stream is the card id, not the effect kind', () => {
+  const bullets: PurgeCandidate[] = Array.from({ length: 8 }, (_, index) => ({
+    bulletId: `b-${index}`,
+    xMilli: index * 1000,
+    yMilli: 0,
+  }));
+  const byCardId = selectPurgeTargets(bullets, 0, 0, 120000, 3, 5, 700, 'purge_bell');
+  const byKind = selectPurgeTargets(bullets, 0, 0, 120000, 3, 5, 700, 'bullet_purge');
+  expectDeepEqual(byCardId, referencePurge(bullets, 120000, 3, 5, 700), 'card-id stream is authoritative');
+  expect(
+    JSON.stringify(byCardId) !== JSON.stringify(byKind),
+    'scoring with the effect kind instead of the card id would change the pick',
+  );
 });
 
 suite('card effects: opponent aim + invulnerability window');

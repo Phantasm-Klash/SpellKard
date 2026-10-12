@@ -250,9 +250,10 @@ export interface PurgeCandidate {
  *     this order, but this sorts defensively so the caller's input order never
  *     changes the result.
  *  2. Score each bullet by its index `p` in that canonical order:
- *     `deterministicUnit(seed, tick, streamId, p)` (the Godot-convention
- *     `core/math/deterministic` stream the spec names; `streamId` is the card id,
- *     `'bullet_purge'`).
+ *     `deterministicUnit(seed, tick, cardId, p)` (the Godot-convention
+ *     `core/math/deterministic` stream the spec names:
+ *     `deterministicUnit(match.ServerSeed, tick, cardID, i)`). The third
+ *     argument is the **card id** (`'purge_bell'`), not the effect kind.
  *  3. Keep the candidates within `radiusMilli` of the origin.
  *  4. Sort the survivors by `(unit asc, bulletId asc)` and take the first
  *     `count`.
@@ -262,6 +263,7 @@ export interface PurgeCandidate {
  * every later index.
  *
  * @param radiusMilli clear radius, already converted to milli units
+ * @param cardId the purge card's id, used as the deterministic stream
  */
 export function selectPurgeTargets(
   bullets: readonly PurgeCandidate[],
@@ -271,7 +273,7 @@ export function selectPurgeTargets(
   count: number,
   seed: number,
   tick: number,
-  streamId: string,
+  cardId: string,
 ): string[] {
   const radiusSq = radiusMilli * radiusMilli;
   const canonical = bullets.slice().sort((left, right) => compareIds(left.bulletId, right.bulletId));
@@ -283,7 +285,7 @@ export function selectPurgeTargets(
     if (dx * dx + dy * dy > radiusSq) {
       continue;
     }
-    eligible.push({ bulletId: bullet.bulletId, unit: deterministicUnit(seed, tick, streamId, index) });
+    eligible.push({ bulletId: bullet.bulletId, unit: deterministicUnit(seed, tick, cardId, index) });
   }
   eligible.sort((left, right) => (left.unit !== right.unit ? left.unit - right.unit : compareIds(left.bulletId, right.bulletId)));
   const limit = Math.max(0, Math.trunc(count));

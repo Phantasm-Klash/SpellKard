@@ -336,7 +336,7 @@ export class BattleScene implements ClientScene {
       damage: event.damage ?? definition?.damage ?? 0,
     };
     if (effectKind === 'bullet_purge') {
-      effect.purgedIds = this.resolvePurgeTargets(purgeRadiusPx, purgeCount);
+      effect.purgedIds = this.resolvePurgeTargets(event.cardId, purgeRadiusPx, purgeCount);
     }
     if (effectKind === 'finisher') {
       this.lastFinisherDamage = effect.damage;
@@ -352,9 +352,11 @@ export class BattleScene implements ClientScene {
   /**
    * Picks the bullets a purge hides, from the **milli-unit** snapshot bullets so
    * the radius is compared in the server's own unit space. The choice is
-   * deterministic (see `selectPurgeTargets`) so a repaint never flickers.
+   * deterministic (see `selectPurgeTargets`) so a repaint never flickers; the
+   * deterministic stream is the **card id**, matching the server's
+   * `deterministicUnit(seed, tick, cardID, i)`.
    */
-  private resolvePurgeTargets(radiusPx: number, count: number): Set<string> {
+  private resolvePurgeTargets(cardId: string, radiusPx: number, count: number): Set<string> {
     const snapshot = this.authoritative ?? this.options.battle.simulationRef?.snapshot() ?? null;
     if (snapshot === null || radiusPx <= 0 || count <= 0) {
       return new Set<string>();
@@ -372,7 +374,7 @@ export class BattleScene implements ClientScene {
       count,
       this.options.cardEffectSeed ?? 0,
       snapshot.tick,
-      'bullet_purge',
+      cardId,
     );
     return new Set<string>(ids);
   }
