@@ -3,12 +3,14 @@
  * `RecordsView` from `card_records_spec.md` §2.3), the `records.get` REST route,
  * the `LobbyFlow` records screen, and the `ActiveCardSnapshot` accessor that
  * carries the new `pattern_id` / `purge_radius` / `purge_count` / `target_user_id`
- * fields.
+ * fields plus the `started_tick` / `expires_tick` window the wire really sends.
  */
 
 import {
   HttpLobbyTransport,
   LobbyClient,
+  activeCardDurationTicks,
+  activeCardRemainingTicks,
   activeCardSnapshotFromPayload,
   type HttpClient,
   type HttpResponseLike,
@@ -177,34 +179,54 @@ test('activeCardSnapshotFromPayload maps the base fields', () => {
   const snapshot = activeCardSnapshotFromPayload({
     card_id: 'aegis_ward',
     effect_kind: 'invulnerable',
-    remaining_ticks: 120,
-    duration_ticks: 180,
+    started_tick: 300,
+    expires_tick: 480,
   });
   expectEqual(snapshot.cardId, 'aegis_ward');
   expectEqual(snapshot.effectKind, 'invulnerable');
-  expectEqual(snapshot.remainingTicks, 120);
-  expectEqual(snapshot.durationTicks, 180);
+  expectEqual(snapshot.startedTick, 300);
+  expectEqual(snapshot.expiresTick, 480);
+  expectEqual(activeCardDurationTicks(snapshot), 180, 'duration is derived from the window');
+  expectEqual(activeCardRemainingTicks(snapshot, 360), 120, 'half-way through the window');
+  expectEqual(activeCardRemainingTicks(snapshot, 480), 0, 'the expiry tick reads zero');
+  expectEqual(activeCardRemainingTicks(snapshot, 900), 0, 'an expired effect floors at zero');
   expectEqual(snapshot.patternId, undefined, 'absent optional fields stay unset');
   expectEqual(snapshot.purgeRadius, undefined);
+});
+
+test('the parser ignores the phantom remaining_ticks / duration_ticks pair', () => {
+  // `Gensoulkyo/runtime/core/types.go` sends started_tick/expires_tick only; a
+  // payload shaped the old way must not silently produce a fake countdown.
+  const snapshot = activeCardSnapshotFromPayload({
+    card_id: 'aegis_ward',
+    effect_kind: 'invulnerable',
+    remaining_ticks: 120,
+    duration_ticks: 180,
+  });
+  expectEqual(snapshot.startedTick, 0);
+  expectEqual(snapshot.expiresTick, 0);
+  expectEqual(activeCardDurationTicks(snapshot), 0);
+  expectEqual(activeCardRemainingTicks(snapshot, 60), 0);
 });
 
 test('activeCardSnapshotFromPayload carries the new optional fields', () => {
   const purge = activeCardSnapshotFromPayload({
     card_id: 'purge_bell',
     effect_kind: 'bullet_purge',
-    remaining_ticks: 1,
-    duration_ticks: 1,
+    started_tick: 700,
+    expires_tick: 701,
     purge_radius: 120,
     purge_count: 24,
   });
   expectEqual(purge.purgeRadius, 120);
   expectEqual(purge.purgeCount, 24);
+  expectEqual(activeCardDurationTicks(purge), 1, 'a one-shot effect lasts a single tick');
 
   const aimed = activeCardSnapshotFromPayload({
     card_id: 'mirror_lance',
     effect_kind: 'opponent_pattern',
-    remaining_ticks: 300,
-    duration_ticks: 360,
+    started_tick: 100,
+    expires_tick: 460,
     pattern_id: 'mirror_lance',
     target_user_id: 'u-2',
   });

@@ -36,10 +36,15 @@ function byId(left: { bulletId: string }, right: { bulletId: string }): number {
 }
 
 /**
- * Independent reference for the canonical purge pick: score every bullet by its
- * index in the `bulletId`-sorted order, keep the in-radius ones, take the
- * `count` smallest units. Uses the **lobby's** SHA-256 `lobbyDeterministicUnit`
- * (not the Godot mixer) so it mirrors the server exactly.
+ * Reference for the canonical purge pick: score every bullet by its index in the
+ * `bulletId`-sorted order, keep the in-radius ones, take the `count` smallest
+ * units.
+ *
+ * Scope, stated honestly: this is independent of the implementation in the
+ * **index basis** (it re-derives the canonical order and re-applies the filter)
+ * but it deliberately calls the same `lobbyDeterministicUnit`. It therefore
+ * catches index/ordering/filter regressions, not RNG regressions. RNG
+ * independence is covered separately by the Go-pinned picks below.
  */
 function referencePurge(
   bullets: readonly PurgeCandidate[],
@@ -218,7 +223,7 @@ test('the index basis is the bulletId-sorted canonical order, not the input orde
   expectDeepEqual(
     scrambled,
     referencePurge(bullets, 120000, 2, '11', 500),
-    'the pick must match an independent canonical-index recompute',
+    'the pick must match a recompute over the same canonical-index basis and RNG',
   );
   expectEqual(scrambled.length, 2);
 });
@@ -239,10 +244,12 @@ test('the deterministic stream is the card id, not the effect kind', () => {
 });
 
 test('the full purge pick matches the Go lobby output end to end', () => {
-  // The Go program scored this exact field (px coords ×1000 = milli) with
-  // seed=123456789, tick=900, card=purge_bell, radius=120, count=24 and printed
-  // the pick order below. `expectClose` on the units makes the pin decisive.
-  const bullets: PurgeCandidate[] = [
+  // `/root/gotouhou/tmp/purge_picks_ref.go` scored these exact fields with the
+  // lobby's own `shortHash` / `deterministicUnit` and printed the picks pinned
+  // below. Hard-coding the literals — instead of recomputing with the client's
+  // own RNG — is what makes this an independent check of the RNG and not just
+  // of the index basis.
+  const f1: PurgeCandidate[] = [
     { bulletId: 'b-3', xMilli: 10000, yMilli: 0 },
     { bulletId: 'b-1', xMilli: 20000, yMilli: 0 },
     { bulletId: 'b-7', xMilli: -30000, yMilli: 0 },
@@ -252,14 +259,53 @@ test('the full purge pick matches the Go lobby output end to end', () => {
     { bulletId: 'b-4', xMilli: -10000, yMilli: 5000 },
     { bulletId: 'b-6', xMilli: 130000, yMilli: 0 },
   ];
-  const picked = selectPurgeTargets(bullets, 0, 0, 120000, 24, '123456789', 900, 'purge_bell');
-  expectDeepEqual(picked, ['b-0', 'b-2', 'b-3', 'b-4', 'b-7', 'b-1']);
-  // Same field, fewer slots: the lowest units win first.
-  expectDeepEqual(selectPurgeTargets(bullets, 0, 0, 120000, 3, '123456789', 900, 'purge_bell'), [
+  // `f2` keeps ids where byte order and numeric order disagree (`b-10` < `b-2`),
+  // so a `localeCompare`-style sort would pick a different set.
+  const f2: PurgeCandidate[] = [
+    { bulletId: 'b-10', xMilli: 5000, yMilli: 0 },
+    { bulletId: 'b-2', xMilli: 40000, yMilli: 0 },
+    { bulletId: 'b-1', xMilli: 90000, yMilli: 0 },
+    { bulletId: 'b-0', xMilli: -60000, yMilli: 0 },
+    { bulletId: 'b-20', xMilli: 15000, yMilli: 15000 },
+    { bulletId: 'b-3', xMilli: -20000, yMilli: 0 },
+    { bulletId: 'b-11', xMilli: 100000, yMilli: 0 },
+    { bulletId: 'b-4', xMilli: 0, yMilli: 30000 },
+  ];
+
+  // S1: the whole in-radius field, ordered by the lowest units.
+  expectDeepEqual(selectPurgeTargets(f1, 0, 0, 120000, 24, '123456789', 900, 'purge_bell'), [
     'b-0',
     'b-2',
     'b-3',
+    'b-4',
+    'b-7',
+    'b-1',
   ]);
+  // S2: same field at tick 0, three slots — a different draw, not a prefix.
+  expectDeepEqual(selectPurgeTargets(f1, 0, 0, 120000, 3, '123456789', 0, 'purge_bell'), [
+    'b-4',
+    'b-2',
+    'b-0',
+  ]);
+  // S3: a seed above 2^53 must survive the decimal-string trip intact.
+  expectDeepEqual(
+    selectPurgeTargets(f1, 0, 0, 120000, 4, '9007199254740993', 100, 'purge_bell'),
+    ['b-3', 'b-0', 'b-2', 'b-7'],
+  );
+  // S4/S5: byte-wise id order over `f2`.
+  expectDeepEqual(selectPurgeTargets(f2, 0, 0, 120000, 5, '123456789', 900, 'purge_bell'), [
+    'b-0',
+    'b-3',
+    'b-10',
+    'b-11',
+    'b-2',
+  ]);
+  expectDeepEqual(selectPurgeTargets(f2, 0, 0, 120000, 3, '42', 7, 'purge_bell'), [
+    'b-1',
+    'b-3',
+    'b-20',
+  ]);
+
   // The units themselves (Go printed 0.1112, 0.2308, 0.6279 … for indices 0,2,3).
   expectClose(lobbyDeterministicUnit('123456789', 900, 'purge_bell', 0), 0.1112, 1e-9);
   expectClose(lobbyDeterministicUnit('123456789', 900, 'purge_bell', 2), 0.2308, 1e-9);

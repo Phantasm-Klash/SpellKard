@@ -405,6 +405,12 @@ export interface ActivityClaimView {
 /**
  * One live card effect on the field, mirroring the lobby's `ActiveCardSnapshot`.
  *
+ * The wire carries the effect's window as two absolute ticks (`started_tick` /
+ * `expires_tick`) rather than a remaining/duration pair, so those are what this
+ * mirrors. Derive the rest with {@link activeCardDurationTicks} and
+ * {@link activeCardRemainingTicks} — the latter needs "now", which a payload
+ * parser cannot know.
+ *
  * The four extra fields are optional and only meaningful for their own effect:
  * `patternId` for `opponent_pattern`, `purgeRadius`/`purgeCount` for
  * `bullet_purge`, and `targetUserId` for an effect aimed at another player.
@@ -412,10 +418,10 @@ export interface ActivityClaimView {
 export interface ActiveCardSnapshot {
   cardId: string;
   effectKind: string;
-  /** Ticks the effect still has to run; `0` for one-shot effects. */
-  remainingTicks: number;
-  /** Total ticks the effect was granted for. */
-  durationTicks: number;
+  /** Server tick the effect was activated on. */
+  startedTick: number;
+  /** Server tick the effect expires on. */
+  expiresTick: number;
   /** Curtain pattern id (`opponent_pattern`). */
   patternId?: string;
   /** Clear radius in playfield pixels (`bullet_purge`). */
@@ -2198,8 +2204,8 @@ export function activeCardSnapshotFromPayload(payload: Record<string, unknown>):
   const snapshot: ActiveCardSnapshot = {
     cardId: stringField(payload, 'card_id', 'cardId'),
     effectKind: stringField(payload, 'effect_kind', 'effectKind'),
-    remainingTicks: numberField(payload, 'remaining_ticks', 'remainingTicks'),
-    durationTicks: numberField(payload, 'duration_ticks', 'durationTicks'),
+    startedTick: numberField(payload, 'started_tick', 'startedTick'),
+    expiresTick: numberField(payload, 'expires_tick', 'expiresTick'),
   };
   const patternId = stringField(payload, 'pattern_id', 'patternId');
   if (patternId !== '') {
@@ -2216,6 +2222,22 @@ export function activeCardSnapshotFromPayload(payload: Record<string, unknown>):
     snapshot.purgeCount = numberField(payload, 'purge_count', 'purgeCount');
   }
   return snapshot;
+}
+
+/**
+ * Ticks the effect was granted for. The wire only sends the start and expiry
+ * ticks, so the duration is derived here instead of being read off the payload.
+ */
+export function activeCardDurationTicks(snapshot: ActiveCardSnapshot): number {
+  return Math.max(0, snapshot.expiresTick - snapshot.startedTick);
+}
+
+/**
+ * Ticks left at `currentTick`, floored at zero so an expired effect reads `0`.
+ * Lives outside the parser because a payload has no notion of "now".
+ */
+export function activeCardRemainingTicks(snapshot: ActiveCardSnapshot, currentTick: number): number {
+  return Math.max(0, snapshot.expiresTick - currentTick);
 }
 
 /**
