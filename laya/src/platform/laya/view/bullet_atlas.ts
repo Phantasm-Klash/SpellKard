@@ -27,6 +27,11 @@
  * root that slices **at least one frame** — a wrong guess costs a couple of
  * failed loads instead of silently degrading the whole battle to vector art.
  *
+ * `image(name)` resolves a standalone image (the playfield backdrop, the stage
+ * backgrounds and the portraits). `load()` preloads the backdrop; anything else
+ * must be requested through {@link LayaAtlasFrameSource.ensureImage}, because
+ * `image()` alone only reads the loader cache and never triggers a fetch.
+ *
  * NOTE: `platform/laya/` only. Never import from `core/` other than the
  *       engine-agnostic descriptor / path / cache helpers.
  */
@@ -98,9 +103,19 @@ export const DEFAULT_TNA_ATLAS_ROOT = TNA_WEB_ROOT;
 export class LayaAtlasFrameSource implements BulletFrameSource, AtlasImageSource {
   private readonly imageCache = new AssetLookupCache<Laya.Texture>(() => this.loaded);
   private readonly frames = new Map<string, Laya.Texture>();
+  /**
+   * Images fetched on demand (backgrounds, portraits) through
+   * {@link ensureImage}. Kept separate from `imageCache` because a successful
+   * on-demand load must win over the `null` a pre-`load()` probe may have
+   * memoised, and because a failed on-demand fetch must NOT be cached (the
+   * layer retries on the next stage selection).
+   */
+  private readonly onDemandImages = new Map<string, Laya.Texture>();
   private readonly roots: readonly string[];
   private root: string;
   private loaded = false;
+  /** Shared promise so concurrent `load()` callers probe the roots only once. */
+  private loadPromise: Promise<void> | null = null;
 
   constructor(
     root?: string,
@@ -130,8 +145,18 @@ export class LayaAtlasFrameSource implements BulletFrameSource, AtlasImageSource
    * until one slices at least one frame. Resolves even when the loader is
    * unavailable (headless / offline), in which case the renderer keeps its
    * vector fallback.
+   *
+   * Memoised: concurrent callers (the view, the background and the watermark
+   * all kick it off) share one in-flight probe instead of racing it.
    */
-  async load(): Promise<void> {
+  load(): Promise<void> {
+    if (this.loadPromise === null) {
+      this.loadPromise = this.loadOnce();
+    }
+    return this.loadPromise;
+  }
+
+  private async loadOnce(): Promise<void> {
     if (this.loaded) {
       return;
     }
@@ -151,7 +176,37 @@ export class LayaAtlasFrameSource implements BulletFrameSource, AtlasImageSource
   }
 
   image(name: string): Laya.Texture | null {
+    const onDemand = this.onDemandImages.get(name);
+    if (onDemand !== undefined) {
+      return onDemand;
+    }
     return this.imageCache.resolve(name, () => this.readTexture(`${this.root}/${name}`));
+  }
+
+  /**
+   * Loads a standalone image (`name` relative to the TNA root, e.g.
+   * `bg_01_01.png`, `player/player_01.png`) and memoises a **successful** load.
+   *
+   * `load()` must have resolved the root first — callers await it. A failed
+   * fetch returns `null` and is deliberately not cached, so a later retry can
+   * still succeed; callers treat `null` as "no art" and degrade.
+   */
+  async ensureImage(name: string): Promise<Laya.Texture | null> {
+    const cached = this.onDemandImages.get(name);
+    if (cached !== undefined) {
+      return cached;
+    }
+    // A preloaded image (the backdrop) is already in the loader cache.
+    const preloaded = this.readTexture(`${this.root}/${name}`);
+    if (preloaded !== null) {
+      this.onDemandImages.set(name, preloaded);
+      return preloaded;
+    }
+    const loaded = await this.loadImage(`${this.root}/${name}`);
+    if (loaded !== null) {
+      this.onDemandImages.set(name, loaded);
+    }
+    return loaded;
   }
 
   /** Frame source that also resolves a `kEnemyBullet` value to its frame. */

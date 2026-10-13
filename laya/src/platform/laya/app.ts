@@ -4,9 +4,15 @@
  * Owns the LayaAir stage, the lobby/battle clients, the four screens and the
  * screen-switch policy driven by `LobbyFlow`. Platform adapters (socket, timer,
  * datagram, HTTP) are chosen here so the core stays platform-free.
+ *
+ * It also owns the battle "performance" wiring: the match-event poller (built
+ * on the REST transport, because `match.events` is forbidden on the Nakama RPC
+ * path) and the match snapshot that drives the stage background, the watermarks
+ * and the stage BGM. The `BattleScene` exposes the seams; this file feeds them.
  */
 
 import { bossRaceSeedFromHex } from '../../core/math/boss_race_seed';
+import { shortHashHex } from '../../core/math/lobby_rng';
 import { BattleClient } from '../../core/net/battle_client';
 import {
   HttpLobbyTransport,
@@ -15,6 +21,9 @@ import {
   WsLobbyTransport,
   type LobbySessionStore,
 } from '../../core/net/lobby_client';
+import { BattleEventPoller, type MatchEventsPage } from '../../core/net/battle_event_poller';
+import type { MatchEventView } from '../../core/game/battle_events';
+import { bossPortrait, characterPortrait, stageIndex } from '../../core/game/stage_art';
 import type { DatagramFactory, Logger, SocketFactory, TimerLike } from '../../core/net/transport';
 import { DEFAULT_MODE_ID, LobbyFlow, LobbyScreen, type LobbyFlowSnapshot } from '../../core/game/lobby_flow';
 import { BOSS_RACE_DEFAULT_BOSS_HP, BOSS_RACE_DEFAULT_MAX_TICKS, BOSS_RACE_TICK_RATE_HZ } from '../../core/sim/boss_race';
@@ -82,6 +91,14 @@ export class SpellKardApp {
   private readonly lobbyClient: LobbyClient;
   private readonly battleClient: BattleClient;
   private readonly input: LayaInput;
+  /**
+   * Polls the lobby's REST match-event stream and feeds the battle scene. Owned
+   * here (not by the scene) because it needs the REST transport; the scene's
+   * `onEnter`/`onExit` start and stop it through the performance callbacks.
+   */
+  private readonly battlePoller: BattleEventPoller;
+  /** Match whose events are being polled / whose roster ids resolve. */
+  private performanceMatchId = '';
   private readonly loginScene: LoginScene;
   private readonly lobbyScene: LobbyScene;
   private readonly roomScene: RoomScene;
@@ -147,6 +164,10 @@ export class SpellKardApp {
 
     this.lobbyClient = new LobbyClient({
       transport: lobbyTransport,
+      // `match.events` / `match.snapshot` are forbidden on the Nakama RPC path
+      // (403 client_operation_disallowed), so every fetch must go over REST
+      // regardless of which transport carries the business operations.
+      restTransport: httpTransport,
       logger: config.logger,
       deviceId: config.deviceId,
       clientBuild: config.clientBuild,
@@ -183,6 +204,24 @@ export class SpellKardApp {
       const ticketPlayerId = this.flow.snapshot().match?.playerId ?? '';
       return ticketPlayerId !== '' ? ticketPlayerId : this.lobbyClient.session?.playerId ?? '';
     };
+
+    // The match-event poller. Its source is backed by the REST transport (via
+    // `LobbyClient.fetchMatchEvents`), and its events drive the battle scene's
+    // card effects and SEs. 500 ms / 64 rows mirrors the server page cap.
+    this.battlePoller = new BattleEventPoller(
+      { fetchEvents: (matchId, after, limit) => this.fetchEventsPage(matchId, after, limit) },
+      this.timer,
+      {
+        intervalMs: 500,
+        limit: 64,
+        onEvents: (events) => this.onMatchEvents(events),
+        // The server dropped events we had not read; rebuild from the snapshot.
+        onGap: (matchId) => {
+          void this.enterBattlePerformance(matchId, true);
+        },
+        onError: (message) => console.warn(`[spellkard] match event poll failed: ${message}`),
+      },
+    );
 
     // The login screen is the entry point: `LobbyFlow` starts on
     // `LobbyScreen.Login`, so `start()` shows this scene first. It also gets the
@@ -225,6 +264,13 @@ export class SpellKardApp {
           this.flow.snapshot().match?.serverSeedHex ?? this.lobbyClient.allocation?.serverSeedHex ?? '';
         return hex === '' ? '' : bossRaceSeedFromHex(hex).decimal;
       },
+      // The scene's lifecycle starts/stops the poller; it owns no network itself.
+      onPerformanceEnter: () => {
+        if (this.performanceMatchId !== '' && !this.battlePoller.running) {
+          this.battlePoller.start(this.performanceMatchId);
+        }
+      },
+      onPerformanceExit: () => this.battlePoller.stop(),
       onMatchEnd: (winnerPlayerId) => this.onMatchEnd(winnerPlayerId),
     });
     this.resultScene = new ResultScene({
@@ -353,6 +399,10 @@ export class SpellKardApp {
   private onFlowChange(snapshot: LobbyFlowSnapshot): void {
     if (snapshot.screen === LobbyScreen.Battle && snapshot.match !== null) {
       this.ensureBattleConnected(snapshot);
+      // Record the match before the async snapshot so `onPerformanceEnter`
+      // (fired by the scene's `onEnter`, right after this) can start the poller.
+      this.performanceMatchId = snapshot.match.matchId;
+      void this.enterBattlePerformance(snapshot.match.matchId, false);
     }
     switch (snapshot.screen) {
       case LobbyScreen.Login:
@@ -411,7 +461,86 @@ export class SpellKardApp {
     });
   }
 
+  /**
+   * Fetches the match snapshot and applies it to the battle scene: stage
+   * background, watermarks and BGM. Called on entering a match and again on a
+   * poller gap (to rebuild the scene state the dropped events would have set).
+   *
+   * @param restartPoller force a cursor reset (a gap resync); otherwise the
+   *        poller is only started when it is not already running.
+   */
+  private async enterBattlePerformance(matchId: string, restartPoller: boolean): Promise<void> {
+    if (matchId === '') {
+      return;
+    }
+    const snapshot = await this.lobbyClient.fetchMatchSnapshot(matchId);
+    // The flow moved on while the snapshot was in flight: drop the stale result.
+    if (this.performanceMatchId !== matchId) {
+      return;
+    }
+    if (snapshot !== null) {
+      const stage = stageIndex(snapshot.stageId);
+      this.battleScene.setStage(stage);
+      this.battleScene.showCharacter(characterPortrait(snapshot.characterId));
+      // The snapshot carries no boss phase yet; phase 1 is the standing art.
+      this.battleScene.showBoss(bossPortrait(stage, 1), 1);
+      this.battleScene.playStageBgm(snapshot.stageId);
+    }
+    if (restartPoller || !this.battlePoller.running) {
+      this.battlePoller.start(matchId);
+    }
+  }
+
+  /** Stops polling and forgets the match. */
+  private stopBattlePerformance(): void {
+    this.battlePoller.stop();
+    this.performanceMatchId = '';
+  }
+
+  /**
+   * One REST page of the match-event stream, adapted to the poller's page shape.
+   *
+   * `oldestCursor` is set to the cursor we asked with, so the poller never
+   * reports a gap: the REST `MatchEventsView` (`LobbyClient.fetchMatchEvents`)
+   * does not expose the server's `oldest_cursor`, and guessing it would fire
+   * spurious snapshot rebuilds. The cost is that a real gap is not detected —
+   * the events that were dropped simply never play.
+   */
+  private async fetchEventsPage(matchId: string, after: number, limit: number): Promise<MatchEventsPage | null> {
+    const page = await this.lobbyClient.fetchMatchEvents(matchId, after, limit);
+    if (page === null) {
+      return null;
+    }
+    return { events: page.events, cursor: page.cursor, hasMore: page.hasMore, oldestCursor: after };
+  }
+
+  /** Feeds one page of match events into the battle scene's effect/SE bridge. */
+  private onMatchEvents(events: MatchEventView[]): void {
+    const resolveRosterId = (userId: string): string => this.resolveRosterId(userId);
+    for (const event of events) {
+      this.battleScene.applyMatchEvent(event, resolveRosterId);
+    }
+  }
+
+  /**
+   * Maps a lobby `user_id` to the battle roster id (`p-<hash>`).
+   *
+   * The lobby mints it as `"p-" + hex(sha256(matchID + ":" + userID)[:4])`
+   * (`Gensoulkyo/runtime/core/service.go` `playerIDForUser` / `shortHash`), and
+   * `shortHashHex` reproduces `shortHash` exactly, so the client derives the
+   * same id without a server round-trip. Before a match id is known the input is
+   * passed through unchanged.
+   */
+  private resolveRosterId(userId: string): string {
+    const matchId = this.performanceMatchId;
+    if (matchId === '' || userId === '') {
+      return userId;
+    }
+    return `p-${shortHashHex(`${matchId}:${userId}`)}`;
+  }
+
   private onMatchEnd(winnerPlayerId: string): void {
+    this.stopBattlePerformance();
     const match = this.flow.snapshot().match;
     this.flow.applyResult({
       matchId: match?.matchId ?? '',
@@ -468,6 +597,7 @@ export class SpellKardApp {
 
   destroy(): void {
     this.activeScene?.onExit();
+    this.battlePoller.stop();
     for (const scene of this.allScenes()) {
       scene.destroy();
     }

@@ -65,6 +65,12 @@ export interface BossRaceViewOptions {
    * backdrop image and keeps the vector playfield if it is unavailable.
    */
   backgroundTexture?: Laya.Texture;
+  /**
+   * Optional watermark layer (character/boss portraits). Inserted between the
+   * actor layer and the HUD strip, so portraits sit above the actors and below
+   * the status panel. Owned and sized by the caller.
+   */
+  watermark?: Laya.Sprite;
 }
 
 export class BossRaceView {
@@ -85,6 +91,7 @@ export class BossRaceView {
   private readonly backdrop: Laya.Sprite;
   private readonly bulletLayer: Laya.Sprite;
   private readonly actorLayer: Laya.Sprite;
+  private readonly watermark: Laya.Sprite | null;
   private readonly hudLayer: Laya.Sprite;
   private readonly hud: Laya.Text;
   private readonly bulletPool: Laya.Sprite[] = [];
@@ -109,6 +116,7 @@ export class BossRaceView {
     this.stageWidth = options.stageWidth ?? this.hudX + this.hudWidth;
     this.stageHeight = options.stageHeight ?? Math.max(this.playfieldY + this.layout.height, this.hudHeight);
     this.backgroundTexture = options.backgroundTexture ?? null;
+    this.watermark = options.watermark ?? null;
 
     // Real TNA art (Boss / player / backdrop) with vector fallback. The shared
     // source is only created when a caller has not supplied its own renderer or
@@ -140,6 +148,11 @@ export class BossRaceView {
     this.actorLayer.pos(this.playfieldX, this.playfieldY);
     this.root.addChild(this.bulletLayer);
     this.root.addChild(this.actorLayer);
+
+    // Watermark portraits sit above the actors but below the HUD strip.
+    if (this.watermark !== null) {
+      this.root.addChild(this.watermark);
+    }
 
     // Structured HUD panel: a vertical strip to the right of the playfield. It
     // can render either as vector cards (`hudState`) or as a plain text block
@@ -257,6 +270,12 @@ export class BossRaceView {
     this.playfield.pos(this.playfieldX, this.playfieldY);
     this.bulletLayer.pos(this.playfieldX, this.playfieldY);
     this.actorLayer.pos(this.playfieldX, this.playfieldY);
+    // Re-apply the watermark's stage-sized geometry. Its z-order was fixed at
+    // construction (above actors, below the HUD) and is left untouched.
+    if (this.watermark !== null) {
+      this.watermark.pos(0, 0);
+      this.watermark.size(this.stageWidth, this.stageHeight);
+    }
     this.hudLayer.pos(this.hudX, this.hudY);
     this.hud.pos(this.hudX + 8, this.hudY + 8);
     this.hud.width = this.hudWidth - 16;

@@ -5,6 +5,11 @@
  * the local prediction before the first snapshot arrives. The local
  * `BossRaceSimulation` still runs every tick so reconciliation metrics (position
  * error, state-hash match, hard-snap count) stay meaningful.
+ *
+ * On top of the playfield the scene owns the "performance" layers — a scrolling
+ * stage background, the character/boss watermarks, a stage-entrance cutscene and
+ * the battle audio. All of them advance off the scene's single fixed-tick timer
+ * (no extra timer), and none of them write to the battle simulation.
  */
 
 import type { BattleClient, BattleCorrectionMetrics } from '../../../core/net/battle_client';
@@ -13,6 +18,8 @@ import type { TimerLike } from '../../../core/net/transport';
 import { battleLayout, type BattleLayout } from '../../../core/game/battle_layout';
 import { buildBossRaceFrame, type BossRaceFrame, type PlayerRenderItem, type RenderPoint, PlayfieldTransform, bossOriginPixels } from '../../../core/game/boss_race_view_model';
 import { describeDirectionBits, encodeInput } from '../../../core/game/input';
+import { eventToSfx, toCardEffectEvent, type MatchEventView } from '../../../core/game/battle_events';
+import { defaultCutsceneSteps } from '../../../core/game/stage_visual';
 import type { BossRaceSnapshot } from '../../../core/sim/boss_race';
 import {
   BOSS_ORIGIN_X_MILLI,
@@ -31,12 +38,16 @@ import {
   type CardEffectKind,
 } from '../../../core/sim/card_effects';
 import type { LayaInput } from '../laya_input';
+import { BattleAudioManager } from '../audio_manager';
 import { BossRaceView } from '../view/boss_race_view';
 import { AtlasBulletRenderer } from '../view/bullets';
 import { sharedTnaFrameSource } from '../view/bullet_atlas';
+import { CutsceneOverlay } from '../view/cutscene';
 import type { HudState } from '../view/hud';
 import { fade } from '../view/sprites';
+import { StageBackgroundLayer } from '../view/stage_background';
 import * as theme from '../view/theme';
+import { WatermarkLayer } from '../view/watermark';
 import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
 import type { ClientScene } from './scene';
 
@@ -71,6 +82,14 @@ export interface BattleSceneOptions {
    * `match_start` / the battle allocation, after sign-in.
    */
   serverSeedDecimal?: () => string;
+  /**
+   * Called on `onEnter`. The app uses it to start the match-event poller (the
+   * scene itself owns no network source); optional so the scene still runs
+   * standalone.
+   */
+  onPerformanceEnter?: () => void;
+  /** Called on `onExit`; the app uses it to stop the match-event poller. */
+  onPerformanceExit?: () => void;
   onMatchEnd?: (winnerPlayerId: string) => void;
 }
 
@@ -128,6 +147,14 @@ export class BattleScene implements ClientScene {
   // once, not once per instance.
   private readonly bulletAtlas = sharedTnaFrameSource();
   private readonly bulletRenderer: AtlasBulletRenderer;
+  /** Scrolling stage background, painted under every other layer. */
+  private readonly stageBackground: StageBackgroundLayer;
+  /** Character/boss watermark portraits, above the actors and below the HUD. */
+  private readonly watermark: WatermarkLayer;
+  /** Stage-entrance cutscene, above the effects and below the PAUSED banner. */
+  private readonly cutscene: CutsceneOverlay;
+  /** Battle audio (stage BGM + match-event SEs). */
+  private readonly audio = new BattleAudioManager();
   /** Full-stage banner shown while the tick loop is held by `battle.pause`. */
   private readonly pauseOverlay: Laya.Text;
   /**
@@ -146,6 +173,12 @@ export class BattleScene implements ClientScene {
   private paused = false;
   private frame: BossRaceFrame | null = null;
   private matchEnded = false;
+  /** Lobby stage id whose BGM is playing (empty until the snapshot arrives). */
+  private stageId = '';
+  /** Cutscene banner text for the stage title. */
+  private stageTitle = 'BATTLE';
+  private characterPortraitName = '';
+  private bossPortraitName = '';
 
   constructor(options: BattleSceneOptions) {
     this.options = options;
@@ -159,6 +192,16 @@ export class BattleScene implements ClientScene {
     const artScale = this.geometry.playfield.width / 640;
     this.bulletRenderer = new AtlasBulletRenderer(this.bulletAtlas, artScale);
     void this.bulletAtlas.load();
+
+    // The scrolling background is the first child, so it paints under the
+    // playfield, the HUD strip and every overlay.
+    this.stageBackground = new StageBackgroundLayer();
+    this.root.addChild(this.stageBackground.root);
+
+    // The watermark is handed to the view so it can sit between the actors and
+    // the HUD strip; the view owns its z-order from then on.
+    this.watermark = new WatermarkLayer();
+
     this.view = new BossRaceView({
       layout: this.geometry.playfield,
       playfieldX: this.geometry.playfieldX,
@@ -169,6 +212,7 @@ export class BattleScene implements ClientScene {
       stageWidth: width,
       stageHeight: height,
       bulletRenderer: this.bulletRenderer,
+      watermark: this.watermark.root,
     });
     this.root.addChild(this.view.root);
 
@@ -184,6 +228,11 @@ export class BattleScene implements ClientScene {
     this.effectText.align = 'center';
     this.effectText.visible = false;
     this.root.addChild(this.effectText);
+
+    // The stage-entrance cutscene sits above the card effects but below the
+    // PAUSED banner (a pause should always win visually).
+    this.cutscene = new CutsceneOverlay();
+    this.root.addChild(this.cutscene.root);
 
     // The scene owns no HUD/status text of its own (the strip belongs to
     // `BossRaceView`), so the paused state is surfaced with a full-stage banner
@@ -221,6 +270,13 @@ export class BattleScene implements ClientScene {
     this.paused = false;
     this.pauseOverlay.visible = false;
     this.clearCardEffects();
+    // Reset the overlays, replay the entrance cutscene and (re)start the stage
+    // track from the stage the snapshot last reported.
+    this.resetOverlays();
+    this.cutscene.play(defaultCutsceneSteps(this.stageTitle));
+    this.audio.playStageBgm(this.stageId);
+    // Let the app start its match-event poller; the scene owns no network.
+    this.options.onPerformanceEnter?.();
     this.start();
   }
 
@@ -230,6 +286,10 @@ export class BattleScene implements ClientScene {
     this.paused = false;
     this.pauseOverlay.visible = false;
     this.clearCardEffects();
+    this.resetOverlays();
+    // Nothing should bleed across screens.
+    this.audio.stopAll();
+    this.options.onPerformanceExit?.();
     this.stop();
   }
 
@@ -238,7 +298,63 @@ export class BattleScene implements ClientScene {
     this.stop();
     this.clearCardEffects();
     this.view.destroy();
+    this.stageBackground.destroy();
+    this.watermark.destroy();
+    this.cutscene.destroy();
     this.root.destroy(true);
+  }
+
+  /** Resets the transient overlay state (the entrance cutscene). */
+  private resetOverlays(): void {
+    this.cutscene.reset();
+  }
+
+  /**
+   * Selects the stage background (reference stage 1..4) and the banner text for
+   * the entrance cutscene. Called by the app once the match snapshot resolves.
+   */
+  setStage(stage: number): void {
+    this.stageBackground.setStage(stage);
+    this.stageTitle = stage >= 1 ? `STAGE ${stage}` : 'BATTLE';
+  }
+
+  /** Sets the local character's watermark portrait (TNA-root-relative name). */
+  showCharacter(portrait: string): void {
+    this.characterPortraitName = portrait;
+    this.watermark.showCharacter(portrait);
+    this.cutscene.setPortraits(portrait, this.bossPortraitName);
+  }
+
+  /** Sets the boss watermark portrait (TNA-root-relative name) and its phase. */
+  showBoss(portrait: string, phase: number): void {
+    this.bossPortraitName = portrait;
+    this.watermark.showBoss(portrait, phase);
+    this.cutscene.setPortraits(this.characterPortraitName, portrait);
+  }
+
+  /** Starts (or restarts) the stage BGM. An unknown id plays nothing. */
+  playStageBgm(stageId: string): void {
+    this.stageId = stageId;
+    this.audio.playStageBgm(stageId);
+  }
+
+  /**
+   * Bridges one lobby match event into the scene's visuals and audio: card
+   * effects are presented through {@link applyCardEffect}, and the event's SE
+   * channel (when any) plays through the throttled audio manager.
+   *
+   * @param resolveRosterId maps the event's lobby `user_id` to the battle roster
+   *        id (`p-<hash>`); see `app.ts` for how it is derived.
+   */
+  applyMatchEvent(event: MatchEventView, resolveRosterId: (userId: string) => string): void {
+    const effect = toCardEffectEvent(event, resolveRosterId);
+    if (effect !== null) {
+      this.applyCardEffect(effect);
+    }
+    const sfx = eventToSfx(event);
+    if (sfx !== null) {
+      this.audio.playSfx(sfx);
+    }
   }
 
   /** Drops every card effect and its overlay paint. */
@@ -259,6 +375,10 @@ export class BattleScene implements ClientScene {
     this.geometry = battleLayout(width, height);
     this.root.size(width, height);
     this.pauseOverlay.size(width, height);
+    // The performance overlays cover the whole stage, HUD strip included.
+    this.stageBackground.relayout(width, height);
+    this.watermark.relayout(width, height);
+    this.cutscene.relayout(width, height);
     // Effect overlay works in playfield-local pixels, so it shares the
     // playfield's origin and size; the readout sits in the HUD strip.
     this.effectLayer.pos(this.geometry.playfieldX, this.geometry.playfieldY);
@@ -304,6 +424,15 @@ export class BattleScene implements ClientScene {
   /** Debug-only: direct view access for the local screenshot harness. */
   get __debugView(): BossRaceView {
     return this.view;
+  }
+
+  /** Debug-only: the performance overlays, for the screenshot harness. */
+  get __debugOverlays(): {
+    background: StageBackgroundLayer;
+    watermark: WatermarkLayer;
+    cutscene: CutsceneOverlay;
+  } {
+    return { background: this.stageBackground, watermark: this.watermark, cutscene: this.cutscene };
   }
 
   /** Debug-only: card effects currently being animated. */
@@ -445,6 +574,10 @@ export class BattleScene implements ClientScene {
 
   /** One simulation tick: read input, send it, advance prediction, render. */
   step(): void {
+    // The performance overlays animate off this same fixed-tick clock, so they
+    // keep running even while the battle connection is not yet `Running` (the
+    // entrance cutscene must play before the first snapshot arrives).
+    this.updateOverlays(this.options.battle.tickIntervalMs);
     const battle = this.options.battle;
     if (battle.state !== BattleConnectionState.Running) {
       this.renderFrame();
@@ -465,6 +598,13 @@ export class BattleScene implements ClientScene {
     battle.tick();
     this.pruneEffects();
     this.renderFrame();
+  }
+
+  /** Advances the background, watermark and cutscene by one tick. */
+  private updateOverlays(dtMs: number): void {
+    this.stageBackground.update(dtMs);
+    this.watermark.update(dtMs);
+    this.cutscene.update(dtMs);
   }
 
   /** Drops card effects whose visual window has elapsed. */

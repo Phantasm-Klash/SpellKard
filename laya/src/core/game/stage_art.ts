@@ -28,7 +28,12 @@
  * | `wide`               | `player_03.png` |
  * | `spell_power`        | `player_04.png` |
  *
- * Asset layout (relative to the TNA resource root, see `tna_assets.ts`):
+ * ★ Every function below returns a path **relative to the TNA resource root**
+ * (see `tna_assets.ts`), e.g. `bg_01_01.png`, `player/player_01.png`,
+ * `boss/boss_01_11.png`, `audio/bgm_stage_01_11.mp3`. The caller joins the name
+ * onto the deployment root with `tnaAssetUrl(name, isNativeAssetRuntime())` —
+ * the name helpers must never carry the `tna/` segment themselves, or the join
+ * would double it. Asset layout:
  * `bg_XX_01.png` / `bg_XX_02.png` for the two background layers,
  * `player/player_XX.png` for the character watermark, `boss/boss_XX_YY.png`
  * for the boss watermark (`XX` = stage, `YY` = phase) and
@@ -36,8 +41,6 @@
  *
  * NOTE: `core/` only — never import Laya or platform code from here.
  */
-
-import { TNA_ASSET_DIR } from './tna_assets';
 
 /** The four lobby stage ids, in reference-stage order (`service.go:453`). */
 export const STAGE_IDS = ['starlit_lanes', 'misty_crossfire', 'clockwork_bloom', 'lunar_maze'] as const;
@@ -102,18 +105,21 @@ export function bossPortrait(stage: number, phase: number): string {
 }
 
 /**
- * Joins a file name onto the TNA audio root. Kept as a helper (rather than
- * inlining the template) so the audio root stays defined in exactly one place
- * if the resource layout ever moves.
+ * Joins an audio file name onto the TNA root's `audio/` directory, returning a
+ * **TNA-root-relative** path (e.g. `audio/bgm_stage_01_11.mp3`), consistent with
+ * {@link backgroundNames} / {@link characterPortrait} / {@link bossPortrait}.
+ * The caller adds the deployment root with `tnaAssetUrl(path, native)`.
  */
 export function tnaAudioUrl(fileName: string): string {
-  return `${TNA_ASSET_DIR}/audio/${fileName}`;
+  return `audio/${fileName}`;
 }
 
 /**
- * Stage BGM URL, or `''` for an unknown stage id (silent degradation: this
- * build ships no audio assets yet, and `playBgm` treats `''` as "nothing to
- * play"). The `_11` suffix is the track slot inside the stage's audio set.
+ * Stage BGM path **relative to the TNA root** (e.g. `audio/bgm_stage_01_11.mp3`),
+ * or `''` for an unknown stage id (silent degradation: `playBgm` treats `''` as
+ * "nothing to play"). Join it with `tnaAssetUrl(stageBgmUrl(id), isNativeAssetRuntime())`
+ * before handing it to the audio layer. The `_11` suffix is the track slot
+ * inside the stage's audio set.
  */
 export function stageBgmUrl(stageId: string): string {
   const stage = stageIndex(stageId);

@@ -44,6 +44,20 @@ export function resolveTnaAtlasRoot(native: boolean): string {
 }
 
 /**
+ * Joins a **TNA-root-relative** path onto a deployment's TNA root.
+ *
+ * `relativePath` is always relative to the TNA root itself (e.g.
+ * `audio/bgm_stage_01_11.mp3`, `bg_01_01.png`, `player/player_01.png`) — the
+ * `stage_art.ts` name helpers deliberately return root-relative names — so this
+ * is the single place that knows the deployment root and adds it exactly once.
+ * A leading `/` is tolerated and stripped, so `'/audio/x.mp3'` and
+ * `'audio/x.mp3'` join identically (and the `tna` segment is never doubled).
+ */
+export function tnaAssetUrl(relativePath: string, native: boolean): string {
+  return `${resolveTnaAtlasRoot(native)}/${relativePath.replace(/^\/+/, '')}`;
+}
+
+/**
  * Detects the LayaNative runtime by the presence of the `conch` global, which
  * the engine itself uses (`LayaEnv.isConch = window.conch != null`). Kept as a
  * pure scope probe so it is testable without a live runtime.

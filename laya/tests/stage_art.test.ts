@@ -1,10 +1,15 @@
 /**
- * `core/game/stage_art` — the stage/character/boss → asset-name table.
+ * `core/game/stage_art` — the stage/character/boss → asset-name table, and the
+ * `tnaAssetUrl` join that adds the deployment root to a root-relative name.
  *
  * The expected values are hand-derived from the reference contract (the four
  * lobby stage ids in declaration order, the four character portraits and the
- * `bg_XX_01/02.png` / `boss_XX_YY.png` / `bgm_stage_0X_11.mp3` layouts), not
- * read back out of the implementation, so a wrong mapping fails the test.
+ * `bg_XX_01/02.png` / `boss_XX_YY.png` / `audio/bgm_stage_0X_11.mp3` layouts),
+ * not read back out of the implementation, so a wrong mapping fails the test.
+ *
+ * ★ Every name helper returns a path **relative to the TNA root** (no `tna`
+ * segment); the caller joins it with `tnaAssetUrl(name, native)`, which must add
+ * the root exactly once.
  */
 
 import {
@@ -15,6 +20,7 @@ import {
   stageBgmUrl,
   stageIndex,
 } from '../src/core/game/stage_art';
+import { TNA_NATIVE_ROOT, TNA_WEB_ROOT, tnaAssetUrl } from '../src/core/game/tna_assets';
 import { expect, expectDeepEqual, expectEqual, suite, test } from './harness';
 
 suite('stage art mapping');
@@ -84,7 +90,7 @@ test('unknown bosses fall back to stage 1 phase 1 without throwing', () => {
   expectEqual(bossPortrait(Number.NaN, 1), 'boss/boss_01_01.png');
 });
 
-test('stageBgmUrl builds the per-stage track under the tna audio root', () => {
+test('stageBgmUrl builds the per-stage track relative to the tna root', () => {
   const expected: Record<string, string> = {
     starlit_lanes: 'bgm_stage_01_11.mp3',
     misty_crossfire: 'bgm_stage_02_11.mp3',
@@ -95,9 +101,8 @@ test('stageBgmUrl builds the per-stage track under the tna audio root', () => {
   for (const stageId of STAGE_IDS) {
     const url = stageBgmUrl(stageId);
     expect(url !== '', `stage ${stageId} must have a BGM url`);
-    expect(url.includes('tna'), `url must carry the tna root segment: ${url}`);
-    expect(url.includes('/audio/'), `url must sit under the audio directory: ${url}`);
-    expect(url.endsWith(`/audio/${expected[stageId]}`), `track for ${stageId}: ${url}`);
+    expect(!url.includes('tna'), `url must be TNA-root-relative (no tna segment): ${url}`);
+    expectEqual(url, `audio/${expected[stageId]}`, `track for ${stageId}`);
     expect(!seen.has(url), `stage ${stageId} must not reuse another stage's track`);
     seen.add(url);
   }
@@ -107,4 +112,19 @@ test('stageBgmUrl is empty for an unknown stage id', () => {
   expectEqual(stageBgmUrl(''), '');
   expectEqual(stageBgmUrl('not_a_stage'), '');
   expectEqual(stageBgmUrl('STARLIT_LANES'), '', 'the id is case-sensitive');
+});
+
+test('tnaAssetUrl adds the deployment root exactly once, for both deployments', () => {
+  // Audio (TNA-root-relative → joined).
+  expectEqual(tnaAssetUrl(stageBgmUrl('starlit_lanes'), false), `${TNA_WEB_ROOT}/audio/bgm_stage_01_11.mp3`);
+  expectEqual(tnaAssetUrl(stageBgmUrl('starlit_lanes'), true), `${TNA_NATIVE_ROOT}/audio/bgm_stage_01_11.mp3`);
+  // Backgrounds and portraits join the same way.
+  expectEqual(tnaAssetUrl(backgroundNames(3)[0], false), `${TNA_WEB_ROOT}/bg_03_01.png`);
+  expectEqual(tnaAssetUrl(characterPortrait('wide'), true), `${TNA_NATIVE_ROOT}/player/player_03.png`);
+  expectEqual(tnaAssetUrl(bossPortrait(2, 2), false), `${TNA_WEB_ROOT}/boss/boss_02_02.png`);
+  // The web root already contains `tna`, so the segment must appear exactly once.
+  for (const native of [false, true]) {
+    const joined = tnaAssetUrl(stageBgmUrl('lunar_maze'), native);
+    expectEqual(joined.split('tna').length - 1, 1, `the tna segment must appear exactly once: ${joined}`);
+  }
 });
