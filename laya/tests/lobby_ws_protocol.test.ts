@@ -58,6 +58,12 @@ class FakeSocket implements SocketLike {
     this.handlers.onClose?.(code, reason);
   }
 
+  /** Simulates the socket finishing its handshake. */
+  emitOpen(): void {
+    this.connected = true;
+    this.handlers.onOpen?.();
+  }
+
   frame(index: number): Record<string, unknown> {
     return JSON.parse(this.sent[index] ?? '{}') as Record<string, unknown>;
   }
@@ -75,6 +81,15 @@ class RecordingFallback implements LobbyTransport {
 
   close(): void {
     // nothing to release
+  }
+}
+
+/** Fallback that records the session tokens pushed to it. */
+class TokenRecordingFallback extends RecordingFallback {
+  readonly tokens: string[] = [];
+
+  setSessionToken(token: string): void {
+    this.tokens.push(token);
   }
 }
 
@@ -526,4 +541,90 @@ test('battle allocation/ticket map to the routes runtime/httpapi actually serves
   expectEqual(seen[0]?.path, '/v1/matches/match_000080/battle-allocation');
   expectEqual(seen[1]?.method, 'POST');
   expectEqual(seen[1]?.path, '/v1/matches/match_000080/battle-ticket');
+});
+
+suite('lobby ws account-session authentication');
+
+test('setSessionToken re-authenticates the connection with the session token', () => {
+  // The lobby authenticates the CONNECTION, not each message: `rooms.create`
+  // and friends call `requireAuth()` on the socket. Anonymous sign-in bound it
+  // by routing `auth.anonymous` over the socket, but an account sign-in has no
+  // WS route and falls back to HTTP, so the socket stayed unauthenticated and
+  // every room operation answered `unauthorized`. This is that gap.
+  const socket = new FakeSocket();
+  const transport = new WsLobbyTransport(socket, { userId: 'device-1' });
+  expectEqual(socket.sent.length, 0, 'nothing is sent before a session exists');
+
+  transport.setSessionToken('acct-token');
+
+  expectEqual(socket.sent.length, 1);
+  const frame = socket.frame(0);
+  expectEqual(frame.type, LOBBY_MESSAGE.AuthRequest);
+  const payload = frame.payload as Record<string, unknown>;
+  expectEqual(payload.session_token, 'acct-token');
+  expectEqual(payload.user_id, 'device-1');
+});
+
+test('setSessionToken forwards to the fallback as well', () => {
+  const socket = new FakeSocket();
+  const fallback = new TokenRecordingFallback();
+  const transport = new WsLobbyTransport(socket, { fallback });
+  transport.setSessionToken('acct-token');
+  // The HTTP fallback authenticates with a bearer header; it must learn the
+  // token too or every non-WS operation would stay anonymous.
+  expectEqual(fallback.tokens.length, 1);
+  expectEqual(fallback.tokens[0], 'acct-token');
+});
+
+test('an empty session token never re-authenticates', () => {
+  const socket = new FakeSocket();
+  const transport = new WsLobbyTransport(socket, { userId: 'device-1' });
+  transport.setSessionToken('');
+  expectEqual(socket.sent.length, 0, 'signing out must not send an auth frame');
+});
+
+test('a session installed before the socket opens binds when it opens', () => {
+  const socket = new FakeSocket();
+  socket.connected = false;
+  const transport = new WsLobbyTransport(socket, { userId: 'device-2' });
+
+  transport.setSessionToken('late-token');
+  expectEqual(socket.sent.length, 0, 'a closed socket cannot be authenticated yet');
+
+  socket.emitOpen();
+  expectEqual(socket.sent.length, 1, 'the pending session is bound on open');
+  const payload = socket.frame(0).payload as Record<string, unknown>;
+  expectEqual(payload.session_token, 'late-token');
+});
+
+test('the auth response resolves without leaking into push events', () => {
+  const socket = new FakeSocket();
+  const transport = new WsLobbyTransport(socket, { userId: 'device-3' });
+  const events: string[] = [];
+  transport.onEvent((event) => events.push(event.kind));
+
+  transport.setSessionToken('acct-token');
+  socket.deliver(encodeLobbyEnvelope(LOBBY_MESSAGE.AuthResponse, { user_id: 'acct-1' }, 0));
+  expectEqual(events.length, 0, 'an auth response is a reply, not a pushed event');
+});
+
+test('signing out drops the connection so the server-side binding is released', () => {
+  // The lobby registers the connection under the session it authenticated
+  // with. Leaving that binding in place means the next sign-in for the same
+  // account supersedes it, and the server pushes `session_replaced` + closes
+  // the socket the client is still using.
+  const socket = new FakeSocket();
+  const transport = new WsLobbyTransport(socket, { userId: 'device-4' });
+  transport.setSessionToken('acct-token');
+  expectEqual(socket.connected, true);
+
+  transport.setSessionToken('');
+  expectEqual(socket.connected, false, 'sign-out abandons the connection');
+});
+
+test('signing out without a session does not disturb the socket', () => {
+  const socket = new FakeSocket();
+  const transport = new WsLobbyTransport(socket, { userId: 'device-5' });
+  transport.setSessionToken('');
+  expectEqual(socket.connected, true, 'there was no binding to release');
 });

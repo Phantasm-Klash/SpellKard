@@ -1835,6 +1835,12 @@ export class WsLobbyTransport implements LobbyTransport {
   private readonly userId: string;
   private readonly reconnect: (() => SocketLike) | null;
   private sequence = 0;
+  /**
+   * The session this connection is (or should be) authenticated as. Kept so a
+   * socket that opens *after* the session was installed can still be bound to
+   * it — see {@link authenticateConnection}.
+   */
+  private sessionToken = '';
   /** Set when the connection is known to be down (server close / network drop). */
   private closed = false;
   /**
@@ -1888,6 +1894,11 @@ export class WsLobbyTransport implements LobbyTransport {
     const resolve = this.openResolver;
     this.openResolver = null;
     resolve?.(true);
+    // A session installed before the socket finished connecting still has to
+    // bind: `setSessionToken` could not send anything while it was closed.
+    if (this.sessionToken !== '' && !this.disposed) {
+      void this.authenticateConnection(this.sessionToken);
+    }
   }
 
   private handleError(error: Error): void {
@@ -1979,8 +1990,84 @@ export class WsLobbyTransport implements LobbyTransport {
     this.rejectAll('lobby_ws_closed');
   }
 
+  /**
+   * Binds this connection to a session.
+   *
+   * The lobby WS authenticates the **connection**, not each message:
+   * `handleAuth` stores the token on the client and every connection-scoped
+   * handler (`rooms.create`, `rooms.join`, `bootstrap`, `presence.heartbeat`)
+   * starts with `requireAuth()`, which fails on an unauthenticated socket.
+   *
+   * Anonymous sign-in never exposed this because `LobbyClient.loginAnonymous`
+   * routes `auth.anonymous` — which the server treats as the `AuthRequest` —
+   * through this very socket. An account sign-in (`auth.login` /
+   * `auth.register`) has no WS route and falls back to HTTP, so the socket was
+   * left unauthenticated: the REST session was perfectly valid while every room
+   * operation answered `unauthorized`. Re-sending the auth frame with the
+   * account's session token is what closes that gap.
+   *
+   * Failures are deliberately not surfaced here: the caller is
+   * `LobbyClient.sessionFromPayload`, which cannot await, and a rejected
+   * re-authentication is reported by the next connection-scoped call anyway.
+   */
   setSessionToken(token: string): void {
+    const previous = this.sessionToken;
+    this.sessionToken = token;
     this.fallback?.setSessionToken?.(token);
+    if (this.disposed) {
+      return;
+    }
+    if (token === '') {
+      // Signing out must also release the SERVER-side binding. The lobby keeps
+      // the connection registered under the old session, so signing back into
+      // the same account would supersede it — and the server answers that by
+      // pushing `session_replaced` and closing the socket the client is still
+      // using, which reads to the player as "signed in on another device".
+      // Abandoning the connection here makes the next call build a fresh one.
+      if (previous !== '') {
+        this.closed = true;
+        this.dropSocket();
+      }
+      return;
+    }
+    if (!this.closed && this.socket.connected) {
+      void this.authenticateConnection(token);
+    }
+  }
+
+  /**
+   * Abandons the connection without disposing the transport.
+   *
+   * `close()` is final — an application-initiated shutdown never reconnects —
+   * whereas this only drops the socket, so the next call goes through the
+   * normal one-shot reconnect path.
+   */
+  private dropSocket(): void {
+    try {
+      this.socket.close();
+    } catch {
+      // A socket that is already gone needs nothing.
+    }
+  }
+
+  /** Sends the `AuthRequest` that binds this connection to a session. */
+  private authenticateConnection(token: string): Promise<LobbyRpcResponse> {
+    this.sequence += 1;
+    const frame = encodeLobbyEnvelope(
+      LOBBY_MESSAGE.AuthRequest,
+      {
+        version: this.version,
+        session_token: token,
+        user_id: this.userId,
+        platform: this.platform,
+        client_build: this.clientBuild,
+      },
+      this.sequence,
+    );
+    return new Promise<LobbyRpcResponse>((resolve) => {
+      this.pending.push({ types: [LOBBY_MESSAGE.AuthResponse], resolve });
+      this.socket.send(frame);
+    });
   }
 
   /** Builds the `lobby.proto` payload for a routed operation. */
