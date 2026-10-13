@@ -456,6 +456,21 @@ export interface MatchEventsView {
   cursor: number;
   /** True while the server still holds events past `cursor`. */
   hasMore: boolean;
+  /**
+   * Oldest seq the server still retains (`oldest_cursor`).
+   *
+   * A caller that fetched with `after < oldestCursor` has missed events the
+   * server has since dropped; `BattleEventPoller` compares the two to raise
+   * `onGap` (and the app rebuilds from `match.snapshot`). Defaults to `0` when
+   * the server omits the field, which can only *suppress* a gap — never invent
+   * one — so a deployment that does not report it keeps the previous
+   * behaviour instead of firing spurious snapshot rebuilds.
+   */
+  oldestCursor: number;
+  /** Newest seq the server has produced (`latest_cursor`), when reported. */
+  latestCursor?: number;
+  /** Server tick the page was built at (`snapshot_tick`), when reported. */
+  snapshotTick?: number;
 }
 
 /**
@@ -1126,11 +1141,23 @@ export class LobbyClient {
         }
       }
     }
-    return {
+    const view: MatchEventsView = {
       events,
       cursor: numberField(payload, 'cursor'),
       hasMore: booleanField(payload, 'has_more', 'hasMore'),
+      oldestCursor: numberField(payload, 'oldest_cursor', 'oldestCursor'),
     };
+    // Optional fields are attached only when the server reports them, so a
+    // caller can tell "absent" from "0" (the server may not emit either yet).
+    const latestCursor = optionalNumberField(payload, 'latest_cursor', 'latestCursor');
+    if (latestCursor !== undefined) {
+      view.latestCursor = latestCursor;
+    }
+    const snapshotTick = optionalNumberField(payload, 'snapshot_tick', 'snapshotTick');
+    if (snapshotTick !== undefined) {
+      view.snapshotTick = snapshotTick;
+    }
+    return view;
   }
 
   /**
@@ -2616,6 +2643,26 @@ export function numberField(source: Record<string, unknown>, ...keys: string[]):
     }
   }
   return 0;
+}
+
+/**
+ * Reads a numeric field, or `undefined` when neither spelling is present.
+ *
+ * The counterpart to {@link numberField} for *optional* wire fields:
+ * `numberField` collapses "absent" and "0" into `0`, which is right for a
+ * required field but loses the distinction for an optional one.
+ */
+export function optionalNumberField(source: Record<string, unknown>, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'number') {
+      return value;
+    }
+    if (typeof value === 'string' && value !== '' && !Number.isNaN(Number(value))) {
+      return Number(value);
+    }
+  }
+  return undefined;
 }
 
 export function booleanField(source: Record<string, unknown>, ...keys: string[]): boolean {

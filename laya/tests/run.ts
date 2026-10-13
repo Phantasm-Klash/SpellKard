@@ -48,6 +48,7 @@ import './stage_art.test';
 import './battle_events.test';
 import './cutscene_sequence.test';
 import './battle_event_poller.test';
+import './match_events_cursor.test';
 import './tna_stage_tuning.test';
 import './stage_background_geometry.test';
 import './audio_throttle.test';

@@ -500,18 +500,23 @@ export class SpellKardApp {
   /**
    * One REST page of the match-event stream, adapted to the poller's page shape.
    *
-   * `oldestCursor` is set to the cursor we asked with, so the poller never
-   * reports a gap: the REST `MatchEventsView` (`LobbyClient.fetchMatchEvents`)
-   * does not expose the server's `oldest_cursor`, and guessing it would fire
-   * spurious snapshot rebuilds. The cost is that a real gap is not detected —
-   * the events that were dropped simply never play.
+   * `oldestCursor` comes straight from the server's `oldest_cursor`
+   * (`LobbyClient.fetchMatchEvents`), so the poller's `after < oldestCursor`
+   * test raises `onGap` for real when the server dropped events we had not
+   * read. When the server omits the field it parses as `0`, which can only
+   * suppress a gap — never invent one.
    */
   private async fetchEventsPage(matchId: string, after: number, limit: number): Promise<MatchEventsPage | null> {
     const page = await this.lobbyClient.fetchMatchEvents(matchId, after, limit);
     if (page === null) {
       return null;
     }
-    return { events: page.events, cursor: page.cursor, hasMore: page.hasMore, oldestCursor: after };
+    return {
+      events: page.events,
+      cursor: page.cursor,
+      hasMore: page.hasMore,
+      oldestCursor: page.oldestCursor,
+    };
   }
 
   /** Feeds one page of match events into the battle scene's effect/SE bridge. */

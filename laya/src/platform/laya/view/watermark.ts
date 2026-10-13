@@ -71,8 +71,12 @@ export class WatermarkLayer {
   }
 
   /**
-   * Sets the boss portrait for a stage phase. A changed portrait flashes in;
-   * `phase` is kept so a future phase-specific treatment can read it.
+   * Sets the boss portrait and its stage phase. A changed portrait flashes in.
+   *
+   * `phase` is part of the frozen signature and is intentionally unused: the
+   * portrait name already encodes the phase (`boss_XX_YY.png`, see
+   * `core/game/stage_art.bossPortrait`), so the argument is redundant here and
+   * is `void`ed rather than silently dropped.
    */
   showBoss(portrait: string, phase: number): void {
     if (portrait === this.bossName) {

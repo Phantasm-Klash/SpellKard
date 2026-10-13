@@ -14,9 +14,21 @@
  *
  * ★ File extension: the reference plays `.m4a` (`bgm_stage_SS_XX.m4a`, spec
  * §2.2/§2.5). This client's asset tree was re-encoded to `.mp3`
- * (`layaide/assets/resources/tna/audio/`, commit 78060b "re-encode 32 BGM from
+ * (`layaide/assets/resources/tna/audio/`, commit 780d60b "re-encode 32 BGM from
  * 160k to 96kbps MP3"), so the names here keep `.mp3` — a `.m4a` URL would not
  * resolve. The stage/slot numbering (`_11`, `_21`, …) still follows the spec.
+ *
+ * ★ Not wired yet (deliberate, not forgotten):
+ *   - spec §2.3/§2.5 key the BGM by **(stage, boss)** — 78 tracks, with the
+ *     `XX` slot varying per boss and a phase-mask split for stage 03/boss 14.
+ *     The lobby's snapshot only carries `stage_id`, never a boss/phase, so this
+ *     manager plays the `_11` track per stage and stops there. Extend
+ *     {@link playStageBgm} (or add a boss-aware variant) once the wire carries
+ *     the boss id.
+ *   - spec §2.6 maps 20 `ExeSoundEffect` ids to files, and §2.7 shows 2936 call
+ *     sites. The client only emits three semantic categories (`graze` /
+ *     `playerShot` / `skill`, see {@link SfxCategory}); the remaining ids have
+ *     no event source yet.
  *
  * There is no crossfade API in Laya's `SoundManager`, so starting a stage track
  * does `stopAllAudio()` then `playBgm` — a hard cut, documented here rather than

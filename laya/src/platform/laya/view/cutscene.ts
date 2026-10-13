@@ -16,6 +16,16 @@
  * Portrait art is optional and loaded through the shared TNA frame source (see
  * {@link setPortraits}); a missing texture degrades to just the banner text.
  *
+ * ★ Not modelled (deliberate, not forgotten): the reference has no "stage
+ * entrance" cutscene at all. Its two timed performances are `setStageTitle`
+ * (spec §3.1, EX/PH stages only) and `setSpellCardEffect` (§3.2/§3.3 — four
+ * `spell_effect_line_*` sprites over 160 frames), plus the Boss spell portrait
+ * that flies in over a 3-segment `MoveTo` (§4.4). Reproducing those needs a
+ * per-card / per-phase event the lobby does not send yet, and
+ * `CutsceneSequencer`'s step kinds are a frozen contract (`stage_title` /
+ * `boss_intro` / `player_intro` / `bgm_cue` / `wait`), so the banner + slide
+ * treatment above stands in for them.
+ *
  * NOTE: `platform/laya/` only. Never import from `core/` other than the
  *       engine-agnostic cutscene / tuning / geometry helpers.
  */

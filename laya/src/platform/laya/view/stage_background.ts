@@ -150,6 +150,10 @@ export class StageBackgroundLayer {
       this.tuning.framesPerSecond,
       1,
     );
+    // Spec §1.4 also holds layer 2 still for stage 22 when `boss & ~1 == 0xc`
+    // (boss 12/13). That branch is deliberately not modelled: the client only
+    // maps the four lobby stages onto reference stages 1..4, so stage 22 — and
+    // with it every boss id that reaches it — is unreachable here.
     this.place(this.layer2[0], cx, cy, spin);
     this.place(this.layer2[1], cx, cy, -spin);
   }
