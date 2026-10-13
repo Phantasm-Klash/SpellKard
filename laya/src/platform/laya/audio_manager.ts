@@ -8,8 +8,15 @@
  *
  * Throttle: the event stream can carry a `hit`/`graze` row at up to 60 Hz and
  * `match.events` pages cap at 64 rows, so a drained backlog would fire a burst
- * of identical SEs. Each category is limited to one play per 100 ms (see
- * `core/game/sfx_throttle`); the clock is injected so the limit is testable.
+ * of identical SEs. Each category is limited to one play per 5 frames (~83 ms),
+ * the window the reference build's `ExeSoundEffect` uses (spec §2.0); the clock
+ * is injected so the limit is testable.
+ *
+ * ★ File extension: the reference plays `.m4a` (`bgm_stage_SS_XX.m4a`, spec
+ * §2.2/§2.5). This client's asset tree was re-encoded to `.mp3`
+ * (`layaide/assets/resources/tna/audio/`, commit 78060b "re-encode 32 BGM from
+ * 160k to 96kbps MP3"), so the names here keep `.mp3` — a `.m4a` URL would not
+ * resolve. The stage/slot numbering (`_11`, `_21`, …) still follows the spec.
  *
  * There is no crossfade API in Laya's `SoundManager`, so starting a stage track
  * does `stopAllAudio()` then `playBgm` — a hard cut, documented here rather than

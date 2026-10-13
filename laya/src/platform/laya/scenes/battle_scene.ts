@@ -193,10 +193,11 @@ export class BattleScene implements ClientScene {
     this.bulletRenderer = new AtlasBulletRenderer(this.bulletAtlas, artScale);
     void this.bulletAtlas.load();
 
-    // The scrolling background is the first child, so it paints under the
-    // playfield, the HUD strip and every overlay.
+    // The scrolling background is handed to the view, which paints it above its
+    // opaque stage fill but below the playfield grid; the scene positions and
+    // sizes it over the playfield (the client's analogue of the reference's
+    // 320x480 stage) in `relayout`.
     this.stageBackground = new StageBackgroundLayer();
-    this.root.addChild(this.stageBackground.root);
 
     // The watermark is handed to the view so it can sit between the actors and
     // the HUD strip; the view owns its z-order from then on.
@@ -213,6 +214,7 @@ export class BattleScene implements ClientScene {
       stageHeight: height,
       bulletRenderer: this.bulletRenderer,
       watermark: this.watermark.root,
+      backgroundLayer: this.stageBackground.root,
     });
     this.root.addChild(this.view.root);
 
@@ -375,8 +377,10 @@ export class BattleScene implements ClientScene {
     this.geometry = battleLayout(width, height);
     this.root.size(width, height);
     this.pauseOverlay.size(width, height);
-    // The performance overlays cover the whole stage, HUD strip included.
-    this.stageBackground.relayout(width, height);
+    // The background is the reference 320x480 stage model mapped onto the
+    // playfield; the watermark and cutscene cover the whole stage, HUD included.
+    this.stageBackground.root.pos(this.geometry.playfieldX, this.geometry.playfieldY);
+    this.stageBackground.relayout(this.geometry.playfield.width, this.geometry.playfield.height);
     this.watermark.relayout(width, height);
     this.cutscene.relayout(width, height);
     // Effect overlay works in playfield-local pixels, so it shares the

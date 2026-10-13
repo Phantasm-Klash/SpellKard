@@ -1,17 +1,21 @@
 /**
- * `core/game/stage_visual` — the pure geometry behind the stage background.
+ * `core/game/stage_visual` — the pure geometry behind the four-sprite stage
+ * background.
  *
- * Every expected value is derived by hand from the tuning constants (e.g.
- * `40 px/s * 250 ms / 1000 = 10 px`, `400 % 256 = 144`), so the test fails if
- * the arithmetic drifts. No Laya sprite is touched.
+ * Every expected value is derived by hand from the tuning constants and the
+ * spec figures (e.g. `1 px/frame * 60 fps * 1 s = 60 px`, `0.25°/frame * 60 =
+ * 15°/s`, `512 % 512 = 0`), so the test fails if the arithmetic drifts. No Laya
+ * sprite is touched.
  */
 
 import { DEFAULT_STAGE_BACKGROUND_TUNING } from '../src/core/game/tna_stage_tuning';
 import {
   advanceOffset,
-  breatheScale,
-  tileCount,
-  tileGrid,
+  backgroundScale,
+  frameCounter,
+  layer1ScrollOffset,
+  layer2RotationDeg,
+  layerTileOffsets,
   wrapOffset,
 } from '../src/core/game/stage_visual';
 import { expect, expectClose, expectEqual, suite, test } from './harness';
@@ -35,72 +39,79 @@ test('advanceOffset moves by pxPerSecond * dt / 1000', () => {
   expectEqual(advanceOffset(7, 40, Number.NaN), 7, 'a garbage delta leaves the offset alone');
 });
 
-test('an offset advanced for a while wraps to the hand-computed remainder', () => {
+test('backgroundScale maps the 480 px reference stage onto the covered height', () => {
+  expectEqual(backgroundScale(480, 480), 1, 'the reference height is 1:1');
+  expectEqual(backgroundScale(960, 480), 2, 'twice the height scales by 2');
+  expectEqual(backgroundScale(0, 480), 1, 'a degenerate height falls back to 1, not 0');
+  expectEqual(backgroundScale(Number.NaN, 480), 1);
+  expectEqual(backgroundScale(480, 0), 1, 'a degenerate reference height falls back to 1');
+});
+
+test('frameCounter advances one per frame at the reference rate', () => {
+  expectEqual(frameCounter(0, 60), 0);
+  expectClose(frameCounter(1000, 60), 60, 1e-9, '1 s at 60 fps = 60 frames');
+  expectClose(frameCounter(500, 60), 30, 1e-9);
+  expectEqual(frameCounter(-100, 60), 0, 'negative elapsed time clamps to 0');
+  expectEqual(frameCounter(100, 0), 0, 'a zero frame rate yields no frames');
+});
+
+test('layer1ScrollOffset is pxPerFrame * frames (60 px/s at the spec rate)', () => {
   const tuning = DEFAULT_STAGE_BACKGROUND_TUNING;
-  let offset = 0;
-  for (let step = 0; step < 1000; step += 1) {
-    offset = advanceOffset(offset, tuning.nearScrollPxPerSecond, 16);
+  expectEqual(
+    layer1ScrollOffset(1000, tuning.layer1ScrollPxPerFrame, tuning.framesPerSecond),
+    60,
+    '1 px/frame at 60 fps for 1 s = 60 px',
+  );
+  expectEqual(layer1ScrollOffset(500, tuning.layer1ScrollPxPerFrame, tuning.framesPerSecond), 30);
+  expectEqual(layer1ScrollOffset(0, tuning.layer1ScrollPxPerFrame, tuning.framesPerSecond), 0);
+});
+
+test('layerTileOffsets returns two tiles one spacing apart, scrolling down', () => {
+  const tuning = DEFAULT_STAGE_BACKGROUND_TUNING;
+  const spacing = tuning.layer1SpacingPx;
+  const speed = tuning.layer1ScrollPxPerFrame;
+  const fps = tuning.framesPerSecond;
+
+  const [a0, b0] = layerTileOffsets(0, spacing, speed, fps);
+  expectEqual(a0, -spacing, 'at t=0 the first tile sits one spacing above the centre');
+  expectEqual(b0, 0, 'and the second sits exactly on the centre');
+
+  // 1 s → 60 px scrolled down, wrapped into [0, 512).
+  const [a1, b1] = layerTileOffsets(1000, spacing, speed, fps);
+  expectClose(a1, 60 - spacing, 1e-6, 'first tile: 60 - 512');
+  expectClose(b1, 60, 1e-6, 'second tile: 60');
+  expectClose(b1 - a1, spacing, 1e-6, 'the pair is always one spacing apart');
+
+  // One full spacing of scroll wraps the pattern back to its start. A spacing
+  // of 60 px makes 1 s of scroll land exactly on the wrap boundary.
+  const [aW, bW] = layerTileOffsets(1000, 60, 1, 60);
+  expectEqual(aW, -60, 'a whole spacing wraps the first tile back');
+  expectEqual(bW, 0, 'and the second back onto the centre');
+});
+
+test('the layer-1 tile pair always covers a stage of the covered height', () => {
+  // Two tiles of displayed height `spacing` centred on the layer centre cover
+  // `2 * spacing` around it; the invariant is that this reaches both edges.
+  for (const height of [480, 720, 1080, 1440]) {
+    const tuning = DEFAULT_STAGE_BACKGROUND_TUNING;
+    const factor = backgroundScale(height, tuning.referenceStageHeight);
+    const spacing = tuning.layer1SpacingPx * factor;
+    expect(spacing >= height, `spacing ${spacing} must reach a ${height}px stage`);
   }
-  // 40 px/s * 16 ms * 1000 = 640 px; 640 % 256 = 128. The accumulation is a
-  // float sum, so it is compared with a tolerance rather than exactly.
-  expectClose(offset, 640, 1e-6, 'the accumulated offset');
-  expectClose(wrapOffset(offset, 256), 128, 1e-6, 'the wrapped offset');
 });
 
-test('the tile grid covers the stage at the base offset and mid-tile', () => {
-  for (const [offsetX, offsetY] of [
-    [0, 0],
-    [130, 300],
-    [255, 255],
-  ]) {
-    const grid = tileGrid(640, 480, 256, 256, offsetX, offsetY, 1);
-    expect(grid.baseX <= 0 && grid.baseX > -256, `baseX in (-256, 0]: ${grid.baseX}`);
-    expect(grid.baseY <= 0 && grid.baseY > -256, `baseY in (-256, 0]: ${grid.baseY}`);
-    expect(grid.baseX + grid.cols * 256 >= 640, `columns must cover 640 (offsetX=${offsetX})`);
-    expect(grid.baseY + grid.rows * 256 >= 480, `rows must cover 480 (offsetY=${offsetY})`);
-  }
+test('layerTileOffsets degrades to a zero pair without a usable spacing', () => {
+  expectEqual(layerTileOffsets(1000, 0, 1, 60)[0], 0);
+  expectEqual(layerTileOffsets(1000, 0, 1, 60)[1], 0);
+  expectEqual(layerTileOffsets(1000, Number.NaN, 1, 60)[1], 0);
 });
 
-test('tileCount adds one wrapping tile and honours coverage', () => {
-  expectEqual(tileCount(640, 256, 1), 4, 'ceil(640/256) + 1 = 3 + 1');
-  expectEqual(tileCount(480, 256, 1), 3, 'ceil(480/256) + 1 = 2 + 1');
-  expectEqual(tileCount(0, 256, 1), 1, 'a zero span still yields one tile');
-  expectEqual(tileCount(256, 0, 1), 1, 'a zero tile size yields one tile');
-  // Coverage widens the grid: 5120 / 256 = 20 (+1) becomes 5120/0.9/256 = 22.2 (+1).
-  expectEqual(tileCount(5120, 256, 1), 21);
-  expectEqual(tileCount(5120, 256, 1 / 0.9), 24);
-});
-
-test('coverage keeps the shrunk (scaleMin) layer covering the stage', () => {
+test('layer2RotationDeg turns ±0.25 deg/frame (±15 deg/s) with the sign', () => {
   const tuning = DEFAULT_STAGE_BACKGROUND_TUNING;
-  const width = 5120;
-  const center = width / 2;
-  const coverage = tuning.scaleMin < 1 ? 1 / tuning.scaleMin : 1;
-  const grid = tileGrid(width, width, 256, 256, 0, 0, coverage);
-  const rightmost = grid.baseX + grid.cols * 256;
-  // Scaling about the centre by scaleMin maps `rightmost` to
-  // `centre + (rightmost - centre) * scaleMin`; it must still reach the edge.
-  const scaledRight = center + (rightmost - center) * tuning.scaleMin;
-  expect(scaledRight >= width, `shrunk layer must still cover the stage: ${scaledRight} >= ${width}`);
-});
-
-test('breatheScale stays within the configured bounds and hits them on the quarters', () => {
-  const tuning = DEFAULT_STAGE_BACKGROUND_TUNING;
-  for (let ms = 0; ms <= tuning.breathePeriodMs * 2; ms += 50) {
-    const scale = breatheScale(ms, tuning.breathePeriodMs, tuning.scaleMin, tuning.scaleMax);
-    expect(
-      scale >= tuning.scaleMin - 1e-9 && scale <= tuning.scaleMax + 1e-9,
-      `scale ${scale} escaped [${tuning.scaleMin}, ${tuning.scaleMax}] at ${ms} ms`,
-    );
-  }
-  const period = tuning.breathePeriodMs;
-  expectClose(breatheScale(0, period, tuning.scaleMin, tuning.scaleMax), (tuning.scaleMin + tuning.scaleMax) / 2, 1e-9, 'starts at the midpoint');
-  expectClose(breatheScale(period / 4, period, tuning.scaleMin, tuning.scaleMax), tuning.scaleMax, 1e-9, 'quarter cycle = max');
-  expectClose(breatheScale(period * 3 / 4, period, tuning.scaleMin, tuning.scaleMax), tuning.scaleMin, 1e-9, 'three-quarter cycle = min');
-});
-
-test('breatheScale pins to scaleMax without a usable period', () => {
-  const tuning = DEFAULT_STAGE_BACKGROUND_TUNING;
-  expectEqual(breatheScale(123, 0, tuning.scaleMin, tuning.scaleMax), tuning.scaleMax);
-  expectEqual(breatheScale(123, Number.NaN, tuning.scaleMin, tuning.scaleMax), tuning.scaleMax);
+  const deg = tuning.layer2RotationDegPerFrame;
+  const fps = tuning.framesPerSecond;
+  expectClose(layer2RotationDeg(1000, deg, fps, 1), 15, 1e-9, '+0.25 * 60 frames = +15 deg');
+  expectClose(layer2RotationDeg(1000, deg, fps, -1), -15, 1e-9, 'the second tile mirrors it');
+  expectClose(layer2RotationDeg(2000, deg, fps, -1), -30, 1e-9);
+  expectEqual(layer2RotationDeg(0, deg, fps, 1), 0, 'no rotation before the first frame');
 });

@@ -71,6 +71,14 @@ export interface BossRaceViewOptions {
    * the status panel. Owned and sized by the caller.
    */
   watermark?: Laya.Sprite;
+  /**
+   * Optional scrolling background layer. Inserted directly above the opaque
+   * stage fill and below the playfield, so it is the visible backdrop; when it
+   * is supplied the view skips both the gradient playfield backdrop and the
+   * `TNA_BACKGROUND_IMAGE` starfield that would otherwise cover it. Owned and
+   * sized by the caller.
+   */
+  backgroundLayer?: Laya.Sprite;
 }
 
 export class BossRaceView {
@@ -87,6 +95,7 @@ export class BossRaceView {
   private stageWidth: number;
   private stageHeight: number;
   private readonly background: Laya.Sprite;
+  private readonly backgroundLayer: Laya.Sprite | null;
   private readonly playfield: Laya.Sprite;
   private readonly backdrop: Laya.Sprite;
   private readonly bulletLayer: Laya.Sprite;
@@ -117,6 +126,7 @@ export class BossRaceView {
     this.stageHeight = options.stageHeight ?? Math.max(this.playfieldY + this.layout.height, this.hudHeight);
     this.backgroundTexture = options.backgroundTexture ?? null;
     this.watermark = options.watermark ?? null;
+    this.backgroundLayer = options.backgroundLayer ?? null;
 
     // Real TNA art (Boss / player / backdrop) with vector fallback. The shared
     // source is only created when a caller has not supplied its own renderer or
@@ -130,6 +140,13 @@ export class BossRaceView {
     this.background = new Laya.Sprite();
     this.background.graphics.drawRect(0, 0, this.stageWidth, this.stageHeight, COLOR_BACKGROUND);
     this.root.addChild(this.background);
+
+    // A caller-supplied scrolling background paints directly above the opaque
+    // fill, so it is the visible backdrop. It must sit above the fill (which
+    // would otherwise hide it) but below the playfield grid.
+    if (this.backgroundLayer !== null) {
+      this.root.addChild(this.backgroundLayer);
+    }
 
     // Backdrop image (real art) sits between the solid stage colour and the
     // playfield grid; the grid/reticle/border are still drawn on top.
@@ -177,9 +194,11 @@ export class BossRaceView {
 
     if (source !== null) {
       // Fire-and-forget: the backdrop swaps in as soon as the image resolves;
-      // actor frames are picked up by the per-frame lookups automatically.
+      // actor frames are picked up by the per-frame lookups automatically. A
+      // caller-supplied background layer replaces the starfield, so it is not
+      // loaded then (it would only be painted over).
       void source.load().then(() => {
-        if (this.backgroundTexture === null) {
+        if (this.backgroundTexture === null && this.backgroundLayer === null) {
           const texture = source.image(TNA_BACKGROUND_IMAGE);
           if (texture !== null) {
             this.backgroundTexture = texture;
@@ -190,10 +209,19 @@ export class BossRaceView {
     }
   }
 
-  /** Repaints the playfield grid, skipping the gradient when a backdrop covers it. */
+  /**
+   * Repaints the playfield grid. The gradient is skipped when a real backdrop
+   * covers the field — either the starfield texture or a caller-supplied
+   * background layer — because it would otherwise paint over them.
+   */
   private redrawPlayfield(): void {
     this.playfield.graphics.clear();
-    drawPlayfield(this.playfield.graphics, this.layout.width, this.layout.height, this.backgroundTexture === null);
+    drawPlayfield(
+      this.playfield.graphics,
+      this.layout.width,
+      this.layout.height,
+      this.backgroundTexture === null && this.backgroundLayer === null,
+    );
     this.backdrop.graphics.clear();
     this.backdrop.texture = null;
     this.backdrop.scaleX = 1;

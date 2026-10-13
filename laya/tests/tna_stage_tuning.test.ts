@@ -2,9 +2,10 @@
  * `core/game/tna_stage_tuning` + the `tnaAssetUrl` join.
  *
  * The invariants are hand-derived from the documented tuning contract (positive
- * speeds/periods, `scaleMin < scaleMax`, every number finite) and the join is
- * checked against the two deployment roots, so a wrong value or a doubled `tna`
- * segment fails the test instead of being read back out of the code.
+ * scales/speeds/periods, `layer1Scale < layer2Scale`, the 480 px reference
+ * height, every number finite) and the join is checked against the two
+ * deployment roots, so a wrong value or a doubled `tna` segment fails the test
+ * instead of being read back out of the code.
  */
 
 import { TNA_NATIVE_ROOT, TNA_WEB_ROOT, tnaAssetUrl } from '../src/core/game/tna_assets';
@@ -18,26 +19,40 @@ import { expect, expectEqual, suite, test } from './harness';
 
 suite('tna stage tuning');
 
-test('background scroll/scale constants are positive, finite and ordered', () => {
+test('background scale/scroll constants are positive, finite and ordered', () => {
   const tuning = DEFAULT_STAGE_BACKGROUND_TUNING;
-  expect(tuning.farScrollPxPerSecond > 0, 'far scroll speed must be positive');
-  expect(tuning.nearScrollPxPerSecond > 0, 'near scroll speed must be positive');
-  expect(
-    tuning.nearScrollPxPerSecond > tuning.farScrollPxPerSecond,
-    'the near layer must scroll faster than the far one (parallax)',
-  );
-  expect(tuning.breathePeriodMs > 0, 'the breathe period must be positive');
-  expect(tuning.scaleMin > 0, 'scaleMin must be positive');
-  expect(tuning.scaleMin < tuning.scaleMax, 'scaleMin must be below scaleMax');
+  expect(tuning.layer1Scale > 0, 'layer-1 scale must be positive');
+  expect(tuning.layer2Scale > 0, 'layer-2 scale must be positive');
+  expect(tuning.layer2Scale > tuning.layer1Scale, 'layer 2 is drawn larger than layer 1 (spec 2.4 > 2.0)');
+  expect(tuning.referenceStageHeight > 0, 'the reference stage height must be positive');
+  expect(tuning.layer1SpacingPx > 0, 'the layer-1 tile spacing must be positive');
+  expect(tuning.layer1ScrollPxPerFrame > 0, 'the layer-1 scroll speed must be positive');
+  expect(tuning.layer2RotationDegPerFrame > 0, 'the layer-2 rotation speed must be positive');
+  expect(tuning.framesPerSecond > 0, 'the reference frame rate must be positive');
   for (const value of [
-    tuning.farScrollPxPerSecond,
-    tuning.nearScrollPxPerSecond,
-    tuning.scaleMin,
-    tuning.scaleMax,
-    tuning.breathePeriodMs,
+    tuning.layer1Scale,
+    tuning.layer2Scale,
+    tuning.referenceStageHeight,
+    tuning.layer1SpacingPx,
+    tuning.layer1ScrollPxPerFrame,
+    tuning.layer2RotationDegPerFrame,
+    tuning.framesPerSecond,
   ]) {
     expect(Number.isFinite(value), `every background constant must be finite, got ${value}`);
   }
+});
+
+test('the spec figures are carried verbatim', () => {
+  const tuning = DEFAULT_STAGE_BACKGROUND_TUNING;
+  // Spec §1.2 / §1.3 / §1.4: scale 2.0 and 2.4, 512 px spacing, 1 px/frame
+  // (60 px/s), 0.25 deg/frame (+-15 deg/s), 480 px design stage, 60 fps.
+  expectEqual(tuning.layer1Scale, 2.0);
+  expectEqual(tuning.layer2Scale, 2.4);
+  expectEqual(tuning.referenceStageHeight, 480);
+  expectEqual(tuning.layer1SpacingPx, 512);
+  expectEqual(tuning.layer1ScrollPxPerFrame, 1);
+  expectEqual(tuning.layer2RotationDegPerFrame, 0.25);
+  expectEqual(tuning.framesPerSecond, 60);
 });
 
 test('watermark constants are positive, finite and in range', () => {
@@ -51,11 +66,13 @@ test('watermark constants are positive, finite and in range', () => {
   }
 });
 
-test('cutscene durations are positive and finite', () => {
+test('cutscene durations are positive and finite; the title is the spec 6.0 s', () => {
   const tuning = DEFAULT_CUTSCENE_TUNING;
   expect(tuning.stageTitleMs > 0, 'stage title must last a positive time');
   expect(tuning.bossIntroMs > 0, 'boss intro must last a positive time');
   expect(tuning.playerIntroMs > 0, 'player intro must last a positive time');
+  // Spec §3.1: FadeIn 1.0 + Delay 4.0 + FadeOut 1.0.
+  expectEqual(tuning.stageTitleMs, 6000);
   for (const value of [tuning.stageTitleMs, tuning.bossIntroMs, tuning.playerIntroMs]) {
     expect(Number.isFinite(value), `every cutscene duration must be finite, got ${value}`);
   }

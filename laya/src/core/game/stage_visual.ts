@@ -1,12 +1,13 @@
 /**
  * Pure, engine-agnostic derivations shared by the performance overlays: the
- * scrolling/scaling stage background, the watermark portraits and the
- * stage-entrance cutscene.
+ * four-sprite stage background, the watermark portraits and the stage-entrance
+ * cutscene.
  *
  * Everything here is a function of the tuning numbers in `tna_stage_tuning.ts`
- * and of elapsed time — no Laya, no DOM, no RNG — so the tiling geometry, the
- * breathe curves and the cutscene step→visual table can be unit tested without
- * a runtime. The Laya layers own only the sprite plumbing and call into these.
+ * and of elapsed time — no Laya, no DOM, no RNG — so the background geometry,
+ * the portrait breathe and the cutscene step→visual table can be unit tested
+ * without a runtime. The Laya layers own only the sprite plumbing and call into
+ * these.
  *
  * All trigonometry goes through `core/math/float_lib` (`sinDeg`), so the
  * performance layer keeps a single source of arithmetic and adds no second
@@ -50,71 +51,84 @@ export function advanceOffset(offset: number, pxPerSecond: number, dtMs: number)
 }
 
 /**
- * Tiles needed to cover `span` at `tileSize`, **plus one** so that a partial
- * wrap (the grid is shifted by up to one tile) still reaches the far edge.
+ * Scale factor mapping the reference design stage onto an area of
+ * `coveredHeight` px. The reference stage is 320×480 (spec global), so the
+ * factor is `coveredHeight / referenceStageHeight`; every reference length
+ * (scales, the 512 px tile spacing, the scroll speed) is multiplied by it.
  *
- * `coverage` widens the covered area by a factor, used when the layer is scaled
- * below 1 (a `0.9` breathe must still cover the whole stage); it defaults to 1.
+ * A non-finite / non-positive input yields `1` (draw at reference size) rather
+ * than `0`, which would collapse the layer.
  */
-export function tileCount(span: number, tileSize: number, coverage = 1): number {
-  if (!Number.isFinite(tileSize) || tileSize <= 0 || !Number.isFinite(span) || span <= 0) {
+export function backgroundScale(coveredHeight: number, referenceStageHeight: number): number {
+  if (
+    !Number.isFinite(coveredHeight) ||
+    coveredHeight <= 0 ||
+    !Number.isFinite(referenceStageHeight) ||
+    referenceStageHeight <= 0
+  ) {
     return 1;
   }
-  const factor = Number.isFinite(coverage) && coverage > 0 ? coverage : 1;
-  return Math.max(1, Math.ceil((span * factor) / tileSize) + 1);
-}
-
-/** Top-left origin and tile counts of a scrolling, wrapping tile grid. */
-export interface TileGrid {
-  /** X of the first tile column, in `(-tileW, 0]`. */
-  baseX: number;
-  /** Y of the first tile row, in `(-tileH, 0]`. */
-  baseY: number;
-  cols: number;
-  rows: number;
+  return coveredHeight / referenceStageHeight;
 }
 
 /**
- * The tile grid that covers a `width`×`height` area as `offsetX`/`offsetY`
- * advance. The origin is `-wrapOffset(offset, tileSize)`, so the grid slides by
- * up to one tile and then repeats; tiles sit at `base + n * tileSize` for
- * `n in [0, cols)` (resp. rows), which always spans the whole area because
- * {@link tileCount} adds one wrapping tile.
+ * Reference frame counter after `elapsedMs` at `framesPerSecond`. The reference
+ * bumps its counter by exactly 1 per rendered frame (`GameLayer::update`
+ * @0x5623e8), so at a fixed 60 fps tick this returns the same integer sequence;
+ * it is left continuous so a client running at another tick rate still animates
+ * smoothly. Non-finite / non-positive input yields `0`.
  */
-export function tileGrid(
-  width: number,
-  height: number,
-  tileW: number,
-  tileH: number,
-  offsetX: number,
-  offsetY: number,
-  coverage = 1,
-): TileGrid {
-  return {
-    baseX: -wrapOffset(offsetX, tileW),
-    baseY: -wrapOffset(offsetY, tileH),
-    cols: tileCount(width, tileW, coverage),
-    rows: tileCount(height, tileH, coverage),
-  };
+export function frameCounter(elapsedMs: number, framesPerSecond: number): number {
+  if (!Number.isFinite(elapsedMs) || elapsedMs <= 0 || !Number.isFinite(framesPerSecond) || framesPerSecond <= 0) {
+    return 0;
+  }
+  return (elapsedMs * framesPerSecond) / 1000;
 }
 
 /**
- * Slow "breathe" between `scaleMin` and `scaleMax`: one full sine cycle over
- * `periodMs`, passing through the midpoint at `t = 0` and touching both bounds
- * a quarter-cycle either side.
- *
- * A non-positive / non-finite period pins the layer at `scaleMax` — the bound
- * that never reveals an edge — and a non-finite bound falls back to 1.
+ * Layer-1 downward scroll distance in px after `elapsedMs`:
+ * `pxPerFrame * frames`. Unbounded — {@link layerTileOffsets} wraps it.
  */
-export function breatheScale(nowMs: number, periodMs: number, scaleMin: number, scaleMax: number): number {
-  if (!Number.isFinite(scaleMin) || !Number.isFinite(scaleMax)) {
-    return 1;
+export function layer1ScrollOffset(elapsedMs: number, pxPerFrame: number, framesPerSecond: number): number {
+  return pxPerFrame * frameCounter(elapsedMs, framesPerSecond);
+}
+
+/**
+ * The two layer-1 tile centre offsets, relative to the layer centre, after
+ * `elapsedMs`. The tiles are one `spacing` apart and scroll **down**: the pair
+ * moves toward `+Y` as time advances, and the whole pattern repeats every
+ * `spacing` px (spec §1.3: 1024 px arithmetic period, 512 px visual period).
+ *
+ * The two values are always `spacing` apart and live in `[-spacing, spacing)`,
+ * so two tiles centred on them cover a band of height `2 * spacing` around the
+ * layer centre — seamless as long as `spacing >= coveredHeight`.
+ */
+export function layerTileOffsets(
+  elapsedMs: number,
+  spacing: number,
+  pxPerFrame: number,
+  framesPerSecond: number,
+): [number, number] {
+  if (!Number.isFinite(spacing) || spacing <= 0) {
+    return [0, 0];
   }
-  if (!Number.isFinite(periodMs) || periodMs <= 0) {
-    return scaleMax;
-  }
-  const phase = sinDeg(360 * (nowMs / periodMs));
-  return scaleMin + (scaleMax - scaleMin) * (0.5 + 0.5 * phase);
+  const base = wrapOffset(layer1ScrollOffset(elapsedMs, pxPerFrame, framesPerSecond), spacing);
+  return [base - spacing, base];
+}
+
+/**
+ * Rotation in degrees of one layer-2 tile after `elapsedMs`:
+ * `direction * degPerFrame * frames`. `direction` is `+1` for the first tile
+ * and `-1` for the second, so the two counter-rotate (spec §1.4: ±15°/s).
+ */
+export function layer2RotationDeg(
+  elapsedMs: number,
+  degPerFrame: number,
+  framesPerSecond: number,
+  direction: number,
+): number {
+  const sign = direction < 0 ? -1 : 1;
+  return sign * degPerFrame * frameCounter(elapsedMs, framesPerSecond);
 }
 
 /**

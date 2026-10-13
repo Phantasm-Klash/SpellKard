@@ -1,25 +1,25 @@
 /**
- * Scrolling, breathing stage background.
+ * Four-sprite stage background.
  *
- * Two stacked layers — `bg_XX_01.png` (far, slow) under `bg_XX_02.png` (near,
- * ~3.3× faster) — give the field parallax depth. Each 256×256 (one is 512×512)
- * source texture is tiled across the whole stage by a grid of `Laya.Sprite`
- * children whose origin is wrapped modulo the tile size as the scroll offset
- * advances (see `core/game/stage_visual` for the pure geometry).
+ * Mirrors the reference `GameLayer::resetBackGround` / `updateImage` model
+ * (spec §1.2–§1.4) rather than a generic parallax scroll:
  *
- * Layer transform, from the outside in:
- *   `scaler`  — a container pivoted on the stage centre and scaled by the slow
- *               breathe, so the field never reveals an edge;
- *   `scroller`— a container holding the tile grid, moved by `-wrap(offset)`;
- *   tiles     — one sprite per grid cell, each blitted with the layer texture.
+ *   layer 1 — two `bg_XX_01.png` tiles at scale **2.0**, centres 512 reference
+ *             px apart vertically, scrolling **down** at 60 px/s so the pair
+ *             tiles seamlessly;
+ *   layer 2 — two `bg_XX_02.png` tiles at scale **2.4**, exactly overlapping at
+ *             the centre, counter-rotating at **±15°/s** to form a symmetric
+ *             vortex.
  *
- * Because `scaler.pivot` and `scaler.pos` are both the stage centre, a tile at
- * local `(x, y)` renders at `centre + (x - centre) * scale` — i.e. stage
- * coordinates at scale 1, and a centre-anchored breathe otherwise.
+ * There is no animated scale: the reference calls `setScale` exactly once per
+ * sprite (spec §1.6). The whole model is scaled by `coveredHeight / 480` so the
+ * same proportions hold on the client's variable-size playfield — the pure
+ * arithmetic lives in `core/game/stage_visual`.
  *
- * The art loads asynchronously through the shared TNA frame source; until it
- * arrives the layer draws nothing (never throws), and a missing layer degrades
- * to an empty field. `setStage` re-arms the layer for the next stage.
+ * The layer covers the **playfield** (the client's analogue of the reference's
+ * 320×480 stage); the caller positions `root` over it. Art loads asynchronously
+ * through the shared TNA frame source; until it arrives the layer draws nothing
+ * (never throws), and a missing texture degrades to an empty field.
  *
  * NOTE: `platform/laya/` only. Never import from `core/` other than the
  *       engine-agnostic art-name / tuning / geometry helpers.
@@ -30,40 +30,28 @@ import {
   DEFAULT_STAGE_BACKGROUND_TUNING,
   type StageBackgroundTuning,
 } from '../../../core/game/tna_stage_tuning';
-import { advanceOffset, breatheScale, tileGrid, wrapOffset } from '../../../core/game/stage_visual';
+import {
+  backgroundScale,
+  layer2RotationDeg,
+  layerTileOffsets,
+} from '../../../core/game/stage_visual';
 import { sharedTnaFrameSource, type LayaAtlasFrameSource } from './bullet_atlas';
-
-/** One scrolling layer: a scale container, a scroll container and its tiles. */
-interface ScrollLayer {
-  /** Breathe container, pivoted on the stage centre. */
-  readonly scaler: Laya.Sprite;
-  /** Scroll container; holds the tile grid and carries the wrapped offset. */
-  readonly scroller: Laya.Sprite;
-  /** Pooled tile sprites, indexed `row * cols + col`. */
-  readonly tiles: Laya.Sprite[];
-  texture: Laya.Texture | null;
-  tileW: number;
-  tileH: number;
-  cols: number;
-  rows: number;
-  offset: number;
-  readonly pxPerSecond: number;
-}
 
 export class StageBackgroundLayer {
   readonly root: Laya.Sprite;
 
   private readonly source: LayaAtlasFrameSource;
   private readonly tuning: StageBackgroundTuning;
-  private readonly far: ScrollLayer;
-  private readonly near: ScrollLayer;
+  /** Layer-1 tiles (`bg_XX_01`), one spacing apart, scrolling down. */
+  private readonly layer1: [Laya.Sprite, Laya.Sprite];
+  /** Layer-2 tiles (`bg_XX_02`), overlapping and counter-rotating. */
+  private readonly layer2: [Laya.Sprite, Laya.Sprite];
   private names: [string, string] = ['', ''];
   private stage = 0;
   private width = 0;
   private height = 0;
   private elapsedMs = 0;
   private requested = false;
-  private built = false;
 
   constructor(
     tuning: StageBackgroundTuning = DEFAULT_STAGE_BACKGROUND_TUNING,
@@ -73,148 +61,110 @@ export class StageBackgroundLayer {
     this.source = source;
     this.root = new Laya.Sprite();
     this.root.mouseEnabled = false;
-    this.far = this.makeLayer(tuning.farScrollPxPerSecond);
-    this.near = this.makeLayer(tuning.nearScrollPxPerSecond);
-    this.root.addChild(this.far.scaler);
-    this.root.addChild(this.near.scaler);
+    this.layer1 = [this.makeTile(), this.makeTile()];
+    this.layer2 = [this.makeTile(), this.makeTile()];
+    for (const tile of [...this.layer1, ...this.layer2]) {
+      this.root.addChild(tile);
+    }
   }
 
-  /** Selects the two background layers for a reference stage (unknown → 1). */
+  /** Selects the two background textures for a reference stage (unknown → 1). */
   setStage(stage: number): void {
     if (this.stage === stage && this.names[0] !== '') {
       return;
     }
     this.stage = stage;
     this.names = backgroundNames(stage);
-    this.far.offset = 0;
-    this.near.offset = 0;
-    this.far.texture = null;
-    this.near.texture = null;
-    this.built = false;
+    this.elapsedMs = 0;
     this.requested = false;
+    for (const tile of [...this.layer1, ...this.layer2]) {
+      tile.texture = null;
+      tile.visible = false;
+    }
   }
 
-  /** Re-tiles for a new stage size and re-anchors the breathe pivot. */
+  /** Re-tiles for a new playfield size and re-applies the static scales. */
   relayout(width: number, height: number): void {
     this.width = Math.max(0, width);
     this.height = Math.max(0, height);
     this.root.size(this.width, this.height);
-    for (const layer of [this.far, this.near]) {
-      layer.scaler.pivot(this.width / 2, this.height / 2);
-      layer.scaler.pos(this.width / 2, this.height / 2);
-    }
-    this.build();
+    this.applyScales();
+    this.applyFrame();
   }
 
-  /** Advances the scroll offsets and the breathe phase by `dtMs`. */
+  /** Advances the scroll/rotation clock by `dtMs` and repositions the tiles. */
   update(dtMs: number): void {
     if (!this.requested) {
       this.requested = true;
       void this.loadTextures();
     }
-    if (!Number.isFinite(dtMs) || dtMs <= 0) {
-      return;
+    if (Number.isFinite(dtMs) && dtMs > 0) {
+      this.elapsedMs += dtMs;
     }
-    this.elapsedMs += dtMs;
-    this.far.offset = advanceOffset(this.far.offset, this.far.pxPerSecond, dtMs);
-    this.near.offset = advanceOffset(this.near.offset, this.near.pxPerSecond, dtMs);
-    if (!this.built) {
-      this.build();
-    }
-    const scale = breatheScale(
-      this.elapsedMs,
-      this.tuning.breathePeriodMs,
-      this.tuning.scaleMin,
-      this.tuning.scaleMax,
-    );
-    for (const layer of [this.far, this.near]) {
-      layer.scaler.scaleX = scale;
-      layer.scaler.scaleY = scale;
-      if (layer.cols > 0) {
-        layer.scroller.pos(-wrapOffset(layer.offset, layer.tileW), -wrapOffset(layer.offset, layer.tileH));
-      }
-    }
+    this.applyFrame();
   }
 
   destroy(): void {
     this.root.destroy(true);
   }
 
-  private makeLayer(pxPerSecond: number): ScrollLayer {
-    const scaler = new Laya.Sprite();
-    const scroller = new Laya.Sprite();
-    scaler.addChild(scroller);
-    return {
-      scaler,
-      scroller,
-      tiles: [],
-      texture: null,
-      tileW: 0,
-      tileH: 0,
-      cols: 0,
-      rows: 0,
-      offset: 0,
-      pxPerSecond,
-    };
+  private makeTile(): Laya.Sprite {
+    const tile = new Laya.Sprite();
+    tile.mouseEnabled = false;
+    tile.visible = false;
+    return tile;
   }
 
-  /**
-   * Coverage factor for the tile grid: a breathe below 1 shrinks the layer
-   * toward the centre, so the grid must extend by `1 / scaleMin` to still reach
-   * the edges.
-   */
-  private coverage(): number {
-    return this.tuning.scaleMin > 0 && this.tuning.scaleMin < 1 ? 1 / this.tuning.scaleMin : 1;
-  }
-
-  /** (Re)builds both layer grids from the currently resolved textures. */
-  private build(): void {
-    if (this.width <= 0 || this.height <= 0) {
-      return;
+  /** Static scale of every tile: `referenceScale * coveredHeight / 480`. */
+  private applyScales(): void {
+    const factor = backgroundScale(this.height, this.tuning.referenceStageHeight);
+    const scale1 = this.tuning.layer1Scale * factor;
+    const scale2 = this.tuning.layer2Scale * factor;
+    for (const tile of this.layer1) {
+      tile.scaleX = scale1;
+      tile.scaleY = scale1;
     }
-    let any = false;
-    for (const layer of [this.far, this.near]) {
-      if (layer.texture === null) {
-        continue;
-      }
-      any = true;
-      this.buildLayer(layer);
+    for (const tile of this.layer2) {
+      tile.scaleX = scale2;
+      tile.scaleY = scale2;
     }
-    this.built = any;
   }
 
-  private buildLayer(layer: ScrollLayer): void {
-    const texture = layer.texture;
+  /** Positions and rotates the four tiles for the current elapsed time. */
+  private applyFrame(): void {
+    const factor = backgroundScale(this.height, this.tuning.referenceStageHeight);
+    const cx = this.width / 2;
+    const cy = this.height / 2;
+    const spacing = this.tuning.layer1SpacingPx * factor;
+    const [first, second] = layerTileOffsets(
+      this.elapsedMs,
+      spacing,
+      this.tuning.layer1ScrollPxPerFrame,
+      this.tuning.framesPerSecond,
+    );
+    this.place(this.layer1[0], cx, cy + first, 0);
+    this.place(this.layer1[1], cx, cy + second, 0);
+    const spin = layer2RotationDeg(
+      this.elapsedMs,
+      this.tuning.layer2RotationDegPerFrame,
+      this.tuning.framesPerSecond,
+      1,
+    );
+    this.place(this.layer2[0], cx, cy, spin);
+    this.place(this.layer2[1], cx, cy, -spin);
+  }
+
+  /** Centres `tile` on `(x, y)` and rotates it; hidden while it has no texture. */
+  private place(tile: Laya.Sprite, x: number, y: number, rotationDeg: number): void {
+    const texture = tile.texture;
     if (texture === null) {
+      tile.visible = false;
       return;
     }
-    const tileW = Math.max(1, texture.width || 1);
-    const tileH = Math.max(1, texture.height || 1);
-    const grid = tileGrid(this.width, this.height, tileW, tileH, layer.offset, layer.offset, this.coverage());
-    layer.tileW = tileW;
-    layer.tileH = tileH;
-    layer.cols = grid.cols;
-    layer.rows = grid.rows;
-    const needed = grid.cols * grid.rows;
-    while (layer.tiles.length < needed) {
-      const tile = new Laya.Sprite();
-      tile.mouseEnabled = false;
-      layer.tiles.push(tile);
-      layer.scroller.addChild(tile);
-    }
-    for (let index = 0; index < layer.tiles.length; index += 1) {
-      const tile = layer.tiles[index];
-      if (index >= needed) {
-        tile.visible = false;
-        continue;
-      }
-      const col = index % grid.cols;
-      const row = Math.floor(index / grid.cols);
-      tile.visible = true;
-      tile.texture = texture;
-      tile.pos(col * tileW, row * tileH);
-    }
-    layer.scroller.pos(-wrapOffset(layer.offset, tileW), -wrapOffset(layer.offset, tileH));
+    tile.pivot((texture.width || 0) / 2, (texture.height || 0) / 2);
+    tile.pos(x, y);
+    tile.rotation = rotationDeg;
+    tile.visible = true;
   }
 
   private async loadTextures(): Promise<void> {
@@ -229,9 +179,15 @@ export class StageBackgroundLayer {
     if (farName !== this.names[0] || nearName !== this.names[1]) {
       return;
     }
-    this.far.texture = this.source.image(farName);
-    this.near.texture = this.source.image(nearName);
-    this.built = false;
-    this.build();
+    const farTexture = this.source.image(farName);
+    const nearTexture = this.source.image(nearName);
+    for (const tile of this.layer1) {
+      tile.texture = farTexture;
+    }
+    for (const tile of this.layer2) {
+      tile.texture = nearTexture;
+    }
+    this.applyScales();
+    this.applyFrame();
   }
 }
