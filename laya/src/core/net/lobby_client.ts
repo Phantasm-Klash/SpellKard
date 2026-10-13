@@ -27,6 +27,7 @@ import {
   errorStatusOf,
   type VersionStamp,
 } from './lobby_protocol';
+import { matchEventViewFromPayload, type MatchEventView } from '../game/battle_events';
 
 /**
  * Server error code for "the same account signed in on another device".
@@ -105,6 +106,15 @@ export interface LobbyClientConfig {
    * storage; the client never serializes request sequence or business state.
    */
   sessionStore?: LobbySessionStore;
+  /**
+   * Dedicated REST transport for the operations that are forbidden on the
+   * lobby's other transports — today `match.events` / `match.snapshot`, which
+   * answer `403 client_operation_disallowed` to a client session on the Nakama
+   * RPC path (`runtime/nakamaapi`'s forbidden-op list). Falls back to
+   * `transport` when omitted: correct for REST and WS-fallback deployments,
+   * silently broken for Nakama RPC.
+   */
+  restTransport?: LobbyTransport;
 }
 
 export interface SessionState {
@@ -432,6 +442,35 @@ export interface ActiveCardSnapshot {
   targetUserId?: string;
 }
 
+/**
+ * `GET /v1/matches/{id}/events` — one page of the match-event stream.
+ *
+ * ★ Fetch this through a REST transport ({@link LobbyClientConfig.restTransport}
+ * → {@link LobbyClient.fetchMatchEvents}): `match.events` is a forbidden op on
+ * the Nakama RPC path (`403 client_operation_disallowed` for client sessions),
+ * so a `nakama_rpc` deployment would silently starve every event consumer.
+ */
+export interface MatchEventsView {
+  events: MatchEventView[];
+  /** Cursor to resume from (seq of the last event in the page). */
+  cursor: number;
+  /** True while the server still holds events past `cursor`. */
+  hasMore: boolean;
+}
+
+/**
+ * `GET /v1/matches/{id}/snapshot` — what the battle scene needs to enter a
+ * match: the stage, the local player's character and the live card effects.
+ * REST-only for the same forbidden-op reason as {@link MatchEventsView}.
+ */
+export interface MatchSnapshotView {
+  matchId: string;
+  stageId: string;
+  /** The local player's `character_id`, from their in-match loadout. */
+  characterId: string;
+  activeCards: ActiveCardSnapshot[];
+}
+
 /** One finished match, mirroring the lobby's `MatchHistoryEntry`. */
 export interface MatchHistoryEntryView {
   matchId: string;
@@ -527,6 +566,7 @@ export type LobbyEventListener = (event: LobbyEvent) => void;
  */
 export class LobbyClient {
   private readonly transport: LobbyTransport;
+  private readonly restTransport: LobbyTransport | null;
   private readonly logger: Logger;
   private readonly clientBuild: string;
   private readonly platform: string;
@@ -545,6 +585,7 @@ export class LobbyClient {
 
   constructor(config: LobbyClientConfig) {
     this.transport = config.transport;
+    this.restTransport = config.restTransport ?? null;
     this.logger = config.logger ?? nullLogger;
     this.clientBuild = config.clientBuild ?? '0.1.0-draft';
     this.platform = config.platform ?? 'web';
@@ -606,6 +647,15 @@ export class LobbyClient {
     id: string,
     payload: Record<string, unknown> = {},
   ): Promise<LobbyRpcResponse> {
+    return this.callOn(this.transport, this.buildRequest(id, payload));
+  }
+
+  /**
+   * Builds the stamped request shared by every op on every transport: the
+   * client-minted `cid`, the device id and — for authenticated ops — the
+   * session envelope fields the server correlates and authorizes on.
+   */
+  private buildRequest(id: string, payload: Record<string, unknown> = {}): LobbyRpcRequest {
     const request: LobbyRpcRequest = {
       id,
       cid: this.nextCid(),
@@ -614,16 +664,31 @@ export class LobbyClient {
     if (this.deviceId !== '') {
       request.device_id = this.deviceId;
     }
-    // Whether this request goes out authenticated. A `401` only means "session
-    // lost" when we *were* authenticated — the login endpoints answer a wrong
-    // password with the same status, and that must stay a plain failure.
-    const hadSession = this.session !== null;
     if (this.session !== null && id !== 'auth.anonymous') {
       request.session_id = this.session.sessionToken;
       request.user_id = this.session.userId;
     }
+    return request;
+  }
+
+  /**
+   * Runs an already-stamped request on an explicit transport, with exactly
+   * {@link call}'s behaviour (bookkeeping, session-loss detection, non-throwing
+   * failure). The split exists for the handful of operations that must NOT
+   * use the main transport — see {@link LobbyClientConfig.restTransport} and
+   * the warnings on {@link LobbyClient.fetchMatchEvents} / the snapshot fetch.
+   */
+  private async callOn(
+    transport: LobbyTransport,
+    request: LobbyRpcRequest,
+  ): Promise<LobbyRpcResponse> {
+    const id = request.id;
+    // Whether this request goes out authenticated. A `401` only means "session
+    // lost" when we *were* authenticated — the login endpoints answer a wrong
+    // password with the same status, and that must stay a plain failure.
+    const hadSession = this.session !== null;
     try {
-      const response = await this.transport.call(request);
+      const response = await transport.call(request);
       this.lastResponse = response;
       if (!response.ok) {
         this.lastError = response.error_code ?? `lobby_call_failed:${id}`;
@@ -1026,6 +1091,88 @@ export class LobbyClient {
       serverSeedHex: hexField(payload, 'server_seed', 'serverSeed'),
     };
     return this.allocation;
+  }
+
+  /**
+   * `match.events` / `GET /v1/matches/{id}/events?after&limit` — one page of
+   * the match-event stream, projected through {@link matchEventViewFromPayload}.
+   *
+   * ★★ MUST run on the REST transport. `match.events` is a FORBIDDEN op on the
+   * Nakama RPC path: a client session asking for it gets `403
+   * client_operation_disallowed` (server `runtime/nakamaapi`, same forbidden
+   * list as `match.input` / `battle.*`), and the deployed transport may be
+   * `nakama_rpc`. Without `LobbyClientConfig.restTransport` the symptom is a
+   * battle performance layer that never syncs — not an obvious error — so the
+   * REST transport is the default-on-REST deployments and mandatory on Nakama.
+   */
+  async fetchMatchEvents(matchId: string, after: number, limit: number): Promise<MatchEventsView | null> {
+    const response = await this.callOn(
+      this.restTransport ?? this.transport,
+      this.buildRequest('match.events', { match_id: matchId, after, limit }),
+    );
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    const events: MatchEventView[] = [];
+    if (Array.isArray(payload.events)) {
+      for (const raw of payload.events) {
+        if (!isRecord(raw)) {
+          continue;
+        }
+        const view = matchEventViewFromPayload(raw);
+        if (view !== null) {
+          events.push(view);
+        }
+      }
+    }
+    return {
+      events,
+      cursor: numberField(payload, 'cursor'),
+      hasMore: booleanField(payload, 'has_more', 'hasMore'),
+    };
+  }
+
+  /**
+   * `match.snapshot` / `GET /v1/matches/{id}/snapshot` — the stage, the local
+   * player's character and the live card effects the scene enters with.
+   * REST-only, for the same forbidden-op reason as {@link fetchMatchEvents}.
+   */
+  async fetchMatchSnapshot(matchId: string): Promise<MatchSnapshotView | null> {
+    const response = await this.callOn(
+      this.restTransport ?? this.transport,
+      this.buildRequest('match.snapshot', { match_id: matchId }),
+    );
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    const players = Array.isArray(payload.players) ? payload.players.filter(isRecord) : [];
+    // The local player is identified by the session's user id: the snapshot
+    // lists every participant and `players[].user_id` is the only mapping back
+    // to this client. With no session there is nothing to match on, so the
+    // first entry is used (the server emits players in roster order).
+    const localUserId = this.session?.userId ?? '';
+    const local = localUserId === ''
+      ? players[0]
+      : players.find((player) => stringField(player, 'user_id', 'userId') === localUserId) ?? players[0];
+    const loadout = local !== undefined && isRecord(local.loadout) ? local.loadout : {};
+    const modeState = isRecord(payload.mode_state)
+      ? payload.mode_state
+      : isRecord(payload.modeState)
+        ? payload.modeState
+        : {};
+    const activeCards = Array.isArray(payload.active_cards)
+      ? payload.active_cards
+      : Array.isArray(payload.activeCards)
+        ? payload.activeCards
+        : [];
+    return {
+      matchId: stringField(payload, 'match_id', 'matchId'),
+      stageId: stringField(payload, 'stage_id', 'stageId') || stringField(modeState, 'stage_id', 'stageId'),
+      characterId: stringField(loadout, 'character_id', 'characterId'),
+      activeCards: activeCards.filter(isRecord).map((card) => activeCardSnapshotFromPayload(card)),
+    };
   }
 
   /** `battle.ticket` — the signed ticket used in the battle handshake. */

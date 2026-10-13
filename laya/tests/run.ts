@@ -44,6 +44,10 @@ import './auth_messages.test';
 import './session_replaced.test';
 import './shortcuts.test';
 import './caret.test';
+import './stage_art.test';
+import './battle_events.test';
+import './cutscene_sequence.test';
+import './battle_event_poller.test';
 
 import { runAll } from './harness';
 
