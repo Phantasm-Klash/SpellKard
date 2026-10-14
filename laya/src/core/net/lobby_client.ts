@@ -189,6 +189,12 @@ export interface BattleTicketView {
   signatureAlg: string;
   keyId: string;
   signatureHex: string;
+  /**
+   * W-1 opening loadout decoded from the same signed ticket: the hand the lobby
+   * dealt, the opening energy and the authoritative lobby seed as decimal text.
+   * `null` when the payload carries no hand at all (an older server).
+   */
+  opening?: BattleOpeningState | null;
   /** Raw signed-ticket payload as returned by the server (kept for the handshake). */
   raw: Record<string, unknown>;
 }
@@ -1222,6 +1228,7 @@ export class LobbyClient {
       signatureAlg: stringField(payload, 'signature_alg', 'signatureAlg'),
       keyId: stringField(payload, 'key_id', 'keyId'),
       signatureHex: hexField(payload, 'signature'),
+      opening: openingStateFromPayload(ticket),
       raw: payload,
     };
     return this.ticket;
@@ -2620,6 +2627,67 @@ function isSessionState(value: unknown): value is SessionState {
 
 function cloneSession(session: SessionState): SessionState {
   return { ...session, unlockedCharacterIds: [...session.unlockedCharacterIds] };
+}
+
+/** Opening state the lobby deals into the signed ticket (W-1). */
+export interface BattleOpeningState {
+  /** Catalog card ids in server order, deduplicated, capped at the hand limit. */
+  handCardIds: string[];
+  /** Opening energy; `0` when the ticket omits or malforms it. */
+  initialEnergy: number;
+  /**
+   * The authoritative lobby seed as DECIMAL TEXT (`seedFrom`, SHA-256 based).
+   * Never a number: a JSON number above 2^53 has already narrowed on the wire,
+   * so a numeric value is treated as absent rather than silently coerced.
+   */
+  serverSeed: string;
+}
+
+/** Hand cap the lobby enforces (`cardHandLimit`); mirrored here for display. */
+export const MAX_OPENING_HAND = 4;
+
+/**
+ * Projects the signed ticket's opening loadout onto {@link BattleOpeningState}.
+ *
+ * Returns `null` when the payload is not an object or carries no hand at all,
+ * so callers can tell "no opening state" (an older server) apart from "an empty
+ * hand". Never throws: a malformed row is dropped rather than fatal.
+ */
+export function openingStateFromPayload(payload: Record<string, unknown>): BattleOpeningState | null {
+  if (!isRecord(payload)) {
+    return null;
+  }
+  const handRaw = payload['hand_card_ids'] ?? payload['handCardIds'];
+  if (!Array.isArray(handRaw)) {
+    return null;
+  }
+  const handCardIds: string[] = [];
+  for (const item of handRaw) {
+    if (typeof item !== 'string') {
+      continue;
+    }
+    const cardId = item.trim();
+    if (cardId === '' || handCardIds.includes(cardId)) {
+      continue;
+    }
+    if (handCardIds.length >= MAX_OPENING_HAND) {
+      break;
+    }
+    handCardIds.push(cardId);
+  }
+  const energyRaw = payload['initial_energy'] ?? payload['initialEnergy'];
+  let initialEnergy = 0;
+  if (typeof energyRaw === 'number' && Number.isFinite(energyRaw) && energyRaw >= 0) {
+    initialEnergy = energyRaw;
+  } else if (typeof energyRaw === 'string' && energyRaw !== '') {
+    const parsed = Number(energyRaw);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      initialEnergy = parsed;
+    }
+  }
+  const seedRaw = payload['server_seed'] ?? payload['serverSeed'];
+  const serverSeed = typeof seedRaw === 'string' ? seedRaw.trim() : '';
+  return { handCardIds, initialEnergy, serverSeed };
 }
 
 export function stringField(source: Record<string, unknown>, ...keys: string[]): string {
