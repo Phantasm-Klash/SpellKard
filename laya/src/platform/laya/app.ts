@@ -19,6 +19,7 @@ import {
   LobbyClient,
   NakamaLobbyTransport,
   WsLobbyTransport,
+  type BattleOpeningState,
   type LobbySessionStore,
 } from '../../core/net/lobby_client';
 import { BattleEventPoller, type MatchEventsPage } from '../../core/net/battle_event_poller';
@@ -99,6 +100,12 @@ export class SpellKardApp {
   private readonly battlePoller: BattleEventPoller;
   /** Match whose events are being polled / whose roster ids resolve. */
   private performanceMatchId = '';
+  /**
+   * The signed ticket's opening loadout for the current match (dealt hand +
+   * opening energy), or `null` before the ticket resolves. Read lazily by the
+   * battle scene's hand bar; the ticket is the only source of the dealt hand.
+   */
+  private battleOpening: BattleOpeningState | null = null;
   private readonly loginScene: LoginScene;
   private readonly lobbyScene: LobbyScene;
   private readonly roomScene: RoomScene;
@@ -264,6 +271,10 @@ export class SpellKardApp {
           this.flow.snapshot().match?.serverSeedHex ?? this.lobbyClient.allocation?.serverSeedHex ?? '';
         return hex === '' ? '' : bossRaceSeedFromHex(hex).decimal;
       },
+      // The hand bar reads the dealt hand from the signed ticket (fetched in
+      // `enterBattlePerformance`); before it resolves this returns null and the
+      // bar draws nothing.
+      openingHand: () => this.battleOpening,
       // The scene's lifecycle starts/stops the poller; it owns no network itself.
       onPerformanceEnter: () => {
         if (this.performanceMatchId !== '' && !this.battlePoller.running) {
@@ -486,6 +497,15 @@ export class SpellKardApp {
       this.battleScene.showBoss(bossPortrait(stage, 1), 1);
       this.battleScene.playStageBgm(snapshot.stageId);
     }
+    // The opening hand rides in the signed battle ticket, which is only
+    // revealed once the match starts; fetch it so the hand bar can draw the
+    // dealt cards. A failure leaves `battleOpening` null (the bar draws
+    // nothing) rather than inventing a hand.
+    const ticket = await this.lobbyClient.fetchBattleTicket(matchId);
+    if (this.performanceMatchId !== matchId) {
+      return;
+    }
+    this.battleOpening = ticket?.opening ?? null;
     if (restartPoller || !this.battlePoller.running) {
       this.battlePoller.start(matchId);
     }
@@ -495,6 +515,7 @@ export class SpellKardApp {
   private stopBattlePerformance(): void {
     this.battlePoller.stop();
     this.performanceMatchId = '';
+    this.battleOpening = null;
   }
 
   /**

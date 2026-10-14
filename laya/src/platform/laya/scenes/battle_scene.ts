@@ -18,7 +18,9 @@ import type { TimerLike } from '../../../core/net/transport';
 import { battleLayout, type BattleLayout } from '../../../core/game/battle_layout';
 import { buildBossRaceFrame, type BossRaceFrame, type PlayerRenderItem, type RenderPoint, PlayfieldTransform, bossOriginPixels } from '../../../core/game/boss_race_view_model';
 import { describeDirectionBits, encodeInput } from '../../../core/game/input';
+import { HandBarController } from '../../../core/game/card_hand_view';
 import { eventToSfx, toCardEffectEvent, type MatchEventView } from '../../../core/game/battle_events';
+import type { BattleOpeningState } from '../../../core/net/lobby_client';
 import { defaultCutsceneSteps } from '../../../core/game/stage_visual';
 import type { BossRaceSnapshot } from '../../../core/sim/boss_race';
 import {
@@ -45,6 +47,7 @@ import { sharedTnaFrameSource } from '../view/bullet_atlas';
 import { CutsceneOverlay } from '../view/cutscene';
 import type { HudState } from '../view/hud';
 import { fade } from '../view/sprites';
+import { HandBar } from '../view/hand_bar';
 import { StageBackgroundLayer } from '../view/stage_background';
 import * as theme from '../view/theme';
 import { WatermarkLayer } from '../view/watermark';
@@ -82,6 +85,15 @@ export interface BattleSceneOptions {
    * `match_start` / the battle allocation, after sign-in.
    */
   serverSeedDecimal?: () => string;
+  /**
+   * Lazily read opening loadout from the signed battle ticket
+   * (`BattleTicketView.opening`): the hand the lobby dealt and the opening
+   * energy. Lazy for the same reason as {@link serverSeedDecimal} — the ticket
+   * only arrives after `match_start`. Return `null` before then; the hand bar
+   * simply draws nothing. The provider may allocate a fresh object per call
+   * (the scene compares by value), but a stable reference is cheaper.
+   */
+  openingHand?: () => BattleOpeningState | null;
   /**
    * Called on `onEnter`. The app uses it to start the match-event poller (the
    * scene itself owns no network source); optional so the scene still runs
@@ -165,6 +177,19 @@ export class BattleScene implements ClientScene {
   private readonly effectLayer: Laya.Sprite;
   /** Effect readout (invulnerability countdown, last finisher damage). */
   private readonly effectText: Laya.Text;
+  /**
+   * Hand bar: the ticket's opening hand as cast slots plus the energy readout.
+   * Sits above the card effects and below the cutscene / pause banner.
+   */
+  private readonly handBar: HandBar;
+  /** Hand-bar state: the dealt hand and the one-shot cast intent. */
+  private readonly handController = new HandBarController();
+  /**
+   * Signature of the hand currently mirrored into the bar. The provider is
+   * polled every tick, so the bar is only rebuilt when the hand actually
+   * changes (including a change from "no ticket yet" to the dealt hand).
+   */
+  private lastHandKey = '\u0001';
   private readonly activeEffects: ActiveCardEffect[] = [];
   private lastFinisherDamage = 0;
   private authoritative: BossRaceSnapshot | null = null;
@@ -231,6 +256,14 @@ export class BattleScene implements ClientScene {
     this.effectText.visible = false;
     this.root.addChild(this.effectText);
 
+    // The hand bar hugs the bottom of the playfield: above the card effects
+    // (so a purge ring does not hide a slot) and below the entrance cutscene
+    // and the pause banner (so a pause always wins visually). Its click is a
+    // one-shot cast intent consumed by the next input packet in `step`.
+    this.handBar = new HandBar();
+    this.handBar.onSlotClick = (index) => this.handController.click(index);
+    this.root.addChild(this.handBar.root);
+
     // The stage-entrance cutscene sits above the card effects but below the
     // PAUSED banner (a pause should always win visually).
     this.cutscene = new CutsceneOverlay();
@@ -272,6 +305,8 @@ export class BattleScene implements ClientScene {
     this.paused = false;
     this.pauseOverlay.visible = false;
     this.clearCardEffects();
+    // Mirror whatever opening loadout the ticket has already delivered.
+    this.syncHand();
     // Reset the overlays, replay the entrance cutscene and (re)start the stage
     // track from the stage the snapshot last reported.
     this.resetOverlays();
@@ -303,6 +338,7 @@ export class BattleScene implements ClientScene {
     this.stageBackground.destroy();
     this.watermark.destroy();
     this.cutscene.destroy();
+    this.handBar.destroy();
     this.root.destroy(true);
   }
 
@@ -369,6 +405,26 @@ export class BattleScene implements ClientScene {
   }
 
   /**
+   * Mirrors the signed ticket's opening hand into the hand bar.
+   *
+   * The provider is polled every tick because the ticket arrives after
+   * `match_start`; the bar is only rebuilt when the hand's signature changes,
+   * so an absent ticket (and an empty hand) both settle on "draw nothing"
+   * without redrawing each frame. Never touches the wire: the bar shows the
+   * dealt hand verbatim and the cast intent is the only thing a click sets.
+   */
+  private syncHand(): void {
+    const opening = this.options.openingHand?.() ?? null;
+    const key = `${opening?.initialEnergy ?? 0}|${(opening?.handCardIds ?? []).join(',')}`;
+    if (key === this.lastHandKey) {
+      return;
+    }
+    this.lastHandKey = key;
+    this.handController.setOpening(opening);
+    this.handBar.setView(this.handController.view);
+  }
+
+  /**
    * Re-tiles the whole scene for a new stage size. Called once at construction
    * and again on every `Laya.Event.RESIZE`, so the playfield, status panel and
    * bullet art scale track the window instead of freezing at boot.
@@ -389,6 +445,12 @@ export class BattleScene implements ClientScene {
     this.effectLayer.size(this.geometry.playfield.width, this.geometry.playfield.height);
     this.effectText.pos(this.geometry.hudX + 8, this.geometry.hudHeight - theme.FONT_SIZE_CAPTION - 8);
     this.effectText.width = this.geometry.hudWidth - 16;
+    // The hand bar spans the playfield and hugs its bottom edge.
+    this.handBar.relayout({
+      x: this.geometry.playfieldX,
+      bottom: this.geometry.playfieldY + this.geometry.playfield.height,
+      width: this.geometry.playfield.width,
+    });
     this.view.relayout({
       layout: this.geometry.playfield,
       playfieldX: this.geometry.playfieldX,
@@ -582,7 +644,13 @@ export class BattleScene implements ClientScene {
     // keep running even while the battle connection is not yet `Running` (the
     // entrance cutscene must play before the first snapshot arrives).
     this.updateOverlays(this.options.battle.tickIntervalMs);
+    // Mirror the ticket's hand (it may have just arrived) before reading the
+    // cast intent, so a click can never fire a slot the bar no longer shows.
+    this.syncHand();
     const battle = this.options.battle;
+    // A hand-bar click is one-shot: consume it on this very tick, even when no
+    // packet goes out (a click during a pause must not fire much later).
+    const clickedSlot = this.handController.take();
     if (battle.state !== BattleConnectionState.Running) {
       this.renderFrame();
       return;
@@ -590,13 +658,15 @@ export class BattleScene implements ClientScene {
     const raw = this.options.input.snapshot();
     const encoded = encodeInput(raw);
     const tick = (battle.simulationRef?.getCurrentTick() ?? 0) + 1;
+    // A clicked slot wins over the keyboard's slot for exactly this one packet.
+    const cardSlot = clickedSlot >= 0 ? clickedSlot : encoded.cardSlot;
     battle.sendInput(
       tick,
       encoded.directionBits,
       encoded.slow,
       encoded.shoot,
       encoded.bomb,
-      encoded.cardSlot,
+      cardSlot,
     );
     this.options.input.consumeTransient();
     battle.tick();

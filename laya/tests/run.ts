@@ -11,6 +11,7 @@ import './protocol_codec.test';
 import './battle_codec.test';
 import './battle_opening.test';
 import './card_intent.test';
+import './card_hand_view.test';
 import './battle_client_input.test';
 import './boss_race_sim.test';
 import './boss_race_tna.test';
