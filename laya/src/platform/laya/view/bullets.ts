@@ -303,7 +303,7 @@ export class AtlasBulletRenderer implements BulletRenderer {
       ? animatedFrameFor(request.bulletKind, request.tick) || descriptor.frame
       : descriptor.frame;
     const texture = this.source.frame(descriptor.atlas, frameName);
-    if (texture === null) {
+    if (texture === null || texture === undefined) {
       this.fallback.draw(sprite, request);
       return;
     }

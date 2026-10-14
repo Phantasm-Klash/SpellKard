@@ -86,7 +86,7 @@ export class AtlasActorRenderer implements ActorSpriteRenderer {
     tick: number,
   ): void {
     const texture = this.lookup(bossFrame(isLocal, defeated));
-    if (texture === null) {
+    if (texture === null || texture === undefined) {
       this.fallback.drawBoss(sprite, radius, hpRatio, defeated, isLocal, tick);
       return;
     }
@@ -97,7 +97,7 @@ export class AtlasActorRenderer implements ActorSpriteRenderer {
 
   drawPlayer(sprite: Laya.Sprite, radius: number, isLocal: boolean, isFocused: boolean, angleRad: number): void {
     const texture = this.lookup(playerFrame(isLocal));
-    if (texture === null) {
+    if (texture === null || texture === undefined) {
       this.fallback.drawPlayer(sprite, radius, isLocal, isFocused, angleRad);
       return;
     }

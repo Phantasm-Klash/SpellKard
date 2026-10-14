@@ -254,7 +254,7 @@ export class LayaAtlasFrameSource implements BulletFrameSource, AtlasImageSource
       return 0;
     }
     const texture = await this.loadImage(`${root}/${image}`);
-    if (texture === null) {
+    if (texture === null || texture === undefined) {
       return 0;
     }
     let sliced = 0;

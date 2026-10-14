@@ -572,7 +572,7 @@ export class LobbyScene implements ClientScene {
       res = null;
     }
     let texture = unwrapTexture(res);
-    if (texture === null) {
+    if (texture === null || texture === undefined) {
       try {
         texture = unwrapTexture(Laya.loader.getRes(url));
       } catch {

@@ -127,7 +127,7 @@ export class WatermarkLayer {
   }
 
   private applySprite(sprite: Laya.Sprite, scale: number, flashMs: number): void {
-    if (sprite.texture === null) {
+    if (sprite.texture === null || sprite.texture === undefined) {
       sprite.visible = false;
       return;
     }
@@ -153,7 +153,7 @@ export class WatermarkLayer {
       this.character.pos(margin, margin);
     }
     const bossTexture = this.boss.texture;
-    if (bossTexture !== null) {
+    if (bossTexture !== null && bossTexture !== undefined) {
       this.boss.pivot(bossTexture.width || 0, 0);
       this.boss.pos(Math.max(margin, this.width - margin), margin);
     }

@@ -161,7 +161,7 @@ export class StageBackgroundLayer {
   /** Centres `tile` on `(x, y)` and rotates it; hidden while it has no texture. */
   private place(tile: Laya.Sprite, x: number, y: number, rotationDeg: number): void {
     const texture = tile.texture;
-    if (texture === null) {
+    if (texture === null || texture === undefined) {
       tile.visible = false;
       return;
     }
