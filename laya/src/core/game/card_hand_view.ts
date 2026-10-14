@@ -1,18 +1,19 @@
 /**
  * Hand-bar presentation model (engine-agnostic).
  *
- * The battle HUD shows the local player's opening hand as a small strip of cast
- * slots plus the opening energy. Both come from the **signed battle ticket**
- * (`BattleOpeningState`, `core/net/lobby_client.ts`): the client owns no hand
- * state of its own — it renders what the ticket dealt and turns a slot click
- * into a one-shot cast intent for the next input packet.
+ * The battle HUD shows the local player's hand as a small strip of cast slots
+ * plus the opening energy. The hand starts as the **signed battle ticket's**
+ * opening loadout (`BattleOpeningState`, `core/net/lobby_client.ts`) and only
+ * ever grows through a server `draft_grant` — the client owns no hand state of
+ * its own, it renders what the server dealt and turns a slot click into a
+ * one-shot cast intent for the next input packet.
  *
  * Two deliberate non-features, because the server is authoritative:
  *
  *  - no cost / cooldown / turn gating. Energy is displayed, never compared
  *    against a card's cost; whether a cast is legal is the server's decision.
- *  - no candidate or hand mutation. The hand only changes when a `draft_grant`
- *    row says so (see the draft panel), never because the UI felt like it.
+ *  - no hand mutation beyond a server grant. The hand changes only when a
+ *    `draft_grant` row says so, never because the UI felt like it.
  *
  * NOTE: `core/` only — never import Laya or platform code from here.
  */
@@ -37,28 +38,30 @@ export interface HandBarView {
   slots: HandSlotView[];
   /** Opening energy, shown verbatim; never a gate. */
   energy: number;
-  /** False for a missing or empty hand: the bar draws nothing. */
+  /** False for an empty hand: the bar draws nothing. */
   visible: boolean;
 }
 
 /**
- * Projects an opening loadout onto the hand bar.
+ * Projects a hand onto the hand bar.
  *
- * A missing opening (older server) and an empty hand both yield an invisible
- * bar with no slots — never a placeholder slot, which a click could otherwise
- * arm. Slots are the server's own order, capped at the cast-slot limit so a
- * malformed ticket cannot produce an uncastable slot index. Never throws.
+ * An empty hand yields an invisible bar with no slots — never a placeholder
+ * slot, which a click could otherwise arm. Slots are the server's own order,
+ * capped at the cast-slot limit so a malformed ticket cannot produce an
+ * uncastable slot index. Never throws.
  */
 export function buildHandBar(
-  opening: BattleOpeningState | null | undefined,
+  handCardIds: readonly string[] | null | undefined,
+  energy: number,
   maxSlots: number = MAX_CARD_SLOTS,
 ): HandBarView {
-  const hand = opening?.handCardIds ?? [];
+  const hand = handCardIds ?? [];
   const limit = Math.max(0, Math.trunc(maxSlots));
   const slots: HandSlotView[] = [];
   for (let index = 0; index < hand.length && index < limit; index += 1) {
     const cardId = hand[index];
     if (typeof cardId !== 'string' || cardId === '') {
+      // Keep the index aligned with the server's slot numbering.
       continue;
     }
     const definition = cardEffectDefinition(cardId);
@@ -69,7 +72,6 @@ export function buildHandBar(
       summary: describeCardEffect(cardId),
     });
   }
-  const energy = opening?.initialEnergy ?? 0;
   return {
     slots,
     energy: Number.isFinite(energy) ? energy : 0,
@@ -77,42 +79,71 @@ export function buildHandBar(
   };
 }
 
+/** Convenience: the hand bar for a ticket opening loadout (or `null`). */
+export function openingHandBar(
+  opening: BattleOpeningState | null | undefined,
+  maxSlots: number = MAX_CARD_SLOTS,
+): HandBarView {
+  return buildHandBar(opening?.handCardIds ?? [], opening?.initialEnergy ?? 0, maxSlots);
+}
+
 /**
  * The hand bar's state machine: it owns the current hand and the one-shot cast
  * intent, so a click can never cast a slot the server did not deal.
  *
  * `click` arms a cast only for a slot that actually holds a card; `take`
- * consumes it for exactly one input packet. A change of hand cancels any
- * pending cast, so a click that raced a `draft_grant` cannot fire a stale slot.
+ * consumes it for exactly one input packet. Installing a *different* opening
+ * cancels any pending cast, so a click that raced a fresh ticket cannot fire a
+ * stale slot; a grant only appends, so it leaves an in-flight click alone.
  */
 export class HandBarController {
-  private opening: BattleOpeningState | null = null;
-  private handKey = '';
+  private hand: string[] = [];
+  private energyValue = 0;
+  /** Signature of the opening last installed, so an unchanged ticket is a no-op. */
+  private openingKey = '\u0001';
   private readonly intent = new CardCastIntent();
 
   /** Installs the server's opening loadout; `null` clears the bar. */
   setOpening(opening: BattleOpeningState | null | undefined): void {
     const next = opening ?? null;
-    const nextKey = (next?.handCardIds ?? []).join('\u0000');
-    if (nextKey !== this.handKey) {
-      // The hand changed under a pending click: drop it rather than fire a slot
-      // that may no longer hold that card.
+    const ids = (next?.handCardIds ?? []).slice(0, MAX_CARD_SLOTS);
+    const key = ids.join('\u0000');
+    if (key !== this.openingKey) {
+      // The opening changed under a pending click: drop it rather than fire a
+      // slot that may no longer hold that card.
       this.intent.cancel();
-      this.handKey = nextKey;
+      this.openingKey = key;
     }
-    this.opening = next;
+    this.hand = ids.slice();
+    this.energyValue = next?.initialEnergy ?? 0;
+  }
+
+  /**
+   * Appends a card the server granted to this player (`draft_grant`).
+   *
+   * Returns whether the hand changed. A duplicate id, a blank id, or a full
+   * hand is ignored — the client mirrors the server's `cardHandLimit` for
+   * display and never invents a fifth slot.
+   */
+  applyGrant(cardId: string): boolean {
+    const id = cardId.trim();
+    if (id === '' || this.hand.includes(id) || this.hand.length >= MAX_CARD_SLOTS) {
+      return false;
+    }
+    this.hand.push(id);
+    return true;
   }
 
   get view(): HandBarView {
-    return buildHandBar(this.opening);
+    return buildHandBar(this.hand, this.energyValue);
   }
 
   get energy(): number {
-    return this.opening?.initialEnergy ?? 0;
+    return this.energyValue;
   }
 
   get handCardIds(): readonly string[] {
-    return this.opening?.handCardIds ?? [];
+    return this.hand;
   }
 
   get armed(): boolean {

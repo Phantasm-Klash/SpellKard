@@ -19,7 +19,13 @@ import { battleLayout, type BattleLayout } from '../../../core/game/battle_layou
 import { buildBossRaceFrame, type BossRaceFrame, type PlayerRenderItem, type RenderPoint, PlayfieldTransform, bossOriginPixels } from '../../../core/game/boss_race_view_model';
 import { describeDirectionBits, encodeInput } from '../../../core/game/input';
 import { HandBarController } from '../../../core/game/card_hand_view';
-import { eventToSfx, toCardEffectEvent, type MatchEventView } from '../../../core/game/battle_events';
+import { DraftPanelController, localGrantCardId } from '../../../core/game/draft_panel_view';
+import {
+  draftViewFromEvent,
+  eventToSfx,
+  toCardEffectEvent,
+  type MatchEventView,
+} from '../../../core/game/battle_events';
 import type { BattleOpeningState } from '../../../core/net/lobby_client';
 import { defaultCutsceneSteps } from '../../../core/game/stage_visual';
 import type { BossRaceSnapshot } from '../../../core/sim/boss_race';
@@ -47,6 +53,7 @@ import { sharedTnaFrameSource } from '../view/bullet_atlas';
 import { CutsceneOverlay } from '../view/cutscene';
 import type { HudState } from '../view/hud';
 import { fade } from '../view/sprites';
+import { DraftPanel } from '../view/draft_panel';
 import { HandBar } from '../view/hand_bar';
 import { StageBackgroundLayer } from '../view/stage_background';
 import * as theme from '../view/theme';
@@ -94,6 +101,19 @@ export interface BattleSceneOptions {
    * (the scene compares by value), but a stable reference is cheaper.
    */
   openingHand?: () => BattleOpeningState | null;
+  /**
+   * Lazily read the local player's **lobby** user id. The draft events name
+   * players by lobby `user_id` (not the battle roster id), so this is what
+   * decides the picker's role and which grants belong to this player. Empty
+   * before sign-in, which reads as a spectator.
+   */
+  localUserId?: () => string;
+  /**
+   * Submits one draft pick, exactly as `LobbyClient.selectRoundCard` does
+   * (`match.mode_action` with `candidate_index`). Called only from a candidate
+   * click by the designated picker; the scene never builds the pick itself.
+   */
+  selectDraftCard?: (matchId: string, candidateIndex: number, modeId: string) => void;
   /**
    * Called on `onEnter`. The app uses it to start the match-event poller (the
    * scene itself owns no network source); optional so the scene still runs
@@ -190,6 +210,13 @@ export class BattleScene implements ClientScene {
    * changes (including a change from "no ticket yet" to the dealt hand).
    */
   private lastHandKey = '\u0001';
+  /**
+   * Draft panel: the three candidates of an open mixed-pool round. Centred
+   * over the playfield, above the hand bar and below the pause banner.
+   */
+  private readonly draftPanel: DraftPanel;
+  /** Draft state: the open round and the pick submission. */
+  private readonly draftController: DraftPanelController;
   private readonly activeEffects: ActiveCardEffect[] = [];
   private lastFinisherDamage = 0;
   private authoritative: BossRaceSnapshot | null = null;
@@ -263,6 +290,15 @@ export class BattleScene implements ClientScene {
     this.handBar = new HandBar();
     this.handBar.onSlotClick = (index) => this.handController.click(index);
     this.root.addChild(this.handBar.root);
+
+    // The draft panel sits above the hand bar; a candidate click becomes one
+    // `select_round_card` submission through the injected lobby callback.
+    this.draftPanel = new DraftPanel();
+    this.draftController = new DraftPanelController((matchId, candidateIndex, modeId) =>
+      this.options.selectDraftCard?.(matchId, candidateIndex, modeId),
+    );
+    this.draftPanel.onCandidateClick = (index) => this.draftController.click(index);
+    this.root.addChild(this.draftPanel.root);
 
     // The stage-entrance cutscene sits above the card effects but below the
     // PAUSED banner (a pause should always win visually).
@@ -339,12 +375,16 @@ export class BattleScene implements ClientScene {
     this.watermark.destroy();
     this.cutscene.destroy();
     this.handBar.destroy();
+    this.draftPanel.destroy();
     this.root.destroy(true);
   }
 
-  /** Resets the transient overlay state (the entrance cutscene). */
+  /** Resets the transient overlay state (the entrance cutscene, any open draft). */
   private resetOverlays(): void {
     this.cutscene.reset();
+    // No round is open when a battle (re)starts; a `draft_open` shows it again.
+    this.draftController.setDraft(null);
+    this.draftPanel.setView(null);
   }
 
   /**
@@ -393,6 +433,59 @@ export class BattleScene implements ClientScene {
     if (sfx !== null) {
       this.audio.playSfx(sfx);
     }
+    this.handleDraftEvent(event);
+  }
+
+  /**
+   * Bridges the draft event family onto the panel and the hand bar.
+   *
+   * `draft_open` shows the round's three candidates; `draft_grant` appends the
+   * local player's card to the hand and closes the panel; `draft_timeout` /
+   * `draft_skipped` close it too. `draft_pick` is informational and changes
+   * nothing here — the server owns the round and re-sends what it wants shown.
+   *
+   * A deferred grant (`card_grant_deferred`) is *not* added to the visible
+   * hand: the card waits in the server's pending list, so the bar keeps showing
+   * the four cards that are actually playable.
+   */
+  private handleDraftEvent(event: MatchEventView): void {
+    switch (event.type) {
+      case 'draft_open': {
+        this.refreshDraftContext();
+        this.draftController.setDraft(draftViewFromEvent(event));
+        this.draftPanel.setView(this.draftController.panel);
+        break;
+      }
+      case 'draft_grant':
+      case 'card_grant_deferred': {
+        // Only this player's immediate grants change this player's hand; the
+        // opponent's grant and a deferred one must leave it untouched.
+        const cardId = localGrantCardId(event, this.options.localUserId?.() ?? '');
+        if (cardId !== null && this.handController.applyGrant(cardId)) {
+          this.handBar.setView(this.handController.view);
+        }
+        this.draftController.setDraft(null);
+        this.draftPanel.setView(null);
+        break;
+      }
+      case 'draft_timeout':
+      case 'draft_skipped':
+        this.draftController.setDraft(null);
+        this.draftPanel.setView(null);
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** Refreshes the match context a draft pick is submitted against. */
+  private refreshDraftContext(): void {
+    const info = this.options.battle.info;
+    this.draftController.setContext(
+      info?.matchId ?? '',
+      info?.modeId ?? '',
+      this.options.localUserId?.() ?? '',
+    );
   }
 
   /** Drops every card effect and its overlay paint. */
@@ -450,6 +543,13 @@ export class BattleScene implements ClientScene {
       x: this.geometry.playfieldX,
       bottom: this.geometry.playfieldY + this.geometry.playfield.height,
       width: this.geometry.playfield.width,
+    });
+    // The draft panel centres itself over the whole playfield.
+    this.draftPanel.relayout({
+      x: this.geometry.playfieldX,
+      y: this.geometry.playfieldY,
+      width: this.geometry.playfield.width,
+      height: this.geometry.playfield.height,
     });
     this.view.relayout({
       layout: this.geometry.playfield,

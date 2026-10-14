@@ -275,6 +275,14 @@ export class SpellKardApp {
       // `enterBattlePerformance`); before it resolves this returns null and the
       // bar draws nothing.
       openingHand: () => this.battleOpening,
+      // Draft events name players by lobby `user_id`, so the picker's role and
+      // which grants belong to this client are decided against the session id.
+      localUserId: () => this.lobbyClient.session?.userId ?? '',
+      // A candidate click becomes one `match.mode_action` pick; the lobby owns
+      // the outcome, the client only sends the intent.
+      selectDraftCard: (matchId, candidateIndex, modeId) => {
+        void this.lobbyClient.selectRoundCard(matchId, candidateIndex, modeId);
+      },
       // The scene's lifecycle starts/stops the poller; it owns no network itself.
       onPerformanceEnter: () => {
         if (this.performanceMatchId !== '' && !this.battlePoller.running) {
