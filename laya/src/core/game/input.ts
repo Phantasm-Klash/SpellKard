@@ -96,3 +96,42 @@ export function describeDirectionBits(bits: number): string {
   }
   return names.length === 0 ? 'none' : names.join('+');
 }
+
+/** Hand size the lobby enforces (`cardHandLimit`); a cast slot stays below it. */
+export const MAX_CARD_SLOTS = 4;
+
+/**
+ * A one-shot card-cast intent.
+ *
+ * The battle loop builds exactly one packet per tick, so a click must survive
+ * one `take()` and then clear — otherwise a single click would cast on every
+ * subsequent tick. Out-of-range requests are ignored rather than clamped: a
+ * stale UI must never fire a card the server would reject anyway.
+ */
+export class CardCastIntent {
+  private pending = -1;
+
+  get armed(): boolean {
+    return this.pending >= 0;
+  }
+
+  /** Arms a cast for the next packet; returns whether the request was accepted. */
+  request(slot: number): boolean {
+    if (!Number.isInteger(slot) || slot < 0 || slot >= MAX_CARD_SLOTS) {
+      return false;
+    }
+    this.pending = slot;
+    return true;
+  }
+
+  /** Consumes the armed slot (one packet only); `-1` when nothing is armed. */
+  take(): number {
+    const slot = this.pending;
+    this.pending = -1;
+    return slot;
+  }
+
+  cancel(): void {
+    this.pending = -1;
+  }
+}

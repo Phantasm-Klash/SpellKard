@@ -39,6 +39,16 @@ export interface MatchEventView {
   targetUserId?: string;
   actionId?: string;
   bulletId?: string;
+  /** `draft_open` names the SECOND picker here (the first is `userId`). */
+  fromUserId?: string;
+  /** Draft round index; 0 for event families that do not carry one. */
+  roundIndex?: number;
+  /**
+   * Free-form state the emitting family defines: the draft uses it for the
+   * picker role (`first` / `second`) and for grant state (`granted` /
+   * `deferred`).
+   */
+  status?: string;
 }
 
 /** A raw event payload: the server writes snake_case, camelCase is accepted. */
@@ -146,6 +156,18 @@ export function matchEventViewFromPayload(payload: MatchEventPayload): MatchEven
   if (bulletId !== '') {
     view.bulletId = bulletId;
   }
+  const fromUserId = payloadString(payload, 'from_user_id', 'fromUserId');
+  if (fromUserId !== '') {
+    view.fromUserId = fromUserId;
+  }
+  const roundIndex = payloadNumber(payload, 'round_index', 'roundIndex');
+  if (roundIndex !== undefined) {
+    view.roundIndex = roundIndex;
+  }
+  const status = payloadString(payload, 'status');
+  if (status !== '') {
+    view.status = status;
+  }
   return view;
 }
 
@@ -223,4 +245,119 @@ export function eventToSfx(event: MatchEventView): MatchEventSfx | null {
     default:
       return null;
   }
+}
+
+/** One round of the mixed-pool draft, projected from a `draft_open` row. */
+export interface DraftView {
+  roundIndex: number;
+  /** The boss whose defeat opened the round (the event's `action_id`). */
+  bossId: string;
+  /** The three candidates, in server order (the wire joins them with commas). */
+  candidates: string[];
+  /** The player who defeated the boss first — picks first. */
+  firstUserId: string;
+  /** The second defeater — picks from what remains, or '' when unknown. */
+  secondUserId: string;
+  /** Public pool hash (the event's `reason`), for auditing the pool. */
+  poolHash: string;
+  /** Tick after which the server auto-picks for a silent player. */
+  expiresTick: number;
+}
+
+/**
+ * Projects a `draft_open` row onto {@link DraftView}.
+ *
+ * The wire has no array fields, so the candidates arrive comma-joined in
+ * `card_id` (see `battle_draft.go`). An empty list means the row is unusable —
+ * never render a draft with nothing to pick.
+ */
+export function draftViewFromEvent(event: MatchEventView): DraftView | null {
+  if (event.type !== 'draft_open') {
+    return null;
+  }
+  const candidates = (event.cardId ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item !== '');
+  if (candidates.length === 0) {
+    return null;
+  }
+  return {
+    roundIndex: event.roundIndex ?? 0,
+    bossId: event.actionId ?? '',
+    candidates,
+    firstUserId: event.userId ?? '',
+    secondUserId: event.fromUserId ?? '',
+    poolHash: event.reason ?? '',
+    expiresTick: event.expiresTick ?? 0,
+  };
+}
+
+/** A granted card row: one per player, sharing `action_id` as the grant id. */
+export interface DraftGrantView {
+  roundIndex: number;
+  userId: string;
+  cardId: string;
+  /** Shared id across the rows of one grant, so both can be matched up. */
+  grantId: string;
+  /** True when the hand was full and the card waits in `PendingGrants`. */
+  deferred: boolean;
+}
+
+export function draftGrantFromEvent(event: MatchEventView): DraftGrantView | null {
+  if (event.type !== 'draft_grant' && event.type !== 'card_grant_deferred') {
+    return null;
+  }
+  const cardId = (event.cardId ?? '').trim();
+  if (cardId === '') {
+    return null;
+  }
+  return {
+    roundIndex: event.roundIndex ?? 0,
+    userId: event.userId ?? '',
+    cardId,
+    grantId: event.actionId ?? '',
+    deferred: event.type === 'card_grant_deferred',
+  };
+}
+
+/** One pick, with the picker's role in the round. */
+export interface DraftPickView {
+  roundIndex: number;
+  userId: string;
+  cardId: string;
+  role: string;
+}
+
+export function draftPickFromEvent(event: MatchEventView): DraftPickView | null {
+  if (event.type !== 'draft_pick') {
+    return null;
+  }
+  const cardId = (event.cardId ?? '').trim();
+  if (cardId === '') {
+    return null;
+  }
+  return {
+    roundIndex: event.roundIndex ?? 0,
+    userId: event.userId ?? '',
+    cardId,
+    role: event.status ?? '',
+  };
+}
+
+/**
+ * Which side of the draft the local player is on. A spectator (a third player,
+ * or an unknown local id) must never be shown a pick control.
+ */
+export function draftPickerRole(view: DraftView, localUserId: string): 'first' | 'second' | 'spectator' {
+  if (localUserId === '') {
+    return 'spectator';
+  }
+  if (localUserId === view.firstUserId) {
+    return 'first';
+  }
+  if (localUserId === view.secondUserId) {
+    return 'second';
+  }
+  return 'spectator';
 }

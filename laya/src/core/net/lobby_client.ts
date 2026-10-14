@@ -1234,6 +1234,18 @@ export class LobbyClient {
     return this.ticket;
   }
 
+  /**
+   * `match.mode_action` — submit one draft pick.
+   *
+   * The lobby accepts `candidate_index` (0..2) or `card_id`; the index form is
+   * preferred (see {@link roundCardPickPayload}). A rejection returns as an
+   * ordinary response with `accepted === false` plus a reason, so the caller
+   * shows the reason instead of guessing.
+   */
+  async selectRoundCard(matchId: string, candidateIndex: number, modeId = ''): Promise<LobbyRpcResponse> {
+    return this.call('match.mode_action', roundCardPickPayload(matchId, candidateIndex, modeId));
+  }
+
   /** `replay.get` — server-owned replay audit record for a finished match. */
   async fetchReplay(replayId: string): Promise<Record<string, unknown> | null> {
     const response = await this.call('replay.get', { replay_id: replayId });
@@ -2653,6 +2665,27 @@ export const MAX_OPENING_HAND = 4;
  * so callers can tell "no opening state" (an older server) apart from "an empty
  * hand". Never throws: a malformed row is dropped rather than fatal.
  */
+/**
+ * The `match.mode_action` payload for a draft pick.
+ *
+ * `candidate_index` is preferred over `card_id`: an index cannot name a card
+ * outside the round's candidates, so a stale UI cannot smuggle one in. The
+ * result is never client-authoritative — the lobby owns the outcome.
+ */
+export function roundCardPickPayload(
+  matchId: string,
+  candidateIndex: number,
+  modeId = '',
+): Record<string, unknown> {
+  return {
+    match_id: matchId,
+    mode_id: modeId,
+    action_type: 'select_round_card',
+    payload: { candidate_index: candidateIndex },
+    client_result_authoritative: false,
+  };
+}
+
 export function openingStateFromPayload(payload: Record<string, unknown>): BattleOpeningState | null {
   if (!isRecord(payload)) {
     return null;
