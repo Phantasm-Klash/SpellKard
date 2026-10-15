@@ -5,10 +5,14 @@
  * `encodeInput` converts into the server's direction bitmask. Bindings follow
  * the Godot prototype's intent (arrow keys or WASD to move, Z/J to shoot,
  * Shift to focus, X/K to bomb, 1-4 for card slots).
+ *
+ * The digit keys map onto **0-based** wire slots (key `1` = the first card) via
+ * `core/game/input.cardSlotForKeyCode`; the armed slot is held in a
+ * `CardKeyState` so a keypress survives exactly one packet.
  */
 
 import type { RawInputSnapshot } from '../../core/game/input';
-import { emptyInputState } from '../../core/game/input';
+import { CardKeyState, emptyInputState } from '../../core/game/input';
 
 export const KEY_LEFT = 37;
 export const KEY_UP = 38;
@@ -23,10 +27,6 @@ export const KEY_J = 74;
 export const KEY_K = 75;
 export const KEY_X = 88;
 export const KEY_Z = 90;
-export const KEY_1 = 49;
-export const KEY_2 = 50;
-export const KEY_3 = 51;
-export const KEY_4 = 52;
 
 interface KeyEventLike {
   keyCode: number;
@@ -34,7 +34,8 @@ interface KeyEventLike {
 
 export class LayaInput {
   private readonly pressed = new Set<number>();
-  private lastCardSlot = -1;
+  /** The card slot armed by the digit keys `1`..`4`, cleared once per tick. */
+  private readonly cardKeys = new CardKeyState();
 
   constructor() {
     Laya.stage.on(Laya.Event.KEY_DOWN, this, (...args: unknown[]) => {
@@ -53,9 +54,7 @@ export class LayaInput {
 
   private onKeyDown(keyCode: number): void {
     this.pressed.add(keyCode);
-    if (keyCode >= KEY_1 && keyCode <= KEY_4) {
-      this.lastCardSlot = keyCode - KEY_1 + 1;
-    }
+    this.cardKeys.press(keyCode);
   }
 
   private isDown(...keyCodes: number[]): boolean {
@@ -69,7 +68,7 @@ export class LayaInput {
 
   /** Clears transient (just-pressed) state; call once per simulation tick. */
   consumeTransient(): void {
-    this.lastCardSlot = -1;
+    this.cardKeys.consume();
   }
 
   snapshot(): RawInputSnapshot {
@@ -81,7 +80,7 @@ export class LayaInput {
       slow: this.isDown(KEY_SHIFT),
       shoot: this.isDown(KEY_Z, KEY_J),
       bomb: this.isDown(KEY_X, KEY_K),
-      cardSlot: this.lastCardSlot,
+      cardSlot: this.cardKeys.slot,
     };
   }
 

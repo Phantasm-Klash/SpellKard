@@ -135,3 +135,52 @@ export class CardCastIntent {
     this.pending = -1;
   }
 }
+
+/**
+ * `KeyboardEvent.keyCode` for the digit keys `1`..`4`, in slot order.
+ *
+ * The values are the **wire** slots: 0-based, so key `1` casts the first card.
+ * That matches the server's `ValidateCast` (`slot >= hand.size()` is rejected,
+ * see `M-1_card_slot_bound_fix.md`) and `CardCastIntent`. The old
+ * `keyCode - KEY_1 + 1` mapping was 1-based, which cast the *second* card on
+ * key `1` and made key `4` an out-of-range slot the server rejects.
+ */
+export const CARD_KEY_CODES: readonly number[] = [49, 50, 51, 52];
+
+/**
+ * Maps a key code onto a 0-based cast slot, or `-1` when the key is not a card
+ * key. `-1` doubles as the wire's "no card this tick" sentinel.
+ */
+export function cardSlotForKeyCode(keyCode: number): number {
+  return CARD_KEY_CODES.indexOf(keyCode);
+}
+
+/**
+ * Tracks the card slot armed by the digit keys.
+ *
+ * The battle loop reads one slot per tick and then clears it, so a keypress
+ * survives exactly one packet — the keyboard's counterpart to
+ * {@link CardCastIntent}'s one-shot contract. Kept in `core/` so the key→slot
+ * mapping and the transient reset are unit-testable without an engine.
+ */
+export class CardKeyState {
+  private pending = -1;
+
+  /** Records a key-down; a non-card key leaves the armed slot unchanged. */
+  press(keyCode: number): void {
+    const slot = cardSlotForKeyCode(keyCode);
+    if (slot >= 0) {
+      this.pending = slot;
+    }
+  }
+
+  /** The armed slot (0-based), or `-1` when no card key was pressed. */
+  get slot(): number {
+    return this.pending;
+  }
+
+  /** Clears the transient state; call once per simulation tick. */
+  consume(): void {
+    this.pending = -1;
+  }
+}

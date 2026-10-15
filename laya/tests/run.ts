@@ -11,6 +11,7 @@ import './protocol_codec.test';
 import './battle_codec.test';
 import './battle_opening.test';
 import './card_intent.test';
+import './card_keys.test';
 import './card_hand_view.test';
 import './draft_panel.test';
 import './battle_client_input.test';
