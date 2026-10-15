@@ -21,6 +21,7 @@ import { describeDirectionBits, encodeInput } from '../../../core/game/input';
 import { HandBarController } from '../../../core/game/card_hand_view';
 import { DraftPanelController, localGrantCardId } from '../../../core/game/draft_panel_view';
 import {
+  draftPickFromEvent,
   draftViewFromEvent,
   eventToSfx,
   toCardEffectEvent,
@@ -441,8 +442,9 @@ export class BattleScene implements ClientScene {
    *
    * `draft_open` shows the round's three candidates; `draft_grant` appends the
    * local player's card to the hand and closes the panel; `draft_timeout` /
-   * `draft_skipped` close it too. `draft_pick` is informational and changes
-   * nothing here — the server owns the round and re-sends what it wants shown.
+   * `draft_skipped` close it too. `draft_pick` carries the first picker's
+   * card: the panel remembers it and drops it from the second picker's offered
+   * set (keeping the original `candidate_index` of every card left on offer).
    *
    * A deferred grant (`card_grant_deferred`) is *not* added to the visible
    * hand: the card waits in the server's pending list, so the bar keeps showing
@@ -454,6 +456,14 @@ export class BattleScene implements ClientScene {
         this.refreshDraftContext();
         this.draftController.setDraft(draftViewFromEvent(event));
         this.draftPanel.setView(this.draftController.panel);
+        break;
+      }
+      case 'draft_pick': {
+        // Only the first picker's pick changes what the panel offers (to the
+        // second picker); anything else leaves the open round untouched.
+        if (this.draftController.notePick(draftPickFromEvent(event))) {
+          this.draftPanel.setView(this.draftController.panel);
+        }
         break;
       }
       case 'draft_grant':

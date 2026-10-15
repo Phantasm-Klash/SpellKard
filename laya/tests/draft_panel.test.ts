@@ -6,7 +6,7 @@
 
 import { HandBarController } from '../src/core/game/card_hand_view';
 import { buildDraftPanel, DraftPanelController, localGrantCardId } from '../src/core/game/draft_panel_view';
-import { draftViewFromEvent, matchEventViewFromPayload } from '../src/core/game/battle_events';
+import { draftPickFromEvent, draftViewFromEvent, matchEventViewFromPayload } from '../src/core/game/battle_events';
 import { roundCardPickPayload } from '../src/core/net/lobby_client';
 import { expect, expectDeepEqual, expectEqual, suite, test } from './harness';
 
@@ -156,4 +156,158 @@ test('a local draft_grant updates the hand; the opponent and a deferred grant do
     return;
   }
   expectEqual(localGrantCardId(deferred, 'me'), null, 'a deferred grant waits in the server');
+});
+
+/** A `draft_pick` row naming the card a picker took in a round. */
+function draftPick(cardId: string, userId: string, role: string, roundIndex = 3) {
+  const event = matchEventViewFromPayload({
+    seq: 20,
+    type: 'draft_pick',
+    tick: 650,
+    user_id: userId,
+    card_id: cardId,
+    action_id: 'boss-1',
+    round_index: roundIndex,
+    status: role,
+  });
+  expect(event !== null, 'the draft_pick row projects');
+  if (event === null) {
+    return null;
+  }
+  return draftPickFromEvent(event);
+}
+
+test('the second picker is offered the two left after the first pick, at their original indices', () => {
+  const draft = draftOpen(['mirror_lance', 'purge_bell', 'aegis_ward'], 'u-first', 'u-second');
+  expect(draft !== null, 'the draft projects');
+  if (draft === null) {
+    return;
+  }
+  const controller = new DraftPanelController(() => {});
+  controller.setContext('m-1', '', 'u-second');
+  controller.setDraft(draft);
+
+  const before = controller.panel;
+  expect(before !== null, 'the panel projects');
+  if (before === null) {
+    return;
+  }
+  expectEqual(before.candidates.length, 3, 'before the pick row arrives all three are on offer');
+
+  const pick = draftPick('purge_bell', 'u-first', 'first');
+  expect(pick !== null, 'the pick projects');
+  if (pick === null) {
+    return;
+  }
+  expect(controller.notePick(pick), 'the current panel changed');
+  const after = controller.panel;
+  expect(after !== null, 'the panel still projects');
+  if (after === null) {
+    return;
+  }
+  expectDeepEqual(
+    after.candidates.map((candidate) => [candidate.cardId, candidate.index]),
+    [['mirror_lance', 0], ['aegis_ward', 2]],
+    'the taken card is gone; the rest keep their candidate_index',
+  );
+  expectEqual(after.canPick, true, 'the second picker may still pick');
+});
+
+test('a pick for another round does not touch the open panel', () => {
+  const draft = draftOpen(['a', 'b', 'c'], 'u-first', 'u-second');
+  expect(draft !== null, 'the draft projects');
+  if (draft === null) {
+    return;
+  }
+  const controller = new DraftPanelController(() => {});
+  controller.setContext('m-1', '', 'u-second');
+  controller.setDraft(draft);
+  const pick = draftPick('a', 'u-first', 'first', 9);
+  expect(pick !== null, 'the pick projects');
+  if (pick === null) {
+    return;
+  }
+  expectEqual(controller.notePick(pick), false, 'the open round did not change');
+  const panel = controller.panel;
+  expect(panel !== null, 'the panel projects');
+  if (panel !== null) {
+    expectEqual(panel.candidates.length, 3, 'all three candidates stay on offer');
+  }
+});
+
+test('the first picker and a spectator keep seeing the full round after a pick row', () => {
+  const draft = draftOpen(['mirror_lance', 'purge_bell', 'aegis_ward'], 'u-first', 'u-second');
+  expect(draft !== null, 'the draft projects');
+  if (draft === null) {
+    return;
+  }
+  const pick = draftPick('purge_bell', 'u-first', 'first');
+  expect(pick !== null, 'the pick projects');
+  if (pick === null) {
+    return;
+  }
+
+  const asFirst = new DraftPanelController(() => {});
+  asFirst.setContext('m-1', '', 'u-first');
+  asFirst.setDraft(draft);
+  asFirst.notePick(pick);
+  const firstPanel = asFirst.panel;
+  expect(firstPanel !== null, 'the panel projects');
+  if (firstPanel !== null) {
+    expectEqual(firstPanel.candidates.length, 3, 'the first picker still sees every candidate');
+  }
+
+  const asSpectator = new DraftPanelController(() => {});
+  asSpectator.setContext('m-1', '', '');
+  asSpectator.setDraft(draft);
+  asSpectator.notePick(pick);
+  const spectatorPanel = asSpectator.panel;
+  expect(spectatorPanel !== null, 'the panel projects');
+  if (spectatorPanel !== null) {
+    expectEqual(spectatorPanel.candidates.length, 3, 'a spectator still sees every candidate');
+  }
+});
+
+test('the second picker cannot click the card the first picker took', () => {
+  const draft = draftOpen(['mirror_lance', 'purge_bell', 'aegis_ward'], 'u-first', 'u-second');
+  expect(draft !== null, 'the draft projects');
+  if (draft === null) {
+    return;
+  }
+  const calls: number[] = [];
+  const controller = new DraftPanelController((_, candidateIndex) => calls.push(candidateIndex));
+  controller.setContext('m-1', '', 'u-second');
+  controller.setDraft(draft);
+  const pick = draftPick('purge_bell', 'u-first', 'first');
+  expect(pick !== null, 'the pick projects');
+  if (pick === null) {
+    return;
+  }
+  controller.notePick(pick);
+
+  expectEqual(controller.click(1), false, 'the taken card is no longer on offer');
+  expect(controller.click(2), 'the last candidate still submits');
+  expectDeepEqual(calls, [2], 'exactly one pick was submitted, with the original candidate_index');
+});
+
+test('the second picker own pick row leaves the open round untouched', () => {
+  const draft = draftOpen(['mirror_lance', 'purge_bell', 'aegis_ward'], 'u-first', 'u-second');
+  expect(draft !== null, 'the draft projects');
+  if (draft === null) {
+    return;
+  }
+  const controller = new DraftPanelController(() => {});
+  controller.setContext('m-1', '', 'u-second');
+  controller.setDraft(draft);
+  const secondPick = draftPick('aegis_ward', 'u-second', 'second');
+  expect(secondPick !== null, 'the pick projects');
+  if (secondPick === null) {
+    return;
+  }
+  expectEqual(controller.notePick(secondPick), false, "the second picker's pick is not a first pick");
+  const panel = controller.panel;
+  expect(panel !== null, 'the panel projects');
+  if (panel !== null) {
+    expectEqual(panel.candidates.length, 3, 'all three candidates stay on offer');
+  }
 });
