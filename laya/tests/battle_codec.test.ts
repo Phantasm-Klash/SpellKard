@@ -12,11 +12,111 @@ import {
   decodeBattleResult,
   decodeBossRaceSnapshot,
   encodeBattleInput,
+  encodeBattleInputWithTicket,
   peekPayloadType,
 } from '../src/core/net/battle_codec';
 import { BattlePayloadType, emptyVersionStamp } from '../src/core/protocol/types';
 import { BossRaceState } from '../src/core/sim/boss_race';
 import { expect, expectDeepEqual, expectEqual, suite, test } from './harness';
+
+// The ticket block is what lets the battle server bind a session to a verified
+// account (and fill `players[].user_id` in the .dem). Its field order is frozen
+// by the server's `WriteTicketBlock`, so this reads the frame back in that order
+// and asserts the values survive the round trip.
+test('the signed ticket rides on the input frame in the server field order', () => {
+  const raw = {
+    signature_alg: 'ED25519',
+    key_id: 'lobby-key-1',
+    signature: 'aabb',
+    public_key_hex: 'ccdd',
+    server_authoritative: true,
+    ticket: {
+      version: { protocol_version: 1, business_api_version: 'v1', battle_api_version: 'b1', ruleset_version: 'ruleset-local-s0' },
+      ticket_id: 'tk-1',
+      match_id: 'm1',
+      user_id: 'u-42',
+      player_id: 'p1',
+      mode_id: 'mvp_boss_race',
+      battle_server_id: 'bs-1',
+      endpoint: '10.0.0.1:7400',
+      deck_snapshot_hash: 'deck',
+      ruleset_version: 'ruleset-local-s0',
+      ticket_nonce_hex: 'nonce',
+      issued_at_ms: 1700000000000,
+      expires_at_ms: 1700003600000,
+      business_session_id: 'sess-1',
+      hand_card_ids: ['c1', 'c2'],
+      deck_card_ids: ['d1'],
+      initial_energy: 3,
+      server_seed: '12345678901234567890',
+    },
+  };
+  const frame = encodeBattleInputWithTicket(
+    {
+      version: { ...emptyVersionStamp(), protocolVersion: 1 },
+      matchId: 'm1',
+      playerId: 'p1',
+      tick: 7,
+      seq: 3,
+      directionBits: 0,
+      slow: false,
+      shoot: true,
+      bomb: false,
+      cardSlot: -1,
+      modeActionId: '',
+    },
+    raw,
+  );
+  const plain = encodeBattleInput({
+    version: { ...emptyVersionStamp(), protocolVersion: 1 },
+    matchId: 'm1',
+    playerId: 'p1',
+    tick: 7,
+    seq: 3,
+    directionBits: 0,
+    slow: false,
+    shoot: true,
+    bomb: false,
+    cardSlot: -1,
+    modeActionId: '',
+  });
+  // The plain input frame comes first, byte for byte, then the present flag.
+  for (let index = 0; index < plain.length; index += 1) {
+    expectEqual(frame[index], plain[index]);
+  }
+  const reader = new ByteReader(frame.subarray(plain.length));
+  expectEqual(reader.u8(), 1);
+  expectEqual(reader.u32(), 1);
+  expectEqual(reader.string(), 'v1');
+  expectEqual(reader.string(), 'b1');
+  expectEqual(reader.string(), 'ruleset-local-s0');
+  expectEqual(reader.string(), 'tk-1');
+  expectEqual(reader.string(), 'm1');
+  expectEqual(reader.string(), 'u-42');
+  expectEqual(reader.string(), 'p1');
+  expectEqual(reader.string(), 'mvp_boss_race');
+  expectEqual(reader.string(), 'bs-1');
+  expectEqual(reader.string(), '10.0.0.1:7400');
+  expectEqual(reader.string(), 'deck');
+  expectEqual(reader.string(), 'ruleset-local-s0');
+  expectEqual(reader.string(), 'nonce');
+  expectEqual(reader.u64(), 1700000000000);
+  expectEqual(reader.u64(), 1700003600000);
+  expectEqual(reader.string(), 'sess-1');
+  expectEqual(reader.u32(), 2);
+  expectEqual(reader.string(), 'c1');
+  expectEqual(reader.string(), 'c2');
+  expectEqual(reader.u32(), 1);
+  expectEqual(reader.string(), 'd1');
+  // Doubles travel as decimal text on this wire.
+  expectEqual(Number(reader.string()), 3);
+  expectEqual(reader.string(), '12345678901234567890');
+  expectEqual(reader.string(), 'ED25519');
+  expectEqual(reader.string(), 'lobby-key-1');
+  expectEqual(reader.string(), 'aabb');
+  expectEqual(reader.string(), 'ccdd');
+  expectEqual(reader.u8(), 1);
+});
 
 suite('battle wire codec');
 

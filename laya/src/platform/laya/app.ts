@@ -293,12 +293,6 @@ export class SpellKardApp {
       },
       onPerformanceExit: () => this.battlePoller.stop(),
       onMatchEnd: (winnerPlayerId) => this.onMatchEnd(winnerPlayerId),
-      // The in-match "abandon / disconnect" entry (T10 rule 3). The lobby owns
-      // the outcome; the flow sends the explicit abandon intent and then leaves
-      // the match through its own navigation.
-      onAbandonMatch: () => {
-        void this.flow.abandonMatch();
-      },
     });
     // `.dem` replay player. It owns no network: the result / records screens
     // ask for a replay id and the app downloads the container bytes on their
@@ -442,14 +436,11 @@ export class SpellKardApp {
     // A flow transition closes any open replay player overlay.
     this.demPlayerScene.close();
     if (snapshot.screen === LobbyScreen.Battle && snapshot.match !== null) {
-      this.ensureBattleConnected(snapshot);
+      void this.ensureBattleConnected(snapshot);
       // Record the match before the async snapshot so `onPerformanceEnter`
       // (fired by the scene's `onEnter`, right after this) can start the poller.
       this.performanceMatchId = snapshot.match.matchId;
       void this.enterBattlePerformance(snapshot.match.matchId, false);
-      // Auto-reconnect (T10 rule 4): only a lobby-reported disconnect calls
-      // `match.reconnect`; the returned tick resyncs the local prediction.
-      void this.resumeMatch(snapshot.match.matchId);
     }
     switch (snapshot.screen) {
       case LobbyScreen.Login:
@@ -501,7 +492,7 @@ export class SpellKardApp {
     }
   }
 
-  private ensureBattleConnected(snapshot: LobbyFlowSnapshot): void {
+  private async ensureBattleConnected(snapshot: LobbyFlowSnapshot): Promise<void> {
     const match = snapshot.match;
     if (match === null || this.battleClient.info?.matchId === match.matchId) {
       return;
@@ -512,6 +503,20 @@ export class SpellKardApp {
     // own `playerId` is usually empty (anonymous auth returns none), and sending
     // the lobby `user_id` instead makes the battle server drop every input.
     const localPlayerId = match.playerId !== '' ? match.playerId : session?.playerId ?? '';
+    // The battle server binds a session to the first input that carries the
+    // signed ticket, so the ticket has to be in hand before the first send —
+    // otherwise it logs `reason=ticket_missing` and the recording loses the
+    // account. A failure here degrades to today's behaviour (connect without a
+    // ticket) instead of blocking the match.
+    let signedTicket = this.lobbyClient.ticket?.raw;
+    if (signedTicket === undefined) {
+      try {
+        const ticket = await this.lobbyClient.fetchBattleTicket(match.matchId);
+        signedTicket = ticket?.raw;
+      } catch {
+        signedTicket = undefined;
+      }
+    }
     this.battleClient.connect({
       matchId: match.matchId,
       playerId: localPlayerId,
@@ -522,6 +527,7 @@ export class SpellKardApp {
       // Full 64-bit width: the server prints the whole seed into both its RNG
       // material and its state hash, so a 32-bit fold can never agree.
       serverSeed: bossRaceSeedFromHex(match.serverSeedHex),
+      signedTicket,
     });
   }
 
@@ -569,23 +575,6 @@ export class SpellKardApp {
     this.battlePoller.stop();
     this.performanceMatchId = '';
     this.battleOpening = null;
-  }
-
-  /**
-   * Auto-reconnects the local player on entering a match (T10 rule 4).
-   *
-   * `LobbyFlow.resumeMatch` only calls `match.reconnect` when the lobby reports
-   * the player as disconnected; a connected player (or a failed reconnect)
-   * yields `null` and nothing happens — the player is never presented as alive
-   * on a guess. On success the lobby's tick is handed to the battle scene, which
-   * resyncs the local prediction and respawns the player.
-   */
-  private async resumeMatch(matchId: string): Promise<void> {
-    const tick = await this.flow.resumeMatch(matchId);
-    if (tick === null) {
-      return;
-    }
-    this.battleScene.applyReconnectTick(tick);
   }
 
   /**

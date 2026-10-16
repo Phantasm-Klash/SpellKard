@@ -28,6 +28,7 @@ import {
   decodeBattleResult,
   decodeBossRaceSnapshot,
   encodeBattleInput,
+  encodeBattleInputWithTicket,
   peekPayloadType,
   type BattleResultPayload,
 } from './battle_codec';
@@ -64,6 +65,14 @@ export interface BattleSessionInfo {
    * the RNG material and the state hash print it in full.
    */
   serverSeed: BossRaceSeed;
+  /**
+   * Raw signed battle ticket (the `battle.ticket` response payload). When set it
+   * rides on every input frame, which is what lets the battle server bind the
+   * session to a verified account and fill `players[].user_id` in the `.dem`.
+   * Without it the server logs `reason=ticket_missing` and keeps recording, so
+   * the field is optional by design.
+   */
+  signedTicket?: Record<string, unknown>;
 }
 
 export interface BattleClientConfig {
@@ -298,33 +307,6 @@ export class BattleClient {
     return 1000 / this.tickRateHz;
   }
 
-  /**
-   * Resyncs the local prediction to the lobby's match tick after a reconnect
-   * (T10 rule 4) and marks the local player connected again ("respawned").
-   *
-   * The lobby owns the value: the caller passes it verbatim and this method
-   * never advances the tick on its own first. The tick only ever moves forward
-   * — a rewind would invalidate inputs already sent for ticks the server has
-   * not consumed, and the battle server rejects `tick <= current_tick`. Returns
-   * false when there is no prediction to resync (before `connect`) or the value
-   * is not usable, so a caller cannot mistake "did nothing" for "resynced".
-   */
-  resyncTick(tick: number): boolean {
-    const local = this.simulation;
-    if (local === null || !Number.isFinite(tick) || tick <= 0) {
-      return false;
-    }
-    const current = local.snapshot();
-    if (tick > current.tick) {
-      local.adoptAuthoritativeSnapshot({ ...current, tick }, { alignTick: true });
-    }
-    const info = this.sessionInfo;
-    if (info !== null && info.playerId !== '') {
-      local.setPlayerConnected(info.playerId, true);
-    }
-    return true;
-  }
-
   close(): void {
     this.session?.close();
     this.session = null;
@@ -341,9 +323,12 @@ export class BattleClient {
     }
     while (this.inputQueue.length > 0) {
       const input = this.inputQueue[0];
+      const ticket = this.sessionInfo?.signedTicket;
       let sent: boolean;
       try {
-        sent = session.send(encodeBattleInput(input));
+        sent = session.send(
+          ticket === undefined ? encodeBattleInput(input) : encodeBattleInputWithTicket(input, ticket),
+        );
       } catch (error) {
         // A broken or offline channel must degrade to a dropped datagram, never
         // an exception that unwinds `sendInput` and stalls the whole input

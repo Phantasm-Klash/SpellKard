@@ -260,6 +260,114 @@ export function encodeBattleInput(input: BattleInput): Uint8Array {
   return writer.finish();
 }
 
+/** `1` = a ticket block follows the input body (the server's present flag). */
+const TICKET_BLOCK_PRESENT = 1;
+
+/**
+ * Appends the signed battle ticket to an input frame, byte-for-byte with the
+ * server's `EncodeBattleInputWithTicketPayload` (field order frozen there).
+ *
+ * The battle server binds a session to the **first** input that carries the
+ * ticket; without it the app path only logs `reason=ticket_missing` and the
+ * `.dem` header keeps an empty `players[].user_id`, so the recording cannot say
+ * which account played. The payload is the `battle.ticket` response: the ticket
+ * object (nested under `ticket`, or the payload itself) plus the signature
+ * fields at the top level. Every field is written, an absent one as empty, so
+ * the server's decode still succeeds and falls back to its own checks.
+ */
+export function encodeBattleInputWithTicket(
+  input: BattleInput,
+  raw: Record<string, unknown>,
+): Uint8Array {
+  const base = encodeBattleInput(input);
+  const ticket = isRecord(raw.ticket) ? raw.ticket : raw;
+  const version = isRecord(ticket.version) ? ticket.version : {};
+  const writer = new ByteWriter();
+  writer.u8(TICKET_BLOCK_PRESENT);
+  const protocolVersion = ticketNumber(version, 'protocol_version', 'protocolVersion');
+  writer.u32(protocolVersion > 0 ? protocolVersion : 1);
+  writer.string(ticketString(version, 'business_api_version', 'businessApiVersion'));
+  writer.string(ticketString(version, 'battle_api_version', 'battleApiVersion'));
+  writer.string(ticketString(version, 'ruleset_version', 'rulesetVersion'));
+  writer.string(ticketString(ticket, 'ticket_id', 'ticketId'));
+  writer.string(ticketString(ticket, 'match_id', 'matchId'));
+  writer.string(ticketString(ticket, 'user_id', 'userId'));
+  writer.string(ticketString(ticket, 'player_id', 'playerId'));
+  writer.string(ticketString(ticket, 'mode_id', 'modeId'));
+  writer.string(ticketString(ticket, 'battle_server_id', 'battleServerId'));
+  writer.string(ticketString(ticket, 'endpoint'));
+  writer.string(ticketString(ticket, 'deck_snapshot_hash', 'deckSnapshotHash'));
+  writer.string(ticketString(ticket, 'ruleset_version', 'rulesetVersion'));
+  writer.string(ticketString(ticket, 'ticket_nonce_hex', 'ticketNonceHex'));
+  writer.u64(ticketNumber(ticket, 'issued_at_ms', 'issuedAtMs'));
+  writer.u64(ticketNumber(ticket, 'expires_at_ms', 'expiresAtMs'));
+  writer.string(ticketString(ticket, 'business_session_id', 'businessSessionId'));
+  const handCards = ticketStringArray(ticket, 'hand_card_ids', 'handCardIds');
+  writer.u32(handCards.length);
+  for (const cardId of handCards) {
+    writer.string(cardId);
+  }
+  const deckCards = ticketStringArray(ticket, 'deck_card_ids', 'deckCardIds');
+  writer.u32(deckCards.length);
+  for (const cardId of deckCards) {
+    writer.string(cardId);
+  }
+  // Doubles travel as decimal text on this wire (the server's `%.17g`); JS's
+  // shortest round-trip form parses back to the same value through `strtod`.
+  writer.string(String(ticketNumber(ticket, 'initial_energy', 'initialEnergy')));
+  writer.string(ticketString(ticket, 'server_seed', 'serverSeedDecimal'));
+  writer.string(ticketString(raw, 'signature_alg', 'signatureAlg'));
+  writer.string(ticketString(raw, 'key_id', 'keyId'));
+  writer.string(ticketString(raw, 'signature', 'signatureHex'));
+  writer.string(ticketString(raw, 'public_key_hex', 'publicKeyHex'));
+  writer.u8(raw.server_authoritative === false ? 0 : 1);
+  const block = writer.finish();
+  const out = new Uint8Array(base.length + block.length);
+  out.set(base, 0);
+  out.set(block, base.length);
+  return out;
+}
+
+/** First present string among the keys (snake_case wins over camelCase). */
+function ticketString(source: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'string') {
+      return value;
+    }
+  }
+  return '';
+}
+
+/** First finite number among the keys, or 0 when none is present. */
+function ticketNumber(source: Record<string, unknown>, ...keys: string[]): number {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string' && value !== '' && !Number.isNaN(Number(value))) {
+      return Number(value);
+    }
+  }
+  return 0;
+}
+
+/** A string array field, or an empty list when absent or of another type. */
+function ticketStringArray(source: Record<string, unknown>, ...keys: string[]): string[] {
+  for (const key of keys) {
+    const value = source[key];
+    if (Array.isArray(value)) {
+      return value.filter((item): item is string => typeof item === 'string');
+    }
+  }
+  return [];
+}
+
+
+
+
+
 export function decodeBattleInput(payload: Uint8Array): BattleInput | null {
   try {
     const reader = new ByteReader(payload);
