@@ -45,6 +45,12 @@ export interface DemHeader {
   tick_rate_hz: number;
   final_tick: number;
   final_state_hash: string;
+  /**
+   * Boss 满血值。服务端只在录到时写出（`--boss-hp`），旧容器没有这个键 → 0，
+   * 表示「重放端沿用自己的默认/目录值」。玩家 HP 进了 state hash，缺了它
+   * 用非默认 HP 录的容器就无法忠实重放。
+   */
+  boss_max_hp?: number;
   players: DemPlayer[];
   created_at: number;
   entry_count: number;
@@ -371,6 +377,10 @@ export function encodeDemHeaderJson(header: DemHeader): string {
   out += `,"tick_rate_hz":${header.tick_rate_hz}`;
   out += `,"final_tick":${header.final_tick}`;
   out += `,"final_state_hash":${jsonString(header.final_state_hash)}`;
+  // 与服务端一致：只在记录到时写出（0 = 沿用重放端默认），旧容器字节不变。
+  if (header.boss_max_hp !== undefined && header.boss_max_hp > 0) {
+    out += `,"boss_max_hp":${header.boss_max_hp}`;
+  }
   out += ',"players":[';
   for (let i = 0; i < header.players.length; i += 1) {
     const player = header.players[i];
@@ -410,6 +420,15 @@ function decodeDemHeaderJson(json: string): DemHeader {
     if (typeof field !== 'number' || !Number.isFinite(field)) throw new DemError('dem_header_decode_failed', key);
     return field;
   };
+  // Optional for backward compatibility: containers written before the field
+  // existed simply do not carry it.
+  const readOptionalNumber = (key: string): number | undefined => {
+    const field = value[key];
+    if (field === undefined) return undefined;
+    if (typeof field !== 'number' || !Number.isFinite(field)) throw new DemError('dem_header_decode_failed', key);
+    return field;
+  };
+  const bossMaxHp = readOptionalNumber('boss_max_hp');
   const rawPlayers = value['players'];
   if (!Array.isArray(rawPlayers)) throw new DemError('dem_header_decode_failed', 'players');
   const players: DemPlayer[] = rawPlayers.map((item) => {
@@ -445,6 +464,7 @@ function decodeDemHeaderJson(json: string): DemHeader {
     tick_rate_hz: readNumber('tick_rate_hz'),
     final_tick: readNumber('final_tick'),
     final_state_hash: readString('final_state_hash'),
+    ...(bossMaxHp !== undefined && bossMaxHp > 0 ? { boss_max_hp: bossMaxHp } : {}),
     players,
     created_at: readNumber('created_at'),
     entry_count: readNumber('entry_count'),

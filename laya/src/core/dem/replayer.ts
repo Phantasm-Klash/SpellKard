@@ -79,7 +79,10 @@ export function bossRaceConfigFromDemHeader(header: DemHeader): BossRaceConfig {
     modeId: header.mode_id,
     rulesetVersion: header.ruleset_version,
     matchSeed: bossRaceSeedFromDecimal(header.server_seed),
-    bossMaxHp: 0,
+    // The server records its boss HP whenever it deviates from the catalog
+    // default (a `--boss-hp` match), and player HP is part of the state hash, so
+    // a recording without this value can never be replayed faithfully.
+    bossMaxHp: header.boss_max_hp ?? 0,
     tickRateHz: header.tick_rate_hz,
     patternPeriodTicks: 0,
     bossId: header.boss_id,

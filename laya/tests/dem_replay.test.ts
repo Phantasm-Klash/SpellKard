@@ -218,6 +218,20 @@ test('encode → parse round-trips a dem container field by field', () => {
   expectEqual(document.header.chain_head_digest, header.chain_head_digest);
 });
 
+// boss HP feeds the state hash, so a match recorded with `--boss-hp` can only
+// be replayed faithfully when the container carries it. It stays optional so
+// containers written before the field existed are byte-identical.
+test('boss_max_hp is optional but survives the container round trip', () => {
+  const { header, entries } = sampleDocument(2, 'placeholder');
+  const plain = encodeDemHeaderJson(header);
+  expect(!plain.includes('boss_max_hp'), 'an unrecorded boss hp is not written');
+  expectEqual(parseDemDocument(encodeDemDocument(header, entries)).header.boss_max_hp ?? 0, 0);
+
+  const withHp: DemHeader = { ...header, boss_max_hp: 300 };
+  expect(encodeDemHeaderJson(withHp).includes('"boss_max_hp":300'), 'a recorded boss hp is written');
+  expectEqual(parseDemDocument(encodeDemDocument(withHp, entries)).header.boss_max_hp ?? 0, 300);
+});
+
 test('parse rejects tampered containers with stable dem_* codes', () => {
   const { header, entries } = sampleDocument(4, 'placeholder');
   const bytes = encodeDemDocument(header, entries);
