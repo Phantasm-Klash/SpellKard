@@ -24,6 +24,12 @@ export interface RecordsSceneOptions {
   width: number;
   height: number;
   flow: LobbyFlow;
+  /**
+   * Opens the `.dem` replay player for a match that has a downloadable
+   * recording. `replayId` is the match id (the lobby's dem download route
+   * accepts either a replay id or a match id); absent → no download buttons.
+   */
+  onOpenDemPlayer?: (replayId: string, label: string) => void;
 }
 
 /** Height of one summary row (one label + value line). */
@@ -32,6 +38,8 @@ const SUMMARY_ROW_HEIGHT = 30;
 const RECENT_ROW_HEIGHT = 26;
 /** Maximum recent matches rendered; the server caps the list at 20. */
 const RECENT_LIMIT = 20;
+/** Width of the per-row ".dem download" button. */
+const DEM_BUTTON_WIDTH = 120;
 
 export class RecordsScene implements ClientScene {
   readonly root: Laya.Sprite;
@@ -207,7 +215,7 @@ export class RecordsScene implements ClientScene {
 
       const meta = this.makeText(
         formatRecentEntry(entry),
-        contentWidth - theme.SPACE_XL - theme.SPACE_SM * 2,
+        contentWidth - theme.SPACE_XL - theme.SPACE_SM * 2 - (entry.hasDem ? DEM_BUTTON_WIDTH + theme.SPACE_SM : 0),
         theme.COLOR_TEXT,
         false,
         theme.SPACE_XL,
@@ -216,6 +224,19 @@ export class RecordsScene implements ClientScene {
       meta.y = (RECENT_ROW_HEIGHT - theme.FONT_SIZE_CAPTION) / 2;
       meta.overflow = 'hidden';
       row.addChild(meta);
+
+      if (entry.hasDem && this.options.onOpenDemPlayer !== undefined) {
+        const download = createButtonEx(
+          'Download .dem',
+          contentWidth - DEM_BUTTON_WIDTH - theme.SPACE_SM,
+          3,
+          DEM_BUTTON_WIDTH,
+          () => this.options.onOpenDemPlayer?.(entry.matchId, `match ${entry.matchId}`),
+          'ghost',
+          RECENT_ROW_HEIGHT - 6,
+        );
+        row.addChild(download.sprite);
+      }
       this.recentHost.addChild(row);
     });
   }

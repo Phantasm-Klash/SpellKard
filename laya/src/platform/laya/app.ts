@@ -46,6 +46,7 @@ import { LobbyScene } from './scenes/lobby_scene';
 import { LoginScene } from './scenes/login_scene';
 import { RecordsScene } from './scenes/records_scene';
 import { ResultScene } from './scenes/result_scene';
+import { DemPlayerScene } from './scenes/dem_player';
 import { RoomScene } from './scenes/room_scene';
 import { ShopScene } from './scenes/shop_scene';
 import { isShortcutCapable, type ClientScene } from './scenes/scene';
@@ -115,6 +116,7 @@ export class SpellKardApp {
   private readonly shopScene: ShopScene;
   private readonly inventoryScene: InventoryScene;
   private readonly recordsScene: RecordsScene;
+  private readonly demPlayerScene: DemPlayerScene;
   /**
    * The single keyboard dispatcher. Screens never subscribe to raw key events;
    * they implement `ShortcutCapable` and `app.ts` routes actions to whichever
@@ -292,18 +294,32 @@ export class SpellKardApp {
       onPerformanceExit: () => this.battlePoller.stop(),
       onMatchEnd: (winnerPlayerId) => this.onMatchEnd(winnerPlayerId),
     });
+    // `.dem` replay player. It owns no network: the result / records screens
+    // ask for a replay id and the app downloads the container bytes on their
+    // behalf (constructed first so both screens can reference it).
+    this.demPlayerScene = new DemPlayerScene({ width: config.stageWidth, height: config.stageHeight });
     this.resultScene = new ResultScene({
       width: config.stageWidth,
       height: config.stageHeight,
       flow: this.flow,
       localPlayerId,
+      onOpenDemPlayer: (replayId, label) => {
+        void this.openDemReplay(replayId, label);
+      },
     });
     // Lobby business screens: check-in, shop and inventory. All three read the
     // same `LobbyFlow` snapshot, so wiring is just construction + the switch.
     this.checkinScene = new CheckinScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
     this.shopScene = new ShopScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
     this.inventoryScene = new InventoryScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
-    this.recordsScene = new RecordsScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
+    this.recordsScene = new RecordsScene({
+      width: config.stageWidth,
+      height: config.stageHeight,
+      flow: this.flow,
+      onOpenDemPlayer: (replayId, label) => {
+        void this.openDemReplay(replayId, label);
+      },
+    });
 
     this.flow.onChange((snapshot) => this.onFlowChange(snapshot));
     this.battleClient.onResult((result) => {
@@ -412,10 +428,13 @@ export class SpellKardApp {
       this.shopScene,
       this.inventoryScene,
       this.recordsScene,
+      this.demPlayerScene,
     ];
   }
 
   private onFlowChange(snapshot: LobbyFlowSnapshot): void {
+    // A flow transition closes any open replay player overlay.
+    this.demPlayerScene.close();
     if (snapshot.screen === LobbyScreen.Battle && snapshot.match !== null) {
       this.ensureBattleConnected(snapshot);
       // Record the match before the async snapshot so `onPerformanceEnter`
@@ -454,6 +473,23 @@ export class SpellKardApp {
         break;
     }
     this.switchTo(snapshot.screen);
+  }
+
+  /**
+   * Downloads a finished match's `.dem` container and opens the replay player.
+   * A missing container (or a non-participant caller) simply does not open the
+   * overlay; the records screen keeps showing the list.
+   */
+  private async openDemReplay(replayId: string, label: string): Promise<void> {
+    try {
+      const bytes = await this.lobbyClient.downloadDem(replayId);
+      if (bytes === null) {
+        return;
+      }
+      this.demPlayerScene.open(bytes, label);
+    } catch (error) {
+      console.warn(`[spellkard] dem download failed for ${replayId}: ${String(error)}`);
+    }
   }
 
   private ensureBattleConnected(snapshot: LobbyFlowSnapshot): void {
@@ -657,6 +693,7 @@ export class SpellKardApp {
     shop: ShopScene;
     inventory: InventoryScene;
     records: RecordsScene;
+    demPlayer: DemPlayerScene;
     flow: LobbyFlow;
     /** Shared settings store, so the harness can drive values directly. */
     settings: SettingsStore;
@@ -682,6 +719,7 @@ export class SpellKardApp {
       shop: this.shopScene,
       inventory: this.inventoryScene,
       records: this.recordsScene,
+      demPlayer: this.demPlayerScene,
       flow: this.flow,
       settings: this.settings,
       shortcuts: this.shortcuts,

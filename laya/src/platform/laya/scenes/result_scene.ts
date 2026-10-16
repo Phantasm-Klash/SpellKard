@@ -27,6 +27,11 @@ export interface ResultSceneOptions {
   flow: LobbyFlow;
   /** Lazily read: the player id is only known after lobby sign-in. */
   localPlayerId: () => string;
+  /**
+   * Opens the `.dem` replay player when the settled match has a downloadable
+   * recording. Absent → the download button stays hidden.
+   */
+  onOpenDemPlayer?: (replayId: string, label: string) => void;
 }
 
 /**
@@ -51,6 +56,9 @@ export class ResultScene implements ClientScene {
   private readonly divider: Laya.Sprite;
   private readonly metaText: Laya.Text;
   private readonly backButton: ButtonHandle;
+  private readonly demButton: ButtonHandle;
+  private demReplayId = '';
+  private demLabel = '';
   private readonly cardY: number;
   private readonly cardHeight: number;
 
@@ -123,11 +131,23 @@ export class ResultScene implements ClientScene {
     this.root.addChild(this.metaText);
 
     // --- action band ---
+    // Two side-by-side buttons: "Download .dem" (only shown when the settled
+    // match has a recording) and "Back to lobby".
+    const buttonGap = theme.SPACE_SM;
+    const buttonWidth = Math.floor((contentWidth - buttonGap) / 2);
+    const actionY = height - margin - theme.BUTTON_HEIGHT;
+    this.demButton = createButtonEx('Download .dem', margin, actionY, buttonWidth, () => {
+      if (this.demReplayId !== '') {
+        this.options.onOpenDemPlayer?.(this.demReplayId, this.demLabel);
+      }
+    }, 'ghost');
+    this.demButton.sprite.visible = false;
+    this.root.addChild(this.demButton.sprite);
     this.backButton = createButtonEx(
       'Back to lobby',
-      margin,
-      height - margin - theme.BUTTON_HEIGHT,
-      contentWidth,
+      margin + buttonWidth + buttonGap,
+      actionY,
+      buttonWidth,
       () => this.options.flow.backToLobby(),
       'ghost',
     );
@@ -171,8 +191,16 @@ export class ResultScene implements ClientScene {
       this.metaText.text = 'No result yet';
       this.metaText.fontSize = theme.FONT_SIZE_HEADING;
       this.metaText.y = this.cardY + this.cardHeight / 2 - theme.FONT_SIZE_HEADING / 2;
+      this.demReplayId = '';
+      this.demButton.sprite.visible = false;
       return;
     }
+    // Show the replay download only when the lobby assigned a replay id AND the
+    // host wired a player opener.
+    const canDownload = result.replayId !== '' && this.options.onOpenDemPlayer !== undefined;
+    this.demReplayId = canDownload ? result.replayId : '';
+    this.demLabel = `match ${result.matchId || result.replayId}`;
+    this.demButton.sprite.visible = canDownload;
 
     this.metaText.visible = false;
     this.setColumnsVisible(true);

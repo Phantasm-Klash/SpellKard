@@ -2,7 +2,7 @@
  * `fetch`-based `HttpClient` for the lobby REST transport.
  */
 
-import type { HttpClient, HttpResponseLike } from '../../core/net/lobby_client';
+import type { BinaryHttpResponseLike, HttpClient, HttpResponseLike } from '../../core/net/lobby_client';
 
 export class FetchHttpClient implements HttpClient {
   constructor(private readonly baseUrl = '', private readonly bearer = '') {}
@@ -35,5 +35,19 @@ export class FetchHttpClient implements HttpClient {
       }
     }
     return { status: response.status, body: parsed };
+  }
+
+  async requestBytes(
+    method: 'GET',
+    path: string,
+    headers?: Record<string, string>,
+  ): Promise<BinaryHttpResponseLike> {
+    const requestHeaders: Record<string, string> = { ...(headers ?? {}) };
+    if (this.bearer !== '') {
+      requestHeaders.Authorization = `Bearer ${this.bearer}`;
+    }
+    const response = await fetch(`${this.baseUrl}${path}`, { method, headers: requestHeaders });
+    const buffer = await response.arrayBuffer();
+    return { status: response.status, bytes: new Uint8Array(buffer) };
   }
 }
