@@ -56,6 +56,13 @@ import {
   type EmitContext,
   type PatternDef,
 } from './danmaku/pattern_timeline';
+import {
+  bossEmitterOffsetMilli,
+  bossTimelinePatternIndexAt,
+  findBossCatalogEntry,
+  type BossCatalogEntry,
+} from './danmaku/boss_catalog';
+import { playerBombDamage, playerShotDamage } from './danmaku/player_loadout_damage';
 
 export const MVP_BOSS_RACE_MODE_ID = 'mvp_boss_race';
 export const BOSS_RACE_TICK_RATE_HZ = 60;
@@ -219,6 +226,19 @@ export interface BossRaceSnapshot {
   stateHash: string;
 }
 
+/**
+ * 每玩家自机 loadout —— 服务端 `phk::battle::PlayerLoadoutSpec` 的镜像。
+ *
+ * `shotType` / `bombType` 取自 `danmaku/player_loadout.ts` 的名字空间；为空 =
+ * 默认自机行为（复现现状）。`characterId` 仅作透传/展示（协议白名单在服务端）。
+ */
+export interface BossRaceLoadout {
+  playerId: string;
+  characterId: string;
+  shotType: string;
+  bombType: string;
+}
+
 export interface BossRaceConfig {
   matchId: string;
   modeId: string;
@@ -228,6 +248,15 @@ export interface BossRaceConfig {
   bossMaxHp: number;
   tickRateHz: number;
   patternPeriodTicks: number;
+  /**
+   * 房间级 boss 选择（`tian` / `hui`）；空 = 默认 timeline（复现现状）。
+   * 命中目录时 pattern 调度与发射点偏移均由 `danmaku/boss_catalog` 驱动，
+   * 与服务端 `BossRaceSimulation::PatternIndexForTick` / `BossEmitterOffsetMilli`
+   * 逐位一致。
+   */
+  bossId?: string;
+  /** 每玩家自机 loadout（空/缺省 = 默认自机行为）。 */
+  loadouts?: readonly BossRaceLoadout[];
   /**
    * Whether the real-danmaku timeline in this build is the reverse-engineered
    * production one. Defaults to {@link TNA_TIMELINE_IS_PRODUCTION} — now `true`,
@@ -374,6 +403,11 @@ export class BossRaceSimulation {
   private readonly players = new Map<string, PlayerState>();
   private readonly pendingInputsByTick = new Map<number, Map<string, BossRaceInput>>();
   private liveBullets: LiveBullet[] = [];
+  /** 解析后的 boss 目录项（bossId 为空/未知 → null = 默认 timeline）。 */
+  private readonly bossEntry: BossCatalogEntry | null;
+  /** 已解析的每玩家 shot/bomb 伤害（无 loadout → 缺省，走 BOSS_RACE_DAMAGE_PER_SHOT_TICK）。 */
+  private readonly shotDamageByPlayer = new Map<string, number>();
+  private readonly bombDamageByPlayer = new Map<string, number>();
   /**
    * `tick -> canonicalStateHash`, oldest first. Ticks only ever move forward, so
    * insertion order is tick order and the first key is always the oldest.
@@ -381,14 +415,58 @@ export class BossRaceSimulation {
   private readonly hashHistory = new Map<number, string>();
 
   constructor(config: BossRaceConfig) {
+    this.bossEntry = findBossCatalogEntry(config.bossId ?? '');
+    const catalogHp = this.bossEntry === null ? null : this.bossEntry.bossMaxHp;
     this.config = {
       ...config,
       modeId: config.modeId === '' ? MVP_BOSS_RACE_MODE_ID : config.modeId,
       tickRateHz: config.tickRateHz === 0 ? BOSS_RACE_TICK_RATE_HZ : config.tickRateHz,
-      bossMaxHp: config.bossMaxHp === 0 ? BOSS_RACE_DEFAULT_BOSS_HP : config.bossMaxHp,
+      // boss 目录存在时以目录 HP 为准（与服务端 MakeBossRaceConfig/BossRaceSimulation 一致）。
+      bossMaxHp:
+        config.bossMaxHp === 0 ? catalogHp ?? BOSS_RACE_DEFAULT_BOSS_HP : config.bossMaxHp,
       patternPeriodTicks:
         config.patternPeriodTicks === 0 ? BOSS_RACE_PATTERN_PERIOD_TICKS : config.patternPeriodTicks,
     };
+    for (const loadout of config.loadouts ?? []) {
+      if (loadout.playerId === '') {
+        continue;
+      }
+      if (loadout.shotType !== '') {
+        this.shotDamageByPlayer.set(loadout.playerId, playerShotDamage(loadout.shotType));
+      }
+      if (loadout.bombType !== '') {
+        this.bombDamageByPlayer.set(loadout.playerId, playerBombDamage(loadout.bombType));
+      }
+    }
+  }
+
+  /** 已解析的 boss 目录项（无 boss / 未知 boss → null）。 */
+  getBossEntry(): BossCatalogEntry | null {
+    return this.bossEntry;
+  }
+
+  /**
+   * 该 tick 使用的库内 pattern index —— 服务端 `PatternIndexForTick` 的镜像。
+   *
+   * boss 目录命中时按阶段组展开（`bossTimelinePatternIndexAt`），否则回退原
+   * `(tick / period) % 10` 轮转（默认路径逐位保持现状）。
+   */
+  patternIndexForTick(tick: number): number {
+    const period =
+      this.config.patternPeriodTicks === 0 ? BOSS_RACE_PATTERN_PERIOD_TICKS : this.config.patternPeriodTicks;
+    const waveIndex = Math.floor(tick / period);
+    if (this.bossEntry !== null) {
+      return bossTimelinePatternIndexAt(this.bossEntry, waveIndex, BOSS_RACE_TNA_PATTERN_IDS);
+    }
+    return waveIndex % BOSS_RACE_PATTERN_COUNT;
+  }
+
+  /** 某 tick 的 boss 发射点偏移（milli）；无 boss → (0, 0)。 */
+  private bossOffsetForTick(tick: number): { xMilli: number; yMilli: number } {
+    if (this.bossEntry === null) {
+      return { xMilli: 0, yMilli: 0 };
+    }
+    return bossEmitterOffsetMilli(this.bossEntry.movement, tick);
   }
 
   getState(): BossRaceState {
@@ -414,10 +492,9 @@ export class BossRaceSimulation {
 
   /** Pattern scheduled for a given tick, matching `PatternIdForTick`. */
   patternIdForTick(tick: number): string {
-    const period = this.config.patternPeriodTicks;
-    const index = Math.floor(tick / period);
+    const index = this.patternIndexForTick(tick);
     if (this.usesRealDanmaku()) {
-      return BOSS_RACE_TNA_PATTERN_IDS[index % BOSS_RACE_TNA_PATTERN_IDS.length] ?? '';
+      return BOSS_RACE_TNA_PATTERN_IDS[index] ?? '';
     }
     return BOSS_RACE_PATTERN_IDS[index % BOSS_RACE_PATTERN_COUNT];
   }
@@ -599,10 +676,29 @@ export class BossRaceSimulation {
       player.xMilli = clampMilli(player.xMilli, -ARENA_HALF_WIDTH_MILLI, ARENA_HALF_WIDTH_MILLI);
       player.yMilli = clampMilli(player.yMilli, -ARENA_HALF_HEIGHT_MILLI, ARENA_HALF_HEIGHT_MILLI);
 
-      if (input.shoot && player.bossCurrentHp > 0) {
-        const damage = Math.min(BOSS_RACE_DAMAGE_PER_SHOT_TICK, player.bossCurrentHp);
-        player.bossCurrentHp -= damage;
-        player.damageDealt += damage;
+      // 伤害：默认每 tick BOSS_RACE_DAMAGE_PER_SHOT_TICK（与现状一致）。
+      // 配置自机 loadout 后改为真实自机表（shot 主弹伤害 / bomb 主弹伤害），
+      // 与服务端 `ApplyPlayerTick` 逐位一致。
+      if (player.bossCurrentHp > 0) {
+        let tickDamage = 0;
+        if (input.shoot) {
+          tickDamage += BOSS_RACE_DAMAGE_PER_SHOT_TICK;
+          const shotDamage = this.shotDamageByPlayer.get(player.playerId);
+          if (shotDamage !== undefined && shotDamage >= 0) {
+            tickDamage = shotDamage;
+          }
+        }
+        if (input.bomb) {
+          const bombDamage = this.bombDamageByPlayer.get(player.playerId);
+          if (bombDamage !== undefined && bombDamage >= 0) {
+            tickDamage += bombDamage;
+          }
+        }
+        if (tickDamage > 0) {
+          const damage = Math.min(tickDamage, player.bossCurrentHp);
+          player.bossCurrentHp -= damage;
+          player.damageDealt += damage;
+        }
       }
     }
     if (bucket !== undefined) {
@@ -638,11 +734,13 @@ export class BossRaceSimulation {
     if (tick === 0 || tick % this.config.patternPeriodTicks !== 0) {
       return;
     }
-    const patternIndex = Math.floor(tick / this.config.patternPeriodTicks) % BOSS_RACE_PATTERN_COUNT;
+    const patternIndex = this.patternIndexForTick(tick);
     const def = BOSS_RACE_TNA_PATTERNS[patternIndex];
     if (def === undefined) {
       return;
     }
+    // boss 移动：整数三角波发射点偏移（无 boss → (0,0)，与现状一致）。
+    const bossOffset = this.bossOffsetForTick(tick);
 
     for (const playerId of this.sortedPlayerIds()) {
       const player = this.players.get(playerId);
@@ -653,7 +751,12 @@ export class BossRaceSimulation {
         continue;
       }
 
-      const ctx: EmitContext = { emitter_x: EMITTER_X_PX, emitter_y: EMITTER_Y_PX };
+      // 与服务端 `kScreenCenter + ToPixels(origin + offset)` 逐位一致：
+      // 先把 milli 相加再除，避免 a/1000 + b/1000 的末位差异。
+      const ctx: EmitContext = {
+        emitter_x: SCREEN_CENTER_X_PX + toPixels(BOSS_ORIGIN_X_MILLI + bossOffset.xMilli),
+        emitter_y: SCREEN_CENTER_Y_PX + toPixels(BOSS_ORIGIN_Y_MILLI + bossOffset.yMilli),
+      };
       const targets = createMotionTargets({
         has_my_ship: true,
         my_ship_x: shipXpx(player.xMilli),
@@ -833,11 +936,15 @@ export class BossRaceSimulation {
     if (!this.hashComparable()) {
       return;
     }
+    // 敌机（boss）随三角波移动；无 boss → 常量发射点（与现状一致）。
+    const bossOffset = this.bossOffsetForTick(tick);
+    const enemyX = SCREEN_CENTER_X_PX + toPixels(BOSS_ORIGIN_X_MILLI + bossOffset.xMilli);
+    const enemyY = SCREEN_CENTER_Y_PX + toPixels(BOSS_ORIGIN_Y_MILLI + bossOffset.yMilli);
     for (const live of this.liveBullets) {
       const targets = createMotionTargets({
         has_enemy: true,
-        enemy_x: EMITTER_X_PX,
-        enemy_y: EMITTER_Y_PX,
+        enemy_x: enemyX,
+        enemy_y: enemyY,
       });
       const owner = this.players.get(live.ownerPlayerId);
       if (owner !== undefined) {

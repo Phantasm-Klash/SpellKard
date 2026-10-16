@@ -15,6 +15,8 @@ import type {
   LobbyClient,
   MatchmakingTicketView,
   RecordsView,
+  RoomCreateOptions,
+  RoomJoinOptions,
   RoomView,
   SessionState,
   ShopView,
@@ -487,10 +489,14 @@ export class LobbyFlow {
     this.notify();
   }
 
-  async createRoom(roomCode: string, modeId = DEFAULT_MODE_ID): Promise<boolean> {
+  async createRoom(
+    roomCode: string,
+    modeId = DEFAULT_MODE_ID,
+    options: RoomCreateOptions = {},
+  ): Promise<boolean> {
     this.statusText = `Creating room ${roomCode}…`;
     this.notify();
-    const room = await this.client.createRoom(roomCode, modeId);
+    const room = await this.client.createRoom(roomCode, modeId, options);
     if (room === null) {
       this.fail(`Create room failed: ${this.client.lastError}`);
       return false;
@@ -499,10 +505,10 @@ export class LobbyFlow {
     return true;
   }
 
-  async joinRoom(roomCode: string): Promise<boolean> {
+  async joinRoom(roomCode: string, options: RoomJoinOptions = {}): Promise<boolean> {
     this.statusText = `Joining room ${roomCode}…`;
     this.notify();
-    const room = await this.client.joinRoom(roomCode);
+    const room = await this.client.joinRoom(roomCode, options);
     if (room === null) {
       this.fail(`Join room failed: ${this.client.lastError}`);
       return false;
@@ -515,6 +521,38 @@ export class LobbyFlow {
     await this.client.leaveRoom();
     this.statusText = 'Left room';
     this.setScreen(LobbyScreen.Lobby);
+  }
+
+  /**
+   * 房主在房间等待界面重配 boss / 自机（任务「boss 选择 + 自机机制」）。
+   *
+   * 服务端把 boss 固定在**建房**时刻（`rooms.create`），没有「改房间 boss」的
+   * RPC，所以这里用「离房 → 以新配置重建」实现。为不打扰已加入的 guest，
+   * **仅当房主独自一人时**允许；否则返回 false 并给出提示。
+   */
+  async reconfigureRoom(options: RoomCreateOptions): Promise<boolean> {
+    const room = this.client.room;
+    if (room === null) {
+      this.fail('No room to reconfigure');
+      return false;
+    }
+    if (room.players.length > 1) {
+      this.fail('Boss/loadout can only change while you are alone in the room');
+      return false;
+    }
+    const code = room.roomCode;
+    const modeId = room.modeId || DEFAULT_MODE_ID;
+    this.statusText = 'Reconfiguring room…';
+    this.notify();
+    await this.client.leaveRoom('reconfigure');
+    const recreated = await this.client.createRoom(code, modeId, options);
+    if (recreated === null) {
+      this.fail(`Reconfigure failed: ${this.client.lastError}`);
+      return false;
+    }
+    this.statusText = `Room ${recreated.roomCode} ready`;
+    this.setScreen(LobbyScreen.Room);
+    return true;
   }
 
   /**

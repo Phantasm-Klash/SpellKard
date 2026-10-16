@@ -86,6 +86,12 @@ export interface HttpResponseLike {
   body: unknown;
 }
 
+/** Raw-bytes response for the binary endpoints (the `.dem` download). */
+export interface BinaryHttpResponseLike {
+  status: number;
+  bytes: Uint8Array;
+}
+
 export interface HttpClient {
   request(
     method: 'GET' | 'POST',
@@ -93,6 +99,16 @@ export interface HttpClient {
     body?: unknown,
     headers?: Record<string, string>,
   ): Promise<HttpResponseLike>;
+  /**
+   * Optional raw-bytes GET. Implemented by the Laya/browser adapters to fetch
+   * `GET /v1/replays/{id}/dem` (octet-stream) without mangling binary through a
+   * JSON/text path. Absent on transports that cannot serve binary.
+   */
+  requestBytes?(
+    method: 'GET',
+    path: string,
+    headers?: Record<string, string>,
+  ): Promise<BinaryHttpResponseLike>;
 }
 
 export interface LobbyClientConfig {
@@ -115,6 +131,12 @@ export interface LobbyClientConfig {
    * silently broken for Nakama RPC.
    */
   restTransport?: LobbyTransport;
+  /**
+   * Plain HTTP client for binary endpoints (the `.dem` replay download). The
+   * transport layer is JSON-only, so the dem bytes are fetched through this
+   * directly when present.
+   */
+  http?: HttpClient;
 }
 
 export interface SessionState {
@@ -158,6 +180,10 @@ export interface RoomPlayerView {
   host: boolean;
   connected: boolean;
   characterId: string;
+  /** 自机 shot 名（如 "ReimuA1"）；空 = 默认自机（复现现状）。 */
+  shotType: string;
+  /** 自机 bomb 名（如 "Reimu"）；空 = 默认自机。 */
+  bombType: string;
 }
 
 export interface RoomView {
@@ -167,6 +193,48 @@ export interface RoomView {
   allReady: boolean;
   rulesetVersion: string;
   players: RoomPlayerView[];
+  /** 房间级 boss 选择（`tian`/`hui`）；空 = 默认 timeline。仅房主可设。 */
+  bossId: string;
+  /** 房间舞台 id（自机/关卡选择的一部分）。 */
+  stageId: string;
+}
+
+/** `rooms.create` 的可选房间配置（boss + 自机 loadout）。 */
+export interface RoomCreateOptions {
+  /** 房间 boss（仅房主可设）。空 = 不指定。 */
+  bossId?: string;
+  stageId?: string;
+  characterId?: string;
+  shotType?: string;
+  bombType?: string;
+}
+
+/** `rooms.join` 的可选自机 loadout（guest 不能改 boss）。 */
+export interface RoomJoinOptions {
+  stageId?: string;
+  characterId?: string;
+  shotType?: string;
+  bombType?: string;
+}
+
+/** 把房间选项编成服务端 `mode_params`（snake_case，字符串值；空值省略）。 */
+function roomModeParams(options: RoomCreateOptions | RoomJoinOptions | undefined): Record<string, string> {
+  const params: Record<string, string> = {};
+  if (options === undefined) {
+    return params;
+  }
+  const fields: Array<[string, string | undefined]> = [
+    ['stage_id', options.stageId],
+    ['character_id', options.characterId],
+    ['shot_type', options.shotType],
+    ['bomb_type', options.bombType],
+  ];
+  for (const [key, value] of fields) {
+    if (value !== undefined && value !== '') {
+      params[key] = value;
+    }
+  }
+  return params;
 }
 
 export interface BattleAllocationView {
@@ -508,6 +576,10 @@ export interface MatchHistoryEntryView {
   cardPlays: number;
   durationTicks: number;
   endedAtMs: number;
+  /** Whether a downloadable `.dem` replay exists for this match (thread B). */
+  hasDem: boolean;
+  /** `.dem` container size in bytes (0 when absent). */
+  demSize: number;
 }
 
 /**
@@ -588,6 +660,7 @@ export type LobbyEventListener = (event: LobbyEvent) => void;
 export class LobbyClient {
   private readonly transport: LobbyTransport;
   private readonly restTransport: LobbyTransport | null;
+  private readonly http: HttpClient | null;
   private readonly logger: Logger;
   private readonly clientBuild: string;
   private readonly platform: string;
@@ -607,6 +680,7 @@ export class LobbyClient {
   constructor(config: LobbyClientConfig) {
     this.transport = config.transport;
     this.restTransport = config.restTransport ?? null;
+    this.http = config.http ?? null;
     this.logger = config.logger ?? nullLogger;
     this.clientBuild = config.clientBuild ?? '0.1.0-draft';
     this.platform = config.platform ?? 'web';
@@ -982,11 +1056,17 @@ export class LobbyClient {
   }
 
   /** `rooms.create` / `POST /v1/rooms/create`. */
-  async createRoom(roomCode: string, modeId = 'mvp_boss_race'): Promise<RoomView | null> {
+  async createRoom(
+    roomCode: string,
+    modeId = 'mvp_boss_race',
+    options: RoomCreateOptions = {},
+  ): Promise<RoomView | null> {
     const response = await this.call('rooms.create', {
       room_code: roomCode,
       mode_id: modeId,
       host_user_id: this.session?.userId ?? '',
+      boss_id: options.bossId ?? '',
+      mode_params: roomModeParams(options),
     });
     if (!response.ok || !isRecord(response.payload)) {
       return null;
@@ -999,11 +1079,12 @@ export class LobbyClient {
   }
 
   /** `rooms.join` / `POST /v1/rooms/{code}/join`. */
-  async joinRoom(roomCode: string): Promise<RoomView | null> {
+  async joinRoom(roomCode: string, options: RoomJoinOptions = {}): Promise<RoomView | null> {
     const response = await this.call('rooms.join', {
       room_code: roomCode,
       user_id: this.session?.userId ?? '',
       player_id: this.session?.playerId ?? '',
+      mode_params: roomModeParams(options),
     });
     if (!response.ok || !isRecord(response.payload)) {
       return null;
@@ -1253,6 +1334,29 @@ export class LobbyClient {
       return null;
     }
     return response.payload;
+  }
+
+  /**
+   * `GET /v1/replays/{id}/dem` — download a finished match's `.dem` v1 replay
+   * container (octet-stream). `id` may be a `replay_id` or a `match_id` (the
+   * records view only carries the latter). Returns `null` when no `.dem` exists
+   * or the caller is not a participant.
+   */
+  async downloadDem(id: string): Promise<Uint8Array | null> {
+    const http = this.http;
+    if (http === null || typeof http.requestBytes !== 'function') {
+      return null;
+    }
+    const headers: Record<string, string> = {};
+    const token = this.session?.sessionToken ?? '';
+    if (token !== '') {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    const response = await http.requestBytes('GET', `/v1/replays/${pathSegment(id)}/dem`, headers);
+    if (response.status < 200 || response.status >= 300) {
+      return null;
+    }
+    return response.bytes;
   }
 
   /**
@@ -1585,6 +1689,8 @@ export class LobbyClient {
       modeId: stringField(payload, 'mode_id', 'modeId') || modeId,
       allReady: booleanField(payload, 'all_ready', 'allReady'),
       rulesetVersion: stringField(payload, 'ruleset_version', 'rulesetVersion'),
+      bossId: stringField(payload, 'boss_id', 'bossId'),
+      stageId: stringField(payload, 'stage_id', 'stageId'),
       players: Array.isArray(payload.players)
         ? payload.players.filter(isRecord).map((player) => this.playerFromPayload(player))
         : [],
@@ -1592,6 +1698,8 @@ export class LobbyClient {
   }
 
   private playerFromPayload(payload: Record<string, unknown>): RoomPlayerView {
+    // 服务端可能把自机字段放在嵌套 `loadout` 里（core.PlayerLoadout），也可能平铺。
+    const loadout = isRecord(payload.loadout) ? payload.loadout : payload;
     return {
       userId: stringField(payload, 'user_id', 'userId'),
       playerId: stringField(payload, 'player_id', 'playerId'),
@@ -1599,7 +1707,9 @@ export class LobbyClient {
       ready: booleanField(payload, 'ready'),
       host: booleanField(payload, 'host'),
       connected: booleanField(payload, 'connected'),
-      characterId: stringField(payload, 'character_id', 'characterId'),
+      characterId: stringField(loadout, 'character_id', 'characterId'),
+      shotType: stringField(loadout, 'shot_type', 'shotType'),
+      bombType: stringField(loadout, 'bomb_type', 'bombType'),
     };
   }
 
@@ -2476,6 +2586,8 @@ function matchHistoryEntryFromPayload(payload: Record<string, unknown>): MatchHi
     cardPlays: numberField(payload, 'card_plays', 'cardPlays'),
     durationTicks: numberField(payload, 'duration_ticks', 'durationTicks'),
     endedAtMs: timeFieldMs(payload, 'ended_at', 'endedAt', 'ended_at_ms', 'endedAtMs'),
+    hasDem: payload['has_dem'] === true || payload['hasDem'] === true,
+    demSize: numberField(payload, 'dem_size', 'demSize'),
   };
 }
 
@@ -2550,16 +2662,23 @@ export function roomViewFromState(payload: unknown): RoomView {
     modeId: stringField(source, 'mode_id', 'modeId'),
     allReady: booleanField(source, 'all_ready', 'allReady'),
     rulesetVersion: stringField(source, 'ruleset_version', 'rulesetVersion'),
+    bossId: stringField(source, 'boss_id', 'bossId'),
+    stageId: stringField(source, 'stage_id', 'stageId'),
     players: Array.isArray(source.players)
-      ? source.players.filter(isRecord).map((player) => ({
-          userId: stringField(player, 'user_id', 'userId'),
-          playerId: stringField(player, 'player_id', 'playerId'),
-          displayName: stringField(player, 'display_name', 'displayName'),
-          ready: booleanField(player, 'ready'),
-          host: booleanField(player, 'host'),
-          connected: booleanField(player, 'connected'),
-          characterId: stringField(player, 'character_id', 'characterId'),
-        }))
+      ? source.players.filter(isRecord).map((player) => {
+          const loadout = isRecord(player.loadout) ? player.loadout : player;
+          return {
+            userId: stringField(player, 'user_id', 'userId'),
+            playerId: stringField(player, 'player_id', 'playerId'),
+            displayName: stringField(player, 'display_name', 'displayName'),
+            ready: booleanField(player, 'ready'),
+            host: booleanField(player, 'host'),
+            connected: booleanField(player, 'connected'),
+            characterId: stringField(loadout, 'character_id', 'characterId'),
+            shotType: stringField(loadout, 'shot_type', 'shotType'),
+            bombType: stringField(loadout, 'bomb_type', 'bombType'),
+          };
+        })
       : [],
   };
 }

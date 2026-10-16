@@ -131,6 +131,8 @@ test('fetchRecords maps the whole dashboard including the recent list', async ()
     cardPlays: 4,
     durationTicks: 3600,
     endedAtMs: Date.parse('2026-10-10T12:00:00Z'),
+    hasDem: false,
+    demSize: 0,
   });
 });
 

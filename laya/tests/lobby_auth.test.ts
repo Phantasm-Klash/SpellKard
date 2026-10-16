@@ -197,7 +197,16 @@ test('logout clears the session and every per-session field', () => {
     rulesetVersion: 'rs-1',
     unlockedCharacterIds: [],
   };
-  client.room = { roomCode: 'R1', hostUserId: 'u-1', modeId: 'm', allReady: false, rulesetVersion: 'rs-1', players: [] };
+  client.room = {
+    roomCode: 'R1',
+    hostUserId: 'u-1',
+    modeId: 'm',
+    allReady: false,
+    rulesetVersion: 'rs-1',
+    players: [],
+    bossId: '',
+    stageId: '',
+  };
   client.allocation = {
     matchId: 'M1',
     modeId: 'm',

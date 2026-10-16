@@ -13,7 +13,7 @@
  */
 
 import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow';
-import type { RoomPlayerView } from '../../../core/net/lobby_client';
+import type { RoomPlayerView, RoomView } from '../../../core/net/lobby_client';
 import * as theme from '../view/theme';
 import {
   createBadge,
@@ -49,6 +49,30 @@ const CARD_BADGE_HEIGHT = 20;
 /** Width reserved at the card's trailing edge for the status chip. */
 const CARD_BADGE_RESERVE = 96;
 
+/** 房间 boss 选项（与 Gensoulkyo core.BossCatalog / C++ boss_catalog 一致）。 */
+const ROOM_BOSS_OPTIONS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: '', label: 'Default' },
+  { id: 'tian', label: '天 / tian' },
+  { id: 'hui', label: '辉 / hui' },
+];
+
+/** 自机 shot/bomb 快捷循环选项（完整 52/13 表在 core/sim/danmaku/player_loadout）。 */
+const ROOM_SHOT_OPTIONS: readonly string[] = [
+  '',
+  'ReimuA1',
+  'ReimuB1',
+  'MarisaA1',
+  'MarisaB1',
+  'SanaeA1',
+  'SakuyaA1',
+  'YoumuA1',
+  'YuyukoA1',
+];
+const ROOM_BOMB_OPTIONS: readonly string[] = ['', 'Reimu', 'Marisa', 'Sanae', 'Sakuya', 'Youmu', 'Yuyuko'];
+
+/** 高亮「match setup」区的高度，roster 标题据此下移（不设则不重叠）。 */
+const SETUP_BLOCK_HEIGHT = 96;
+
 export class RoomScene implements ClientScene {
   readonly root: Laya.Sprite;
   readonly shortcutScope: ShortcutScope = 'room';
@@ -61,6 +85,13 @@ export class RoomScene implements ClientScene {
   private readonly statusText: Laya.Text;
   private readonly readyButton: ButtonHandle;
   private readonly leaveButton: ButtonHandle;
+  private readonly setupText: Laya.Text;
+  private readonly bossButton: ButtonHandle;
+  private readonly shotButton: ButtonHandle;
+  private readonly bombButton: ButtonHandle;
+  private bossIndex = 0;
+  private shotIndex = 0;
+  private bombIndex = 0;
   private busy = false;
 
   constructor(private readonly options: RoomSceneOptions) {
@@ -97,8 +128,40 @@ export class RoomScene implements ClientScene {
     this.roomMetaText.y = codeY + codeHeight - theme.SPACE_LG;
     this.root.addChild(this.roomMetaText);
 
+    // --- match setup band: boss + 自机 (host-only; server fixes boss at create,
+    // so a host change re-creates the room while alone) ---
+    const setupY = codeY + codeHeight + theme.SPACE_SM;
+    const setupCaption = createCaption('Match setup · 房主可改', contentWidth, setupY);
+    setupCaption.x = margin;
+    this.root.addChild(setupCaption);
+    this.setupText = this.makeText('', theme.FONT_SIZE_CAPTION, theme.COLOR_TEXT_MUTED, false, margin);
+    this.setupText.y = setupY + theme.FONT_SIZE_CAPTION + theme.SPACE_XS;
+    this.root.addChild(this.setupText);
+    const setupRowY = this.setupText.y + theme.FONT_SIZE_CAPTION + theme.SPACE_XS;
+    const setupButtonWidth = Math.floor((contentWidth - theme.SPACE_SM * 2) / 3);
+    this.bossButton = createButtonEx('Boss', margin, setupRowY, setupButtonWidth, () => void this.cycleBoss(), 'ghost');
+    this.root.addChild(this.bossButton.sprite);
+    this.shotButton = createButtonEx(
+      'Shot',
+      margin + setupButtonWidth + theme.SPACE_SM,
+      setupRowY,
+      setupButtonWidth,
+      () => void this.cycleShot(),
+      'ghost',
+    );
+    this.root.addChild(this.shotButton.sprite);
+    this.bombButton = createButtonEx(
+      'Bomb',
+      margin + (setupButtonWidth + theme.SPACE_SM) * 2,
+      setupRowY,
+      setupButtonWidth,
+      () => void this.cycleBomb(),
+      'ghost',
+    );
+    this.root.addChild(this.bombButton.sprite);
+
     // --- roster band: dynamic player cards rebuilt per snapshot ---
-    const rosterCaptionY = codeY + codeHeight + theme.SPACE_MD;
+    const rosterCaptionY = codeY + codeHeight + SETUP_BLOCK_HEIGHT;
     const rosterCaption = createCaption('Players', contentWidth, rosterCaptionY);
     rosterCaption.x = margin;
     this.root.addChild(rosterCaption);
@@ -157,6 +220,8 @@ export class RoomScene implements ClientScene {
       this.roomCodeText.text = '—';
       this.roomCodeText.color = theme.COLOR_TEXT_DISABLED;
       this.roomMetaText.text = 'No room';
+      this.setupText.text = '';
+      this.setSetupEnabled(false);
       this.rebuildPlayers([]);
       this.readyButton.setEnabled(false);
       this.readyButton.setText('Ready');
@@ -166,6 +231,7 @@ export class RoomScene implements ClientScene {
     this.roomCodeText.text = room.roomCode;
     this.roomCodeText.color = theme.COLOR_ACCENT;
     this.roomMetaText.text = `${room.modeId} · ruleset ${room.rulesetVersion || '-'}`;
+    this.applySetup(snapshot, room);
     this.rebuildPlayers(room.players);
 
     const allReady = room.allReady && room.players.length >= 2;
@@ -195,7 +261,17 @@ export class RoomScene implements ClientScene {
     const step = cardHeight + theme.SPACE_MD;
     players.forEach((player, index) => {
       const card = createCard(0, index * step, contentWidth, cardHeight, player.displayName || player.playerId);
-      const name = this.makeText(player.playerId, theme.FONT_SIZE_CAPTION, theme.COLOR_TEXT_MUTED, false, theme.SPACE_MD);
+      const loadoutLabel =
+        player.shotType === '' && player.bombType === ''
+          ? ''
+          : ` · ${player.shotType || 'default'}/${player.bombType || 'default'}`;
+      const name = this.makeText(
+        `${player.playerId}${loadoutLabel}`,
+        theme.FONT_SIZE_CAPTION,
+        theme.COLOR_TEXT_MUTED,
+        false,
+        theme.SPACE_MD,
+      );
       name.y = CARD_BODY_PAD_TOP;
       // Reserve the trailing third of the row for the status chip so a long id
       // never runs under it.
@@ -232,6 +308,76 @@ export class RoomScene implements ClientScene {
       cursor -= badgeWidth + theme.SPACE_XS;
       body.addChild(badge.sprite);
     }
+  }
+
+  /**
+   * Renders the match setup band. The boss is fixed by the server at create
+   * time, so the controls are host-only: a guest sees the values read-only.
+   */
+  private applySetup(snapshot: LobbyFlowSnapshot, room: RoomView): void {
+    const isHost = snapshot.session !== null && snapshot.session.userId === room.hostUserId;
+    this.setSetupEnabled(isHost && !this.busy);
+    const bossLabel = ROOM_BOSS_OPTIONS.find((option) => option.id === room.bossId)?.label ?? room.bossId;
+    const me = room.players.find((player) => player.userId === snapshot.session?.userId) ?? null;
+    const shot = me?.shotType ?? '';
+    const bomb = me?.bombType ?? '';
+    const bossIndex = ROOM_BOSS_OPTIONS.findIndex((option) => option.id === room.bossId);
+    if (bossIndex >= 0) {
+      this.bossIndex = bossIndex;
+    }
+    const shotIndex = ROOM_SHOT_OPTIONS.indexOf(shot);
+    if (shotIndex >= 0) {
+      this.shotIndex = shotIndex;
+    }
+    const bombIndex = ROOM_BOMB_OPTIONS.indexOf(bomb);
+    if (bombIndex >= 0) {
+      this.bombIndex = bombIndex;
+    }
+    this.setupText.text = `Boss: ${room.bossId === '' ? 'Default' : bossLabel} · 自机: ${shot || 'default'} / ${bomb || 'default'}`;
+    this.setupText.color = isHost ? theme.COLOR_INFO : theme.COLOR_TEXT_MUTED;
+  }
+
+  private setSetupEnabled(enabled: boolean): void {
+    this.bossButton.setEnabled(enabled);
+    this.shotButton.setEnabled(enabled);
+    this.bombButton.setEnabled(enabled);
+  }
+
+  /** Cycles the room boss (host only) by re-creating the room with the new id. */
+  private async cycleBoss(): Promise<void> {
+    this.bossIndex = (this.bossIndex + 1) % ROOM_BOSS_OPTIONS.length;
+    await this.reconfigure({ bossId: ROOM_BOSS_OPTIONS[this.bossIndex].id });
+  }
+
+  private async cycleShot(): Promise<void> {
+    this.shotIndex = (this.shotIndex + 1) % ROOM_SHOT_OPTIONS.length;
+    await this.reconfigure({ shotType: ROOM_SHOT_OPTIONS[this.shotIndex] });
+  }
+
+  private async cycleBomb(): Promise<void> {
+    this.bombIndex = (this.bombIndex + 1) % ROOM_BOMB_OPTIONS.length;
+    await this.reconfigure({ bombType: ROOM_BOMB_OPTIONS[this.bombIndex] });
+  }
+
+  /** Applies a host selection by re-creating the room (server fixes boss at create). */
+  private async reconfigure(selection: {
+    bossId?: string;
+    shotType?: string;
+    bombType?: string;
+  }): Promise<void> {
+    const room = this.options.flow.snapshot().room;
+    if (room === null) {
+      return;
+    }
+    const bossId = selection.bossId ?? room.bossId;
+    const me = room.players.find((player) => player.userId === this.options.flow.snapshot().session?.userId);
+    const shotType = selection.shotType ?? me?.shotType ?? '';
+    const bombType = selection.bombType ?? me?.bombType ?? '';
+    this.busy = true;
+    this.applySnapshot(this.options.flow.snapshot());
+    await this.options.flow.reconfigureRoom({ bossId, shotType, bombType });
+    this.busy = false;
+    this.applySnapshot(this.options.flow.snapshot());
   }
 
   private async ready(): Promise<void> {

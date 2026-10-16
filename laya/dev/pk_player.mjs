@@ -53,6 +53,11 @@ const RELAY = arg('relay', LOBBY.replace(/^http/, 'ws') + '/v1/battle/relay');
 // `--stop-after room` ends the run once the room exists (or the guest has
 // joined), which is how the flow is smoke-tested without waiting for a match.
 const STOP_AFTER = arg('stop-after', 'battle');
+// 任务「boss 选择 + 自机机制」：可选地在建房/加入时选定 boss（仅房主）与自机。
+// 既有 CLI 参数保持兼容 —— 三个都为空时行为与本改动前完全一致。
+const BOSS = arg('boss'); // tian | hui | ''
+const SHOT = arg('shot'); // 如 ReimuA1
+const BOMB = arg('bomb'); // 如 Reimu
 /** How long to wait for the companion script to hand over the mailed code. */
 const CODE_TIMEOUT_MS = Number(arg('code-timeout', '240')) * 1000;
 
@@ -382,6 +387,27 @@ if (ROLE === 'host') {
   );
   step('Create room produced a room on the lobby', !!created.room && created.room.roomCode !== '', JSON.stringify(created).slice(0, 400));
   roomCode = created.room?.roomCode ?? '';
+
+  // 可选：房主在建房后（仍独自一人）选定 boss + 自机 —— 服务端把 boss 固定在
+  // 建房时刻，所以这里走 flow.reconfigureRoom（离房→以新配置重建）。
+  if (BOSS !== '' || SHOT !== '' || BOMB !== '') {
+    const reconfigured = await page.evaluate(
+      async ({ bossId, shotType, bombType }) => {
+        const scenes = window.__PK_SCENES__;
+        const ok = await scenes.flow.reconfigureRoom({ bossId, shotType, bombType });
+        await new Promise((r) => setTimeout(r, 1500));
+        const s = scenes.flow.snapshot();
+        return { ok, room: s.room, error: s.lastError };
+      },
+      { bossId: BOSS, shotType: SHOT, bombType: BOMB },
+    );
+    step('host selected boss/loadout', reconfigured.ok === true, JSON.stringify(reconfigured).slice(0, 400));
+    if (reconfigured.room?.roomCode) {
+      roomCode = reconfigured.room.roomCode;
+    }
+    await shot(page, '08a-boss-selected');
+  }
+
   writeFileSync(ROOM_FILE, JSON.stringify({ roomCode, host: USER, at: Date.now() }));
   log(`published room ${roomCode} to the rendezvous file`);
   await shot(page, '08-room-created');
@@ -397,14 +423,14 @@ if (ROLE === 'host') {
   roomCode = rendezvous.roomCode;
   log(`host published room ${roomCode}`);
   const joined = await page.evaluate(
-    async ({ roomCode }) => {
+    async ({ roomCode, shotType, bombType }) => {
       const scenes = window.__PK_SCENES__;
-      const ok = await scenes.flow.joinRoom(roomCode);
+      const ok = await scenes.flow.joinRoom(roomCode, { shotType, bombType });
       await new Promise((r) => setTimeout(r, 2000));
       const s = scenes.flow.snapshot();
       return { ok, room: s.room, status: s.statusText, error: s.lastError };
     },
-    { roomCode },
+    { roomCode, shotType: SHOT, bombType: BOMB },
   );
   step('joining the host room reached the lobby', joined.ok === true, JSON.stringify(joined).slice(0, 400));
   writeFileSync(JOINED_FILE, JSON.stringify({ roomCode, guest: USER, at: Date.now() }));
