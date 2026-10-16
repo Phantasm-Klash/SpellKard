@@ -285,6 +285,14 @@ export class SpellKardApp {
       selectDraftCard: (matchId, candidateIndex, modeId) => {
         void this.lobbyClient.selectRoundCard(matchId, candidateIndex, modeId);
       },
+      // A gift-bar click becomes one `match.mode_action` gift; the lobby owns
+      // the outcome (and echoes it to both players as `gift_sent`).
+      sendGift: (matchId, giftId, modeId) => {
+        void this.lobbyClient.sendMatchGift(matchId, giftId, modeId);
+      },
+      // The signed ticket carries the opening energy; before it arrives the
+      // paid gifts are simply greyed out.
+      giftEnergy: () => this.battleOpening?.initialEnergy ?? 0,
       // The scene's lifecycle starts/stops the poller; it owns no network itself.
       onPerformanceEnter: () => {
         if (this.performanceMatchId !== '' && !this.battlePoller.running) {
@@ -508,6 +516,11 @@ export class SpellKardApp {
     // otherwise it logs `reason=ticket_missing` and the recording loses the
     // account. A failure here degrades to today's behaviour (connect without a
     // ticket) instead of blocking the match.
+    // The `battle.ticket` RPC response is the authoritative signed ticket: the
+    // same field names and shapes the battle server decodes. The `match_start`
+    // WS message also carries a ticket, but as a *projection* (its seed is not
+    // the decimal text the server parses), so swapping it in wholesale made the
+    // server log `server_seed_invalid` — keep the RPC object.
     let signedTicket = this.lobbyClient.ticket?.raw;
     if (signedTicket === undefined) {
       try {
@@ -604,6 +617,9 @@ export class SpellKardApp {
     const resolveRosterId = (userId: string): string => this.resolveRosterId(userId);
     for (const event of events) {
       this.battleScene.applyMatchEvent(event, resolveRosterId);
+      if (event.type === 'gift_sent') {
+        this.battleScene.applyGiftEvent(event);
+      }
     }
   }
 

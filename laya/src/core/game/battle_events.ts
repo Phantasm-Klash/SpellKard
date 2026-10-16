@@ -254,9 +254,44 @@ export function eventToSfx(event: MatchEventView): MatchEventSfx | null {
     }
     case 'card_accepted':
       return 'playerShot';
+    case 'gift_sent':
+      // A gift is a social flourish; the spell SE is the only channel loud
+      // enough to read as "something was handed over".
+      return 'skill';
     default:
       return null;
   }
+}
+
+/** One gift handed to the other player, projected from a `gift_sent` event. */
+export interface GiftView {
+  /** Catalog id of the gift (`heart`, `star`, …). */
+  giftId: string;
+  /** Lobby `user_id` of the sender; empty when the event omits it. */
+  fromUserId: string;
+  /** Lobby `user_id` of the recipient; empty when the event omits it. */
+  toUserId: string;
+}
+
+/**
+ * `gift_sent` payload → {@link GiftView}, or `null` when the event carries no
+ * usable gift id. An unknown id is *kept* (not dropped): the scene shows the
+ * sender's name and a generic glyph rather than pretending nothing happened,
+ * which is what a client on an older build should do.
+ */
+export function giftViewFromEvent(event: MatchEventView): GiftView | null {
+  if (event.type !== 'gift_sent') {
+    return null;
+  }
+  const giftId = (event.cardId ?? event.actionId ?? '').trim();
+  if (giftId === '') {
+    return null;
+  }
+  return {
+    giftId,
+    fromUserId: event.userId ?? '',
+    toUserId: event.targetUserId ?? '',
+  };
 }
 
 /** One round of the mixed-pool draft, projected from a `draft_open` row. */

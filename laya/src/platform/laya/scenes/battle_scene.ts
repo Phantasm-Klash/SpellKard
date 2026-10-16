@@ -56,6 +56,9 @@ import type { HudState } from '../view/hud';
 import { fade } from '../view/sprites';
 import { DraftPanel } from '../view/draft_panel';
 import { HandBar } from '../view/hand_bar';
+import { giftBarView, giftGlyphPath, affordableGiftAt, giftAnnouncement, type GiftBarView } from '../../../core/game/gift_bar_view';
+import { giftDefinition } from '../../../core/game/gift_catalog';
+import { giftViewFromEvent } from '../../../core/game/battle_events';
 import { StageBackgroundLayer } from '../view/stage_background';
 import * as theme from '../view/theme';
 import { WatermarkLayer } from '../view/watermark';
@@ -116,6 +119,18 @@ export interface BattleSceneOptions {
    */
   selectDraftCard?: (matchId: string, candidateIndex: number, modeId: string) => void;
   /**
+   * Sends one in-match gift, exactly as `LobbyClient.sendMatchGift` does
+   * (`match.mode_action` with a `gift` action). Called only from a gift-bar
+   * click; the scene never builds the payload itself. Optional so the scene
+   * still runs without a lobby (offline demos).
+   */
+  sendGift?: (matchId: string, giftId: string, modeId: string) => void;
+  /**
+   * Lazily read the local player's energy. Decides which gifts the bar greys
+   * out; `0` before the ticket arrives simply disables the paid ones.
+   */
+  giftEnergy?: () => number;
+  /**
    * Called on `onEnter`. The app uses it to start the match-event poller (the
    * scene itself owns no network source); optional so the scene still runs
    * standalone.
@@ -124,13 +139,6 @@ export interface BattleSceneOptions {
   /** Called on `onExit`; the app uses it to stop the match-event poller. */
   onPerformanceExit?: () => void;
   onMatchEnd?: (winnerPlayerId: string) => void;
-  /**
-   * Called when the player chooses "abandon / disconnect" from the in-match
-   * screen (the existing `battle.back` shortcut). The app routes it to
-   * `LobbyFlow.abandonMatch`, which sends the explicit `abandon` intent and
-   * then leaves the match. The scene owns no network and decides no outcome.
-   */
-  onAbandonMatch?: () => void;
 }
 
 /**
@@ -205,6 +213,8 @@ export class BattleScene implements ClientScene {
   private readonly effectLayer: Laya.Sprite;
   /** Effect readout (invulnerability countdown, last finisher damage). */
   private readonly effectText: Laya.Text;
+  /** Gift announcement line, centred above the gift bar. */
+  private readonly giftText: Laya.Text;
   /**
    * Hand bar: the ticket's opening hand as cast slots plus the energy readout.
    * Sits above the card effects and below the cutscene / pause banner.
@@ -233,11 +243,6 @@ export class BattleScene implements ClientScene {
   private paused = false;
   private frame: BossRaceFrame | null = null;
   private matchEnded = false;
-  /**
-   * Last lobby tick applied through {@link applyReconnectTick}, so a repeated
-   * value (the app and a poll can both deliver it) resyncs only once.
-   */
-  private lastReconnectTick = 0;
   /** Lobby stage id whose BGM is playing (empty until the snapshot arrives). */
   private stageId = '';
   /** Cutscene banner text for the stage title. */
@@ -296,6 +301,16 @@ export class BattleScene implements ClientScene {
     this.effectText.visible = false;
     this.root.addChild(this.effectText);
 
+    // The gift announcement shares the effect text's styling; it lives above
+    // the gift bar so a toast never covers a slot.
+    this.giftText = new Laya.Text();
+    this.giftText.fontSize = theme.FONT_SIZE_CAPTION;
+    this.giftText.bold = true;
+    this.giftText.color = theme.COLOR_INFO;
+    this.giftText.align = 'center';
+    this.giftText.visible = false;
+    this.root.addChild(this.giftText);
+
     // The hand bar hugs the bottom of the playfield: above the card effects
     // (so a purge ring does not hide a slot) and below the entrance cutscene
     // and the pause banner (so a pause always wins visually). Its click is a
@@ -344,6 +359,15 @@ export class BattleScene implements ClientScene {
     // window (the stage may differ from `options` on a resizable native window).
     this.relayout(width, height);
   }
+
+  /** Gift bar state: rebuilt every frame from the local energy. */
+  private giftBar: GiftBarView = giftBarView(0, -1);
+  /** Slot the pointer last picked; -1 until the player clicks one. */
+  private giftSelected = -1;
+  /** Active gift announcement: the line plus the tick it expires on. */
+  private giftToast: { text: string; untilTick: number } | null = null;
+  /** Hit boxes of the gift bar slots, refreshed with every draw. */
+  private giftHitBoxes: { x: number; y: number; w: number; h: number; index: number }[] = [];
 
   onEnter(): void {
     this.root.visible = true;
@@ -734,41 +758,19 @@ export class BattleScene implements ClientScene {
 
   /**
    * Handles a battle shortcut. `pause` holds the fixed-tick loop and shows the
-   * banner so the key has visible feedback; `back` is the in-match
-   * "abandon / disconnect" entry (T10 rule 3) and is handed to the app, which
-   * owns the lobby call and the navigation. The HUD strip is owned by
-   * `BossRaceView`, so `toggleHud` falls through to the app-level handlers.
+   * banner so the key has visible feedback; the other two battle actions have
+   * no control on this screen — there is no forfeit/back path and the HUD strip
+   * is owned by `BossRaceView` — so they fall through to the app-level handlers.
    *
    * Only the scene's own `start()`/`stop()` lifecycle is used: the simulation,
    * input sampling and network code are left untouched.
    */
   handleShortcut(action: ShortcutAction, _event: Laya.KeyboardEventLike): boolean {
-    if (action === 'battle.back') {
-      this.options.onAbandonMatch?.();
-      return true;
-    }
     if (action !== 'battle.pause') {
       return false;
     }
     this.setPaused(!this.paused);
     return true;
-  }
-
-  /**
-   * Applies a lobby tick from a reconnect (T10 rule 4) to the battle layer.
-   *
-   * The app calls this once `LobbyFlow.resumeMatch` resolves with the server's
-   * tick; the scene passes it straight through to `BattleClient.resyncTick`,
-   * which aligns the local prediction and marks the local player alive again.
-   * The value is never advanced locally first, and a repeat of the last value is
-   * a no-op so a polling caller cannot resync twice.
-   */
-  applyReconnectTick(tick: number): void {
-    if (tick <= 0 || tick === this.lastReconnectTick) {
-      return;
-    }
-    this.lastReconnectTick = tick;
-    this.options.battle.resyncTick(tick);
   }
 
   /** Holds or resumes the tick loop and mirrors the state on the banner. */
@@ -864,6 +866,97 @@ export class BattleScene implements ClientScene {
     this.frame = frame;
     this.view.render(frame, this.hudLines(source), this.hudState(source));
     this.drawCardEffects(frame, source);
+    this.drawGiftLayer(frame);
+  }
+
+  /**
+   * The in-match gift bar and the last gift announcement.
+   *
+   * The bar is pure vector art (see {@link giftGlyphPath}) — the TNA art root
+   * ships no gift icons, so drawing them keeps the interaction self-contained.
+   * A click is routed through {@link BattleSceneOptions.sendGift}; the scene
+   * never builds the payload, exactly like the draft picks.
+   */
+  private drawGiftLayer(frame: BossRaceFrame): void {
+    const g = this.effectLayer?.graphics;
+    if (g === undefined) {
+      return;
+    }
+    g.clear();
+    const energy = this.options.giftEnergy?.() ?? 0;
+    this.giftBar = giftBarView(energy, this.giftSelected);
+    const box = 26;
+    const gap = 6;
+    const total = this.giftBar.slots.length * box + (this.giftBar.slots.length - 1) * gap;
+    const startX = Math.max(8, (this.geometry.playfield.width - total) / 2);
+    const y = this.geometry.playfield.height - box - 10;
+    this.giftHitBoxes = [];
+    for (const [index, slot] of this.giftBar.slots.entries()) {
+      const x = startX + index * (box + gap);
+      this.giftHitBoxes.push({ x, y, w: box, h: box, index });
+      const accent = slot.affordable ? slot.definition.accent : 0x6b7280;
+      const accentCss = `#${accent.toString(16).padStart(6, '0')}`;
+      g.drawRect(x, y, box, box, slot.selected ? '#1f2937' : '#111827', accentCss, slot.selected ? 2 : 1);
+      const path = giftGlyphPath(slot.definition.glyph);
+      if (path.length >= 3) {
+        // Flattened x,y pairs — Laya's drawPoly takes a number list.
+        const points: number[] = [];
+        for (const [px, py] of path) {
+          points.push(x + box / 2 + px * box * 0.34, y + box / 2 + py * box * 0.34);
+        }
+        g.drawPoly(0, 0, points, accentCss, accentCss, 1);
+      }
+    }
+    if (this.giftToast !== null && frame.tick <= this.giftToast.untilTick) {
+      this.giftText.text = this.giftToast.text;
+      this.giftText.visible = true;
+    } else {
+      this.giftText.text = '';
+      this.giftText.visible = false;
+      this.giftToast = null;
+    }
+  }
+
+  /**
+   * Routes a pointer position onto the gift bar. Returns true when a slot was
+   * hit (so the caller knows the tap was consumed). An unaffordable slot is
+   * selected but not sent — the player sees what it costs first.
+   */
+  handleGiftTap(px: number, py: number): boolean {
+    for (const hit of this.giftHitBoxes) {
+      if (px < hit.x || px > hit.x + hit.w || py < hit.y || py > hit.y + hit.h) {
+        continue;
+      }
+      this.giftSelected = hit.index;
+      const slot = this.giftBar.slots[hit.index];
+      if (slot === undefined || !slot.affordable) {
+        return true;
+      }
+      const gift = affordableGiftAt(this.giftBar, this.options.giftEnergy?.() ?? 0);
+      if (gift === null) {
+        return true;
+      }
+      const definition = giftDefinition(gift.giftId);
+      this.giftToast = {
+        text: definition === null ? `送出了 ${gift.giftId}` : `送出了 ${definition.name}`,
+        untilTick: (this.frame?.tick ?? 0) + 180,
+      };
+      this.options.sendGift?.(this.options.battle.info?.matchId ?? '', gift.giftId, this.options.battle.info?.modeId ?? '');
+      return true;
+    }
+    return false;
+  }
+
+  /** Shows a received `gift_sent` event as the announcement line. */
+  applyGiftEvent(event: MatchEventView): void {
+    const gift = giftViewFromEvent(event);
+    if (gift === null) {
+      return;
+    }
+    const mine = this.options.localUserId?.() ?? '';
+    const from = gift.fromUserId === mine ? '你' : '对手';
+    const to = gift.toUserId === mine ? '你' : '对手';
+    this.giftToast = { text: giftAnnouncement(gift.giftId, from, to), untilTick: (this.frame?.tick ?? 0) + 240 };
   }
 
   /** Bullet ids hidden by an active purge. */
