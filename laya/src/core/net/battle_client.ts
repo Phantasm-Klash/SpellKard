@@ -298,6 +298,33 @@ export class BattleClient {
     return 1000 / this.tickRateHz;
   }
 
+  /**
+   * Resyncs the local prediction to the lobby's match tick after a reconnect
+   * (T10 rule 4) and marks the local player connected again ("respawned").
+   *
+   * The lobby owns the value: the caller passes it verbatim and this method
+   * never advances the tick on its own first. The tick only ever moves forward
+   * — a rewind would invalidate inputs already sent for ticks the server has
+   * not consumed, and the battle server rejects `tick <= current_tick`. Returns
+   * false when there is no prediction to resync (before `connect`) or the value
+   * is not usable, so a caller cannot mistake "did nothing" for "resynced".
+   */
+  resyncTick(tick: number): boolean {
+    const local = this.simulation;
+    if (local === null || !Number.isFinite(tick) || tick <= 0) {
+      return false;
+    }
+    const current = local.snapshot();
+    if (tick > current.tick) {
+      local.adoptAuthoritativeSnapshot({ ...current, tick }, { alignTick: true });
+    }
+    const info = this.sessionInfo;
+    if (info !== null && info.playerId !== '') {
+      local.setPlayerConnected(info.playerId, true);
+    }
+    return true;
+  }
+
   close(): void {
     this.session?.close();
     this.session = null;

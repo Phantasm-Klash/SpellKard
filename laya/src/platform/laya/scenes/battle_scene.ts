@@ -124,6 +124,13 @@ export interface BattleSceneOptions {
   /** Called on `onExit`; the app uses it to stop the match-event poller. */
   onPerformanceExit?: () => void;
   onMatchEnd?: (winnerPlayerId: string) => void;
+  /**
+   * Called when the player chooses "abandon / disconnect" from the in-match
+   * screen (the existing `battle.back` shortcut). The app routes it to
+   * `LobbyFlow.abandonMatch`, which sends the explicit `abandon` intent and
+   * then leaves the match. The scene owns no network and decides no outcome.
+   */
+  onAbandonMatch?: () => void;
 }
 
 /**
@@ -226,6 +233,11 @@ export class BattleScene implements ClientScene {
   private paused = false;
   private frame: BossRaceFrame | null = null;
   private matchEnded = false;
+  /**
+   * Last lobby tick applied through {@link applyReconnectTick}, so a repeated
+   * value (the app and a poll can both deliver it) resyncs only once.
+   */
+  private lastReconnectTick = 0;
   /** Lobby stage id whose BGM is playing (empty until the snapshot arrives). */
   private stageId = '';
   /** Cutscene banner text for the stage title. */
@@ -722,19 +734,41 @@ export class BattleScene implements ClientScene {
 
   /**
    * Handles a battle shortcut. `pause` holds the fixed-tick loop and shows the
-   * banner so the key has visible feedback; the other two battle actions have
-   * no control on this screen — there is no forfeit/back path and the HUD strip
-   * is owned by `BossRaceView` — so they fall through to the app-level handlers.
+   * banner so the key has visible feedback; `back` is the in-match
+   * "abandon / disconnect" entry (T10 rule 3) and is handed to the app, which
+   * owns the lobby call and the navigation. The HUD strip is owned by
+   * `BossRaceView`, so `toggleHud` falls through to the app-level handlers.
    *
    * Only the scene's own `start()`/`stop()` lifecycle is used: the simulation,
    * input sampling and network code are left untouched.
    */
   handleShortcut(action: ShortcutAction, _event: Laya.KeyboardEventLike): boolean {
+    if (action === 'battle.back') {
+      this.options.onAbandonMatch?.();
+      return true;
+    }
     if (action !== 'battle.pause') {
       return false;
     }
     this.setPaused(!this.paused);
     return true;
+  }
+
+  /**
+   * Applies a lobby tick from a reconnect (T10 rule 4) to the battle layer.
+   *
+   * The app calls this once `LobbyFlow.resumeMatch` resolves with the server's
+   * tick; the scene passes it straight through to `BattleClient.resyncTick`,
+   * which aligns the local prediction and marks the local player alive again.
+   * The value is never advanced locally first, and a repeat of the last value is
+   * a no-op so a polling caller cannot resync twice.
+   */
+  applyReconnectTick(tick: number): void {
+    if (tick <= 0 || tick === this.lastReconnectTick) {
+      return;
+    }
+    this.lastReconnectTick = tick;
+    this.options.battle.resyncTick(tick);
   }
 
   /** Holds or resumes the tick loop and mirrors the state on the banner. */

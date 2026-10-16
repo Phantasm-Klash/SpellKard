@@ -277,6 +277,50 @@ export interface MatchResultView {
   settledAtMs: number;
 }
 
+/**
+ * Why a client is telling the lobby it is disconnecting (T10).
+ *
+ * `abandon` is the player's own choice from the in-match screen: the lobby
+ * settles the match at once, awards the win to the still-connected player,
+ * records the caller as fleeing and moves no score (`Gensoulkyo
+ * runtime/httpapi/handler.go` → `AbandonMatch`). `drop` (or an omitted intent)
+ * is a passive drop that keeps the match alive so the player can reconnect and
+ * respawn (rule 4). Kept as a union so no call site passes a bare string.
+ */
+export type DisconnectIntent = 'abandon' | 'drop';
+
+/**
+ * `POST /v1/matches/{id}/disconnect` — the lobby's view of the disconnect.
+ * The client never decides the outcome; `status` is the lobby's word for it.
+ */
+export interface DisconnectView {
+  matchId: string;
+  /** `abandoned` (explicit lobby disconnect) or `disconnected` (passive drop). */
+  status: string;
+  connected: boolean;
+  /** Match tick at the moment of the call. */
+  tick: number;
+}
+
+/** `POST /v1/matches/{id}/reconnect` — the lobby's view of the reconnect. */
+export interface ReconnectView {
+  matchId: string;
+  /** `restored` when the lobby accepted the reconnect. */
+  status: string;
+  connected: boolean;
+  /**
+   * Match tick at the moment of the call, for the battle layer to resync to.
+   *
+   * Read from the response's top-level `tick`, falling back to `snapshot.tick`:
+   * the deployed lobby's `ReconnectMatch` fills the snapshot tick but does not
+   * (yet) copy it onto the top-level field, so the fallback is what actually
+   * carries the value today.
+   */
+  tick: number;
+  /** Seconds left in the reconnect window (0 when the lobby did not say). */
+  secondsLeft: number;
+}
+
 /** Gensoulkyo matchmaking queue ticket (`matchmaking.join` / `.ticket` / `.cancel`). */
 export interface MatchmakingTicketView {
   ticketId: string;
@@ -558,6 +602,15 @@ export interface MatchSnapshotView {
   /** The local player's `character_id`, from their in-match loadout. */
   characterId: string;
   activeCards: ActiveCardSnapshot[];
+  /**
+   * Whether the lobby reports the local player as connected.
+   *
+   * `true` when the snapshot omits the flag: an older server that does not send
+   * `connected` must never be read as a drop, or every entry would trigger a
+   * spurious reconnect. A `false` here is the signal to auto-reconnect on
+   * entering the match (T10 rule 4).
+   */
+  localConnected: boolean;
 }
 
 /** One finished match, mirroring the lobby's `MatchHistoryEntry`. */
@@ -1129,6 +1182,59 @@ export class LobbyClient {
   }
 
   /**
+   * `match.disconnect` / `POST /v1/matches/{id}/disconnect`.
+   *
+   * `intent` is the player's own choice (T10): `'abandon'` is the explicit
+   * "leave this match" from the in-match screen and makes the lobby settle at
+   * once with no score; `'drop'` (the default) is a passive drop that keeps the
+   * match alive for a reconnect. The client only supplies the intent — the
+   * lobby decides the outcome — so the result is returned verbatim as a view
+   * rather than interpreted here.
+   */
+  async disconnectMatch(
+    matchId = '',
+    intent: DisconnectIntent = 'drop',
+  ): Promise<DisconnectView | null> {
+    const response = await this.call('match.disconnect', { match_id: matchId, intent });
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    return {
+      matchId: stringField(payload, 'match_id', 'matchId'),
+      status: stringField(payload, 'reconnect_status', 'reconnectStatus'),
+      connected: booleanField(payload, 'connected'),
+      tick: numberField(payload, 'tick'),
+    };
+  }
+
+  /**
+   * `match.reconnect` / `POST /v1/matches/{id}/reconnect` — the auto-reconnect
+   * on entering a match (T10 rule 4).
+   *
+   * The response carries the match `tick` the battle layer must resync to and
+   * (when the match is still running) a fresh signed ticket for the respawn
+   * handshake. `tick` is read from the top-level field with a `snapshot.tick`
+   * fallback — see {@link ReconnectView.tick}.
+   */
+  async reconnectMatch(matchId = ''): Promise<ReconnectView | null> {
+    const response = await this.call('match.reconnect', { match_id: matchId });
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    const snapshot = isRecord(payload.snapshot) ? payload.snapshot : {};
+    const topLevelTick = optionalNumberField(payload, 'tick');
+    return {
+      matchId: stringField(payload, 'match_id', 'matchId'),
+      status: stringField(payload, 'reconnect_status', 'reconnectStatus'),
+      connected: booleanField(payload, 'connected'),
+      tick: topLevelTick !== undefined ? topLevelTick : numberField(snapshot, 'tick'),
+      secondsLeft: numberField(payload, 'seconds_left', 'secondsLeft'),
+    };
+  }
+
+  /**
    * `matchmaking.join` / `POST /v1/matchmaking/join`.
    *
    * Enqueues the player for a mode and stores the returned queue ticket. The
@@ -1281,11 +1387,15 @@ export class LobbyClient {
       : Array.isArray(payload.activeCards)
         ? payload.activeCards
         : [];
+    // `connected` is a single-word wire field; `optionalBooleanField` keeps
+    // "absent" distinct from `false` so an older server reads as connected.
+    const localConnected = local === undefined ? true : optionalBooleanField(local, 'connected') ?? true;
     return {
       matchId: stringField(payload, 'match_id', 'matchId'),
       stageId: stringField(payload, 'stage_id', 'stageId') || stringField(modeState, 'stage_id', 'stageId'),
       characterId: stringField(loadout, 'character_id', 'characterId'),
       activeCards: activeCards.filter(isRecord).map((card) => activeCardSnapshotFromPayload(card)),
+      localConnected,
     };
   }
 
@@ -2893,6 +3003,24 @@ export function booleanField(source: Record<string, unknown>, ...keys: string[])
     }
   }
   return false;
+}
+
+/**
+ * Reads a boolean field, or `undefined` when no spelling is present.
+ *
+ * The counterpart to {@link booleanField} for *optional* wire fields:
+ * `booleanField` collapses "absent" and `false` into `false`, which loses the
+ * distinction a caller needs when the default must be `true` (e.g. a player the
+ * server never flagged as disconnected).
+ */
+export function optionalBooleanField(source: Record<string, unknown>, ...keys: string[]): boolean | undefined {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'boolean') {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 export function stringArrayField(source: Record<string, unknown>, ...keys: string[]): string[] {

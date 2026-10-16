@@ -59,6 +59,7 @@ import './stage_background_geometry.test';
 import './audio_throttle.test';
 import './cutscene_overlay_steps.test';
 import './dem_replay.test';
+import './client_disconnect.test';
 
 import { runAll } from './harness';
 

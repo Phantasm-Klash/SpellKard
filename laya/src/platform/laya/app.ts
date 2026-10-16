@@ -293,6 +293,12 @@ export class SpellKardApp {
       },
       onPerformanceExit: () => this.battlePoller.stop(),
       onMatchEnd: (winnerPlayerId) => this.onMatchEnd(winnerPlayerId),
+      // The in-match "abandon / disconnect" entry (T10 rule 3). The lobby owns
+      // the outcome; the flow sends the explicit abandon intent and then leaves
+      // the match through its own navigation.
+      onAbandonMatch: () => {
+        void this.flow.abandonMatch();
+      },
     });
     // `.dem` replay player. It owns no network: the result / records screens
     // ask for a replay id and the app downloads the container bytes on their
@@ -441,6 +447,9 @@ export class SpellKardApp {
       // (fired by the scene's `onEnter`, right after this) can start the poller.
       this.performanceMatchId = snapshot.match.matchId;
       void this.enterBattlePerformance(snapshot.match.matchId, false);
+      // Auto-reconnect (T10 rule 4): only a lobby-reported disconnect calls
+      // `match.reconnect`; the returned tick resyncs the local prediction.
+      void this.resumeMatch(snapshot.match.matchId);
     }
     switch (snapshot.screen) {
       case LobbyScreen.Login:
@@ -560,6 +569,23 @@ export class SpellKardApp {
     this.battlePoller.stop();
     this.performanceMatchId = '';
     this.battleOpening = null;
+  }
+
+  /**
+   * Auto-reconnects the local player on entering a match (T10 rule 4).
+   *
+   * `LobbyFlow.resumeMatch` only calls `match.reconnect` when the lobby reports
+   * the player as disconnected; a connected player (or a failed reconnect)
+   * yields `null` and nothing happens — the player is never presented as alive
+   * on a guess. On success the lobby's tick is handed to the battle scene, which
+   * resyncs the local prediction and respawns the player.
+   */
+  private async resumeMatch(matchId: string): Promise<void> {
+    const tick = await this.flow.resumeMatch(matchId);
+    if (tick === null) {
+      return;
+    }
+    this.battleScene.applyReconnectTick(tick);
   }
 
   /**

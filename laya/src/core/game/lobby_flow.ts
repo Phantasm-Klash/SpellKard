@@ -641,6 +641,60 @@ export class LobbyFlow {
     this.setScreen(LobbyScreen.Lobby);
   }
 
+  /**
+   * The player chose to disconnect from the in-match screen (T10 rule 3).
+   *
+   * Sends the explicit `abandon` intent so the lobby settles the match at once
+   * with no score, then leaves the match through the existing navigation
+   * ({@link backToLobby}). The client does not decide the winner or the score.
+   * A failure surfaces on the battle screen and does NOT leave it, so the
+   * player is never dropped out of a match the lobby still thinks is live.
+   */
+  async abandonMatch(): Promise<boolean> {
+    const matchId = this.match?.matchId ?? '';
+    if (matchId === '') {
+      this.fail('No match to abandon');
+      return false;
+    }
+    this.statusText = 'Leaving the match…';
+    this.notify();
+    const view = await this.client.disconnectMatch(matchId, 'abandon');
+    if (view === null) {
+      this.fail(`Abandon failed: ${this.client.lastError}`);
+      return false;
+    }
+    this.statusText = `Match ${matchId} abandoned`;
+    this.backToLobby();
+    return true;
+  }
+
+  /**
+   * Auto-reconnect on entering a match (T10 rule 4).
+   *
+   * Reads the lobby snapshot and, **only** when it reports the local player as
+   * disconnected, asks the lobby to reconnect and returns the tick the battle
+   * layer must resync to. A connected player (or a failed reconnect) returns
+   * `null` — the caller must not invent a tick nor present the player as alive.
+   */
+  async resumeMatch(matchId = ''): Promise<number | null> {
+    const id = matchId !== '' ? matchId : this.match?.matchId ?? '';
+    if (id === '') {
+      return null;
+    }
+    const snapshot = await this.client.fetchMatchSnapshot(id);
+    if (snapshot === null || snapshot.localConnected) {
+      // Connected, or the snapshot is unreadable: nothing to resume, and no
+      // reconnect call is made.
+      return null;
+    }
+    const view = await this.client.reconnectMatch(id);
+    if (view === null || !view.connected) {
+      // The lobby refused the reconnect: the player stays disconnected.
+      return null;
+    }
+    return view.tick;
+  }
+
   /** Convenience for demos/tests: drive the flow straight to the battle screen. */
   enterBattle(info: MatchStartInfo): void {
     this.match = info;
