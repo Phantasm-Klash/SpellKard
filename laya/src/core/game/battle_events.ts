@@ -238,8 +238,20 @@ export function eventToSfx(event: MatchEventView): MatchEventSfx | null {
       return 'graze';
     case 'hit':
     case 'bomb_damage':
-    case 'card_effect_applied':
       return 'skill';
+    case 'card_effect_applied': {
+      // The card's effect kind picks the channel, because the three kinds read
+      // very differently in play: a purge is the player's own screen clear (the
+      // shot SE), while a barrage or a finisher is an enemy-side spell SE. An
+      // unknown card id keeps the old 'skill' default, so an unrecognised card
+      // never sounds like the player's own action.
+      const definition =
+        event.cardId === undefined || event.cardId === '' ? null : cardEffectDefinition(event.cardId);
+      if (definition !== null && definition.effectKind === 'bullet_purge') {
+        return 'playerShot';
+      }
+      return 'skill';
+    }
     case 'card_accepted':
       return 'playerShot';
     default:

@@ -164,6 +164,13 @@ test('eventToSfx classifies the audible event families', () => {
   expectEqual(eventToSfx(cardEvent({ type: 'card_accepted' })), 'playerShot');
 });
 
+test('a purge effect plays the player SE, other kinds keep the spell SE', () => {
+  expectEqual(eventToSfx(cardEvent({ type: 'card_effect_applied', cardId: 'purge_bell' })), 'playerShot');
+  expectEqual(eventToSfx(cardEvent({ type: 'card_effect_applied', cardId: 'finale_arc' })), 'skill');
+  // An unknown card id must not borrow the player's channel.
+  expectEqual(eventToSfx(cardEvent({ type: 'card_effect_applied', cardId: 'not_a_card' })), 'skill');
+});
+
 test('silent events map to null', () => {
   expectEqual(eventToSfx(cardEvent({ type: 'round_start' })), null);
   expectEqual(eventToSfx(cardEvent({ type: 'card_expired' })), null);
