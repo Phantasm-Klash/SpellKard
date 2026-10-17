@@ -156,6 +156,24 @@ export class BattleClient {
     return this.config.convOverride ?? deriveDevKcpConv(this.sessionInfo.matchId, this.sessionInfo.playerId);
   }
 
+  /**
+   * T10 rule 4: adopt the lobby's match tick after a passive drop and present
+   * the local player alive again — they died on drop, and the resync revives
+   * them. Forward only, and refused when there is nothing to resync yet.
+   */
+  resyncTick(tick: number): boolean {
+    const simulation = this.simulation;
+    const playerId = this.sessionInfo?.playerId ?? '';
+    if (simulation === null || playerId === '') {
+      return false;
+    }
+    if (!simulation.resyncTick(tick)) {
+      return false;
+    }
+    simulation.setPlayerConnected(playerId, true);
+    return true;
+  }
+
   get simulationRef(): BossRaceSimulation | null {
     return this.simulation;
   }

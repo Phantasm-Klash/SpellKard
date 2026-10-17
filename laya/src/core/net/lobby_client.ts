@@ -558,6 +558,12 @@ export interface MatchSnapshotView {
   /** The local player's `character_id`, from their in-match loadout. */
   characterId: string;
   activeCards: ActiveCardSnapshot[];
+  /**
+   * The local player's connection state, when the lobby reports it. Absent
+   * means "the server did not say", which the caller must not read as
+   * "connected" — hence optional rather than defaulted.
+   */
+  localConnected?: boolean;
 }
 
 /** One finished match, mirroring the lobby's `MatchHistoryEntry`. */
@@ -1207,6 +1213,38 @@ export class LobbyClient {
    * battle performance layer that never syncs — not an obvious error — so the
    * REST transport is the default-on-REST deployments and mandatory on Nakama.
    */
+  // T10: the player's own choice to leave (`abandon`) ends the match at once
+  // with no score; anything else is a passive drop that stays reconnectable.
+  // The client only supplies the intent — the lobby decides the outcome.
+  async disconnectMatch(
+    matchId: string,
+    intent: 'abandon' | 'drop' = 'drop',
+  ): Promise<{ status: string; connected: boolean; tick: number } | null> {
+    const response = await this.callOn(
+      this.restTransport ?? this.transport,
+      this.buildRequest('match.disconnect', { match_id: matchId, intent }),
+    );
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    return matchConnectionViewFromPayload(response.payload);
+  }
+
+  // T10 rule 4: the response carries the match tick, which the battle scene
+  // uses to resync and respawn after a passive drop.
+  async reconnectMatch(
+    matchId: string,
+  ): Promise<{ status: string; connected: boolean; tick: number; secondsLeft?: number } | null> {
+    const response = await this.callOn(
+      this.restTransport ?? this.transport,
+      this.buildRequest('match.reconnect', { match_id: matchId }),
+    );
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    return matchConnectionViewFromPayload(response.payload);
+  }
+
   async fetchMatchEvents(matchId: string, after: number, limit: number): Promise<MatchEventsView | null> {
     const response = await this.callOn(
       this.restTransport ?? this.transport,
@@ -1286,6 +1324,12 @@ export class LobbyClient {
       stageId: stringField(payload, 'stage_id', 'stageId') || stringField(modeState, 'stage_id', 'stageId'),
       characterId: stringField(loadout, 'character_id', 'characterId'),
       activeCards: activeCards.filter(isRecord).map((card) => activeCardSnapshotFromPayload(card)),
+      localConnected:
+        typeof payload.local_connected === 'boolean'
+          ? payload.local_connected
+          : typeof payload.localConnected === 'boolean'
+            ? payload.localConnected
+            : undefined,
     };
   }
 
@@ -2754,6 +2798,31 @@ export function matchResultView(payload: unknown): MatchResultView {
 // ---------------------------------------------------------------------------
 // Small typed accessors shared by the payload mapping code
 // ---------------------------------------------------------------------------
+
+function connectionStringField(payload: Record<string, unknown>, ...names: string[]): string {
+  for (const name of names) {
+    const value = payload[name];
+    if (typeof value === 'string') {
+      return value;
+    }
+  }
+  return '';
+}
+
+function matchConnectionViewFromPayload(
+  payload: Record<string, unknown>,
+): { status: string; connected: boolean; tick: number; secondsLeft?: number } {
+  const view: { status: string; connected: boolean; tick: number; secondsLeft?: number } = {
+    status: connectionStringField(payload, 'reconnect_status', 'reconnectStatus'),
+    connected: booleanField(payload, 'connected'),
+    tick: numberField(payload, 'tick'),
+  };
+  const secondsLeft = optionalNumberField(payload, 'seconds_left', 'secondsLeft');
+  if (secondsLeft !== undefined) {
+    view.secondsLeft = secondsLeft;
+  }
+  return view;
+}
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

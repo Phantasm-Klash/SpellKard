@@ -477,6 +477,21 @@ export class BossRaceSimulation {
     return this.currentTick;
   }
 
+  /**
+   * T10: adopt the lobby's match tick after a reconnect. Forward only — a
+   * stale tick must never rewind a prediction — and a non-positive tick is
+   * refused. Reviving the local player is the caller's job.
+   */
+  resyncTick(tick: number): boolean {
+    if (!Number.isFinite(tick) || tick <= 0) {
+      return false;
+    }
+    if (tick > this.currentTick) {
+      this.currentTick = tick;
+    }
+    return true;
+  }
+
   getPlayerCount(): number {
     return this.players.size;
   }
