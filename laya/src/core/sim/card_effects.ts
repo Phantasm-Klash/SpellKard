@@ -126,6 +126,71 @@ export const NEW_CARD_EFFECTS: Readonly<Record<NewCardId, CardEffectDefinition>>
   },
 };
 
+/**
+ * The four cards of the 16 -> 20 pool expansion (2026-10-17), values verbatim
+ * from the lobby's authoritative catalog (`Gensoulkyo/runtime/core/service.go`).
+ *
+ * | cardId | effectKind | cost | cooldown | duration | damage | score | extra |
+ * | --- | --- | --- | --- | --- | --- | --- | --- |
+ * | frost_arc | bullet_purge | 2 | 360 | 1 | 0 | 18 | radius 100 / count 12 |
+ * | ember_lance | opponent_pattern | 3 | 300 | 240 | 20 | 24 | — |
+ * | iron_veil | invulnerable | 4 | 480 | 120 | 0 | 16 | — |
+ * | thunder_fall | finisher | 4 | 420 | 1 | 30 | 40 | — |
+ *
+ * Rarities mirror the lobby's `serverCardRarities`: uncommon siblings of
+ * existing cards (deck-legal: only thunder_fall counts against the six
+ * high-rarity cap) and one epic finisher. ember_lance's fan geometry
+ * (5 x speed 6.5 / radius 4.0 / amber) is server-side compile-time data — the
+ * client renders the server's bullet deltas, so it carries no pattern table.
+ */
+export const EXPANSION_CARD_IDS = ['frost_arc', 'ember_lance', 'iron_veil', 'thunder_fall'] as const;
+export type ExpansionCardId = (typeof EXPANSION_CARD_IDS)[number];
+
+export const EXPANSION_CARD_EFFECTS: Readonly<Record<ExpansionCardId, CardEffectDefinition>> = {
+  frost_arc: {
+    cardId: 'frost_arc',
+    effectKind: 'bullet_purge',
+    cost: 2,
+    cooldownTicks: 360,
+    durationTicks: 1,
+    damage: 0,
+    scoreBonus: 18,
+    rarity: 'uncommon',
+    purgeRadius: 100,
+    purgeCount: 12,
+  },
+  ember_lance: {
+    cardId: 'ember_lance',
+    effectKind: 'opponent_pattern',
+    cost: 3,
+    cooldownTicks: 300,
+    durationTicks: 240,
+    damage: 20,
+    scoreBonus: 24,
+    rarity: 'uncommon',
+  },
+  iron_veil: {
+    cardId: 'iron_veil',
+    effectKind: 'invulnerable',
+    cost: 4,
+    cooldownTicks: 480,
+    durationTicks: 120,
+    damage: 0,
+    scoreBonus: 16,
+    rarity: 'uncommon',
+  },
+  thunder_fall: {
+    cardId: 'thunder_fall',
+    effectKind: 'finisher',
+    cost: 4,
+    cooldownTicks: 420,
+    durationTicks: 1,
+    damage: 30,
+    scoreBonus: 40,
+    rarity: 'epic',
+  },
+};
+
 /** True when `kind` is one of the contract's `EffectKind` values. */
 export function isCardEffectKind(kind: string): kind is CardEffectKind {
   return (CARD_EFFECT_KINDS as readonly string[]).includes(kind);
@@ -163,8 +228,14 @@ export function effectTarget(kind: string): CardEffectTarget {
 
 /** The static definition for a card id, or `null` when the card is unknown. */
 export function cardEffectDefinition(cardId: string): CardEffectDefinition | null {
-  const definition = (NEW_CARD_EFFECTS as Readonly<Record<string, CardEffectDefinition>>)[cardId];
-  return definition ?? null;
+  const tables = [NEW_CARD_EFFECTS, EXPANSION_CARD_EFFECTS] as Readonly<Record<string, CardEffectDefinition>>[];
+  for (const table of tables) {
+    const definition = table[cardId];
+    if (definition !== undefined) {
+      return definition;
+    }
+  }
+  return null;
 }
 
 /** True when `cardId` is one of the four cards added by this contract. */

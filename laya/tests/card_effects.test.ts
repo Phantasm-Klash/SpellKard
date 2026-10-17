@@ -9,6 +9,8 @@
 
 import {
   CARD_EFFECT_KINDS,
+  EXPANSION_CARD_EFFECTS,
+  EXPANSION_CARD_IDS,
   NEW_CARD_EFFECTS,
   NEW_CARD_IDS,
   cardEffectDefinition,
@@ -158,6 +160,63 @@ test('rarity and effect descriptions are player-facing strings', () => {
   expectEqual(describeCardEffect('aegis_ward'), 'Immune to damage for 3.0s');
   expectEqual(describeCardEffect('unknown'), '');
   expect(purgeRadiusMilli(120) === 120000, 'purge radius converts px → milli');
+});
+
+
+test('the 16 -> 20 expansion cards match the lobby catalog exactly', () => {
+  expectDeepEqual(EXPANSION_CARD_IDS, ['frost_arc', 'ember_lance', 'iron_veil', 'thunder_fall']);
+  expectDeepEqual(EXPANSION_CARD_EFFECTS.frost_arc, {
+    cardId: 'frost_arc',
+    effectKind: 'bullet_purge',
+    cost: 2,
+    cooldownTicks: 360,
+    durationTicks: 1,
+    damage: 0,
+    scoreBonus: 18,
+    rarity: 'uncommon',
+    purgeRadius: 100,
+    purgeCount: 12,
+  });
+  expectDeepEqual(EXPANSION_CARD_EFFECTS.ember_lance, {
+    cardId: 'ember_lance',
+    effectKind: 'opponent_pattern',
+    cost: 3,
+    cooldownTicks: 300,
+    durationTicks: 240,
+    damage: 20,
+    scoreBonus: 24,
+    rarity: 'uncommon',
+  });
+  expectDeepEqual(EXPANSION_CARD_EFFECTS.iron_veil, {
+    cardId: 'iron_veil',
+    effectKind: 'invulnerable',
+    cost: 4,
+    cooldownTicks: 480,
+    durationTicks: 120,
+    damage: 0,
+    scoreBonus: 16,
+    rarity: 'uncommon',
+  });
+  expectDeepEqual(EXPANSION_CARD_EFFECTS.thunder_fall, {
+    cardId: 'thunder_fall',
+    effectKind: 'finisher',
+    cost: 4,
+    cooldownTicks: 420,
+    durationTicks: 1,
+    damage: 30,
+    scoreBonus: 40,
+    rarity: 'epic',
+  });
+  // The shared lookup must resolve both tables (hand bar / draft panel data).
+  expectEqual(cardEffectDefinition('frost_arc')?.rarity, 'uncommon');
+  expectEqual(cardEffectDefinition('ember_lance')?.effectKind, 'opponent_pattern');
+  expectEqual(cardEffectDefinition('iron_veil')?.effectKind, 'invulnerable');
+  expectEqual(cardEffectDefinition('thunder_fall')?.rarity, 'epic');
+  expectDeepEqual(purgeSpecFor('frost_arc'), { radius: 100, count: 12 });
+  expectEqual(describeCardEffect('frost_arc'), 'Clears 12 bullets within 100px');
+  expectEqual(describeCardEffect('ember_lance'), 'Fires an aimed curtain at the opponent (dmg 20)');
+  expectEqual(describeCardEffect('iron_veil'), 'Immune to damage for 2.0s');
+  expectEqual(describeCardEffect('thunder_fall'), 'Clears the field and deals 30 damage');
 });
 
 suite('card effects: purge selection');
