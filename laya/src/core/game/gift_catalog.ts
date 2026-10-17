@@ -1,13 +1,20 @@
 /**
  * In-match interactive gifts: what a player can hand to a character mid-race.
  *
- * A gift is a *social* interaction, not a simulation effect: it costs energy, it
- * is announced to both players through the match event stream, and it is drawn
- * from a real 64x64 icon when the asset tree ships one (see
+ * A gift is a *social* interaction, not a simulation effect: it costs one of
+ * the player's **gift charges** (an independent per-match pool — NOT card
+ * energy), it is announced to both players through the match event stream,
+ * and it is drawn from a real 64x64 icon when the asset tree ships one (see
  * {@link ./gift_assets}) with the scene's own vector glyph as the fallback.
  * Keeping the effect out of the deterministic simulation is what lets a `.dem`
  * replay stay byte-identical: a gift changes what the players see, never what
  * the server ticks.
+ *
+ * The price table mirrors the lobby's `GiftCatalog` / `giftChargeBudget`
+ * (`Gensoulkyo/runtime/core/gifts.go`): a gift spends charges, never card
+ * energy, so a player at 0 energy can still be generous. Charges are counted
+ * **per sender** (the recipient is never charged) and do not migrate across
+ * matches.
  *
  * 版权：东方同人逆向成果，仅用于自研玩法。
  */
@@ -21,13 +28,24 @@ export type GiftGlyphKind =
   | 'wand'
   | 'cup';
 
+/**
+ * Gift charges every player gets per match. Mirrors the lobby's
+ * `giftChargeBudget` (`Gensoulkyo/runtime/core/gifts.go`) — the two must stay
+ * equal or the client's grey-out preview disagrees with the server's refusals.
+ * Sending the whole catalog once costs 10, so 5 is a real choice.
+ */
+export const GIFT_CHARGE_BUDGET = 5;
+
 export interface GiftDefinition {
   readonly giftId: string;
   /** Player-facing name (Chinese, matching the rest of the UI). */
   readonly name: string;
   /** One-line description shown in the gift bar tooltip. */
   readonly blurb: string;
-  /** Energy the sender spends; 0 means free. */
+  /**
+   * Gift charges the sender spends (see {@link GIFT_CHARGE_BUDGET}). This is
+   * NOT card energy: the two pools are fully decoupled.
+   */
   readonly cost: number;
   /** Glyph the icon is drawn from when no bitmap is available. */
   readonly glyph: GiftGlyphKind;
@@ -46,6 +64,9 @@ export interface GiftDefinition {
 /**
  * The gift catalog. Ids are stable wire values: the lobby echoes them back in
  * `gift_sent` events, so renaming one is a protocol change.
+ *
+ * `cost` is in gift charges, mirroring `Gensoulkyo/runtime/core/gifts.go`:
+ * heart/star/ribbon = 1, lantern/wand = 2, cup = 3.
  */
 export const GIFT_IDS = ['heart', 'star', 'ribbon', 'lantern', 'wand', 'cup'] as const;
 
@@ -56,7 +77,7 @@ const GIFTS: Readonly<Record<string, GiftDefinition>> = {
     giftId: 'heart',
     name: '心愿',
     blurb: '把一份心意递给对方',
-    cost: 10,
+    cost: 1,
     glyph: 'heart',
     accent: 0xff5f8d,
     icon: 'gift_heart.png',
@@ -65,7 +86,7 @@ const GIFTS: Readonly<Record<string, GiftDefinition>> = {
     giftId: 'star',
     name: '星砂',
     blurb: '撒一把会发光的碎星',
-    cost: 20,
+    cost: 1,
     glyph: 'star',
     accent: 0xffd166,
     icon: 'gift_star.png',
@@ -74,7 +95,7 @@ const GIFTS: Readonly<Record<string, GiftDefinition>> = {
     giftId: 'ribbon',
     name: '丝带',
     blurb: '系一个蝴蝶结过去',
-    cost: 30,
+    cost: 1,
     glyph: 'ribbon',
     accent: 0x8ecae6,
     icon: 'gift_ribbon.png',
@@ -83,7 +104,7 @@ const GIFTS: Readonly<Record<string, GiftDefinition>> = {
     giftId: 'lantern',
     name: '灯笼',
     blurb: '提一盏灯照路',
-    cost: 40,
+    cost: 2,
     glyph: 'lantern',
     accent: 0xff8fab,
     icon: 'gift_lantern.png',
@@ -92,7 +113,7 @@ const GIFTS: Readonly<Record<string, GiftDefinition>> = {
     giftId: 'wand',
     name: '御币',
     blurb: '借一根扫帚……不，御币',
-    cost: 50,
+    cost: 2,
     glyph: 'wand',
     accent: 0xb5e48c,
     icon: 'gift_wand.png',
@@ -101,7 +122,7 @@ const GIFTS: Readonly<Record<string, GiftDefinition>> = {
     giftId: 'cup',
     name: '茶',
     blurb: '请对方喝一杯茶',
-    cost: 60,
+    cost: 3,
     glyph: 'cup',
     accent: 0xc8b6ff,
     icon: 'gift_cup.png',

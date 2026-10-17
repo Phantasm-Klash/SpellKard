@@ -24,6 +24,7 @@ import {
 } from '../../core/net/lobby_client';
 import { BattleEventPoller, type MatchEventsPage } from '../../core/net/battle_event_poller';
 import type { MatchEventView } from '../../core/game/battle_events';
+import { giftChargesLeft, giftChargesSpentFrom } from '../../core/game/gift_bar_view';
 import { bossPortrait, characterPortrait, stageIndex } from '../../core/game/stage_art';
 import type { DatagramFactory, Logger, SocketFactory, TimerLike } from '../../core/net/transport';
 import { DEFAULT_MODE_ID, LobbyFlow, LobbyScreen, type LobbyFlowSnapshot } from '../../core/game/lobby_flow';
@@ -107,6 +108,14 @@ export class SpellKardApp {
    * battle scene's hand bar; the ticket is the only source of the dealt hand.
    */
   private battleOpening: BattleOpeningState | null = null;
+  /**
+   * Gift charges the local player has spent in the current match, derived from
+   * the `gift_sent` rows of the event stream (see
+   * {@link giftChargesSpentFrom}). Reset whenever the poller (re)starts, because
+   * a gap resync replays the stream from the oldest retained event and every
+   * row would otherwise be counted twice.
+   */
+  private giftChargesSpent = 0;
   private readonly loginScene: LoginScene;
   private readonly lobbyScene: LobbyScene;
   private readonly roomScene: RoomScene;
@@ -290,9 +299,11 @@ export class SpellKardApp {
       sendGift: (matchId, giftId, modeId) => {
         void this.lobbyClient.sendMatchGift(matchId, giftId, modeId);
       },
-      // The signed ticket carries the opening energy; before it arrives the
-      // paid gifts are simply greyed out.
-      giftEnergy: () => this.battleOpening?.initialEnergy ?? 0,
+      // Remaining gift charges of the independent per-match pool — NOT card
+      // energy. Derived from the event stream (the server pushes no count), so
+      // it lags by at most one poll; the server stays authoritative and its
+      // refusals surface as the usual error toast.
+      giftCharges: () => giftChargesLeft(this.giftChargesSpent),
       // The scene's lifecycle starts/stops the poller; it owns no network itself.
       onPerformanceEnter: () => {
         if (this.performanceMatchId !== '' && !this.battlePoller.running) {
@@ -579,6 +590,11 @@ export class SpellKardApp {
     }
     this.battleOpening = ticket?.opening ?? null;
     if (restartPoller || !this.battlePoller.running) {
+      // A (re)start replays the stream from the oldest retained event, so the
+      // derived gift-charge count must restart from zero — otherwise every
+      // `gift_sent` row counts twice (a gap resync re-delivers the boundary
+      // page that detected it).
+      this.giftChargesSpent = 0;
       this.battlePoller.start(matchId);
     }
   }
@@ -588,6 +604,8 @@ export class SpellKardApp {
     this.battlePoller.stop();
     this.performanceMatchId = '';
     this.battleOpening = null;
+    // Charges are per-match: they do not migrate into the next one.
+    this.giftChargesSpent = 0;
   }
 
   /**
@@ -621,6 +639,11 @@ export class SpellKardApp {
         this.battleScene.applyGiftEvent(event);
       }
     }
+    // Derive the spent gift charges from this page: the rows the local player
+    // sent, priced by the catalog. Pages arrive in order and each row is
+    // delivered once per poller run (the run resets the counter on start), so
+    // accumulating per page is exact — see `enterBattlePerformance`.
+    this.giftChargesSpent += giftChargesSpentFrom(events, this.lobbyClient.session?.userId ?? '');
   }
 
   /**

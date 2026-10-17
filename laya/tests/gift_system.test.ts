@@ -1,21 +1,24 @@
 /**
- * Gift system tests: catalog resolution, the bar's affordability rule, the
- * announcement line, the glyph paths (they must stay non-empty and centred
- * or the icons silently vanish), and the bitmap icons (every gift must have a
- * usable icon file *or* a glyph, and the shipped files must be real 64x64
- * PNGs so a botched asset drop fails the build instead of blanking the bar).
+ * Gift system tests: catalog resolution, the charge-based affordability rule,
+ * the announcement line, the glyph paths (they must stay non-empty and centred
+ * or the icons silently vanish), the bitmap icons (every gift must have a
+ * usable icon file *or* a glyph), and the charge derivation from the event
+ * stream (the server pushes no count, so the bar's grey-out is derived).
  *
  * 版权：东方同人逆向成果，仅用于自研玩法。
  */
 
 import { expect, expectEqual, suite, test } from './harness';
-import { giftCatalog, giftDefinition, isKnownGift } from '../src/core/game/gift_catalog';
+import { GIFT_CHARGE_BUDGET, giftCatalog, giftDefinition, isKnownGift } from '../src/core/game/gift_catalog';
 import {
   affordableGiftAt,
   giftAnnouncement,
   giftBarView,
+  giftChargesLeft,
+  giftChargesSpentFrom,
   giftGlyphPath,
 } from '../src/core/game/gift_bar_view';
+import type { MatchEventView } from '../src/core/game/battle_events';
 import {
   GIFT_ASSET_DIR,
   GIFT_NATIVE_ROOT,
@@ -35,15 +38,28 @@ declare const __dirname: string;
 
 suite('in-match gifts');
 
-test('every catalog entry resolves and carries a cost and a glyph', () => {
+test('every catalog entry resolves and carries a charge cost and a glyph', () => {
   const catalog = giftCatalog();
   expect(catalog.length >= 4, 'the catalog should offer a handful of gifts');
+  let wholeCatalogCost = 0;
   for (const definition of catalog) {
     expect(giftDefinition(definition.giftId) === definition, `${definition.giftId} resolves`);
-    expect(definition.cost >= 0, `${definition.giftId} cost is not negative`);
+    expect(definition.cost > 0, `${definition.giftId} costs at least one charge`);
     expect(definition.name !== '', `${definition.giftId} has a name`);
     expect(giftGlyphPath(definition.glyph).length > 0, `${definition.giftId} has a glyph`);
+    wholeCatalogCost += definition.cost;
   }
+  // The lobby's price table (Gensoulkyo gifts.go): 1/1/1/2/2/3.
+  expectEqual(giftDefinition('heart')?.cost, 1, 'heart costs 1');
+  expectEqual(giftDefinition('star')?.cost, 1, 'star costs 1');
+  expectEqual(giftDefinition('ribbon')?.cost, 1, 'ribbon costs 1');
+  expectEqual(giftDefinition('lantern')?.cost, 2, 'lantern costs 2');
+  expectEqual(giftDefinition('wand')?.cost, 2, 'wand costs 2');
+  expectEqual(giftDefinition('cup')?.cost, 3, 'cup costs 3');
+  // One full sweep of the catalog costs more than the per-match budget, so the
+  // 5-charge pool is a real choice rather than a formality.
+  expect(wholeCatalogCost > GIFT_CHARGE_BUDGET, 'the whole catalog outcosts the budget');
+  expectEqual(GIFT_CHARGE_BUDGET, 5, 'the budget mirrors the server giftChargeBudget');
 });
 
 test('an unknown gift id resolves to null instead of a guess', () => {
@@ -52,33 +68,81 @@ test('an unknown gift id resolves to null instead of a guess', () => {
   expect(isKnownGift('heart'), 'isKnownGift accepts a catalog id');
 });
 
-test('the bar greys gifts the energy cannot cover', () => {
-  const poor = giftBarView(15, 0);
-  expectEqual(poor.slots.length, giftCatalog().length);
-  expect(poor.slots[0].affordable, 'the cheapest gift is affordable at 15 energy');
-  expect(!poor.slots[3].affordable, 'a 40-cost gift is not affordable at 15 energy');
-
-  const rich = giftBarView(1000, -1);
-  expectEqual(rich.selectedIndex, -1);
-  for (const slot of rich.slots) {
-    expect(slot.affordable, 'everything is affordable at 1000 energy');
+test('the bar greys gifts the remaining charges cannot cover', () => {
+  const full = giftBarView(GIFT_CHARGE_BUDGET, -1);
+  expectEqual(full.slots.length, giftCatalog().length);
+  expectEqual(full.selectedIndex, -1);
+  for (const slot of full.slots) {
+    expect(slot.affordable, `everything is affordable at ${GIFT_CHARGE_BUDGET} charges`);
   }
+  // Two charges left: the 1- and 2-cost gifts still fit, cup (3) does not.
+  const twoLeft = giftBarView(2, -1);
+  expect(twoLeft.slots[0].affordable, 'heart (1) is affordable at 2 charges');
+  expect(twoLeft.slots[1].affordable, 'star (1) is affordable at 2 charges');
+  expect(twoLeft.slots[2].affordable, 'ribbon (1) is affordable at 2 charges');
+  expect(twoLeft.slots[3].affordable, 'lantern (2) is affordable at 2 charges');
+  expect(twoLeft.slots[4].affordable, 'wand (2) is affordable at 2 charges');
+  expect(!twoLeft.slots[5].affordable, 'cup (3) is greyed at 2 charges');
+  // One charge left: only the cheap three survive.
+  const oneLeft = giftBarView(1, -1);
+  expect(oneLeft.slots[0].affordable, 'heart (1) is affordable at 1 charge');
+  expect(!oneLeft.slots[3].affordable, 'lantern (2) is greyed at 1 charge');
+  expect(!oneLeft.slots[5].affordable, 'cup (3) is greyed at 1 charge');
 });
 
 test('a gift is only sendable when it is both selected and affordable', () => {
-  const broke = giftBarView(25, 2);
-  expectEqual(broke.selectedIndex, 2);
-  expect(broke.slots[2].selected, 'slot 2 is selected');
-  // slot 2 costs 30, so a bar built at 25 energy marks it unaffordable even
-  // though it is the selected slot.
-  expect(!broke.slots[2].affordable, 'a 30-cost gift is greyed at 25 energy');
-  expectEqual(affordableGiftAt(broke, 25), null);
-  // The same slot becomes sendable once the energy is there.
-  const funded = giftBarView(30, 2);
-  expect(funded.slots[2].affordable, 'the same gift is affordable at 30 energy');
-  expectEqual(affordableGiftAt(funded, 30)?.giftId, funded.slots[2].definition.giftId);
+  // Slot 5 is cup (3 charges): selected but unaffordable at 2 left.
+  const broke = giftBarView(2, 5);
+  expectEqual(broke.selectedIndex, 5);
+  expect(broke.slots[5].selected, 'slot 5 is selected');
+  expect(!broke.slots[5].affordable, 'cup (3) is greyed at 2 charges');
+  expectEqual(affordableGiftAt(broke, 2), null);
+  // The same slot becomes sendable once the third charge is there.
+  const funded = giftBarView(3, 5);
+  expect(funded.slots[5].affordable, 'cup (3) is affordable at 3 charges');
+  expectEqual(affordableGiftAt(funded, 3)?.giftId, funded.slots[5].definition.giftId);
   // An out-of-range selection must not throw or invent a gift.
-  expectEqual(affordableGiftAt(giftBarView(100, 99), 100), null);
+  expectEqual(affordableGiftAt(giftBarView(GIFT_CHARGE_BUDGET, 99), GIFT_CHARGE_BUDGET), null);
+});
+
+test('gift charges derive from the match event stream', () => {
+  const gift = (giftId: string, from: string, value?: number): MatchEventView => ({
+    seq: 1,
+    type: 'gift_sent',
+    tick: 10,
+    userId: from,
+    cardId: giftId,
+    targetUserId: from === 'me' ? 'you' : 'me',
+    ...(value === undefined ? {} : { value }),
+  });
+  // heart (1) + cup (3) from the local player = 4 spent → 1 left. The
+  // opponent's star must not count: charges are per sender.
+  const events = [gift('heart', 'me'), gift('cup', 'me'), gift('star', 'you')];
+  expectEqual(giftChargesSpentFrom(events, 'me'), 4, 'only the local player rows count');
+  expectEqual(giftChargesLeft(giftChargesSpentFrom(events, 'me')), 1, 'one charge remains');
+  // Non-gift rows and malformed rows contribute nothing.
+  const mixed: MatchEventView[] = [
+    { seq: 2, type: 'card_effect_applied', tick: 11, cardId: 'heart' },
+    gift('', 'me'),
+    gift('wand', 'you'),
+  ];
+  expectEqual(giftChargesSpentFrom(mixed, 'me'), 0, 'non-gift and empty-id rows are free');
+  // An id this build does not know falls back to the server's charge value.
+  const future = [gift('mystery_gift', 'me', 2)];
+  expectEqual(giftChargesSpentFrom(future, 'me'), 2, 'unknown id uses the event value');
+  // Pre-sign-in (no local id) counts nothing rather than everyone's gifts.
+  expectEqual(giftChargesSpentFrom(events, ''), 0, 'no local id counts nothing');
+});
+
+test('the remaining-charge count clamps into the budget', () => {
+  expectEqual(giftChargesLeft(0), GIFT_CHARGE_BUDGET, 'nothing spent leaves the full pool');
+  expectEqual(giftChargesLeft(4), 1, 'four spent leaves one');
+  expectEqual(giftChargesLeft(5), 0, 'a full pool spent reads zero');
+  // The stream is a log, not a ledger: a replayed or hostile overspend must
+  // read as "none left", never a negative number.
+  expectEqual(giftChargesLeft(7), 0, 'an overspend clamps to zero');
+  expectEqual(giftChargesLeft(Number.NaN), GIFT_CHARGE_BUDGET, 'a NaN count reads as untouched');
+  expectEqual(giftChargesLeft(-3), GIFT_CHARGE_BUDGET, 'a negative count reads as untouched');
 });
 
 test('the announcement names both sides and the gift', () => {
@@ -120,7 +184,7 @@ test('the bar stays drawable when a bitmap is missing', () => {
   expect(stripped.icon === undefined, 'icon can be absent');
   expect(giftGlyphPath(stripped.glyph).length > 0, 'the glyph still draws it');
   // …and the view model does not care which path a slot takes.
-  const view = giftBarView(1000, 0);
+  const view = giftBarView(GIFT_CHARGE_BUDGET, 0);
   expectEqual(view.slots.length, giftCatalog().length);
   for (const slot of view.slots) {
     expect(slot.affordable, 'slots stay affordable regardless of the icon');

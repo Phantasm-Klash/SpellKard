@@ -58,13 +58,23 @@ import { fade } from '../view/sprites';
 import { DraftPanel } from '../view/draft_panel';
 import { HandBar } from '../view/hand_bar';
 import { giftBarView, giftGlyphPath, affordableGiftAt, giftAnnouncement, type GiftBarView } from '../../../core/game/gift_bar_view';
-import { giftDefinition } from '../../../core/game/gift_catalog';
+import { GIFT_CHARGE_BUDGET, giftDefinition } from '../../../core/game/gift_catalog';
 import { giftViewFromEvent } from '../../../core/game/battle_events';
 import { StageBackgroundLayer } from '../view/stage_background';
 import * as theme from '../view/theme';
 import { WatermarkLayer } from '../view/watermark';
 import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
 import type { ClientScene } from './scene';
+
+/**
+ * Gift-bar geometry, shared by `drawGiftLayer` (which paints the slots) and
+ * `relayout` (which places the charge readout above them), so the text can
+ * never drift away from the bar it describes.
+ */
+const GIFT_BOX = 26;
+const GIFT_GAP = 6;
+/** Distance between the bar's bottom edge and the playfield's bottom edge. */
+const GIFT_BOTTOM_MARGIN = 10;
 
 export interface BattleSceneOptions {
   width: number;
@@ -127,10 +137,13 @@ export interface BattleSceneOptions {
    */
   sendGift?: (matchId: string, giftId: string, modeId: string) => void;
   /**
-   * Lazily read the local player's energy. Decides which gifts the bar greys
-   * out; `0` before the ticket arrives simply disables the paid ones.
+   * Lazily read the local player's **remaining gift charges** (the independent
+   * per-match pool, `0..GIFT_CHARGE_BUDGET` — NOT card energy). Decides which
+   * gifts the bar greys out. Optional: without a provider the bar assumes the
+   * full budget, so a standalone scene shows every gift as sendable rather
+   * than greying the whole bar.
    */
-  giftEnergy?: () => number;
+  giftCharges?: () => number;
   /**
    * Called on `onEnter`. The app uses it to start the match-event poller (the
    * scene itself owns no network source); optional so the scene still runs
@@ -221,6 +234,8 @@ export class BattleScene implements ClientScene {
   private readonly effectText: Laya.Text;
   /** Gift announcement line, centred above the gift bar. */
   private readonly giftText: Laya.Text;
+  /** Remaining gift-charge readout (`心意 x/5`), just above the gift bar. */
+  private readonly giftChargesText: Laya.Text;
   /**
    * Hand bar: the ticket's opening hand as cast slots plus the energy readout.
    * Sits above the card effects and below the cutscene / pause banner.
@@ -320,6 +335,16 @@ export class BattleScene implements ClientScene {
     this.giftText.visible = false;
     this.root.addChild(this.giftText);
 
+    // Remaining gift charges, read out just above the gift bar. Same styling
+    // as the announcement; turns warning-coloured once the pool is spent.
+    this.giftChargesText = new Laya.Text();
+    this.giftChargesText.fontSize = theme.FONT_SIZE_CAPTION;
+    this.giftChargesText.bold = true;
+    this.giftChargesText.color = theme.COLOR_INFO;
+    this.giftChargesText.align = 'center';
+    this.giftChargesText.visible = false;
+    this.root.addChild(this.giftChargesText);
+
     // The hand bar hugs the bottom of the playfield: above the card effects
     // (so a purge ring does not hide a slot) and below the entrance cutscene
     // and the pause banner (so a pause always wins visually). Its click is a
@@ -370,7 +395,7 @@ export class BattleScene implements ClientScene {
   }
 
   /** Gift bar state: rebuilt every frame from the local energy. */
-  private giftBar: GiftBarView = giftBarView(0, -1);
+  private giftBar: GiftBarView = giftBarView(GIFT_CHARGE_BUDGET, -1);
   /** Slot the pointer last picked; -1 until the player clicks one. */
   private giftSelected = -1;
   /** Active gift announcement: the line plus the tick it expires on. */
@@ -593,6 +618,12 @@ export class BattleScene implements ClientScene {
     this.effectLayer.size(this.geometry.playfield.width, this.geometry.playfield.height);
     this.effectText.pos(this.geometry.hudX + 8, this.geometry.hudHeight - theme.FONT_SIZE_CAPTION - 8);
     this.effectText.width = this.geometry.hudWidth - 16;
+    // The gift-charge readout spans the playfield just above the gift bar, so
+    // it tracks the same geometry `drawGiftLayer` paints the slots with.
+    const giftBarTop =
+      this.geometry.playfieldY + this.geometry.playfield.height - GIFT_BOX - GIFT_BOTTOM_MARGIN;
+    this.giftChargesText.pos(this.geometry.playfieldX, giftBarTop - theme.FONT_SIZE_CAPTION - 2);
+    this.giftChargesText.width = this.geometry.playfield.width;
     // The hand bar spans the playfield and hugs its bottom edge.
     this.handBar.relayout({
       x: this.geometry.playfieldX,
@@ -883,10 +914,12 @@ export class BattleScene implements ClientScene {
    *
    * Each slot draws its catalog bitmap (see {@link ../core/game/gift_assets})
    * when the icon has loaded, and otherwise the vector glyph from
-   * {@link giftGlyphPath} — the TNA art root ships no gift icons of its own, so
-   * the glyph path is what keeps the bar drawable offline. A click is routed
-   * through {@link BattleSceneOptions.sendGift}; the scene never builds the
-   * payload, exactly like the draft picks.
+   * {@link giftGlyphPath} — so the bar stays drawable even when the icon files
+   * never resolve. Grey-out follows the gift-charge pool
+   * ({@link GIFT_CHARGE_BUDGET} per match, independent of card energy); the
+   * server stays authoritative and its refusals surface as a toast. A click is
+   * routed through {@link BattleSceneOptions.sendGift}; the scene never builds
+   * the payload, exactly like the draft picks.
    */
   private drawGiftLayer(frame: BossRaceFrame): void {
     const g = this.effectLayer?.graphics;
@@ -894,13 +927,13 @@ export class BattleScene implements ClientScene {
       return;
     }
     g.clear();
-    const energy = this.options.giftEnergy?.() ?? 0;
-    this.giftBar = giftBarView(energy, this.giftSelected);
-    const box = 26;
-    const gap = 6;
+    const chargesLeft = this.options.giftCharges?.() ?? GIFT_CHARGE_BUDGET;
+    this.giftBar = giftBarView(chargesLeft, this.giftSelected);
+    const box = GIFT_BOX;
+    const gap = GIFT_GAP;
     const total = this.giftBar.slots.length * box + (this.giftBar.slots.length - 1) * gap;
     const startX = Math.max(8, (this.geometry.playfield.width - total) / 2);
-    const y = this.geometry.playfield.height - box - 10;
+    const y = this.geometry.playfield.height - box - GIFT_BOTTOM_MARGIN;
     this.giftHitBoxes = [];
     for (const [index, slot] of this.giftBar.slots.entries()) {
       const x = startX + index * (box + gap);
@@ -926,6 +959,11 @@ export class BattleScene implements ClientScene {
         g.drawPoly(0, 0, points, accentCss, accentCss, 1);
       }
     }
+    // Charge readout: the pool the bar greys against, so a greyed slot always
+    // has a visible reason. Warning colour once the pool is spent.
+    this.giftChargesText.text = `心意 ${chargesLeft}/${GIFT_CHARGE_BUDGET}`;
+    this.giftChargesText.color = chargesLeft > 0 ? theme.COLOR_INFO : theme.COLOR_WARNING;
+    this.giftChargesText.visible = true;
     if (this.giftToast !== null && frame.tick <= this.giftToast.untilTick) {
       this.giftText.text = this.giftToast.text;
       this.giftText.visible = true;
@@ -951,7 +989,7 @@ export class BattleScene implements ClientScene {
       if (slot === undefined || !slot.affordable) {
         return true;
       }
-      const gift = affordableGiftAt(this.giftBar, this.options.giftEnergy?.() ?? 0);
+      const gift = affordableGiftAt(this.giftBar, this.options.giftCharges?.() ?? GIFT_CHARGE_BUDGET);
       if (gift === null) {
         return true;
       }
