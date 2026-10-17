@@ -3,11 +3,11 @@
  *
  * A gift is a *social* interaction, not a simulation effect: it costs energy, it
  * is announced to both players through the match event stream, and it is drawn
- * with the scene's own vector primitives (no bitmap assets — the TNA art root
- * ships no gift icons, and the Dota 2 workshop pack that does could not be
- * unpacked offline). Keeping the effect out of the deterministic simulation is
- * what lets a `.dem` replay stay byte-identical: a gift changes what the players
- * see, never what the server ticks.
+ * from a real 64x64 icon when the asset tree ships one (see
+ * {@link ./gift_assets}) with the scene's own vector glyph as the fallback.
+ * Keeping the effect out of the deterministic simulation is what lets a `.dem`
+ * replay stay byte-identical: a gift changes what the players see, never what
+ * the server ticks.
  *
  * 版权：东方同人逆向成果，仅用于自研玩法。
  */
@@ -29,8 +29,16 @@ export interface GiftDefinition {
   readonly blurb: string;
   /** Energy the sender spends; 0 means free. */
   readonly cost: number;
-  /** Glyph the icon is drawn from. */
+  /** Glyph the icon is drawn from when no bitmap is available. */
   readonly glyph: GiftGlyphKind;
+  /**
+   * Optional bitmap icon: a file name relative to the gift asset root (see
+   * {@link ./gift_assets}), e.g. `gift_heart.png`. When present the gift bar
+   * draws the texture; when absent — or when the file fails to load — it falls
+   * back to the vector {@link glyph}. Omitting the field entirely is allowed:
+   * the glyph is the guaranteed-drawable path.
+   */
+  readonly icon?: string;
   /** Accent colour used for the glyph and the toast, as `0xRRGGBB`. */
   readonly accent: number;
 }
@@ -51,6 +59,7 @@ const GIFTS: Readonly<Record<string, GiftDefinition>> = {
     cost: 10,
     glyph: 'heart',
     accent: 0xff5f8d,
+    icon: 'gift_heart.png',
   },
   star: {
     giftId: 'star',
@@ -59,6 +68,7 @@ const GIFTS: Readonly<Record<string, GiftDefinition>> = {
     cost: 20,
     glyph: 'star',
     accent: 0xffd166,
+    icon: 'gift_star.png',
   },
   ribbon: {
     giftId: 'ribbon',
@@ -67,6 +77,7 @@ const GIFTS: Readonly<Record<string, GiftDefinition>> = {
     cost: 30,
     glyph: 'ribbon',
     accent: 0x8ecae6,
+    icon: 'gift_ribbon.png',
   },
   lantern: {
     giftId: 'lantern',
@@ -75,6 +86,7 @@ const GIFTS: Readonly<Record<string, GiftDefinition>> = {
     cost: 40,
     glyph: 'lantern',
     accent: 0xff8fab,
+    icon: 'gift_lantern.png',
   },
   wand: {
     giftId: 'wand',
@@ -83,6 +95,7 @@ const GIFTS: Readonly<Record<string, GiftDefinition>> = {
     cost: 50,
     glyph: 'wand',
     accent: 0xb5e48c,
+    icon: 'gift_wand.png',
   },
   cup: {
     giftId: 'cup',
@@ -91,6 +104,7 @@ const GIFTS: Readonly<Record<string, GiftDefinition>> = {
     cost: 60,
     glyph: 'cup',
     accent: 0xc8b6ff,
+    icon: 'gift_cup.png',
   },
 };
 

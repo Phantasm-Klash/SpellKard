@@ -51,6 +51,7 @@ import { BattleAudioManager } from '../audio_manager';
 import { BossRaceView } from '../view/boss_race_view';
 import { AtlasBulletRenderer } from '../view/bullets';
 import { sharedTnaFrameSource } from '../view/bullet_atlas';
+import { sharedGiftIconSource } from '../view/gift_icons';
 import { CutsceneOverlay } from '../view/cutscene';
 import type { HudState } from '../view/hud';
 import { fade } from '../view/sprites';
@@ -194,6 +195,11 @@ export class BattleScene implements ClientScene {
   // Shared with `BossRaceView`'s actor renderer so the 25 atlases are sliced
   // once, not once per instance.
   private readonly bulletAtlas = sharedTnaFrameSource();
+  /**
+   * Gift-bar icons: the six 64x64 PNGs of {@link ../core/game/gift_assets}.
+   * A miss keeps the bar on its vector glyphs, so this load is best-effort.
+   */
+  private readonly giftIcons = sharedGiftIconSource();
   private readonly bulletRenderer: AtlasBulletRenderer;
   /** Scrolling stage background, painted under every other layer. */
   private readonly stageBackground: StageBackgroundLayer;
@@ -262,6 +268,9 @@ export class BattleScene implements ClientScene {
     const artScale = this.geometry.playfield.width / 640;
     this.bulletRenderer = new AtlasBulletRenderer(this.bulletAtlas, artScale);
     void this.bulletAtlas.load();
+    // Best-effort: the gift bar draws its vector glyphs until (and unless) the
+    // icon files resolve, so a failed load must never hold up the scene.
+    void this.giftIcons.load();
 
     // The scrolling background is handed to the view, which paints it above its
     // opaque stage fill but below the playfield grid; the scene positions and
@@ -872,10 +881,12 @@ export class BattleScene implements ClientScene {
   /**
    * The in-match gift bar and the last gift announcement.
    *
-   * The bar is pure vector art (see {@link giftGlyphPath}) — the TNA art root
-   * ships no gift icons, so drawing them keeps the interaction self-contained.
-   * A click is routed through {@link BattleSceneOptions.sendGift}; the scene
-   * never builds the payload, exactly like the draft picks.
+   * Each slot draws its catalog bitmap (see {@link ../core/game/gift_assets})
+   * when the icon has loaded, and otherwise the vector glyph from
+   * {@link giftGlyphPath} — the TNA art root ships no gift icons of its own, so
+   * the glyph path is what keeps the bar drawable offline. A click is routed
+   * through {@link BattleSceneOptions.sendGift}; the scene never builds the
+   * payload, exactly like the draft picks.
    */
   private drawGiftLayer(frame: BossRaceFrame): void {
     const g = this.effectLayer?.graphics;
@@ -897,6 +908,14 @@ export class BattleScene implements ClientScene {
       const accent = slot.affordable ? slot.definition.accent : 0x6b7280;
       const accentCss = `#${accent.toString(16).padStart(6, '0')}`;
       g.drawRect(x, y, box, box, slot.selected ? '#1f2937' : '#111827', accentCss, slot.selected ? 2 : 1);
+      const icon = slot.definition.icon;
+      const texture = icon === undefined ? null : this.giftIcons.texture(icon);
+      if (texture !== null) {
+        // Real art: inset so the icon never touches the slot border.
+        const inset = 3;
+        g.drawTexture(texture, x + inset, y + inset, box - inset * 2, box - inset * 2);
+        continue;
+      }
       const path = giftGlyphPath(slot.definition.glyph);
       if (path.length >= 3) {
         // Flattened x,y pairs — Laya's drawPoly takes a number list.

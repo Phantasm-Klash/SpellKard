@@ -137,6 +137,12 @@ declare namespace Laya {
     drawEllipse(x: number, y: number, width: number, height: number, fillColor: string | null, lineColor?: string | null, lineWidth?: number, percent?: boolean): Graphics;
     drawPie(x: number, y: number, radius: number, startAngle: number, endAngle: number, fillColor: string | null, lineColor?: string | null, lineWidth?: number): Graphics;
     drawPoly(x: number, y: number, points: number[], fillColor: string | null, lineColor?: string | null, lineWidth?: number): Graphics;
+    /**
+     * Draws a texture into the command list. Verified against
+     * `engine/libs/laya.core.js`: `drawTexture(tex, x, y, width, height,
+     * color = 0xffffffff)` — the last argument is a tint, not alpha.
+     */
+    drawTexture(tex: Texture, x: number, y: number, width: number, height: number, color?: number): Graphics;
 
     // --- stroked shapes ---
     drawLine(fromX: number, fromY: number, toX: number, toY: number, lineColor: string, lineWidth?: number): Graphics;
