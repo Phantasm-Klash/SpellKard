@@ -13,6 +13,7 @@ import './battle_opening.test';
 import './card_intent.test';
 import './gift_system.test';
 import './art_icons.test';
+import './i18n.test';
 import './card_keys.test';
 import './card_hand_view.test';
 import './draft_panel.test';

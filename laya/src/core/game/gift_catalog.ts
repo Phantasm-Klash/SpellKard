@@ -38,10 +38,14 @@ export const GIFT_CHARGE_BUDGET = 5;
 
 export interface GiftDefinition {
   readonly giftId: string;
-  /** Player-facing name (Chinese, matching the rest of the UI). */
-  readonly name: string;
-  /** One-line description shown in the gift bar tooltip. */
-  readonly blurb: string;
+  /**
+   * i18n key for the player-facing name (see `core/game/i18n.ts`). The catalog
+   * stays language-neutral on purpose: every language's table carries the key,
+   * so a new language never has to touch this file.
+   */
+  readonly nameKey: string;
+  /** i18n key for the one-line description shown in the gift bar tooltip. */
+  readonly blurbKey: string;
   /**
    * Gift charges the sender spends (see {@link GIFT_CHARGE_BUDGET}). This is
    * NOT card energy: the two pools are fully decoupled.
@@ -75,8 +79,8 @@ export type GiftId = (typeof GIFT_IDS)[number];
 const GIFTS: Readonly<Record<string, GiftDefinition>> = {
   heart: {
     giftId: 'heart',
-    name: '心愿',
-    blurb: '把一份心意递给对方',
+    nameKey: 'gift.heart',
+    blurbKey: 'gift.heart.blurb',
     cost: 1,
     glyph: 'heart',
     accent: 0xff5f8d,
@@ -84,8 +88,8 @@ const GIFTS: Readonly<Record<string, GiftDefinition>> = {
   },
   star: {
     giftId: 'star',
-    name: '星砂',
-    blurb: '撒一把会发光的碎星',
+    nameKey: 'gift.star',
+    blurbKey: 'gift.star.blurb',
     cost: 1,
     glyph: 'star',
     accent: 0xffd166,
@@ -93,8 +97,8 @@ const GIFTS: Readonly<Record<string, GiftDefinition>> = {
   },
   ribbon: {
     giftId: 'ribbon',
-    name: '丝带',
-    blurb: '系一个蝴蝶结过去',
+    nameKey: 'gift.ribbon',
+    blurbKey: 'gift.ribbon.blurb',
     cost: 1,
     glyph: 'ribbon',
     accent: 0x8ecae6,
@@ -102,8 +106,8 @@ const GIFTS: Readonly<Record<string, GiftDefinition>> = {
   },
   lantern: {
     giftId: 'lantern',
-    name: '灯笼',
-    blurb: '提一盏灯照路',
+    nameKey: 'gift.lantern',
+    blurbKey: 'gift.lantern.blurb',
     cost: 2,
     glyph: 'lantern',
     accent: 0xff8fab,
@@ -111,8 +115,8 @@ const GIFTS: Readonly<Record<string, GiftDefinition>> = {
   },
   wand: {
     giftId: 'wand',
-    name: '御币',
-    blurb: '借一根扫帚……不，御币',
+    nameKey: 'gift.wand',
+    blurbKey: 'gift.wand.blurb',
     cost: 2,
     glyph: 'wand',
     accent: 0xb5e48c,
@@ -120,8 +124,8 @@ const GIFTS: Readonly<Record<string, GiftDefinition>> = {
   },
   cup: {
     giftId: 'cup',
-    name: '茶',
-    blurb: '请对方喝一杯茶',
+    nameKey: 'gift.cup',
+    blurbKey: 'gift.cup.blurb',
     cost: 3,
     glyph: 'cup',
     accent: 0xc8b6ff,

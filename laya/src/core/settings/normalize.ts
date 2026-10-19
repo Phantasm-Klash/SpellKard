@@ -15,14 +15,13 @@
  * NOTE: `core/` only.
  */
 
+import { isLanguageCode } from '../game/i18n';
 import {
   EFFECT_LEVELS,
   FRAME_CAPS,
   NETWORK_MODES,
   RENDER_SCALES,
-  SUPPORTED_LOCALES,
   defaultSettings,
-  type LocaleId,
   type AudioSettings,
   type DisplaySettings,
   type EffectLevel,
@@ -182,10 +181,18 @@ export function isLoadableModuleUrl(url: string): boolean {
  * `fallback` defaults to the shipped defaults; pass the current state to use a
  * patch-shaped payload as an overlay instead of a full replacement.
  */
+/**
+ * A language this build actually ships; anything else (typo, retired code)
+ * falls back rather than blanking the UI.
+ */
+export function normalizeLanguage(raw: unknown, fallback: string): string {
+  return typeof raw === 'string' && isLanguageCode(raw) ? raw : fallback;
+}
+
 export function normalizeSettings(raw: unknown, fallback: GameSettings = defaultSettings()): GameSettings {
   const source = isRecord(raw) ? raw : {};
   return {
-    locale: readEnum<LocaleId>(source.locale, SUPPORTED_LOCALES, fallback.locale),
+    language: normalizeLanguage(source.language, fallback.language),
     display: normalizeDisplay(source.display, fallback.display),
     audio: normalizeAudio(source.audio, fallback.audio),
     hud: normalizeHud(source.hud, fallback.hud),

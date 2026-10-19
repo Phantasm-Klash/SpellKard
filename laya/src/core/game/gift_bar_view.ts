@@ -27,10 +27,14 @@ import {
   type GiftGlyphKind,
 } from './gift_catalog';
 import type { MatchEventView } from './battle_events';
+import { t } from './i18n';
 
 /** One gift-bar slot, ready to draw. */
 export interface GiftSlotView {
   readonly definition: GiftDefinition;
+  /** Resolved in the active language; re-resolved every frame the bar rebuilds. */
+  readonly name: string;
+  readonly blurb: string;
   /** False when the local player's remaining gift charges cannot cover the cost. */
   readonly affordable: boolean;
   /** True when this slot is the one the pointer/keyboard last selected. */
@@ -56,6 +60,10 @@ export function giftBarView(chargesLeft: number, selectedIndex: number): GiftBar
     selectedIndex: clamped,
     slots: catalog.map((definition, index) => ({
       definition,
+      // Resolved in the active language; the scene rebuilds the bar every frame,
+      // so a language switch takes effect on the next tick.
+      name: t(definition.nameKey),
+      blurb: t(definition.blurbKey),
       affordable: chargesLeft >= definition.cost,
       selected: index === clamped,
     })),
@@ -132,10 +140,13 @@ export function giftChargesLeft(spent: number): number {
  */
 export function giftAnnouncement(giftId: string, fromName: string, toName: string): string {
   const definition = giftDefinition(giftId);
-  const label = definition === null ? giftId : definition.name;
-  const from = fromName === '' ? '对手' : fromName;
-  const to = toName === '' ? '对手' : toName;
-  return `${from} 向 ${to} 送出了 ${label}`;
+  const label = definition === null ? giftId : t(definition.nameKey);
+  // The word used when a side is unnamed is its own string, not something to be
+  // scraped out of the sentence template (word order differs per language).
+  const side = t('ui.opponent');
+  const from = fromName === '' ? side : fromName;
+  const to = toName === '' ? side : toName;
+  return t('gift.announce', { from, to, gift: label });
 }
 
 /**

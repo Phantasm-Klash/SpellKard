@@ -59,6 +59,7 @@ import { DraftPanel } from '../view/draft_panel';
 import { HandBar } from '../view/hand_bar';
 import { giftBarView, giftGlyphPath, affordableGiftAt, giftAnnouncement, type GiftBarView } from '../../../core/game/gift_bar_view';
 import { GIFT_CHARGE_BUDGET, giftDefinition } from '../../../core/game/gift_catalog';
+import { t } from '../../../core/game/i18n';
 import { giftViewFromEvent } from '../../../core/game/battle_events';
 import { StageBackgroundLayer } from '../view/stage_background';
 import * as theme from '../view/theme';
@@ -961,7 +962,7 @@ export class BattleScene implements ClientScene {
     }
     // Charge readout: the pool the bar greys against, so a greyed slot always
     // has a visible reason. Warning colour once the pool is spent.
-    this.giftChargesText.text = `心意 ${chargesLeft}/${GIFT_CHARGE_BUDGET}`;
+    this.giftChargesText.text = t('gift.bar.charges', { left: chargesLeft, total: GIFT_CHARGE_BUDGET });
     this.giftChargesText.color = chargesLeft > 0 ? theme.COLOR_INFO : theme.COLOR_WARNING;
     this.giftChargesText.visible = true;
     if (this.giftToast !== null && frame.tick <= this.giftToast.untilTick) {
@@ -994,8 +995,9 @@ export class BattleScene implements ClientScene {
         return true;
       }
       const definition = giftDefinition(gift.giftId);
+      const label = definition === null ? gift.giftId : t(definition.nameKey);
       this.giftToast = {
-        text: definition === null ? `送出了 ${gift.giftId}` : `送出了 ${definition.name}`,
+        text: t('gift.toast.sent', { gift: label }),
         untilTick: (this.frame?.tick ?? 0) + 180,
       };
       this.options.sendGift?.(this.options.battle.info?.matchId ?? '', gift.giftId, this.options.battle.info?.modeId ?? '');

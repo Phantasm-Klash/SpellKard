@@ -20,6 +20,7 @@ import {
 } from '../src/core/game/gift_bar_view';
 import type { MatchEventView } from '../src/core/game/battle_events';
 import { matchGiftPayload } from '../src/core/net/lobby_client';
+import { setLanguage, t } from '../src/core/game/i18n';
 import {
   GIFT_ASSET_DIR,
   GIFT_NATIVE_ROOT,
@@ -46,7 +47,7 @@ test('every catalog entry resolves and carries a charge cost and a glyph', () =>
   for (const definition of catalog) {
     expect(giftDefinition(definition.giftId) === definition, `${definition.giftId} resolves`);
     expect(definition.cost > 0, `${definition.giftId} costs at least one charge`);
-    expect(definition.name !== '', `${definition.giftId} has a name`);
+    expect(t(definition.nameKey) !== '' && t(definition.nameKey) !== definition.nameKey, `${definition.giftId} has a name in every language`);
     expect(giftGlyphPath(definition.glyph).length > 0, `${definition.giftId} has a glyph`);
     wholeCatalogCost += definition.cost;
   }
@@ -146,10 +147,19 @@ test('the remaining-charge count clamps into the budget', () => {
   expectEqual(giftChargesLeft(-3), GIFT_CHARGE_BUDGET, 'a negative count reads as untouched');
 });
 
-test('the announcement names both sides and the gift', () => {
+test('the announcement names both sides and the gift, in every language', () => {
+  // The line is composed through i18n, so the assertion is the composed string
+  // per language rather than one hardcoded sentence.
+  setLanguage('zh');
   expectEqual(giftAnnouncement('heart', 'Marisa', 'Reimu'), 'Marisa 向 Reimu 送出了 心愿');
+  setLanguage('en');
+  expectEqual(giftAnnouncement('heart', 'Marisa', 'Reimu'), 'Marisa sent Reimu a Heartfelt Wish');
+  setLanguage('zh');
   // Unknown ids and empty names must still read as a sentence.
   expectEqual(giftAnnouncement('mystery', '', ''), '对手 向 对手 送出了 mystery');
+  setLanguage('en');
+  expectEqual(giftAnnouncement('mystery', '', ''), 'opponent sent opponent a mystery');
+  setLanguage('en');
 });
 
 test('glyph paths stay inside the unit box so the icons never clip', () => {

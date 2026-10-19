@@ -32,6 +32,7 @@ import { BOSS_RACE_DEFAULT_BOSS_HP, BOSS_RACE_DEFAULT_MAX_TICKS, BOSS_RACE_TICK_
 import { SettingsStore } from '../../core/settings';
 import type { ShortcutAction } from '../../core/input/shortcuts';
 import { applyAudioSettings } from './audio';
+import { setLanguage } from '../core/game/i18n';
 import { applyDisplaySettings, createFpsOverlay, type FpsOverlayHandle } from './display';
 import { toggleFullscreen, fullscreenDebugState } from './fullscreen';
 import { LayaInput } from './laya_input';
@@ -148,6 +149,11 @@ export class SpellKardApp {
     applyDisplaySettings(this.settings.get().display);
     applyAudioSettings(this.settings.get().audio);
     this.upscalers.apply(this.settings.get().display);
+    // The language is applied here, not in the settings panel, so a value
+    // restored from storage is honoured before the first frame (the same reason
+    // display and audio are applied above). Every view resolves its strings per
+    // frame, so a switch takes effect immediately.
+    setLanguage(this.settings.get().language);
 
     this.fpsOverlay = createFpsOverlay();
     this.fpsOverlay.setVisible(this.settings.get().display.showFps);
@@ -157,6 +163,7 @@ export class SpellKardApp {
       applyAudioSettings(next.audio);
       this.upscalers.apply(next.display);
       this.fpsOverlay.setVisible(next.display.showFps);
+      setLanguage(next.language);
     });
 
     const httpTransport = new HttpLobbyTransport(new LayaHttpClient(config.lobbyHttpBase));
