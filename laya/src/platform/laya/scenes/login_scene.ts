@@ -27,6 +27,7 @@
  */
 
 import type { AuthMode, LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow';
+import { t } from '../../../core/game/i18n';
 import { gameTitle } from '../../../core/game/game_identity';
 import { isNativeAssetRuntime } from '../../../core/game/tna_assets';
 import {
@@ -54,7 +55,7 @@ import {
 } from '../../../core/game/login_layout';
 import * as theme from '../view/theme';
 import { VectorPainter } from '../view/sprites';
-import { createButtonEx, type ButtonHandle } from './ui_kit';
+import { createArtButton, type ButtonHandle } from './ui_kit';
 import { SettingsPanel, type SettingsPanelDebugState } from './settings/panel';
 import { SETTINGS_BUTTON_SIZE, createSettingsButton, type SettingsButtonHandle } from './settings/gear_button';
 import type { SettingsStore } from '../../../core/settings';
@@ -230,28 +231,29 @@ export class LoginScene implements ClientScene {
     this.card = new Laya.Sprite();
     this.root.addChild(this.card);
 
-    this.cardTitle = this.makeLabel('Sign in', theme.FONT_SIZE_HEADING, theme.COLOR_TITLE, true);
+    this.cardTitle = this.makeLabel(t('login.title'), theme.FONT_SIZE_HEADING, theme.COLOR_TITLE, true);
     this.card.addChild(this.cardTitle);
 
-    this.username = this.createField('Username', 'text', 24, () => {
+    this.username = this.createField(t('login.username'), 'text', 24, () => {
       this.usernameDirty = true;
     });
-    this.email = this.createField('E-mail', 'text', 254, () => {
+    this.email = this.createField(t('login.email'), 'text', 254, () => {
       this.emailDirty = true;
     });
-    this.password = this.createField('Password', 'password', 64);
-    this.confirm = this.createField('Confirm password', 'password', 64);
-    this.code = this.createField('E-mail code', 'text', 6);
+    this.password = this.createField(t('login.password'), 'password', 64);
+    this.confirm = this.createField(t('login.confirmPassword'), 'password', 64);
+    this.code = this.createField(t('login.emailCode'), 'text', 6);
 
     // The compact "Send code" button lives inside the e-mail row. It is created
     // here (so it is a sibling of the fields, painted above them) and positioned
     // by `layoutCardContent`.
-    this.emailSendButton = createButtonEx(
-      'Send code',
+    this.emailSendButton = createArtButton(
+      t('login.sendCode'),
       0,
       0,
       0,
       () => void this.sendEmailCode(),
+      'gift',
       'ghost',
       LOGIN_FIELD_H,
     );
@@ -614,9 +616,29 @@ export class LoginScene implements ClientScene {
    */
   private ensureButtons(x: number, y: number, width: number): void {
     if (this.primaryButton === undefined) {
-      this.primaryButton = createButtonEx('Sign in', x, y, width, () => void this.submit(), 'primary', LOGIN_BUTTON_H);
+      // Icons are named explicitly (not derived from the label) so a language
+      // switch cannot drop them: `iconNameForLabel` matches English substrings.
+      this.primaryButton = createArtButton(
+        t('ui.signIn'),
+        x,
+        y,
+        width,
+        () => void this.submit(),
+        'account',
+        'primary',
+        LOGIN_BUTTON_H,
+      );
       this.card.addChild(this.primaryButton.sprite);
-      this.secondaryButton = createButtonEx('Create account', x, y, width, () => this.toggleMode(), 'ghost', LOGIN_BUTTON_H);
+      this.secondaryButton = createArtButton(
+        t('ui.createAccount'),
+        x,
+        y,
+        width,
+        () => this.toggleMode(),
+        'confirm',
+        'ghost',
+        LOGIN_BUTTON_H,
+      );
       this.card.addChild(this.secondaryButton.sprite);
       this.buttonsWidth = width;
     } else if (this.buttonsWidth !== width) {
@@ -632,7 +654,7 @@ export class LoginScene implements ClientScene {
 
   /** Applies the mode-dependent heading to the card title. */
   private applyModeLabels(): void {
-    this.cardTitle.text = this.mode === 'register' ? 'Create account' : 'Sign in';
+    this.cardTitle.text = this.mode === 'register' ? t('ui.createAccount') : t('login.title');
   }
 
   /** Solid + banded fallback backdrop when the art is unavailable. */
@@ -974,18 +996,18 @@ export class LoginScene implements ClientScene {
       const username = this.username.input.text;
       const code = this.code.input.text;
       if (username.trim() === '') {
-        this.localError = 'Enter a username';
+        this.localError = t('login.error.username');
         this.refresh();
         return;
       }
       if (password !== this.confirm.input.text) {
         // Local guard: never send a request the server would reject anyway.
-        this.localError = 'Passwords do not match';
+        this.localError = t('login.error.passwordMismatch');
         this.refresh();
         return;
       }
       if (code.trim() === '') {
-        this.localError = 'Enter the 6-digit code we e-mailed you';
+        this.localError = t('login.error.codeRequired');
         this.refresh();
         return;
       }
@@ -1008,7 +1030,7 @@ export class LoginScene implements ClientScene {
     }
     const email = this.email.input.text.trim();
     if (email === '') {
-      this.localError = 'Enter your e-mail address first';
+      this.localError = t('login.error.emailRequired');
       this.refresh();
       return;
     }
@@ -1060,7 +1082,7 @@ export class LoginScene implements ClientScene {
       return;
     }
     const counting = this.codeResendSeconds > 0;
-    this.emailSendButton.setText(counting ? `Resend ${this.codeResendSeconds}s` : 'Send code');
+    this.emailSendButton.setText(counting ? t('login.resendCode', { seconds: this.codeResendSeconds }) : t('login.sendCode'));
     this.emailSendButton.setEnabled(!this.busy && !this.sendingCode && !counting);
   }
 
@@ -1090,19 +1112,26 @@ export class LoginScene implements ClientScene {
     // Busy swaps the primary label for a progress verb and locks every control
     // so a second submit cannot race the first.
     this.primaryButton.setText(
-      this.busy ? (register ? 'Creating account…' : 'Signing in…') : register ? 'Sign up & play' : 'Sign in',
+      this.busy
+        ? register
+          ? t('login.creatingAccount')
+          : t('login.signingIn')
+        : register
+          ? t('login.signUpAndPlay')
+          : t('ui.signIn'),
     );
-    this.secondaryButton.setText(register ? 'Back to sign in' : 'Create account');
+    this.secondaryButton.setText(register ? t('login.backToSignIn') : t('ui.createAccount'));
     this.primaryButton.setEnabled(!this.busy);
     this.secondaryButton.setEnabled(!this.busy);
 
     for (const field of this.allFields()) {
       field.input.mouseEnabled = !this.busy;
     }
+    this.applyFieldPrompts();
     this.refreshCodeButton();
 
     const message = this.busy
-      ? 'Connecting…'
+      ? t('login.connecting')
       : this.localError !== ''
         ? this.localError
         : snapshot.lastError !== ''
@@ -1116,6 +1145,19 @@ export class LoginScene implements ClientScene {
   }
 
   /**
+   * Re-applies the field prompts from the active language. The prompts are set
+   * once at construction, so without this a language switch would leave the
+   * form showing the previous language until the screen is rebuilt.
+   */
+  private applyFieldPrompts(): void {
+    this.username.input.prompt = t('login.username');
+    this.email.input.prompt = t('login.email');
+    this.password.input.prompt = t('login.password');
+    this.confirm.input.prompt = t('login.confirmPassword');
+    this.code.input.prompt = t('login.emailCode');
+  }
+
+  /**
    * Shows `Lobby: <endpoint>` under the status line while the client is signed
    * out and the last failure was a connection problem (or it never connected),
    * so "Not connected" tells the player which host it could not reach.
@@ -1124,7 +1166,7 @@ export class LoginScene implements ClientScene {
     const endpoint = this.options.lobbyEndpoint ?? '';
     const show = endpoint !== '' && snapshot.session === null && this.isDisconnected(snapshot);
     this.endpointText.visible = show;
-    this.endpointText.text = show ? `Lobby: ${endpoint}` : '';
+    this.endpointText.text = show ? t('login.lobbyEndpoint', { endpoint }) : '';
   }
 
   /** True when the flow is signed out because it could not reach the lobby. */

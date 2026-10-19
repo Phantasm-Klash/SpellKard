@@ -31,15 +31,124 @@ export interface Messages {
 
   // --- login surface ---
   'login.title': string;
+  'login.username': string;
   'login.email': string;
   'login.password': string;
+  'login.confirmPassword': string;
+  'login.emailCode': string;
   'login.notConnected': string;
   'login.signingIn': string;
+  'login.creatingAccount': string;
+  'login.signUpAndPlay': string;
+  'login.backToSignIn': string;
+  'login.sendCode': string;
+  'login.resendCode': string;
+  'login.connecting': string;
+  'login.lobbyEndpoint': string;
   'login.failed': string;
   'login.transportError': string;
+  // Local form validation, shown before a request is ever sent.
+  'login.error.username': string;
+  'login.error.passwordMismatch': string;
+  'login.error.codeRequired': string;
+  'login.error.emailRequired': string;
+
+  // --- lobby surface ---
+  'lobby.notSignedIn': string;
+  'lobby.signOut': string;
+  'lobby.checkin': string;
+  'lobby.inventory': string;
+  'lobby.page.menu': string;
+  'lobby.page.play': string;
+  'lobby.changeRoomCode': string;
+  'lobby.createRoom': string;
+  'lobby.joinRoom': string;
+  'lobby.joinQueue': string;
+  'lobby.refreshQueue': string;
+  'lobby.cancelQueue': string;
+  'lobby.profile.ruleset': string;
+
+  // --- room surface ---
+  'room.title': string;
+  'room.noRoom': string;
+  'room.meta': string;
+  'room.setup.caption': string;
+  'room.setup.summary': string;
+  'room.boss': string;
+  'room.shot': string;
+  'room.bomb': string;
+  'room.default': string;
+  'room.boss.default': string;
+  'room.boss.tian': string;
+  'room.boss.hui': string;
+  'room.players': string;
+  'room.waitingForPlayers': string;
+  'room.ready': string;
+  'room.startMatch': string;
+  'room.leaveRoom': string;
+  'room.readyWaiting': string;
+  'room.badge.host': string;
+  'room.badge.offline': string;
+  'room.badge.ready': string;
+  'room.badge.waiting': string;
+
+  // --- result surface ---
+  'result.title': string;
+  'result.noResult': string;
+  'result.victory': string;
+  'result.defeat': string;
+  'result.badge.victory': string;
+  'result.badge.defeat': string;
+  'result.yourStats': string;
+  'result.opponent': string;
+  'result.serverAuthoritative': string;
+  'result.clientAuthoritative': string;
+  'result.meta': string;
+  'result.row.winner': string;
+  'result.row.yourScore': string;
+  'result.row.match': string;
+  'result.row.opponent': string;
+  'result.row.score': string;
+  'result.row.replay': string;
+
+  // --- records surface ---
+  'records.career': string;
+  'records.recentMatches': string;
+  'records.recentMatchesCount': string;
+  'records.loading': string;
+  'records.noMatches': string;
+  'records.refresh': string;
+  'records.gold': string;
+  'records.tickets': string;
+  'records.points': string;
+  'records.season': string;
+  'records.matches': string;
+  'records.wld': string;
+  'records.winRate': string;
+  'records.bestScore': string;
+  'records.averageScore': string;
+  'records.grazeHit': string;
+  'records.damageCards': string;
+  'records.decksCards': string;
+  'records.unit.seconds': string;
+  'records.unit.points': string;
+  'records.result.win': string;
+  'records.result.loss': string;
+  'records.result.draw': string;
+
+  // --- shop surface ---
+  'shop.wallet': string;
+  'shop.items': string;
+  'shop.noListings': string;
+  'shop.buy': string;
+  'shop.stockUnlimited': string;
+  'shop.stockCount': string;
+  'shop.meta': string;
 
   // --- settings surface ---
   'settings.title': string;
+  'settings.close': string;
+  'settings.restoreDefaults': string;
   'settings.language': string;
   'settings.language.hint': string;
   'settings.language.zh-Hans': string;
@@ -47,6 +156,133 @@ export interface Messages {
   'settings.language.ja': string;
   'settings.language.en': string;
   'settings.applied': string;
+  'settings.tab.display': string;
+  'settings.tab.keys': string;
+  'settings.tab.audio': string;
+  'settings.tab.hud': string;
+  'settings.tab.other': string;
+  'settings.tab.about': string;
+  'settings.subtitle.language': string;
+  'settings.subtitle.display': string;
+  'settings.subtitle.keys': string;
+  'settings.subtitle.audio': string;
+  'settings.subtitle.hud': string;
+  'settings.subtitle.other': string;
+  'settings.subtitle.about': string;
+  // Display tab
+  'settings.display.sharpening': string;
+  'settings.display.sharpening.desc': string;
+  'settings.display.upscaler': string;
+  'settings.display.upscaler.desc': string;
+  'settings.display.resolutionScale': string;
+  'settings.display.resolutionScale.desc': string;
+  'settings.display.effects': string;
+  'settings.display.effects.desc': string;
+  'settings.display.effect.low': string;
+  'settings.display.effect.medium': string;
+  'settings.display.effect.high': string;
+  'settings.display.frameRate': string;
+  'settings.display.frameRate.desc': string;
+  'settings.display.frameCap.uncapped': string;
+  'settings.display.showFps': string;
+  'settings.display.showFps.desc': string;
+  'settings.display.note': string;
+  'settings.display.upscaling': string;
+  'settings.display.unavailable': string;
+  'settings.display.softwareNote': string;
+  'settings.display.unavailableNote': string;
+  // Network group (Other tab)
+  'settings.network.heading': string;
+  'settings.network.connection': string;
+  'settings.network.connection.desc': string;
+  'settings.network.official': string;
+  'settings.network.lan': string;
+  'settings.network.thirdParty': string;
+  'settings.network.lanHost': string;
+  'settings.network.lanHost.desc': string;
+  'settings.network.httpBase': string;
+  'settings.network.httpBase.desc': string;
+  'settings.network.wsUrl': string;
+  'settings.network.relayUrl': string;
+  'settings.network.officialNote': string;
+  // Mods group (Other tab)
+  'settings.mods.heading': string;
+  'settings.mods.workshop': string;
+  'settings.mods.workshop.desc': string;
+  'settings.mods.custom': string;
+  'settings.mods.custom.desc': string;
+  'settings.mods.folder': string;
+  'settings.mods.note': string;
+  // External modules group (Other tab)
+  'settings.plugins.heading': string;
+  'settings.plugins.autoLoad': string;
+  'settings.plugins.autoLoad.desc': string;
+  'settings.plugins.moduleUrls': string;
+  'settings.plugins.moduleUrls.desc': string;
+  'settings.plugins.note1': string;
+  'settings.plugins.note2': string;
+  // About tab
+  'settings.about.repository': string;
+  'settings.about.notPublished': string;
+  'settings.about.open': string;
+  'settings.about.heading.product': string;
+  'settings.about.heading.licences': string;
+  'settings.about.heading.source': string;
+  'settings.about.heading.credits': string;
+  'settings.about.game': string;
+  'settings.about.version': string;
+  'settings.about.build': string;
+  'settings.about.code': string;
+  'settings.about.assets': string;
+  'settings.about.copyright': string;
+  // Audio tab
+  'settings.audio.heading.audio': string;
+  'settings.audio.heading.music': string;
+  'settings.audio.heading.sfx': string;
+  'settings.audio.muteAll': string;
+  'settings.audio.muteAll.desc': string;
+  'settings.audio.master': string;
+  'settings.audio.bgm': string;
+  'settings.audio.graze': string;
+  'settings.audio.graze.desc': string;
+  'settings.audio.playerShot': string;
+  'settings.audio.playerShot.desc': string;
+  'settings.audio.skill': string;
+  'settings.audio.skill.desc': string;
+  'settings.audio.noAssetsNote': string;
+  // HUD tab
+  'settings.hud.heading': string;
+  'settings.hud.opponentHud': string;
+  'settings.hud.opponentHud.desc': string;
+  'settings.hud.damageNumbers': string;
+  'settings.hud.damageNumbers.desc': string;
+  'settings.hud.scoreCard': string;
+  'settings.hud.scoreCard.desc': string;
+  'settings.hud.ultMeter': string;
+  'settings.hud.ultMeter.desc': string;
+  'settings.hud.statusCard': string;
+  'settings.hud.statusCard.desc': string;
+  'settings.hud.bulletCount': string;
+  'settings.hud.bulletCount.desc': string;
+  'settings.hud.countdown': string;
+  'settings.hud.countdown.desc': string;
+  'settings.hud.networkFooter': string;
+  'settings.hud.networkFooter.desc': string;
+  'settings.hud.note': string;
+  // Keys tab
+  'settings.keys.intro': string;
+  'settings.keys.textInputNote': string;
+  'settings.keys.scope.global': string;
+  'settings.keys.scope.login': string;
+  'settings.keys.scope.lobby': string;
+  'settings.keys.scope.room': string;
+  'settings.keys.scope.battle': string;
+  'settings.keys.scope.result': string;
+  'settings.keys.scope.checkin': string;
+  'settings.keys.scope.shop': string;
+  'settings.keys.scope.inventory': string;
+  'settings.keys.scope.records': string;
+  'settings.keys.scope.settings': string;
 
   // --- error surface (lobby error codes -> player-facing text) ---
   'error.generic': string;
@@ -83,7 +319,7 @@ export interface Messages {
   'gift.announce': string;
   'gift.toast.sent': string;
 
-  // --- shared button labels ---
+  // --- shared button labels / captions ---
   'ui.signIn': string;
   'ui.createAccount': string;
   'ui.play': string;
@@ -97,6 +333,10 @@ export interface Messages {
   'ui.queue': string;
   'ui.mail': string;
   'ui.opponent': string;
+  'ui.roomCode': string;
+  'ui.backToLobby': string;
+  'ui.downloadDem': string;
+  'ui.matchLabel': string;
 }
 
 export type LanguageCode = 'zh-Hans' | 'zh-Hant' | 'ja' | 'en';
@@ -128,9 +368,10 @@ export type StringTable = Readonly<Record<string, string>>;
 // ---------------------------------------------------------------------------
 // Tables
 //
-// Keys are namespaced by domain (`gift.*`, `ui.*`). When adding a string, add
-// it to EVERY table below in the same commit — `tests/i18n.test.ts` fails the
-// build otherwise.
+// Keys are namespaced by domain (`gift.*`, `ui.*`, `room.*`). When adding a
+// string, add it to EVERY table below in the same commit —
+// `tests/i18n.test.ts` fails the build otherwise. The English column is the
+// copy the E2E harness asserts against, so it must stay verbatim.
 // ---------------------------------------------------------------------------
 
 const ZH_HANS: Messages = {
@@ -138,14 +379,117 @@ const ZH_HANS: Messages = {
   'app.subtitle': 'Phantasm Klash',
 
   'login.title': '登录',
+  'login.username': '用户名',
   'login.email': '邮箱',
   'login.password': '密码',
+  'login.confirmPassword': '确认密码',
+  'login.emailCode': '邮箱验证码',
   'login.notConnected': '未连接',
   'login.signingIn': '正在登录…',
+  'login.creatingAccount': '正在创建账号…',
+  'login.signUpAndPlay': '注册并开始',
+  'login.backToSignIn': '返回登录',
+  'login.sendCode': '发送验证码',
+  'login.resendCode': '重新发送 {seconds}s',
+  'login.connecting': '正在连接…',
+  'login.lobbyEndpoint': '大厅：{endpoint}',
   'login.failed': '登录失败',
   'login.transportError': '无法连接服务器，请检查网络后重试。',
+  'login.error.username': '请输入用户名',
+  'login.error.passwordMismatch': '两次输入的密码不一致',
+  'login.error.codeRequired': '请输入我们发送到您邮箱的 6 位验证码',
+  'login.error.emailRequired': '请先输入您的邮箱地址',
+
+  'lobby.notSignedIn': '未登录',
+  'lobby.signOut': '退出登录',
+  'lobby.checkin': '签到',
+  'lobby.inventory': '背包',
+  'lobby.page.menu': '主菜单',
+  'lobby.page.play': '开始游戏',
+  'lobby.changeRoomCode': '更换房间码',
+  'lobby.createRoom': '创建房间',
+  'lobby.joinRoom': '加入房间',
+  'lobby.joinQueue': '加入匹配队列',
+  'lobby.refreshQueue': '刷新队列状态',
+  'lobby.cancelQueue': '取消匹配',
+  'lobby.profile.ruleset': '规则集 {version}',
+
+  'room.title': '房间',
+  'room.noRoom': '暂无房间',
+  'room.meta': '{mode} · 规则集 {version}',
+  'room.setup.caption': '对局设置 · 仅房主可改',
+  'room.setup.summary': 'Boss：{boss} · 自机：{shot} / {bomb}',
+  'room.boss': 'Boss',
+  'room.shot': '射击',
+  'room.bomb': '炸弹',
+  'room.default': '默认',
+  'room.boss.default': '默认',
+  'room.boss.tian': '天',
+  'room.boss.hui': '辉',
+  'room.players': '玩家',
+  'room.waitingForPlayers': '等待玩家加入…',
+  'room.ready': '准备',
+  'room.startMatch': '开始对局',
+  'room.leaveRoom': '离开房间',
+  'room.readyWaiting': '已准备 — 等待对局开始…',
+  'room.badge.host': '房主',
+  'room.badge.offline': '离线',
+  'room.badge.ready': '已准备',
+  'room.badge.waiting': '等待中',
+
+  'result.title': '对局结果',
+  'result.noResult': '暂无结果',
+  'result.victory': '胜利！',
+  'result.defeat': '失败',
+  'result.badge.victory': '胜利',
+  'result.badge.defeat': '失败',
+  'result.yourStats': '你的数据',
+  'result.opponent': '对手',
+  'result.serverAuthoritative': '服务端权威',
+  'result.clientAuthoritative': '客户端权威',
+  'result.meta': '{source} · {ms}ms 结算',
+  'result.row.winner': '胜者',
+  'result.row.yourScore': '你的得分',
+  'result.row.match': '对局',
+  'result.row.opponent': '对手',
+  'result.row.score': '得分',
+  'result.row.replay': '回放',
+
+  'records.career': '生涯数据',
+  'records.recentMatches': '最近对局',
+  'records.recentMatchesCount': '最近对局（{count}）',
+  'records.loading': '正在加载战绩…',
+  'records.noMatches': '暂无对局记录',
+  'records.refresh': '刷新',
+  'records.gold': '金币',
+  'records.tickets': '抽奖券',
+  'records.points': '点数',
+  'records.season': '赛季',
+  'records.matches': '对局数',
+  'records.wld': '胜-负-平',
+  'records.winRate': '胜率',
+  'records.bestScore': '最高分',
+  'records.averageScore': '平均分',
+  'records.grazeHit': '擦弹 · 命中',
+  'records.damageCards': '伤害 · 出牌',
+  'records.decksCards': '卡组 · 卡牌',
+  'records.unit.seconds': '{seconds}秒',
+  'records.unit.points': '{points} 分',
+  'records.result.win': '胜利',
+  'records.result.loss': '失败',
+  'records.result.draw': '平局',
+
+  'shop.wallet': '钱包',
+  'shop.items': '商品',
+  'shop.noListings': '暂无商品',
+  'shop.buy': '购买',
+  'shop.stockUnlimited': '无限',
+  'shop.stockCount': '库存 {count}',
+  'shop.meta': '价格 {price} · {stock} · 已购买 {count}',
 
   'settings.title': '设置',
+  'settings.close': '关闭',
+  'settings.restoreDefaults': '恢复默认设置',
   'settings.language': '语言',
   'settings.language.hint': '切换后立即生效，并会记住你的选择。',
   'settings.language.zh-Hans': '简体中文',
@@ -153,6 +497,133 @@ const ZH_HANS: Messages = {
   'settings.language.ja': '日本語',
   'settings.language.en': 'English',
   'settings.applied': '设置已保存',
+  'settings.tab.display': '显示',
+  'settings.tab.keys': '按键',
+  'settings.tab.audio': '音频',
+  'settings.tab.hud': 'HUD',
+  'settings.tab.other': '其他',
+  'settings.tab.about': '关于',
+  'settings.subtitle.language': '界面语言',
+  'settings.subtitle.display': '分辨率、特效与帧率',
+  'settings.subtitle.keys': '客户端全部按键绑定',
+  'settings.subtitle.audio': '音乐、擦弹、射击与技能音量',
+  'settings.subtitle.hud': '对局中绘制哪些浮层',
+  'settings.subtitle.other': '连接模式与模组',
+  'settings.subtitle.about': '版权、版本与制作人员',
+  'settings.display.sharpening': '锐化',
+  'settings.display.sharpening.desc': '在软件放大后应用的对比度自适应锐化。0% 即普通双线性放大。',
+  'settings.display.upscaler': '放大器',
+  'settings.display.upscaler.desc': '后处理放大后端。仅可选择此版本实际可用的后端，其余列在下方。',
+  'settings.display.resolutionScale': '分辨率倍率',
+  'settings.display.resolutionScale.desc': '渲染分辨率倍率。倍率越低渲染像素越少，对弱显卡更友好。',
+  'settings.display.effects': '特效',
+  'settings.display.effects.desc': '弹幕拖尾、辉光与命中特效。',
+  'settings.display.effect.low': '低',
+  'settings.display.effect.medium': '中',
+  'settings.display.effect.high': '高',
+  'settings.display.frameRate': '帧率上限',
+  'settings.display.frameRate.desc': '限制游戏重绘频率。对局过程由服务端权威计算，此设置不会影响模拟。',
+  'settings.display.frameCap.uncapped': '不限制',
+  'settings.display.showFps': '显示帧率',
+  'settings.display.showFps.desc': '在对局画面角落显示帧率计数器。',
+  'settings.display.note':
+    '帧率上限通过控制引擎渲染循环立即生效。分辨率倍率作用于画布后备存储，需要在下一次窗口缩放或重启后才看到效果。',
+  'settings.display.upscaling': '放大',
+  'settings.display.unavailable': '{label}（不可用）',
+  'settings.display.softwareNote': '这是在浏览器中实现的空间近似算法。它不是 DLSS，也不是 FSR —— 详见上方说明。',
+  'settings.display.unavailableNote': '此版本不可用 —— {details}',
+  'settings.network.heading': '网络',
+  'settings.network.connection': '连接',
+  'settings.network.connection.desc': '客户端连接哪个大厅服务器。选择会立即保存，并在下次连接时生效。',
+  'settings.network.official': '官方',
+  'settings.network.lan': '局域网',
+  'settings.network.thirdParty': '第三方',
+  'settings.network.lanHost': '局域网主机',
+  'settings.network.lanHost.desc': '局域网中 Gensoulkyo 服务器的主机或主机:端口。大厅 WebSocket 与对战中继路径由此派生。',
+  'settings.network.httpBase': '大厅 HTTP 地址',
+  'settings.network.httpBase.desc': '第三方部署的 REST 基础地址。',
+  'settings.network.wsUrl': '大厅 WebSocket 地址',
+  'settings.network.relayUrl': '对战中继地址',
+  'settings.network.officialNote':
+    '官方模式使用编译进此版本的大厅与对战中继地址。局域网模式会从你输入的主机派生 http://<host>、ws://<host>/ws 与 ws://<host>/relay，因此只需填写主机。',
+  'settings.mods.heading': '模组',
+  'settings.mods.workshop': '创意工坊',
+  'settings.mods.workshop.desc': '浏览并安装社区模组。预留功能 —— 尚未随附加载器。',
+  'settings.mods.custom': '自定义模组',
+  'settings.mods.custom.desc': '从你选择的文件夹加载模组。',
+  'settings.mods.folder': '模组文件夹',
+  'settings.mods.note': '模组加载器尚未实现。这些偏好会被保存，以便未来的加载器遵循；当前不会加载任何内容。',
+  'settings.plugins.heading': '外部模块（DLC）',
+  'settings.plugins.autoLoad': '自动加载外部模块',
+  'settings.plugins.autoLoad.desc': '客户端启动时立即加载下方所有模块地址，不再逐个询问。',
+  'settings.plugins.moduleUrls': '模块地址',
+  'settings.plugins.moduleUrls.desc': '一个或多个 ES 模块地址，以空格分隔。在此添加之前不会获取任何内容。',
+  'settings.plugins.note1':
+    '除非在此输入地址，否则不会下载任何内容。每个地址必须提供导出 createUpscaler()（或 upscaler / descriptor / register(registry)）的 ES 模块。以这种方式加载的模块只能注册外部放大器后端，它无法让此渲染器支持 DLSS 或 FSR —— 只能为本就支持相应后端的平台提供一个真实后端。',
+  'settings.plugins.note2':
+    '仅接受 http(s):// 地址和根相对 /path 地址。其他形式 —— file:、data:、裸主机名 —— 会在存储或导入前被拒绝。',
+  'settings.about.repository': '仓库',
+  'settings.about.notPublished': '尚未发布',
+  'settings.about.open': '打开',
+  'settings.about.heading.product': '产品',
+  'settings.about.heading.licences': '许可',
+  'settings.about.heading.source': '源码',
+  'settings.about.heading.credits': '制作人员',
+  'settings.about.game': '游戏',
+  'settings.about.version': '版本',
+  'settings.about.build': '构建',
+  'settings.about.code': '代码',
+  'settings.about.assets': '素材',
+  'settings.about.copyright': '版权',
+  'settings.audio.heading.audio': '音频',
+  'settings.audio.heading.music': '音乐',
+  'settings.audio.heading.sfx': '音效',
+  'settings.audio.muteAll': '全部静音',
+  'settings.audio.muteAll.desc': '静音所有声道，但保留下方的混音设置，取消静音后可精确恢复。',
+  'settings.audio.master': '主音量',
+  'settings.audio.bgm': 'BGM 音量',
+  'settings.audio.graze': '擦弹',
+  'settings.audio.graze.desc': '子弹贴近判定点时播放的擦弹提示音。',
+  'settings.audio.playerShot': '自机射击',
+  'settings.audio.playerShot.desc': '你自机的射击音效。',
+  'settings.audio.skill': '技能',
+  'settings.audio.skill.desc': '炸弹与符卡音效。',
+  'settings.audio.noAssetsNote':
+    '此版本未随附音频文件。下方的音量设置会被保存并推送到引擎混音器，但在加入声音素材之前不会有任何声音。',
+  'settings.hud.heading': '对局 HUD',
+  'settings.hud.opponentHud': '对手 HUD',
+  'settings.hud.opponentHud.desc': '对手的 Boss 血量面板。',
+  'settings.hud.damageNumbers': '伤害数字',
+  'settings.hud.damageNumbers.desc': '在 Boss 身上飘出的伤害数值。',
+  'settings.hud.scoreCard': '分数卡',
+  'settings.hud.scoreCard.desc': '你的分数与连击读数。',
+  'settings.hud.ultMeter': '符力槽',
+  'settings.hud.ultMeter.desc': '炸弹与符卡的蓄力槽。',
+  'settings.hud.statusCard': '状态卡',
+  'settings.hud.statusCard.desc': '主读数条：血量、残机与子弹数。',
+  'settings.hud.bulletCount': '子弹数',
+  'settings.hud.bulletCount.desc': '状态卡中的 BULLETS 行。',
+  'settings.hud.countdown': '倒计时',
+  'settings.hud.countdown.desc': '对局剩余时间。',
+  'settings.hud.networkFooter': '网络页脚',
+  'settings.hud.networkFooter.desc': '沿底边显示的延迟与同步读数。',
+  'settings.hud.note':
+    '隐藏的区块会重新排版而非留下空隙，因此 HUD 保持紧凑。伤害数字与符力槽浮层仍在制作中：这两个开关会先保存，待对应浮层上线后生效。',
+  'settings.keys.intro':
+    '此列表由调度器实际匹配的唯一绑定表生成，因此永远不会与代码不一致。文本输入框聚焦时仍然有效的按键会在末尾的说明中标注。',
+  'settings.keys.textInputNote':
+    '文本输入框聚焦时，仅触发标记为 allowInTextInput 的绑定 —— Tab、Shift+Tab、Enter、Escape、Alt+Enter、Ctrl+Tab。',
+  'settings.keys.scope.global': '全局',
+  'settings.keys.scope.login': '登录',
+  'settings.keys.scope.lobby': '大厅',
+  'settings.keys.scope.room': '房间',
+  'settings.keys.scope.battle': '对局',
+  'settings.keys.scope.result': '结算',
+  'settings.keys.scope.checkin': '签到',
+  'settings.keys.scope.shop': '商店',
+  'settings.keys.scope.inventory': '背包',
+  'settings.keys.scope.records': '战绩',
+  'settings.keys.scope.settings': '设置',
 
   'error.generic': '出了点问题，请稍后再试。',
   'error.network': '网络连接失败。',
@@ -200,6 +671,10 @@ const ZH_HANS: Messages = {
   'ui.queue': '排队',
   'ui.mail': '邮件',
   'ui.opponent': '对手',
+  'ui.roomCode': '房间码',
+  'ui.backToLobby': '返回大厅',
+  'ui.downloadDem': '下载 .dem',
+  'ui.matchLabel': '对局 {id}',
 };
 
 const ZH_HANT: Messages = {
@@ -207,14 +682,117 @@ const ZH_HANT: Messages = {
   'app.subtitle': 'Phantasm Klash',
 
   'login.title': '登入',
+  'login.username': '用戶名稱',
   'login.email': '電子郵件',
   'login.password': '密碼',
+  'login.confirmPassword': '確認密碼',
+  'login.emailCode': '電子郵件驗證碼',
   'login.notConnected': '未連線',
   'login.signingIn': '正在登入…',
+  'login.creatingAccount': '正在建立帳號…',
+  'login.signUpAndPlay': '註冊並開始',
+  'login.backToSignIn': '返回登入',
+  'login.sendCode': '傳送驗證碼',
+  'login.resendCode': '重新傳送 {seconds}s',
+  'login.connecting': '正在連線…',
+  'login.lobbyEndpoint': '大廳：{endpoint}',
   'login.failed': '登入失敗',
   'login.transportError': '無法連線到伺服器，請檢查網路後重試。',
+  'login.error.username': '請輸入用戶名稱',
+  'login.error.passwordMismatch': '兩次輸入的密碼不一致',
+  'login.error.codeRequired': '請輸入我們傳送到您電子郵件的 6 位驗證碼',
+  'login.error.emailRequired': '請先輸入您的電子郵件地址',
+
+  'lobby.notSignedIn': '未登入',
+  'lobby.signOut': '登出',
+  'lobby.checkin': '簽到',
+  'lobby.inventory': '背包',
+  'lobby.page.menu': '主選單',
+  'lobby.page.play': '開始遊戲',
+  'lobby.changeRoomCode': '更換房間碼',
+  'lobby.createRoom': '建立房間',
+  'lobby.joinRoom': '加入房間',
+  'lobby.joinQueue': '加入配對佇列',
+  'lobby.refreshQueue': '重新整理佇列狀態',
+  'lobby.cancelQueue': '取消配對',
+  'lobby.profile.ruleset': '規則集 {version}',
+
+  'room.title': '房間',
+  'room.noRoom': '尚無房間',
+  'room.meta': '{mode} · 規則集 {version}',
+  'room.setup.caption': '對局設定 · 僅房主可改',
+  'room.setup.summary': 'Boss：{boss} · 自機：{shot} / {bomb}',
+  'room.boss': 'Boss',
+  'room.shot': '射擊',
+  'room.bomb': '炸彈',
+  'room.default': '預設',
+  'room.boss.default': '預設',
+  'room.boss.tian': '天',
+  'room.boss.hui': '輝',
+  'room.players': '玩家',
+  'room.waitingForPlayers': '等待玩家加入…',
+  'room.ready': '準備',
+  'room.startMatch': '開始對局',
+  'room.leaveRoom': '離開房間',
+  'room.readyWaiting': '已準備 — 等待對局開始…',
+  'room.badge.host': '房主',
+  'room.badge.offline': '離線',
+  'room.badge.ready': '已準備',
+  'room.badge.waiting': '等待中',
+
+  'result.title': '對局結果',
+  'result.noResult': '尚無結果',
+  'result.victory': '勝利！',
+  'result.defeat': '失敗',
+  'result.badge.victory': '勝利',
+  'result.badge.defeat': '失敗',
+  'result.yourStats': '你的數據',
+  'result.opponent': '對手',
+  'result.serverAuthoritative': '伺服器權威',
+  'result.clientAuthoritative': '用戶端權威',
+  'result.meta': '{source} · {ms}ms 結算',
+  'result.row.winner': '勝者',
+  'result.row.yourScore': '你的得分',
+  'result.row.match': '對局',
+  'result.row.opponent': '對手',
+  'result.row.score': '得分',
+  'result.row.replay': '回放',
+
+  'records.career': '生涯數據',
+  'records.recentMatches': '最近對局',
+  'records.recentMatchesCount': '最近對局（{count}）',
+  'records.loading': '正在載入戰績…',
+  'records.noMatches': '尚無對局記錄',
+  'records.refresh': '重新整理',
+  'records.gold': '金幣',
+  'records.tickets': '抽獎券',
+  'records.points': '點數',
+  'records.season': '賽季',
+  'records.matches': '對局數',
+  'records.wld': '勝-負-平',
+  'records.winRate': '勝率',
+  'records.bestScore': '最高分',
+  'records.averageScore': '平均分',
+  'records.grazeHit': '擦彈 · 命中',
+  'records.damageCards': '傷害 · 出牌',
+  'records.decksCards': '牌組 · 卡牌',
+  'records.unit.seconds': '{seconds}秒',
+  'records.unit.points': '{points} 分',
+  'records.result.win': '勝利',
+  'records.result.loss': '失敗',
+  'records.result.draw': '平局',
+
+  'shop.wallet': '錢包',
+  'shop.items': '商品',
+  'shop.noListings': '尚無商品',
+  'shop.buy': '購買',
+  'shop.stockUnlimited': '無限',
+  'shop.stockCount': '庫存 {count}',
+  'shop.meta': '價格 {price} · {stock} · 已購買 {count}',
 
   'settings.title': '設定',
+  'settings.close': '關閉',
+  'settings.restoreDefaults': '恢復預設設定',
   'settings.language': '語言',
   'settings.language.hint': '切換後立即生效，並會記住你的選擇。',
   'settings.language.zh-Hans': '简体中文',
@@ -222,6 +800,133 @@ const ZH_HANT: Messages = {
   'settings.language.ja': '日本語',
   'settings.language.en': 'English',
   'settings.applied': '設定已儲存',
+  'settings.tab.display': '顯示',
+  'settings.tab.keys': '按鍵',
+  'settings.tab.audio': '音訊',
+  'settings.tab.hud': 'HUD',
+  'settings.tab.other': '其他',
+  'settings.tab.about': '關於',
+  'settings.subtitle.language': '介面語言',
+  'settings.subtitle.display': '解析度、特效與訊框率',
+  'settings.subtitle.keys': '用戶端全部按鍵綁定',
+  'settings.subtitle.audio': '音樂、擦彈、射擊與技能音量',
+  'settings.subtitle.hud': '對局中繪製哪些浮層',
+  'settings.subtitle.other': '連線模式與模組',
+  'settings.subtitle.about': '版權、版本與製作人員',
+  'settings.display.sharpening': '銳化',
+  'settings.display.sharpening.desc': '在軟體放大後套用的對比度自适应銳化。0% 即普通雙線性放大。',
+  'settings.display.upscaler': '放大器',
+  'settings.display.upscaler.desc': '後處理放大後端。僅可選擇此版本實際可用的後端，其餘列在下方。',
+  'settings.display.resolutionScale': '解析度倍率',
+  'settings.display.resolutionScale.desc': '渲染解析度倍率。倍率越低渲染像素越少，對弱顯示卡更友好。',
+  'settings.display.effects': '特效',
+  'settings.display.effects.desc': '彈幕拖尾、輝光與命中特效。',
+  'settings.display.effect.low': '低',
+  'settings.display.effect.medium': '中',
+  'settings.display.effect.high': '高',
+  'settings.display.frameRate': '訊框率上限',
+  'settings.display.frameRate.desc': '限制遊戲重繪頻率。對局過程由伺服器權威計算，此設定不會影響模擬。',
+  'settings.display.frameCap.uncapped': '不限制',
+  'settings.display.showFps': '顯示訊框率',
+  'settings.display.showFps.desc': '在對局畫面角落顯示訊框率計數器。',
+  'settings.display.note':
+    '訊框率上限透過控制引擎渲染迴圈立即生效。解析度倍率作用於畫布後備儲存，需要在下一次視窗縮放或重啟後才看到效果。',
+  'settings.display.upscaling': '放大',
+  'settings.display.unavailable': '{label}（不可用）',
+  'settings.display.softwareNote': '這是在瀏覽器中實作的空間近似演算法。它不是 DLSS，也不是 FSR —— 詳見上方說明。',
+  'settings.display.unavailableNote': '此版本不可用 —— {details}',
+  'settings.network.heading': '網路',
+  'settings.network.connection': '連線',
+  'settings.network.connection.desc': '用戶端連線哪個大廳伺服器。選擇會立即儲存，並在下次連線時生效。',
+  'settings.network.official': '官方',
+  'settings.network.lan': '區域網路',
+  'settings.network.thirdParty': '第三方',
+  'settings.network.lanHost': '區域網路主機',
+  'settings.network.lanHost.desc': '區域網路中 Gensoulkyo 伺服器的主機或主機:連接埠。大廳 WebSocket 與對戰中繼路徑由此派生。',
+  'settings.network.httpBase': '大廳 HTTP 位址',
+  'settings.network.httpBase.desc': '第三方部署的 REST 基礎位址。',
+  'settings.network.wsUrl': '大廳 WebSocket 位址',
+  'settings.network.relayUrl': '對戰中繼位址',
+  'settings.network.officialNote':
+    '官方模式使用編譯進此版本的大廳與對戰中繼位址。區域網路模式會從你輸入的主機派生 http://<host>、ws://<host>/ws 與 ws://<host>/relay，因此只需填寫主機。',
+  'settings.mods.heading': '模組',
+  'settings.mods.workshop': '創意工坊',
+  'settings.mods.workshop.desc': '瀏覽並安裝社群模組。預留功能 —— 尚未隨附載入器。',
+  'settings.mods.custom': '自訂模組',
+  'settings.mods.custom.desc': '從你選擇的資料夾載入模組。',
+  'settings.mods.folder': '模組資料夾',
+  'settings.mods.note': '模組載入器尚未實作。這些偏好會被儲存，以便未來的載入器遵循；當前不會載入任何內容。',
+  'settings.plugins.heading': '外部模組（DLC）',
+  'settings.plugins.autoLoad': '自動載入外部模組',
+  'settings.plugins.autoLoad.desc': '用戶端啟動時立即載入下方所有模組位址，不再逐一詢問。',
+  'settings.plugins.moduleUrls': '模組位址',
+  'settings.plugins.moduleUrls.desc': '一個或多個 ES 模組位址，以空格分隔。在此加入之前不會擷取任何內容。',
+  'settings.plugins.note1':
+    '除非在此輸入位址，否則不會下載任何內容。每個位址必須提供匯出 createUpscaler()（或 upscaler / descriptor / register(registry)）的 ES 模組。以這種方式載入的模組只能註冊外部放大器後端，它無法讓此渲染器支援 DLSS 或 FSR —— 只能為本就支援相應後端的平台提供一個真實後端。',
+  'settings.plugins.note2':
+    '僅接受 http(s):// 位址和根相對 /path 位址。其他形式 —— file:、data:、裸主機名 —— 會在儲存或匯入前被拒絕。',
+  'settings.about.repository': '儲存庫',
+  'settings.about.notPublished': '尚未發布',
+  'settings.about.open': '開啟',
+  'settings.about.heading.product': '產品',
+  'settings.about.heading.licences': '授權',
+  'settings.about.heading.source': '原始碼',
+  'settings.about.heading.credits': '製作人員',
+  'settings.about.game': '遊戲',
+  'settings.about.version': '版本',
+  'settings.about.build': '建置',
+  'settings.about.code': '程式碼',
+  'settings.about.assets': '素材',
+  'settings.about.copyright': '版權',
+  'settings.audio.heading.audio': '音訊',
+  'settings.audio.heading.music': '音樂',
+  'settings.audio.heading.sfx': '音效',
+  'settings.audio.muteAll': '全部靜音',
+  'settings.audio.muteAll.desc': '靜音所有聲道，但保留下方的混音設定，取消靜音後可精確恢復。',
+  'settings.audio.master': '主音量',
+  'settings.audio.bgm': 'BGM 音量',
+  'settings.audio.graze': '擦彈',
+  'settings.audio.graze.desc': '子彈貼近判定點時播放的擦彈提示音。',
+  'settings.audio.playerShot': '自機射擊',
+  'settings.audio.playerShot.desc': '你自機的射擊音效。',
+  'settings.audio.skill': '技能',
+  'settings.audio.skill.desc': '炸彈與符卡音效。',
+  'settings.audio.noAssetsNote':
+    '此版本未隨附音訊檔案。下方的音量設定會被儲存並推送到引擎混音器，但在加入聲音素材之前不會有任何聲音。',
+  'settings.hud.heading': '對局 HUD',
+  'settings.hud.opponentHud': '對手 HUD',
+  'settings.hud.opponentHud.desc': '對手的 Boss 血量面板。',
+  'settings.hud.damageNumbers': '傷害數字',
+  'settings.hud.damageNumbers.desc': '在 Boss 身上飄出的傷害數值。',
+  'settings.hud.scoreCard': '分數卡',
+  'settings.hud.scoreCard.desc': '你的分數與連擊讀數。',
+  'settings.hud.ultMeter': '符力槽',
+  'settings.hud.ultMeter.desc': '炸彈與符卡的蓄力槽。',
+  'settings.hud.statusCard': '狀態卡',
+  'settings.hud.statusCard.desc': '主讀數條：血量、殘機與子彈數。',
+  'settings.hud.bulletCount': '子彈數',
+  'settings.hud.bulletCount.desc': '狀態卡中的 BULLETS 行。',
+  'settings.hud.countdown': '倒數計時',
+  'settings.hud.countdown.desc': '對局剩餘時間。',
+  'settings.hud.networkFooter': '網路頁尾',
+  'settings.hud.networkFooter.desc': '沿底邊顯示的延遲與同步讀數。',
+  'settings.hud.note':
+    '隱藏的區塊會重新排版而非留下空隙，因此 HUD 保持緊湊。傷害數字與符力槽浮層仍在製作中：這兩個開關會先儲存，待對應浮層上線後生效。',
+  'settings.keys.intro':
+    '此列表由排程器實際比對的唯一綁定表產生，因此永遠不會與程式碼不一致。文字輸入欄聚焦時仍然有效的按鍵會在末尾的說明中標註。',
+  'settings.keys.textInputNote':
+    '文字輸入欄聚焦時，僅觸發標記為 allowInTextInput 的綁定 —— Tab、Shift+Tab、Enter、Escape、Alt+Enter、Ctrl+Tab。',
+  'settings.keys.scope.global': '全域',
+  'settings.keys.scope.login': '登入',
+  'settings.keys.scope.lobby': '大廳',
+  'settings.keys.scope.room': '房間',
+  'settings.keys.scope.battle': '對局',
+  'settings.keys.scope.result': '結算',
+  'settings.keys.scope.checkin': '簽到',
+  'settings.keys.scope.shop': '商店',
+  'settings.keys.scope.inventory': '背包',
+  'settings.keys.scope.records': '戰績',
+  'settings.keys.scope.settings': '設定',
 
   'error.generic': '發生了一點問題，請稍後再試。',
   'error.network': '網路連線失敗。',
@@ -233,7 +938,7 @@ const ZH_HANT: Messages = {
   'error.deck_invalid': '牌組不符合規則，請檢查後再試。',
   'error.mode_invalid': '該模式不可用。',
   'error.forbidden_field': '請求中含有不允許修改的欄位。',
-  'error.match_state_invalid': '對局狀態不允許此操作。',
+  'error.match_state_invalid': '對局的狀態不允許此操作。',
   'error.rate_limited': '操作過於頻繁，請稍後再試。',
   'error.battle_callback_freshness_incomplete': '對戰服務回呼資訊不完整。',
   'error.reconnect_expired': '重連時間已過，本局無法再加入。',
@@ -269,6 +974,10 @@ const ZH_HANT: Messages = {
   'ui.queue': '排隊',
   'ui.mail': '郵件',
   'ui.opponent': '對手',
+  'ui.roomCode': '房間碼',
+  'ui.backToLobby': '返回大廳',
+  'ui.downloadDem': '下載 .dem',
+  'ui.matchLabel': '對局 {id}',
 };
 
 const JA: Messages = {
@@ -276,14 +985,117 @@ const JA: Messages = {
   'app.subtitle': 'Phantasm Klash',
 
   'login.title': 'ログイン',
+  'login.username': 'ユーザー名',
   'login.email': 'メールアドレス',
   'login.password': 'パスワード',
+  'login.confirmPassword': 'パスワード確認',
+  'login.emailCode': 'メール認証コード',
   'login.notConnected': '未接続',
   'login.signingIn': 'ログイン中…',
+  'login.creatingAccount': 'アカウント作成中…',
+  'login.signUpAndPlay': '登録してプレイ',
+  'login.backToSignIn': 'ログインに戻る',
+  'login.sendCode': 'コードを送信',
+  'login.resendCode': '再送 {seconds}s',
+  'login.connecting': '接続中…',
+  'login.lobbyEndpoint': 'ロビー：{endpoint}',
   'login.failed': 'ログインに失敗しました',
   'login.transportError': 'サーバーに接続できません。通信環境を確認して再試行してください。',
+  'login.error.username': 'ユーザー名を入力してください',
+  'login.error.passwordMismatch': 'パスワードが一致しません',
+  'login.error.codeRequired': 'メールに送信した 6 桁のコードを入力してください',
+  'login.error.emailRequired': 'まずメールアドレスを入力してください',
+
+  'lobby.notSignedIn': '未ログイン',
+  'lobby.signOut': 'ログアウト',
+  'lobby.checkin': 'デイリーログイン',
+  'lobby.inventory': '所持品',
+  'lobby.page.menu': 'メインメニュー',
+  'lobby.page.play': 'プレイ',
+  'lobby.changeRoomCode': 'ルームコードを変更',
+  'lobby.createRoom': 'ルームを作成',
+  'lobby.joinRoom': 'ルームに参加',
+  'lobby.joinQueue': 'マッチメイキング列に参加',
+  'lobby.refreshQueue': '順番待ちの状態を更新',
+  'lobby.cancelQueue': 'マッチメイキングを中止',
+  'lobby.profile.ruleset': 'ルールセット {version}',
+
+  'room.title': 'ルーム',
+  'room.noRoom': 'ルームなし',
+  'room.meta': '{mode} · ルールセット {version}',
+  'room.setup.caption': '対局設定 · ホストのみ変更可',
+  'room.setup.summary': 'Boss：{boss} · ショット：{shot} / {bomb}',
+  'room.boss': 'ボス',
+  'room.shot': 'ショット',
+  'room.bomb': 'ボム',
+  'room.default': 'デフォルト',
+  'room.boss.default': 'デフォルト',
+  'room.boss.tian': '天',
+  'room.boss.hui': '輝',
+  'room.players': 'プレイヤー',
+  'room.waitingForPlayers': 'プレイヤーを待っています…',
+  'room.ready': '準備',
+  'room.startMatch': '対局開始',
+  'room.leaveRoom': 'ルームを退出',
+  'room.readyWaiting': '準備完了 — 対局開始を待っています…',
+  'room.badge.host': 'ホスト',
+  'room.badge.offline': 'オフライン',
+  'room.badge.ready': '準備完了',
+  'room.badge.waiting': '待機中',
+
+  'result.title': '対局結果',
+  'result.noResult': '結果なし',
+  'result.victory': '勝利！',
+  'result.defeat': '敗北',
+  'result.badge.victory': '勝利',
+  'result.badge.defeat': '敗北',
+  'result.yourStats': 'あなたの成績',
+  'result.opponent': '相手',
+  'result.serverAuthoritative': 'サーバー権威',
+  'result.clientAuthoritative': 'クライアント権威',
+  'result.meta': '{source} · {ms}ms で確定',
+  'result.row.winner': '勝者',
+  'result.row.yourScore': 'あなたのスコア',
+  'result.row.match': '対局',
+  'result.row.opponent': '相手',
+  'result.row.score': 'スコア',
+  'result.row.replay': 'リプレイ',
+
+  'records.career': 'キャリア',
+  'records.recentMatches': '最近の対局',
+  'records.recentMatchesCount': '最近の対局（{count}）',
+  'records.loading': '戦績を読み込み中…',
+  'records.noMatches': '対局記録なし',
+  'records.refresh': '更新',
+  'records.gold': 'ゴールド',
+  'records.tickets': 'チケット',
+  'records.points': 'ポイント',
+  'records.season': 'シーズン',
+  'records.matches': '対局数',
+  'records.wld': '勝-敗-分',
+  'records.winRate': '勝率',
+  'records.bestScore': '最高スコア',
+  'records.averageScore': '平均スコア',
+  'records.grazeHit': 'グレイズ · 命中',
+  'records.damageCards': 'ダメージ · カード',
+  'records.decksCards': 'デッキ · カード',
+  'records.unit.seconds': '{seconds}秒',
+  'records.unit.points': '{points} pt',
+  'records.result.win': '勝利',
+  'records.result.loss': '敗北',
+  'records.result.draw': '引き分け',
+
+  'shop.wallet': 'ウォレット',
+  'shop.items': 'アイテム',
+  'shop.noListings': '商品なし',
+  'shop.buy': '購入',
+  'shop.stockUnlimited': '無制限',
+  'shop.stockCount': '在庫 {count}',
+  'shop.meta': '価格 {price} · {stock} · 購入済み {count}',
 
   'settings.title': '設定',
+  'settings.close': '閉じる',
+  'settings.restoreDefaults': '設定を復元',
   'settings.language': '言語',
   'settings.language.hint': '切り替えるとすぐに反映され、選択内容は保存されます。',
   'settings.language.zh-Hans': '简体中文',
@@ -291,6 +1103,133 @@ const JA: Messages = {
   'settings.language.ja': '日本語',
   'settings.language.en': 'English',
   'settings.applied': '設定を保存しました',
+  'settings.tab.display': '表示',
+  'settings.tab.keys': 'キー',
+  'settings.tab.audio': 'オーディオ',
+  'settings.tab.hud': 'HUD',
+  'settings.tab.other': 'その他',
+  'settings.tab.about': 'このゲームについて',
+  'settings.subtitle.language': 'インターフェース言語',
+  'settings.subtitle.display': '解像度・エフェクト・フレームレート',
+  'settings.subtitle.keys': 'クライアントの全キー割り当て',
+  'settings.subtitle.audio': '音楽・グレイズ・ショット・スキルの音量',
+  'settings.subtitle.hud': '対局中に描画するオーバーレイ',
+  'settings.subtitle.other': '接続モードとモッド',
+  'settings.subtitle.about': '著作権・バージョン・クレジット',
+  'settings.display.sharpening': 'シャープニング',
+  'settings.display.sharpening.desc': 'ソフトウェアアップスケール後に適用するコントラスト適応シャープニング。0% は通常のバイリニア拡大です。',
+  'settings.display.upscaler': 'アップスケーラー',
+  'settings.display.upscaler.desc': 'ポストプロセス後のアップスケーリング基盤。このビルドで実際に動作するものだけが選択でき、それ以外は下に表示されます。',
+  'settings.display.resolutionScale': '解像度スケール',
+  'settings.display.resolutionScale.desc': 'レンダリング解像度の倍率。低い値ほど描画ピクセルが減り、非力なGPUでも軽快です。',
+  'settings.display.effects': 'エフェクト',
+  'settings.display.effects.desc': '弾の軌跡、輝き、命中エフェクト。',
+  'settings.display.effect.low': '低',
+  'settings.display.effect.medium': '中',
+  'settings.display.effect.high': '高',
+  'settings.display.frameRate': 'フレームレート上限',
+  'settings.display.frameRate.desc': 'ゲームの再描画頻度を制限します。対局はサーバー権威なので、シミュレーションには影響しません。',
+  'settings.display.frameCap.uncapped': '無制限',
+  'settings.display.showFps': 'フレームレートを表示',
+  'settings.display.showFps.desc': '対局画面の隅にフレームレートカウンターを表示します。',
+  'settings.display.note':
+    'フレームレート上限はエンジンの描画ループを制限してすぐに反映されます。解像度スケールはキャンバスのバッキングストアに適用されるため、次回のウィンドウリサイズまたは再起動後に初めて目に見える効果が現れます。',
+  'settings.display.upscaling': 'アップスケーリング',
+  'settings.display.unavailable': '{label}（利用不可）',
+  'settings.display.softwareNote': 'これはブラウザ内で実装された空間近似です。DLSS でも FSR でもありません — 上の注釈を参照してください。',
+  'settings.display.unavailableNote': 'このビルドでは利用できません — {details}',
+  'settings.network.heading': 'ネットワーク',
+  'settings.network.connection': '接続',
+  'settings.network.connection.desc': 'クライアントが接続するロビーサーバー。選択はすぐに保存され、次回の接続時に使用されます。',
+  'settings.network.official': '公式',
+  'settings.network.lan': 'LAN',
+  'settings.network.thirdParty': 'サードパーティ',
+  'settings.network.lanHost': 'LAN ホスト',
+  'settings.network.lanHost.desc': 'ローカルネットワーク上の Gensoulkyo サーバーのホストまたは ホスト:ポート。ロビー WebSocket と対戦リレーのパスはここから導出されます。',
+  'settings.network.httpBase': 'ロビー HTTP ベース',
+  'settings.network.httpBase.desc': 'サードパーティ配置の REST ベースURL。',
+  'settings.network.wsUrl': 'ロビー WebSocket URL',
+  'settings.network.relayUrl': '対戦リレー URL',
+  'settings.network.officialNote':
+    '公式モードはこのビルドにコンパイルされたロビーと対戦リレーのエンドポイントを使用します。LAN モードは入力したホストから http://<host>、ws://<host>/ws、ws://<host>/relay を導出するため、ホストだけで構いません。',
+  'settings.mods.heading': 'モッド',
+  'settings.mods.workshop': 'ワークショップ',
+  'settings.mods.workshop.desc': 'コミュニティのモッドを閲覧・導入します。予約済み — ローダーは未同梱です。',
+  'settings.mods.custom': 'カスタムモッド',
+  'settings.mods.custom.desc': '選んだフォルダーからモッドを読み込みます。',
+  'settings.mods.folder': 'モッドフォルダー',
+  'settings.mods.note': 'モッドローダーは未実装です。これらの設定は将来のローダーが尊重できるよう保存されますが、現在は何も読み込まれません。',
+  'settings.plugins.heading': '外部モジュール（DLC）',
+  'settings.plugins.autoLoad': '外部モジュールを自動読み込み',
+  'settings.plugins.autoLoad.desc': 'クライアント起動時に、モジュールごとに確認せず下のすべてのモジュールURLを読み込みます。',
+  'settings.plugins.moduleUrls': 'モジュールURL',
+  'settings.plugins.moduleUrls.desc': 'ES モジュールのURLをスペース区切りで指定します。ここに追加するまでは何も取得されません。',
+  'settings.plugins.note1':
+    'ここにURLが入力されない限り、何もダウンロードされません。各URLは createUpscaler()（または upscaler / descriptor / register(registry)）をエクスポートする ES モジュールを配信する必要があります。この方法で読み込まれるモジュールができるのは外部アップスケーラー後端の登録だけで、このレンダラーで DLSS や FSR を可能にすることはできません — 元から対応するプラットフォームに本物の後端を提供できるだけです。',
+  'settings.plugins.note2':
+    '受理されるのは http(s):// URL とルート相対 /path URL だけです。それ以外 — file:、data:、ホスト名のみ — は保存・インポート前に拒否されます。',
+  'settings.about.repository': 'リポジトリ',
+  'settings.about.notPublished': '未公開',
+  'settings.about.open': '開く',
+  'settings.about.heading.product': '製品',
+  'settings.about.heading.licences': 'ライセンス',
+  'settings.about.heading.source': 'ソース',
+  'settings.about.heading.credits': 'クレジット',
+  'settings.about.game': 'ゲーム',
+  'settings.about.version': 'バージョン',
+  'settings.about.build': 'ビルド',
+  'settings.about.code': 'コード',
+  'settings.about.assets': 'アセット',
+  'settings.about.copyright': '著作権',
+  'settings.audio.heading.audio': 'オーディオ',
+  'settings.audio.heading.music': '音楽',
+  'settings.audio.heading.sfx': '効果音',
+  'settings.audio.muteAll': 'すべてミュート',
+  'settings.audio.muteAll.desc': 'すべてのチャンネルをミュートしますが、下のミックスは失われないため、解除すると正確に元に戻ります。',
+  'settings.audio.master': 'マスター音量',
+  'settings.audio.bgm': 'BGM 音量',
+  'settings.audio.graze': 'グレイズ',
+  'settings.audio.graze.desc': '弾が当たり判定の近くを通ったときのグレイズ音。',
+  'settings.audio.playerShot': '自機ショット',
+  'settings.audio.playerShot.desc': '自機のショット音。',
+  'settings.audio.skill': 'スペル',
+  'settings.audio.skill.desc': 'ボムとスペルカード。',
+  'settings.audio.noAssetsNote':
+    'このビルドには音声ファイルが同梱されていません。下のレベルは保存されてエンジンのミキサーに送られますが、サウンドアセットが追加されるまで音は鳴りません。',
+  'settings.hud.heading': '対局 HUD',
+  'settings.hud.opponentHud': '相手 HUD',
+  'settings.hud.opponentHud.desc': '相手のボス HP パネル。',
+  'settings.hud.damageNumbers': 'ダメージ数値',
+  'settings.hud.damageNumbers.desc': 'ボスの上に浮かぶダメージ数値。',
+  'settings.hud.scoreCard': 'スコアカード',
+  'settings.hud.scoreCard.desc': 'スコアとコンボの表示。',
+  'settings.hud.ultMeter': '必殺技メーター',
+  'settings.hud.ultMeter.desc': 'ボムとスペルカードのチャージメーター。',
+  'settings.hud.statusCard': 'ステータスカード',
+  'settings.hud.statusCard.desc': 'メインの表示帯：HP、残機、弾数。',
+  'settings.hud.bulletCount': '弾数',
+  'settings.hud.bulletCount.desc': 'ステータスカード内の BULLETS 行。',
+  'settings.hud.countdown': 'カウントダウン',
+  'settings.hud.countdown.desc': '対局の残り時間。',
+  'settings.hud.networkFooter': 'ネットワークフッター',
+  'settings.hud.networkFooter.desc': '下端に沿って表示される Ping と調整の読み値。',
+  'settings.hud.note':
+    '非表示にしたブロックは隙間を空けずに再配置されるため、HUD はコンパクトなままです。ダメージ数値と必殺技メーターのオーバーレイは現在も構築中です：これら 2 つのスイッチはすぐに保存され、それぞれのオーバーレイができ次第有効になります。',
+  'settings.keys.intro':
+    'この一覧は、ディスパッチャーが照合する単一の binding テーブルから生成されるため、コードと乖離しません。テキスト欄にフォーカスがある間も有効なキーは、最後の注釈に示されます。',
+  'settings.keys.textInputNote':
+    'テキスト欄にフォーカスがある間発動するのは allowInTextInput とマークされた绑定だけです — Tab、Shift+Tab、Enter、Escape、Alt+Enter、Ctrl+Tab。',
+  'settings.keys.scope.global': 'グローバル',
+  'settings.keys.scope.login': 'ログイン',
+  'settings.keys.scope.lobby': 'ロビー',
+  'settings.keys.scope.room': 'ルーム',
+  'settings.keys.scope.battle': '対局',
+  'settings.keys.scope.result': 'リザルト',
+  'settings.keys.scope.checkin': 'デイリーログイン',
+  'settings.keys.scope.shop': '商店',
+  'settings.keys.scope.inventory': '所持品',
+  'settings.keys.scope.records': '戦績',
+  'settings.keys.scope.settings': '設定',
 
   'error.generic': '問題が発生しました。しばらくしてからお試しください。',
   'error.network': 'ネットワーク接続に失敗しました。',
@@ -338,6 +1277,10 @@ const JA: Messages = {
   'ui.queue': '順番待ち',
   'ui.mail': 'メール',
   'ui.opponent': '相手',
+  'ui.roomCode': 'ルームコード',
+  'ui.backToLobby': 'ロビーに戻る',
+  'ui.downloadDem': '.dem をダウンロード',
+  'ui.matchLabel': '対局 {id}',
 };
 
 const EN: Messages = {
@@ -345,14 +1288,119 @@ const EN: Messages = {
   'app.subtitle': 'Clash of Fantasies',
 
   'login.title': 'Sign in',
-  'login.email': 'Email',
+  'login.username': 'Username',
+  // The field prompt reads "E-mail" on the login card (kept verbatim — the E2E
+  // harness matches the shipped copy), so this key carries that spelling.
+  'login.email': 'E-mail',
   'login.password': 'Password',
+  'login.confirmPassword': 'Confirm password',
+  'login.emailCode': 'E-mail code',
   'login.notConnected': 'Not connected',
   'login.signingIn': 'Signing in…',
+  'login.creatingAccount': 'Creating account…',
+  'login.signUpAndPlay': 'Sign up & play',
+  'login.backToSignIn': 'Back to sign in',
+  'login.sendCode': 'Send code',
+  'login.resendCode': 'Resend {seconds}s',
+  'login.connecting': 'Connecting…',
+  'login.lobbyEndpoint': 'Lobby: {endpoint}',
   'login.failed': 'Sign-in failed',
   'login.transportError': 'Cannot reach the server. Check your connection and try again.',
+  'login.error.username': 'Enter a username',
+  'login.error.passwordMismatch': 'Passwords do not match',
+  'login.error.codeRequired': 'Enter the 6-digit code we e-mailed you',
+  'login.error.emailRequired': 'Enter your e-mail address first',
+
+  'lobby.notSignedIn': 'Not signed in',
+  'lobby.signOut': 'Sign out',
+  'lobby.checkin': 'Check-in',
+  'lobby.inventory': 'Inventory',
+  'lobby.page.menu': 'Main menu',
+  'lobby.page.play': 'Play',
+  'lobby.changeRoomCode': 'Change room code',
+  'lobby.createRoom': 'Create room',
+  'lobby.joinRoom': 'Join room',
+  'lobby.joinQueue': 'Join matchmaking queue',
+  'lobby.refreshQueue': 'Refresh queue status',
+  'lobby.cancelQueue': 'Cancel matchmaking',
+  'lobby.profile.ruleset': 'ruleset {version}',
+
+  'room.title': 'Room',
+  'room.noRoom': 'No room',
+  'room.meta': '{mode} · ruleset {version}',
+  'room.setup.caption': 'Match setup · host only',
+  'room.setup.summary': 'Boss: {boss} · Shot: {shot} / {bomb}',
+  'room.boss': 'Boss',
+  'room.shot': 'Shot',
+  'room.bomb': 'Bomb',
+  'room.default': 'default',
+  'room.boss.default': 'Default',
+  'room.boss.tian': '天 / tian',
+  'room.boss.hui': '辉 / hui',
+  'room.players': 'Players',
+  'room.waitingForPlayers': 'Waiting for players…',
+  'room.ready': 'Ready',
+  'room.startMatch': 'Start match',
+  'room.leaveRoom': 'Leave room',
+  'room.readyWaiting': 'Ready — waiting for match…',
+  'room.badge.host': 'HOST',
+  'room.badge.offline': 'OFFLINE',
+  'room.badge.ready': 'READY',
+  'room.badge.waiting': 'WAITING',
+
+  'result.title': 'Match result',
+  'result.noResult': 'No result yet',
+  'result.victory': 'Victory!',
+  'result.defeat': 'Defeat',
+  'result.badge.victory': 'VICTORY',
+  'result.badge.defeat': 'DEFEAT',
+  'result.yourStats': 'Your stats',
+  'result.opponent': 'Opponent',
+  'result.serverAuthoritative': 'Server authoritative',
+  'result.clientAuthoritative': 'Client authoritative',
+  'result.meta': '{source} · settled {ms}ms',
+  'result.row.winner': 'Winner',
+  'result.row.yourScore': 'Your score',
+  'result.row.match': 'Match',
+  'result.row.opponent': 'Opponent',
+  'result.row.score': 'Score',
+  'result.row.replay': 'Replay',
+
+  'records.career': 'Career',
+  'records.recentMatches': 'Recent matches',
+  'records.recentMatchesCount': 'Recent matches ({count})',
+  'records.loading': 'Loading records…',
+  'records.noMatches': 'No matches yet',
+  'records.refresh': 'Refresh',
+  'records.gold': 'Gold',
+  'records.tickets': 'Tickets',
+  'records.points': 'Points',
+  'records.season': 'Season',
+  'records.matches': 'Matches',
+  'records.wld': 'W-L-D',
+  'records.winRate': 'Win rate',
+  'records.bestScore': 'Best score',
+  'records.averageScore': 'Average score',
+  'records.grazeHit': 'Graze · Hit',
+  'records.damageCards': 'Damage · Cards',
+  'records.decksCards': 'Decks · Cards',
+  'records.unit.seconds': '{seconds}s',
+  'records.unit.points': '{points} pts',
+  'records.result.win': 'WIN',
+  'records.result.loss': 'LOSS',
+  'records.result.draw': 'DRAW',
+
+  'shop.wallet': 'Wallet',
+  'shop.items': 'Items',
+  'shop.noListings': 'No listings',
+  'shop.buy': 'Buy',
+  'shop.stockUnlimited': 'unlimited',
+  'shop.stockCount': 'stock {count}',
+  'shop.meta': 'Price {price} · {stock} · bought {count}',
 
   'settings.title': 'Settings',
+  'settings.close': 'Close',
+  'settings.restoreDefaults': 'Restore defaults',
   'settings.language': 'Language',
   'settings.language.hint': 'Applies immediately, and your choice is remembered.',
   'settings.language.zh-Hans': '简体中文',
@@ -360,6 +1408,144 @@ const EN: Messages = {
   'settings.language.ja': '日本語',
   'settings.language.en': 'English',
   'settings.applied': 'Settings saved',
+  'settings.tab.display': 'Display',
+  'settings.tab.keys': 'Keys',
+  'settings.tab.audio': 'Audio',
+  'settings.tab.hud': 'HUD',
+  'settings.tab.other': 'Other',
+  'settings.tab.about': 'About',
+  'settings.subtitle.language': 'Interface language',
+  'settings.subtitle.display': 'Resolution, effects, frame rate',
+  'settings.subtitle.keys': 'Every binding the client ships',
+  'settings.subtitle.audio': 'Music, graze, shot and skill volumes',
+  'settings.subtitle.hud': 'Which battle overlays to draw',
+  'settings.subtitle.other': 'Connection mode and mods',
+  'settings.subtitle.about': 'Copyright, version, credits',
+  'settings.display.sharpening': 'Sharpening',
+  'settings.display.sharpening.desc':
+    'Contrast-adaptive sharpening applied after the software upscale. 0% is a plain bilinear upscale.',
+  'settings.display.upscaler': 'Upscaler',
+  'settings.display.upscaler.desc':
+    'Post-process upscaling backend. Only backends this build can actually run are selectable; the rest are listed below.',
+  'settings.display.resolutionScale': 'Resolution scale',
+  'settings.display.resolutionScale.desc':
+    'Render resolution multiplier. Lower values render fewer pixels and are cheaper on weak GPUs.',
+  'settings.display.effects': 'Effects',
+  'settings.display.effects.desc': 'Bullet trails, glow and impact effects.',
+  'settings.display.effect.low': 'Low',
+  'settings.display.effect.medium': 'Medium',
+  'settings.display.effect.high': 'High',
+  'settings.display.frameRate': 'Frame rate limit',
+  'settings.display.frameRate.desc':
+    'Caps how often the game redraws. Gameplay stays server-authoritative, so this never changes the simulation.',
+  'settings.display.frameCap.uncapped': 'Uncapped',
+  'settings.display.showFps': 'Show frame rate',
+  'settings.display.showFps.desc': 'Draws a frame-rate counter in the corner of the battle screen.',
+  'settings.display.note':
+    'The frame-rate limit applies immediately by gating the engine render loop. The resolution scale is applied to the canvas backing store, so it only takes visible effect after the next window resize or a restart.',
+  'settings.display.upscaling': 'Upscaling',
+  'settings.display.unavailable': '{label} (unavailable)',
+  'settings.display.softwareNote':
+    'This is a spatial approximation implemented in the browser. It is not DLSS and not FSR — see the notes above.',
+  'settings.display.unavailableNote': 'Not available in this build — {details}',
+  'settings.network.heading': 'Network',
+  'settings.network.connection': 'Connection',
+  'settings.network.connection.desc':
+    'Which lobby server the client talks to. The choice is stored immediately and used the next time the client connects.',
+  'settings.network.official': 'Official',
+  'settings.network.lan': 'LAN',
+  'settings.network.thirdParty': 'Third-party',
+  'settings.network.lanHost': 'LAN host',
+  'settings.network.lanHost.desc':
+    'Host or host:port of a Gensoulkyo server on your local network. The lobby WebSocket and battle relay paths are derived from it.',
+  'settings.network.httpBase': 'Lobby HTTP base',
+  'settings.network.httpBase.desc': 'REST base of the third-party deployment.',
+  'settings.network.wsUrl': 'Lobby WebSocket URL',
+  'settings.network.relayUrl': 'Battle relay URL',
+  'settings.network.officialNote':
+    'Official uses the lobby and battle relay endpoints compiled into this build. LAN derives http://<host>, ws://<host>/ws and ws://<host>/relay from the host you enter, so only the host is needed.',
+  'settings.mods.heading': 'Mods',
+  'settings.mods.workshop': 'Creative workshop',
+  'settings.mods.workshop.desc': 'Browse and install community mods. Reserved — no loader ships yet.',
+  'settings.mods.custom': 'Custom mods',
+  'settings.mods.custom.desc': 'Load mods from a folder you choose.',
+  'settings.mods.folder': 'Mod folder',
+  'settings.mods.note':
+    'No mod loader is implemented yet. These preferences are stored so a future loader can honour them; nothing is loaded today.',
+  'settings.plugins.heading': 'External modules (DLC)',
+  'settings.plugins.autoLoad': 'Auto-load external modules',
+  'settings.plugins.autoLoad.desc':
+    'Load every module URL below as soon as the client starts, without asking per module.',
+  'settings.plugins.moduleUrls': 'Module URLs',
+  'settings.plugins.moduleUrls.desc':
+    'One or more ES module URLs, separated by spaces. Nothing is fetched until you add one here.',
+  'settings.plugins.note1':
+    'Nothing is downloaded unless a URL is entered here. Each URL must serve an ES module that exports createUpscaler() (or upscaler / descriptor / register(registry)). A module loaded this way can only ever register an external upscaler backend, and it cannot make DLSS or FSR possible on this renderer — it can only supply a real backend for a platform that already has one.',
+  'settings.plugins.note2':
+    'Only http(s):// URLs and root-relative /path URLs are accepted. Anything else — file:, data:, a bare hostname — is rejected before it is stored or imported.',
+  'settings.about.repository': 'Repository',
+  'settings.about.notPublished': 'Not published yet',
+  'settings.about.open': 'Open',
+  'settings.about.heading.product': 'Product',
+  'settings.about.heading.licences': 'Licences',
+  'settings.about.heading.source': 'Source',
+  'settings.about.heading.credits': 'Credits',
+  'settings.about.game': 'Game',
+  'settings.about.version': 'Version',
+  'settings.about.build': 'Build',
+  'settings.about.code': 'Code',
+  'settings.about.assets': 'Assets',
+  'settings.about.copyright': 'Copyright',
+  'settings.audio.heading.audio': 'Audio',
+  'settings.audio.heading.music': 'Music',
+  'settings.audio.heading.sfx': 'Sound effects',
+  'settings.audio.muteAll': 'Mute all',
+  'settings.audio.muteAll.desc':
+    'Silences every channel without losing the mix below, so un-muting restores it exactly.',
+  'settings.audio.master': 'Master volume',
+  'settings.audio.bgm': 'BGM volume',
+  'settings.audio.graze': 'Graze',
+  'settings.audio.graze.desc': 'The near-miss cue when a bullet passes close to your hitbox.',
+  'settings.audio.playerShot': 'Player shot',
+  'settings.audio.playerShot.desc': 'Your own ship\u2019s shot cues.',
+  'settings.audio.skill': 'Skill',
+  'settings.audio.skill.desc': 'Bombs and spell cards.',
+  'settings.audio.noAssetsNote':
+    'No audio files ship with this build. The levels below are stored and pushed to the engine\u2019s mixer, but nothing will be audible until sound assets are added.',
+  'settings.hud.heading': 'Battle HUD',
+  'settings.hud.opponentHud': 'Opponent HUD',
+  'settings.hud.opponentHud.desc': "The rival's Boss HP panel.",
+  'settings.hud.damageNumbers': 'Damage numbers',
+  'settings.hud.damageNumbers.desc': 'Floating damage values over the Boss.',
+  'settings.hud.scoreCard': 'Score card',
+  'settings.hud.scoreCard.desc': 'Your score and combo readout.',
+  'settings.hud.ultMeter': 'Ultimate meter',
+  'settings.hud.ultMeter.desc': 'Charge meter for bombs and spell cards.',
+  'settings.hud.statusCard': 'Status card',
+  'settings.hud.statusCard.desc': 'The main readout strip: HP, lives and bullet count.',
+  'settings.hud.bulletCount': 'Bullet count',
+  'settings.hud.bulletCount.desc': 'The BULLETS row inside the status card.',
+  'settings.hud.countdown': 'Countdown',
+  'settings.hud.countdown.desc': 'Remaining match time.',
+  'settings.hud.networkFooter': 'Network footer',
+  'settings.hud.networkFooter.desc': 'Ping and reconciliation readout along the bottom edge.',
+  'settings.hud.note':
+    'Hidden blocks are re-flowed away instead of leaving empty gaps, so the HUD stays compact. The damage-number and ultimate-meter overlays are still being built out: those two switches are stored now and take effect as each overlay lands.',
+  'settings.keys.intro':
+    'This list is generated from the single binding table the dispatcher matches against, so it can never drift from the code. Keys that stay live while a text field has focus are marked in the note at the end.',
+  'settings.keys.textInputNote':
+    'While a text field has focus only the bindings marked allowInTextInput fire — Tab, Shift+Tab, Enter, Escape, Alt+Enter, Ctrl+Tab.',
+  'settings.keys.scope.global': 'Global',
+  'settings.keys.scope.login': 'Login',
+  'settings.keys.scope.lobby': 'Lobby',
+  'settings.keys.scope.room': 'Room',
+  'settings.keys.scope.battle': 'Battle',
+  'settings.keys.scope.result': 'Result',
+  'settings.keys.scope.checkin': 'Check-in',
+  'settings.keys.scope.shop': 'Shop',
+  'settings.keys.scope.inventory': 'Inventory',
+  'settings.keys.scope.records': 'Records',
+  'settings.keys.scope.settings': 'Settings',
 
   'error.generic': 'Something went wrong. Please try again later.',
   'error.network': 'Network connection failed.',
@@ -407,6 +1593,10 @@ const EN: Messages = {
   'ui.queue': 'Queue',
   'ui.mail': 'Mail',
   'ui.opponent': 'opponent',
+  'ui.roomCode': 'Room code',
+  'ui.backToLobby': 'Back to lobby',
+  'ui.downloadDem': 'Download .dem',
+  'ui.matchLabel': 'match {id}',
 };
 
 const TABLES: Readonly<Record<LanguageCode, Messages>> = {

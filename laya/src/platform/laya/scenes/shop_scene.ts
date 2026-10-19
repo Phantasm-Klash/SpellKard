@@ -13,6 +13,7 @@
  */
 
 import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow';
+import { t } from '../../../core/game/i18n';
 import type { ShopItemView } from '../../../core/net/lobby_client';
 import * as theme from '../view/theme';
 import { createButtonEx, createCaption, createDivider, createPanel, type ButtonHandle } from './ui_kit';
@@ -54,7 +55,7 @@ export class ShopScene implements ClientScene {
     const contentWidth = width - margin * 2;
 
     // --- title band ---
-    const title = this.makeText('Shop', theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
+    const title = this.makeText(t('ui.shop'), theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
     title.y = margin;
     this.root.addChild(title);
     this.root.addChild(createDivider(margin, title.y + theme.FONT_SIZE_TITLE + theme.SPACE_SM, contentWidth));
@@ -62,7 +63,7 @@ export class ShopScene implements ClientScene {
     // --- wallet strip ---
     const walletY = title.y + theme.FONT_SIZE_TITLE + theme.SPACE_MD;
     this.root.addChild(createPanel(margin, walletY, contentWidth, 48, { fill: theme.COLOR_PANEL_DEEP }));
-    const walletCaption = createCaption('Wallet', contentWidth - theme.SPACE_MD * 2, walletY + theme.SPACE_XS);
+    const walletCaption = createCaption(t('shop.wallet'), contentWidth - theme.SPACE_MD * 2, walletY + theme.SPACE_XS);
     walletCaption.x = margin + theme.SPACE_MD;
     this.root.addChild(walletCaption);
     this.walletText = this.makeText('—', theme.FONT_SIZE_BODY, theme.COLOR_ACCENT, true, margin + theme.SPACE_MD);
@@ -72,7 +73,7 @@ export class ShopScene implements ClientScene {
 
     // --- listing band ---
     const listCaptionY = walletY + 48 + theme.SPACE_MD;
-    const listCaption = createCaption('Items', contentWidth, listCaptionY);
+    const listCaption = createCaption(t('shop.items'), contentWidth, listCaptionY);
     listCaption.x = margin;
     this.root.addChild(listCaption);
 

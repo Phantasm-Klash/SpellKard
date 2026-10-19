@@ -30,6 +30,7 @@
 
 import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow';
 import { describeMatchmakingQueue } from '../../../core/game/lobby_flow';
+import { t } from '../../../core/game/i18n';
 import { lobbyTitle } from '../../../core/game/game_identity';
 import { coverFit } from '../../../core/game/login_assets';
 import { isNativeAssetRuntime } from '../../../core/game/tna_assets';
@@ -40,7 +41,7 @@ import {
 } from '../../../core/game/lobby_assets';
 import * as theme from '../view/theme';
 import { VectorPainter } from '../view/sprites';
-import { createButton, createPanel, type ButtonHandle } from './ui_kit';
+import { createArtButton, createButton, createPanel, type ButtonHandle } from './ui_kit';
 import { SettingsPanel, type SettingsPanelDebugState } from './settings/panel';
 import { SETTINGS_BUTTON_SIZE, createSettingsButton, type SettingsButtonHandle } from './settings/gear_button';
 import type { SettingsStore } from '../../../core/settings';
@@ -160,7 +161,7 @@ export class LobbyScene implements ClientScene {
     const profileY = this.pageText.y + theme.FONT_SIZE_CAPTION + theme.SPACE_MD;
     const profileHeight = 96;
     this.root.addChild(createPanel(margin, profileY, contentWidth, profileHeight));
-    this.profileText = this.makeText('Not signed in', theme.FONT_SIZE_LABEL, theme.COLOR_TEXT, false, margin + theme.SPACE_MD);
+    this.profileText = this.makeText(t('lobby.notSignedIn'), theme.FONT_SIZE_LABEL, theme.COLOR_TEXT, false, margin + theme.SPACE_MD);
     this.profileText.y = profileY + theme.SPACE_SM;
     this.profileText.width = contentWidth - theme.SPACE_MD * 2;
     this.profileText.wordWrap = true;
@@ -184,34 +185,36 @@ export class LobbyScene implements ClientScene {
     let y = contentY;
     // Context-sensitive: "Sign in" opens the login screen while signed out;
     // "Sign out" drops the session while signed in (see `refresh`). One button
-    // covers both so the menu never grows past six entries.
-    this.signInButton = createButton('Sign in', buttonX, y, contentWidth, () => this.onAccountButton());
+    // covers both so the menu never grows past six entries. Icons are named
+    // explicitly (not derived from the label) so a language switch cannot drop
+    // them: `iconNameForLabel` matches English substrings.
+    this.signInButton = createArtButton(t('ui.signIn'), buttonX, y, contentWidth, () => this.onAccountButton(), 'account');
     this.addToPage(this.menuSprites, this.signInButton.sprite);
     y += step;
 
-    this.playButton = createButton('Play', buttonX, y, contentWidth, () => this.setPage('play'));
+    this.playButton = createArtButton(t('ui.play'), buttonX, y, contentWidth, () => this.setPage('play'), 'play');
     this.addToPage(this.menuSprites, this.playButton.sprite);
     y += step;
 
-    this.checkinButton = createButton('Check-in', buttonX, y, contentWidth, () => void this.openCheckin());
+    this.checkinButton = createButton(t('lobby.checkin'), buttonX, y, contentWidth, () => void this.openCheckin());
     this.addToPage(this.menuSprites, this.checkinButton.sprite);
     y += step;
 
-    this.shopButton = createButton('Shop', buttonX, y, contentWidth, () => this.openShop());
+    this.shopButton = createArtButton(t('ui.shop'), buttonX, y, contentWidth, () => this.openShop(), 'shop');
     this.addToPage(this.menuSprites, this.shopButton.sprite);
     y += step;
 
-    this.inventoryButton = createButton('Inventory', buttonX, y, contentWidth, () => void this.openInventory());
+    this.inventoryButton = createButton(t('lobby.inventory'), buttonX, y, contentWidth, () => void this.openInventory());
     this.addToPage(this.menuSprites, this.inventoryButton.sprite);
     y += step;
 
-    this.recordsButton = createButton('Records', buttonX, y, contentWidth, () => void this.openRecords());
+    this.recordsButton = createArtButton(t('ui.records'), buttonX, y, contentWidth, () => void this.openRecords(), 'records');
     this.addToPage(this.menuSprites, this.recordsButton.sprite);
 
     // --- play page: room-code card, then the room + queue actions ---
     const codeCardHeight = 96;
     this.addToPage(this.playSprites, createPanel(margin, contentY, contentWidth, codeCardHeight));
-    const codeCaption = this.makeText('Room code', theme.FONT_SIZE_CAPTION, theme.COLOR_TEXT_MUTED, false, margin + theme.SPACE_MD);
+    const codeCaption = this.makeText(t('ui.roomCode'), theme.FONT_SIZE_CAPTION, theme.COLOR_TEXT_MUTED, false, margin + theme.SPACE_MD);
     codeCaption.y = contentY + theme.SPACE_SM;
     this.addToPage(this.playSprites, codeCaption);
     // Highlight frame around the code so it reads at a glance.
@@ -225,15 +228,15 @@ export class LobbyScene implements ClientScene {
 
     const actionsY = contentY + codeCardHeight + sectionGap;
     let py = actionsY;
-    this.cycleButton = createButton('Change room code', buttonX, py, contentWidth, () => this.cycleRoomCode());
+    this.cycleButton = createArtButton(t('lobby.changeRoomCode'), buttonX, py, contentWidth, () => this.cycleRoomCode(), 'room');
     this.addToPage(this.playSprites, this.cycleButton.sprite);
     py += step;
 
-    this.createButton = createButton('Create room', buttonX, py, contentWidth, () => void this.createRoom());
+    this.createButton = createArtButton(t('lobby.createRoom'), buttonX, py, contentWidth, () => void this.createRoom(), 'confirm');
     this.addToPage(this.playSprites, this.createButton.sprite);
     py += step;
 
-    this.joinButton = createButton('Join room', buttonX, py, contentWidth, () => void this.joinRoom());
+    this.joinButton = createArtButton(t('lobby.joinRoom'), buttonX, py, contentWidth, () => void this.joinRoom(), 'room');
     this.addToPage(this.playSprites, this.joinButton.sprite);
     py += step;
 
@@ -246,19 +249,19 @@ export class LobbyScene implements ClientScene {
     this.addToPage(this.playSprites, this.queueText);
     py += theme.SPACE_XS + 34;
 
-    this.joinQueueButton = createButton('Join matchmaking queue', buttonX, py, contentWidth, () => void this.joinQueue());
+    this.joinQueueButton = createArtButton(t('lobby.joinQueue'), buttonX, py, contentWidth, () => void this.joinQueue(), 'play');
     this.addToPage(this.playSprites, this.joinQueueButton.sprite);
     py += step;
 
-    this.refreshQueueButton = createButton('Refresh queue status', buttonX, py, contentWidth, () => void this.refreshQueue());
+    this.refreshQueueButton = createArtButton(t('lobby.refreshQueue'), buttonX, py, contentWidth, () => void this.refreshQueue(), 'queue');
     this.addToPage(this.playSprites, this.refreshQueueButton.sprite);
     py += step;
 
-    this.cancelQueueButton = createButton('Cancel matchmaking', buttonX, py, contentWidth, () => void this.cancelQueue());
+    this.cancelQueueButton = createArtButton(t('lobby.cancelQueue'), buttonX, py, contentWidth, () => void this.cancelQueue(), 'play');
     this.addToPage(this.playSprites, this.cancelQueueButton.sprite);
     py += step;
 
-    this.backButton = createButton('Back', buttonX, py, contentWidth, () => this.setPage('menu'));
+    this.backButton = createArtButton(t('ui.back'), buttonX, py, contentWidth, () => this.setPage('menu'), 'back');
     this.addToPage(this.playSprites, this.backButton.sprite);
 
     this.roomCodeIndex = 0;
@@ -592,10 +595,10 @@ export class LobbyScene implements ClientScene {
     if (snapshot.session !== null) {
       this.profileText.text =
         `${snapshot.session.displayName} (${snapshot.session.playerId || snapshot.session.userId})\n` +
-        `ruleset ${snapshot.session.rulesetVersion || '-'}`;
+        t('lobby.profile.ruleset', { version: snapshot.session.rulesetVersion || '-' });
       this.profileText.color = theme.COLOR_TEXT;
     } else {
-      this.profileText.text = 'Not signed in';
+      this.profileText.text = t('lobby.notSignedIn');
       this.profileText.color = theme.COLOR_TEXT_DISABLED;
     }
     this.queueText.text = describeMatchmakingQueue(snapshot);
@@ -617,7 +620,7 @@ export class LobbyScene implements ClientScene {
     for (const sprite of this.playSprites) {
       sprite.visible = !onMenu;
     }
-    this.pageText.text = onMenu ? 'Main menu' : 'Play';
+    this.pageText.text = onMenu ? t('lobby.page.menu') : t('lobby.page.play');
   }
 
   /** Switches level and refreshes both visibility and button enablement. */
@@ -641,7 +644,7 @@ export class LobbyScene implements ClientScene {
     // when signed out — and its label flips with the session.
     this.createButton.setEnabled(signedIn && !this.busy);
     this.joinButton.setEnabled(signedIn && !this.busy);
-    this.signInButton.setText(signedIn ? 'Sign out' : 'Sign in');
+    this.signInButton.setText(signedIn ? t('lobby.signOut') : t('ui.signIn'));
     this.signInButton.setEnabled(!this.busy);
     this.cycleButton.setEnabled(!this.busy);
     this.joinQueueButton.setEnabled(signedIn && !queued && !this.busy);

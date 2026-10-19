@@ -13,9 +13,11 @@
  */
 
 import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow';
+import { t } from '../../../core/game/i18n';
 import type { RoomPlayerView, RoomView } from '../../../core/net/lobby_client';
 import * as theme from '../view/theme';
 import {
+  createArtButton,
   createBadge,
   createButtonEx,
   createCaption,
@@ -49,11 +51,15 @@ const CARD_BADGE_HEIGHT = 20;
 /** Width reserved at the card's trailing edge for the status chip. */
 const CARD_BADGE_RESERVE = 96;
 
-/** 房间 boss 选项（与 Gensoulkyo core.BossCatalog / C++ boss_catalog 一致）。 */
-const ROOM_BOSS_OPTIONS: ReadonlyArray<{ id: string; label: string }> = [
-  { id: '', label: 'Default' },
-  { id: 'tian', label: '天 / tian' },
-  { id: 'hui', label: '辉 / hui' },
+/**
+ * 房间 boss 选项（与 Gensoulkyo core.BossCatalog / C++ boss_catalog 一致）。
+ * `labelKey` 指向 i18n 键：标签在显示时才解析，语言切换不会丢图标也不会
+ * 冻结成单一语言（模块级常量在导入时求值，不能直接调用 t()）。
+ */
+const ROOM_BOSS_OPTIONS: ReadonlyArray<{ id: string; labelKey: string }> = [
+  { id: '', labelKey: 'room.boss.default' },
+  { id: 'tian', labelKey: 'room.boss.tian' },
+  { id: 'hui', labelKey: 'room.boss.hui' },
 ];
 
 /** 自机 shot/bomb 快捷循环选项（完整 52/13 表在 core/sim/danmaku/player_loadout）。 */
@@ -105,7 +111,7 @@ export class RoomScene implements ClientScene {
     const contentWidth = width - margin * 2;
 
     // --- title band ---
-    const title = this.makeText('Room', theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
+    const title = this.makeText(t('room.title'), theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
     title.y = margin;
     this.root.addChild(title);
     this.root.addChild(createDivider(margin, title.y + theme.FONT_SIZE_TITLE + theme.SPACE_SM, contentWidth));
@@ -116,7 +122,7 @@ export class RoomScene implements ClientScene {
     this.root.addChild(
       createPanel(margin, codeY, contentWidth, codeHeight, { fill: theme.COLOR_PANEL_DEEP, border: theme.COLOR_ACCENT }),
     );
-    const codeCaption = createCaption('Room code', contentWidth - theme.SPACE_MD * 2, codeY + theme.SPACE_MD);
+    const codeCaption = createCaption(t('ui.roomCode'), contentWidth - theme.SPACE_MD * 2, codeY + theme.SPACE_MD);
     codeCaption.x = margin + theme.SPACE_MD;
     this.root.addChild(codeCaption);
     this.roomCodeText = this.makeText('—', theme.FONT_SIZE_TITLE, theme.COLOR_ACCENT, true, margin);
@@ -131,7 +137,7 @@ export class RoomScene implements ClientScene {
     // --- match setup band: boss + 自机 (host-only; server fixes boss at create,
     // so a host change re-creates the room while alone) ---
     const setupY = codeY + codeHeight + theme.SPACE_SM;
-    const setupCaption = createCaption('Match setup · 房主可改', contentWidth, setupY);
+    const setupCaption = createCaption(t('room.setup.caption'), contentWidth, setupY);
     setupCaption.x = margin;
     this.root.addChild(setupCaption);
     this.setupText = this.makeText('', theme.FONT_SIZE_CAPTION, theme.COLOR_TEXT_MUTED, false, margin);
@@ -139,10 +145,10 @@ export class RoomScene implements ClientScene {
     this.root.addChild(this.setupText);
     const setupRowY = this.setupText.y + theme.FONT_SIZE_CAPTION + theme.SPACE_XS;
     const setupButtonWidth = Math.floor((contentWidth - theme.SPACE_SM * 2) / 3);
-    this.bossButton = createButtonEx('Boss', margin, setupRowY, setupButtonWidth, () => void this.cycleBoss(), 'ghost');
+    this.bossButton = createButtonEx(t('room.boss'), margin, setupRowY, setupButtonWidth, () => void this.cycleBoss(), 'ghost');
     this.root.addChild(this.bossButton.sprite);
     this.shotButton = createButtonEx(
-      'Shot',
+      t('room.shot'),
       margin + setupButtonWidth + theme.SPACE_SM,
       setupRowY,
       setupButtonWidth,
@@ -151,7 +157,7 @@ export class RoomScene implements ClientScene {
     );
     this.root.addChild(this.shotButton.sprite);
     this.bombButton = createButtonEx(
-      'Bomb',
+      t('room.bomb'),
       margin + (setupButtonWidth + theme.SPACE_SM) * 2,
       setupRowY,
       setupButtonWidth,
@@ -162,7 +168,7 @@ export class RoomScene implements ClientScene {
 
     // --- roster band: dynamic player cards rebuilt per snapshot ---
     const rosterCaptionY = codeY + codeHeight + SETUP_BLOCK_HEIGHT;
-    const rosterCaption = createCaption('Players', contentWidth, rosterCaptionY);
+    const rosterCaption = createCaption(t('room.players'), contentWidth, rosterCaptionY);
     rosterCaption.x = margin;
     this.root.addChild(rosterCaption);
 
@@ -171,7 +177,7 @@ export class RoomScene implements ClientScene {
     this.playerList.pos(margin, listY);
     this.root.addChild(this.playerList);
 
-    this.emptyText = this.makeText('Waiting for players…', theme.FONT_SIZE_BODY, theme.COLOR_TEXT_DISABLED, false, 0);
+    this.emptyText = this.makeText(t('room.waitingForPlayers'), theme.FONT_SIZE_BODY, theme.COLOR_TEXT_DISABLED, false, 0);
     this.emptyText.y = theme.SPACE_SM;
     this.playerList.addChild(this.emptyText);
 
@@ -184,15 +190,16 @@ export class RoomScene implements ClientScene {
     this.statusText.leading = theme.SPACE_XS;
     this.root.addChild(this.statusText);
 
-    this.readyButton = createButtonEx('Ready', margin, actionsY, contentWidth, () => void this.ready(), 'primary');
+    this.readyButton = createButtonEx(t('room.ready'), margin, actionsY, contentWidth, () => void this.ready(), 'primary');
     this.root.addChild(this.readyButton.sprite);
 
-    this.leaveButton = createButtonEx(
-      'Leave room',
+    this.leaveButton = createArtButton(
+      t('room.leaveRoom'),
       margin,
       actionsY + theme.BUTTON_HEIGHT + theme.SPACE_MD,
       contentWidth,
       () => void this.leave(),
+      'room',
       'ghost',
     );
     this.root.addChild(this.leaveButton.sprite);
@@ -219,24 +226,24 @@ export class RoomScene implements ClientScene {
     if (room === null) {
       this.roomCodeText.text = '—';
       this.roomCodeText.color = theme.COLOR_TEXT_DISABLED;
-      this.roomMetaText.text = 'No room';
+      this.roomMetaText.text = t('room.noRoom');
       this.setupText.text = '';
       this.setSetupEnabled(false);
       this.rebuildPlayers([]);
       this.readyButton.setEnabled(false);
-      this.readyButton.setText('Ready');
+      this.readyButton.setText(t('room.ready'));
       return;
     }
 
     this.roomCodeText.text = room.roomCode;
     this.roomCodeText.color = theme.COLOR_ACCENT;
-    this.roomMetaText.text = `${room.modeId} · ruleset ${room.rulesetVersion || '-'}`;
+    this.roomMetaText.text = t('room.meta', { mode: room.modeId, version: room.rulesetVersion || '-' });
     this.applySetup(snapshot, room);
     this.rebuildPlayers(room.players);
 
     const allReady = room.allReady && room.players.length >= 2;
     this.readyButton.setEnabled(!this.busy);
-    this.readyButton.setText(allReady ? 'Start match' : 'Ready');
+    this.readyButton.setText(allReady ? t('room.startMatch') : t('room.ready'));
   }
 
   /**
@@ -251,7 +258,7 @@ export class RoomScene implements ClientScene {
   private rebuildPlayers(players: RoomPlayerView[]): void {
     this.playerList.removeChildren();
     if (players.length === 0) {
-      this.emptyText = this.makeText('Waiting for players…', theme.FONT_SIZE_BODY, theme.COLOR_TEXT_DISABLED, false, 0);
+      this.emptyText = this.makeText(t('room.waitingForPlayers'), theme.FONT_SIZE_BODY, theme.COLOR_TEXT_DISABLED, false, 0);
       this.emptyText.y = theme.SPACE_SM;
       this.playerList.addChild(this.emptyText);
       return;
@@ -264,7 +271,7 @@ export class RoomScene implements ClientScene {
       const loadoutLabel =
         player.shotType === '' && player.bombType === ''
           ? ''
-          : ` · ${player.shotType || 'default'}/${player.bombType || 'default'}`;
+          : ` · ${player.shotType || t('room.default')}/${player.bombType || t('room.default')}`;
       const name = this.makeText(
         `${player.playerId}${loadoutLabel}`,
         theme.FONT_SIZE_CAPTION,
@@ -287,14 +294,14 @@ export class RoomScene implements ClientScene {
   private attachBadge(body: Laya.Sprite, player: RoomPlayerView, cardWidth: number): void {
     const badges: BadgeHandle[] = [];
     if (player.host) {
-      badges.push(createBadge('HOST', 0, 0, { tone: 'neutral' }));
+      badges.push(createBadge(t('room.badge.host'), 0, 0, { tone: 'neutral' }));
     }
     if (!player.connected) {
-      badges.push(createBadge('OFFLINE', 0, 0, { tone: 'danger' }));
+      badges.push(createBadge(t('room.badge.offline'), 0, 0, { tone: 'danger' }));
     } else if (player.ready) {
-      badges.push(createBadge('READY', 0, 0, { tone: 'success' }));
+      badges.push(createBadge(t('room.badge.ready'), 0, 0, { tone: 'success' }));
     } else {
-      badges.push(createBadge('WAITING', 0, 0, { tone: 'warning' }));
+      badges.push(createBadge(t('room.badge.waiting'), 0, 0, { tone: 'warning' }));
     }
     // Lay the chips out right-to-left so they hug the card's trailing edge,
     // anchored to the card's inner edge — not the sprite edge, which is where
@@ -317,7 +324,8 @@ export class RoomScene implements ClientScene {
   private applySetup(snapshot: LobbyFlowSnapshot, room: RoomView): void {
     const isHost = snapshot.session !== null && snapshot.session.userId === room.hostUserId;
     this.setSetupEnabled(isHost && !this.busy);
-    const bossLabel = ROOM_BOSS_OPTIONS.find((option) => option.id === room.bossId)?.label ?? room.bossId;
+    const bossOption = ROOM_BOSS_OPTIONS.find((option) => option.id === room.bossId);
+    const bossLabel = bossOption !== undefined ? t(bossOption.labelKey) : room.bossId;
     const me = room.players.find((player) => player.userId === snapshot.session?.userId) ?? null;
     const shot = me?.shotType ?? '';
     const bomb = me?.bombType ?? '';
@@ -333,7 +341,11 @@ export class RoomScene implements ClientScene {
     if (bombIndex >= 0) {
       this.bombIndex = bombIndex;
     }
-    this.setupText.text = `Boss: ${room.bossId === '' ? 'Default' : bossLabel} · 自机: ${shot || 'default'} / ${bomb || 'default'}`;
+    this.setupText.text = t('room.setup.summary', {
+      boss: bossLabel,
+      shot: shot || t('room.default'),
+      bomb: bomb || t('room.default'),
+    });
     this.setupText.color = isHost ? theme.COLOR_INFO : theme.COLOR_TEXT_MUTED;
   }
 
@@ -382,7 +394,7 @@ export class RoomScene implements ClientScene {
 
   private async ready(): Promise<void> {
     this.busy = true;
-    this.statusText.text = 'Ready — waiting for match…';
+    this.statusText.text = t('room.readyWaiting');
     await this.options.flow.ready();
     this.busy = false;
     this.applySnapshot(this.options.flow.snapshot());

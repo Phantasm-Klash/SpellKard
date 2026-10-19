@@ -14,9 +14,10 @@
  */
 
 import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow';
+import { t } from '../../../core/game/i18n';
 import type { MatchHistoryEntryView } from '../../../core/net/lobby_client';
 import * as theme from '../view/theme';
-import { createButtonEx, createCaption, createDivider, createPanel, type ButtonHandle } from './ui_kit';
+import { createArtButton, createButtonEx, createCaption, createDivider, createPanel, type ButtonHandle } from './ui_kit';
 import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
 import type { ClientScene } from './scene';
 
@@ -65,14 +66,14 @@ export class RecordsScene implements ClientScene {
     const contentWidth = width - margin * 2;
 
     // --- title band ---
-    const title = this.makeText('Records', theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
+    const title = this.makeText(t('ui.records'), theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
     title.y = margin;
     this.root.addChild(title);
     this.root.addChild(createDivider(margin, title.y + theme.FONT_SIZE_TITLE + theme.SPACE_SM, contentWidth));
 
     // --- summary block ---
     const summaryCaptionY = title.y + theme.FONT_SIZE_TITLE + theme.SPACE_MD;
-    const summaryCaption = createCaption('Career', contentWidth, summaryCaptionY);
+    const summaryCaption = createCaption(t('records.career'), contentWidth, summaryCaptionY);
     summaryCaption.x = margin;
     this.root.addChild(summaryCaption);
 
@@ -86,7 +87,7 @@ export class RecordsScene implements ClientScene {
     // push the action band off-screen.
     const summaryRows = 6;
     const recentCaptionY = summaryY + summaryRows * (SUMMARY_ROW_HEIGHT + theme.SPACE_XS) + theme.SPACE_MD;
-    this.recentCaption = createCaption('Recent matches', contentWidth, recentCaptionY);
+    this.recentCaption = createCaption(t('records.recentMatches'), contentWidth, recentCaptionY);
     this.recentCaption.x = margin;
     this.root.addChild(this.recentCaption);
 
@@ -104,14 +105,15 @@ export class RecordsScene implements ClientScene {
     this.statusText.leading = theme.SPACE_XS;
     this.root.addChild(this.statusText);
 
-    this.refreshButton = createButtonEx('Refresh', margin, actionsY, contentWidth, () => void this.refresh());
+    this.refreshButton = createButtonEx(t('records.refresh'), margin, actionsY, contentWidth, () => void this.refresh());
     this.root.addChild(this.refreshButton.sprite);
-    this.backButton = createButtonEx(
-      'Back to lobby',
+    this.backButton = createArtButton(
+      t('ui.backToLobby'),
       margin,
       actionsY + theme.BUTTON_HEIGHT + theme.SPACE_MD,
       contentWidth,
       () => this.options.flow.backToLobby(),
+      'back',
       'ghost',
     );
     this.root.addChild(this.backButton.sprite);
@@ -150,22 +152,22 @@ export class RecordsScene implements ClientScene {
     this.summaryHost.removeChildren();
     const contentWidth = this.width - theme.SCREEN_MARGIN * 2;
     if (view === null) {
-      this.summaryHost.addChild(this.emptyLine('Loading records…', 0));
+      this.summaryHost.addChild(this.emptyLine(t('records.loading'), 0));
       return;
     }
     const records = [
-      ['Gold', `${view.gold}`],
-      ['Tickets', `${view.tickets}`],
-      ['Points', `${view.points} (${view.ratingCode || '-'})`],
-      ['Season', view.seasonId || '-'],
-      ['Matches', `${view.matchesPlayed}`],
-      ['W-L-D', `${view.wins}-${view.losses}-${view.draws}`],
-      ['Win rate', `${(view.winRate * 100).toFixed(1)}%`],
-      ['Best score', `${view.bestScore}`],
-      ['Average score', `${view.averageScore.toFixed(1)}`],
-      ['Graze · Hit', `${view.totalGraze} · ${view.totalHits}`],
-      ['Damage · Cards', `${view.totalDamageDealt} · ${view.totalCardPlays}`],
-      ['Decks · Cards', `${view.deckCount} · ${view.cardCount}`],
+      [t('records.gold'), `${view.gold}`],
+      [t('records.tickets'), `${view.tickets}`],
+      [t('records.points'), `${view.points} (${view.ratingCode || '-'})`],
+      [t('records.season'), view.seasonId || '-'],
+      [t('records.matches'), `${view.matchesPlayed}`],
+      [t('records.wld'), `${view.wins}-${view.losses}-${view.draws}`],
+      [t('records.winRate'), `${(view.winRate * 100).toFixed(1)}%`],
+      [t('records.bestScore'), `${view.bestScore}`],
+      [t('records.averageScore'), `${view.averageScore.toFixed(1)}`],
+      [t('records.grazeHit'), `${view.totalGraze} · ${view.totalHits}`],
+      [t('records.damageCards'), `${view.totalDamageDealt} · ${view.totalCardPlays}`],
+      [t('records.decksCards'), `${view.deckCount} · ${view.cardCount}`],
     ] as const;
 
     records.forEach(([label, value], index) => {
@@ -189,9 +191,9 @@ export class RecordsScene implements ClientScene {
   /** Repaints the recent-match list (capped at {@link RECENT_LIMIT}). */
   private rebuildRecent(entries: MatchHistoryEntryView[]): void {
     this.recentHost.removeChildren();
-    this.recentCaption.text = `Recent matches (${entries.length})`;
+    this.recentCaption.text = t('records.recentMatchesCount', { count: entries.length });
     if (entries.length === 0) {
-      this.recentHost.addChild(this.emptyLine('No matches yet', 0));
+      this.recentHost.addChild(this.emptyLine(t('records.noMatches'), 0));
       return;
     }
     const contentWidth = this.width - theme.SCREEN_MARGIN * 2;
@@ -203,7 +205,7 @@ export class RecordsScene implements ClientScene {
 
       const resultColor = resultColour(entry.result);
       const resultText = this.makeText(
-        entry.result.toUpperCase() || '-',
+        resultLabel(entry.result) || '-',
         theme.SPACE_XL,
         resultColor,
         true,
@@ -227,11 +229,11 @@ export class RecordsScene implements ClientScene {
 
       if (entry.hasDem && this.options.onOpenDemPlayer !== undefined) {
         const download = createButtonEx(
-          'Download .dem',
+          t('ui.downloadDem'),
           contentWidth - DEM_BUTTON_WIDTH - theme.SPACE_SM,
           3,
           DEM_BUTTON_WIDTH,
-          () => this.options.onOpenDemPlayer?.(entry.matchId, `match ${entry.matchId}`),
+          () => this.options.onOpenDemPlayer?.(entry.matchId, t('ui.matchLabel', { id: entry.matchId })),
           'ghost',
           RECENT_ROW_HEIGHT - 6,
         );
@@ -317,13 +319,27 @@ function resultColour(result: string): string {
   }
 }
 
+/** Chip label for a `win` / `loss` / `draw` result; unknown values pass through upper-cased. */
+function resultLabel(result: string): string {
+  switch (result) {
+    case 'win':
+      return t('records.result.win');
+    case 'loss':
+      return t('records.result.loss');
+    case 'draw':
+      return t('records.result.draw');
+    default:
+      return result.toUpperCase();
+  }
+}
+
 /** `match abc123 · mvp_boss_race · 42s · 1200 pts · +12` */
 export function formatRecentEntry(entry: MatchHistoryEntryView): string {
   const parts = [
     entry.matchId || '-',
     entry.modeId || '-',
-    `${Math.round(entry.durationTicks / 60)}s`,
-    `${entry.score} pts`,
+    t('records.unit.seconds', { seconds: Math.round(entry.durationTicks / 60) }),
+    t('records.unit.points', { points: entry.score }),
   ];
   if (entry.rankDelta !== 0) {
     parts.push(`${entry.rankDelta > 0 ? '+' : ''}${entry.rankDelta}`);

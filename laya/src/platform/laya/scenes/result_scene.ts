@@ -10,8 +10,10 @@
  */
 
 import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow';
+import { t } from '../../../core/game/i18n';
 import * as theme from '../view/theme';
 import {
+  createArtButton,
   createBadge,
   createButtonEx,
   createDivider,
@@ -73,7 +75,7 @@ export class ResultScene implements ClientScene {
     const contentWidth = width - margin * 2;
 
     // --- title band ---
-    const title = this.makeText('Match result', theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
+    const title = this.makeText(t('result.title'), theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
     title.y = margin;
     this.root.addChild(title);
     this.root.addChild(createDivider(margin, title.y + theme.FONT_SIZE_TITLE + theme.SPACE_SM, contentWidth));
@@ -108,14 +110,14 @@ export class ResultScene implements ClientScene {
 
     this.leftCard = new Laya.Sprite();
     this.leftCard.pos(margin, this.cardY);
-    this.leftTitle = this.makeText('Your stats', columnWidth, theme.COLOR_TITLE, true, 0);
+    this.leftTitle = this.makeText(t('result.yourStats'), columnWidth, theme.COLOR_TITLE, true, 0);
     this.leftTitle.y = theme.SPACE_SM;
     this.leftCard.addChild(this.leftTitle);
     this.root.addChild(this.leftCard);
 
     this.rightCard = new Laya.Sprite();
     this.rightCard.pos(margin + columnWidth + gap, this.cardY);
-    this.rightTitle = this.makeText('Opponent', columnWidth, theme.COLOR_TITLE, true, 0);
+    this.rightTitle = this.makeText(t('result.opponent'), columnWidth, theme.COLOR_TITLE, true, 0);
     this.rightTitle.y = theme.SPACE_SM;
     this.rightCard.addChild(this.rightTitle);
     this.root.addChild(this.rightCard);
@@ -125,7 +127,7 @@ export class ResultScene implements ClientScene {
     this.root.addChild(this.divider);
 
     // `No result yet` uses a single centred notice panel instead of the columns.
-    this.metaText = this.makeText('No result yet', theme.FONT_SIZE_HEADING, theme.COLOR_TEXT_DISABLED, false, margin);
+    this.metaText = this.makeText(t('result.noResult'), theme.FONT_SIZE_HEADING, theme.COLOR_TEXT_DISABLED, false, margin);
     this.metaText.align = 'center';
     this.metaText.y = this.cardY + this.cardHeight / 2 - theme.FONT_SIZE_HEADING / 2;
     this.root.addChild(this.metaText);
@@ -136,19 +138,20 @@ export class ResultScene implements ClientScene {
     const buttonGap = theme.SPACE_SM;
     const buttonWidth = Math.floor((contentWidth - buttonGap) / 2);
     const actionY = height - margin - theme.BUTTON_HEIGHT;
-    this.demButton = createButtonEx('Download .dem', margin, actionY, buttonWidth, () => {
+    this.demButton = createButtonEx(t('ui.downloadDem'), margin, actionY, buttonWidth, () => {
       if (this.demReplayId !== '') {
         this.options.onOpenDemPlayer?.(this.demReplayId, this.demLabel);
       }
     }, 'ghost');
     this.demButton.sprite.visible = false;
     this.root.addChild(this.demButton.sprite);
-    this.backButton = createButtonEx(
-      'Back to lobby',
+    this.backButton = createArtButton(
+      t('ui.backToLobby'),
       margin + buttonWidth + buttonGap,
       actionY,
       buttonWidth,
       () => this.options.flow.backToLobby(),
+      'back',
       'ghost',
     );
     this.root.addChild(this.backButton.sprite);
@@ -183,12 +186,12 @@ export class ResultScene implements ClientScene {
   applySnapshot(snapshot: LobbyFlowSnapshot): void {
     const result = snapshot.result;
     if (result === null) {
-      this.headline.text = 'No result yet';
+      this.headline.text = t('result.noResult');
       this.headline.color = theme.COLOR_TEXT_DISABLED;
       this.badgeHost.visible = false;
       this.setColumnsVisible(false);
       this.metaText.visible = true;
-      this.metaText.text = 'No result yet';
+      this.metaText.text = t('result.noResult');
       this.metaText.fontSize = theme.FONT_SIZE_HEADING;
       this.metaText.y = this.cardY + this.cardHeight / 2 - theme.FONT_SIZE_HEADING / 2;
       this.demReplayId = '';
@@ -199,7 +202,7 @@ export class ResultScene implements ClientScene {
     // host wired a player opener.
     const canDownload = result.replayId !== '' && this.options.onOpenDemPlayer !== undefined;
     this.demReplayId = canDownload ? result.replayId : '';
-    this.demLabel = `match ${result.matchId || result.replayId}`;
+    this.demLabel = t('ui.matchLabel', { id: result.matchId || result.replayId });
     this.demButton.sprite.visible = canDownload;
 
     this.metaText.visible = false;
@@ -218,27 +221,30 @@ export class ResultScene implements ClientScene {
     const localId = signedInId !== '' ? signedInId : scoreIds[0] ?? '';
     const opponentId = scoreIds.find((id) => id !== localId) ?? '';
     const won = localId !== '' && result.winnerPlayerId === localId;
-    this.headline.text = won ? 'Victory!' : 'Defeat';
+    this.headline.text = won ? t('result.victory') : t('result.defeat');
     this.headline.color = won ? theme.COLOR_ACCENT : theme.COLOR_DANGER;
 
     this.badgeHost.removeChildren();
-    const badge = createBadge(won ? 'VICTORY' : 'DEFEAT', 0, 0, { tone: won ? 'success' : 'danger' });
+    const badge = createBadge(won ? t('result.badge.victory') : t('result.badge.defeat'), 0, 0, { tone: won ? 'success' : 'danger' });
     // Centre the pill under the headline.
     badge.sprite.x = Math.floor((this.width - badge.width) / 2);
     this.badgeHost.addChild(badge.sprite);
 
-    this.renderColumn(this.leftCard, 'Your stats', [
-      ['Winner', result.winnerPlayerId || '-'],
-      ['Your score', this.formatScore(result.points[localId])],
-      ['Match', result.matchId || '-'],
+    this.renderColumn(this.leftCard, t('result.yourStats'), [
+      [t('result.row.winner'), result.winnerPlayerId || '-'],
+      [t('result.row.yourScore'), this.formatScore(result.points[localId])],
+      [t('result.row.match'), result.matchId || '-'],
     ]);
-    this.renderColumn(this.rightCard, 'Opponent', [
-      ['Opponent', opponentId || '-'],
-      ['Score', opponentId ? this.formatScore(result.points[opponentId]) : '-'],
-      ['Replay', result.replayId || '-'],
+    this.renderColumn(this.rightCard, t('result.opponent'), [
+      [t('result.row.opponent'), opponentId || '-'],
+      [t('result.row.score'), opponentId ? this.formatScore(result.points[opponentId]) : '-'],
+      [t('result.row.replay'), result.replayId || '-'],
     ]);
 
-    this.metaText.text = `${result.serverAuthoritative ? 'Server authoritative' : 'Client authoritative'} · settled ${result.settledAtMs}ms`;
+    this.metaText.text = t('result.meta', {
+      source: result.serverAuthoritative ? t('result.serverAuthoritative') : t('result.clientAuthoritative'),
+      ms: result.settledAtMs,
+    });
     this.metaText.color = theme.COLOR_TEXT_MUTED;
     this.metaText.fontSize = theme.FONT_SIZE_CAPTION;
     this.metaText.y = this.cardY + this.cardHeight + theme.SPACE_MD;
