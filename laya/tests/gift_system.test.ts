@@ -19,6 +19,7 @@ import {
   giftGlyphPath,
 } from '../src/core/game/gift_bar_view';
 import type { MatchEventView } from '../src/core/game/battle_events';
+import { matchGiftPayload } from '../src/core/net/lobby_client';
 import {
   GIFT_ASSET_DIR,
   GIFT_NATIVE_ROOT,
@@ -236,4 +237,48 @@ test('gift asset roots and urls resolve per deployment', () => {
   // A leading slash joins identically (the `gifts` segment is never doubled).
   expectEqual(giftIconUrl('/gift_heart.png', false), 'layaide/assets/resources/gifts/gift_heart.png');
   expectEqual(giftIconUrlAt(GIFT_NATIVE_ROOT, 'gift_star.png'), 'resources/gifts/gift_star.png');
+});
+
+suite('gift wire contract with the lobby');
+
+test('the gift payload keys match what the lobby reads', () => {
+  // The lobby's ModeActionRequest (runtime/core/types.go) reads `action_type`
+  // and `payload`, and applyGiftLocked (runtime/core/service.go) reads
+  // `payload["gift_id"]`. Neither side's unit test sees the other's keys, so
+  // this pins the seam: a rename on either side fails here, not in a live match.
+  const payload = matchGiftPayload('match-1', 'heart', 'mvp_boss_race');
+  expectEqual(payload['action_type'], 'gift');
+  expectEqual(payload['match_id'], 'match-1');
+  expectEqual(payload['mode_id'], 'mvp_boss_race');
+  expectEqual(payload['client_result_authoritative'], false);
+  const inner = payload['payload'];
+  expect(typeof inner === 'object' && inner !== null, 'payload is an object');
+  const gift = (inner as Record<string, unknown>)['gift_id'];
+  expectEqual(gift, 'heart');
+  // No extra keys: an unknown key is silently ignored today, which is how a
+  // typo survives review.
+  expectEqual(Object.keys(payload).sort().join(','), 'action_type,client_result_authoritative,match_id,mode_id,payload');
+});
+
+test('the client catalog is the lobby catalog, id for id', () => {
+  // runtime/core/gifts.go is the server-side table. If a gift is added there
+  // and not here (or priced differently) the bar either shows nothing or the
+  // lobby rejects a legitimate send.
+  const server: Record<string, number> = {
+    heart: 1,
+    star: 1,
+    ribbon: 1,
+    lantern: 2,
+    wand: 2,
+    cup: 3,
+  };
+  const client = giftCatalog();
+  expectEqual(client.length, Object.keys(server).length);
+  for (const definition of client) {
+    expect(definition.giftId in server, `${definition.giftId} exists on the lobby`);
+    expectEqual(definition.cost, server[definition.giftId], `${definition.giftId} price`);
+  }
+  for (const id of Object.keys(server)) {
+    expect(isKnownGift(id), `${id} is sendable by this build`);
+  }
 });
