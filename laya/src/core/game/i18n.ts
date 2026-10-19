@@ -324,6 +324,29 @@ export interface Messages {
   'ui.createAccount': string;
   'ui.play': string;
   'ui.records': string;
+  'gacha.title': string;
+  'gacha.pools': string;
+  'gacha.pool.cards': string;
+  'gacha.pool.characters': string;
+  'gacha.wallet': string;
+  'gacha.kind.cards': string;
+  'gacha.kind.characters': string;
+  'gacha.odds': string;
+  'gacha.costLine': string;
+  'gacha.pity': string;
+  'gacha.lastPull': string;
+  'gacha.noPulls': string;
+  'gacha.roster': string;
+  'gacha.rosterLine': string;
+  'gacha.exchangePick': string;
+  'gacha.exchangeNeed': string;
+  'gacha.allUnlocked': string;
+  'gacha.pullSingle': string;
+  'gacha.pullTen': string;
+  'gacha.back': string;
+  'gacha.result.new': string;
+  'gacha.result.dupeFaith': string;
+  'gacha.result.dupeDust': string;
   'ui.shop': string;
   'ui.settings': string;
   'ui.back': string;
@@ -662,6 +685,29 @@ const ZH_HANS: Messages = {
   'ui.createAccount': '创建账号',
   'ui.play': '开始',
   'ui.records': '战绩',
+  'gacha.title': '寻觅 · 抽卡',
+  'gacha.pools': '卡池',
+  'gacha.pool.cards': '卡牌池',
+  'gacha.pool.characters': '角色池',
+  'gacha.wallet': '辉玉 {gems} · 信仰 {faith} · 卡尘 {dust}',
+  'gacha.kind.cards': '20 张卡牌',
+  'gacha.kind.characters': '52 个自机 · A1/A2/B1/B2',
+  'gacha.odds': '{kind} · {odds}',
+  'gacha.costLine': '单抽 {single} / 十连 {ten}',
+  'gacha.pity': '保底：{rare} 抽内必出 SSR+ · {epic} 抽内必出 UR · 十连必出 SSR+',
+  'gacha.lastPull': '本次结果',
+  'gacha.noPulls': '还没有抽过 —— 结果全部由服务器判定',
+  'gacha.roster': '名册 · 信仰兑换',
+  'gacha.rosterLine': '已拥有 {owned}/52 · 信仰 {faith} · 兑换需 {cost}',
+  'gacha.exchangePick': '信仰兑换 —— 选一个未解锁自机（{cost} 信仰）',
+  'gacha.exchangeNeed': '信仰不足：需要 {cost}，当前 {faith}（每抽 +1）',
+  'gacha.allUnlocked': '52 个自机已全部解锁',
+  'gacha.pullSingle': '单抽 · {cost}',
+  'gacha.pullTen': '十连 · {cost}',
+  'gacha.back': '返回大厅',
+  'gacha.result.new': '[{rarity}] {name} —— 新获得',
+  'gacha.result.dupeFaith': '[{rarity}] {name} —— 重复 → +{faith} 信仰',
+  'gacha.result.dupeDust': '[{rarity}] {name} —— 重复 → +{dust} 卡尘',
   'ui.shop': '商店',
   'ui.settings': '设置',
   'ui.back': '返回',
@@ -965,6 +1011,29 @@ const ZH_HANT: Messages = {
   'ui.createAccount': '註冊帳號',
   'ui.play': '開始',
   'ui.records': '戰績',
+  'gacha.title': '尋覓 · 抽卡',
+  'gacha.pools': '卡池',
+  'gacha.pool.cards': '卡牌池',
+  'gacha.pool.characters': '角色池',
+  'gacha.wallet': '輝玉 {gems} · 信仰 {faith} · 卡塵 {dust}',
+  'gacha.kind.cards': '20 張卡牌',
+  'gacha.kind.characters': '52 個自機 · A1/A2/B1/B2',
+  'gacha.odds': '{kind} · {odds}',
+  'gacha.costLine': '單抽 {single} / 十連 {ten}',
+  'gacha.pity': '保底：{rare} 抽內必出 SSR+ · {epic} 抽內必出 UR · 十連必出 SSR+',
+  'gacha.lastPull': '本次結果',
+  'gacha.noPulls': '還沒有抽過 —— 結果全部由伺服器判定',
+  'gacha.roster': '名冊 · 信仰兌換',
+  'gacha.rosterLine': '已擁有 {owned}/52 · 信仰 {faith} · 兌換需 {cost}',
+  'gacha.exchangePick': '信仰兌換 —— 選一個未解鎖自機（{cost} 信仰）',
+  'gacha.exchangeNeed': '信仰不足：需要 {cost}，目前 {faith}（每抽 +1）',
+  'gacha.allUnlocked': '52 個自機已全部解鎖',
+  'gacha.pullSingle': '單抽 · {cost}',
+  'gacha.pullTen': '十連 · {cost}',
+  'gacha.back': '返回大廳',
+  'gacha.result.new': '[{rarity}] {name} —— 新獲得',
+  'gacha.result.dupeFaith': '[{rarity}] {name} —— 重複 → +{faith} 信仰',
+  'gacha.result.dupeDust': '[{rarity}] {name} —— 重複 → +{dust} 卡塵',
   'ui.shop': '商店',
   'ui.settings': '設定',
   'ui.back': '返回',
@@ -1268,6 +1337,29 @@ const JA: Messages = {
   'ui.createAccount': 'アカウント作成',
   'ui.play': '開始',
   'ui.records': '戦績',
+  'gacha.title': '探訪 · ガチャ',
+  'gacha.pools': 'カードプール',
+  'gacha.pool.cards': 'カード',
+  'gacha.pool.characters': 'キャラクター',
+  'gacha.wallet': '輝玉 {gems} · 信仰 {faith} · ダスト {dust}',
+  'gacha.kind.cards': '20 枚のカード',
+  'gacha.kind.characters': '52 体の自機 · A1/A2/B1/B2',
+  'gacha.odds': '{kind} · {odds}',
+  'gacha.costLine': '1 回 {single} / 10 連 {ten}',
+  'gacha.pity': '天井：SSR+ は {rare} 回以内 · UR は {epic} 回以内 · 10 連は SSR+ 確定',
+  'gacha.lastPull': '今回の結果',
+  'gacha.noPulls': 'まだ引いていません — 結果はすべてサーバーが決定します',
+  'gacha.roster': '名簿 · 信仰交換',
+  'gacha.rosterLine': '所持 {owned}/52 · 信仰 {faith} · 交換に {cost}',
+  'gacha.exchangePick': '信仰交換 — 未解放の自機を選択（{cost} 信仰）',
+  'gacha.exchangeNeed': '信仰不足：必要 {cost}、現在 {faith}（1 回ごとに +1）',
+  'gacha.allUnlocked': '52 体すべて解放済み',
+  'gacha.pullSingle': '1 回 · {cost}',
+  'gacha.pullTen': '10 連 · {cost}',
+  'gacha.back': 'ロビーに戻る',
+  'gacha.result.new': '[{rarity}] {name} — 新規',
+  'gacha.result.dupeFaith': '[{rarity}] {name} — 重複 → +{faith} 信仰',
+  'gacha.result.dupeDust': '[{rarity}] {name} — 重複 → +{dust} ダスト',
   'ui.shop': '商店',
   'ui.settings': '設定',
   'ui.back': '戻る',
@@ -1584,6 +1676,29 @@ const EN: Messages = {
   'ui.createAccount': 'Create account',
   'ui.play': 'Play',
   'ui.records': 'Records',
+  'gacha.title': 'Totems · Gacha',
+  'gacha.pools': 'Pools',
+  'gacha.pool.cards': 'Card Totem',
+  'gacha.pool.characters': 'Character Totem',
+  'gacha.wallet': 'gems {gems} · faith {faith} · dust {dust}',
+  'gacha.kind.cards': '20-card catalog',
+  'gacha.kind.characters': '52 player shots · A1/A2/B1/B2',
+  'gacha.odds': '{kind} · {odds}',
+  'gacha.costLine': '{single} ×1 / {ten} ×10',
+  'gacha.pity': 'pity · SSR+ in ≤{rare} · UR in ≤{epic} · ten-pull rare+ guaranteed',
+  'gacha.lastPull': 'Last pull',
+  'gacha.noPulls': 'No pulls yet — the server owns every roll.',
+  'gacha.roster': 'Roster · faith exchange',
+  'gacha.rosterLine': 'owned {owned}/52 · faith {faith} · exchange {cost}',
+  'gacha.exchangePick': 'Faith exchange — pick a locked shot ({cost} faith):',
+  'gacha.exchangeNeed': 'Need {cost} faith (have {faith}); pull to earn 1 per draw.',
+  'gacha.allUnlocked': 'All 52 shots unlocked.',
+  'gacha.pullSingle': 'Pull ×1 · {cost}',
+  'gacha.pullTen': 'Pull ×10 · {cost}',
+  'gacha.back': 'Back to lobby',
+  'gacha.result.new': '[{rarity}] {name} — NEW',
+  'gacha.result.dupeFaith': '[{rarity}] {name} — dupe → +{faith} faith',
+  'gacha.result.dupeDust': '[{rarity}] {name} — dupe → +{dust} dust',
   'ui.shop': 'Shop',
   'ui.settings': 'Settings',
   'ui.back': 'Back',

@@ -28,6 +28,7 @@ import {
   shotLabel,
   type GachaRarity,
 } from '../../../core/game/gacha_model';
+import { t } from '../../../core/game/i18n';
 import * as theme from '../view/theme';
 import { createButtonEx, createCaption, createDivider, createPanel, type ButtonHandle } from './ui_kit';
 import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
@@ -93,7 +94,7 @@ export class GachaScene implements ClientScene {
     const contentWidth = width - margin * 2;
 
     // --- title band ---
-    const title = this.makeText('Totems · 寻觅', theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
+    const title = this.makeText(t('gacha.title'), theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
     title.y = margin;
     this.root.addChild(title);
     this.root.addChild(createDivider(margin, title.y + theme.FONT_SIZE_TITLE + theme.SPACE_SM, contentWidth));
@@ -108,7 +109,7 @@ export class GachaScene implements ClientScene {
 
     // --- pool tabs ---
     const tabY = walletY + 44 + theme.SPACE_SM;
-    const tabCaption = createCaption('Pools', contentWidth, tabY);
+    const tabCaption = createCaption(t('gacha.pools'), contentWidth, tabY);
     tabCaption.x = margin;
     this.root.addChild(tabCaption);
     this.poolTabHost = new Laya.Sprite();
@@ -133,7 +134,7 @@ export class GachaScene implements ClientScene {
 
     // --- last pull results ---
     const resultCaptionY = this.pityText.y + theme.FONT_SIZE_CAPTION * 2 + theme.SPACE_SM;
-    const resultCaption = createCaption('Last pull', contentWidth, resultCaptionY);
+    const resultCaption = createCaption(t('gacha.lastPull'), contentWidth, resultCaptionY);
     resultCaption.x = margin;
     this.root.addChild(resultCaption);
     this.resultHost = new Laya.Sprite();
@@ -142,7 +143,7 @@ export class GachaScene implements ClientScene {
 
     // --- roster + faith exchange ---
     const rosterCaptionY = this.resultHost.y + RESULT_ROW_HEIGHT * MAX_RESULT_ROWS + theme.SPACE_SM;
-    const rosterCaption = createCaption('Roster · faith exchange', contentWidth, rosterCaptionY);
+    const rosterCaption = createCaption(t('gacha.roster'), contentWidth, rosterCaptionY);
     rosterCaption.x = margin;
     this.root.addChild(rosterCaption);
     this.rosterText = this.makeText('', theme.FONT_SIZE_CAPTION, theme.COLOR_TEXT_MUTED, false, margin);
@@ -164,7 +165,7 @@ export class GachaScene implements ClientScene {
 
     const buttonWidth = (contentWidth - theme.SPACE_SM * 2) / 3;
     this.singleButton = createButtonEx(
-      `Pull ×1 · ${GACHA_SINGLE_COST_GEMS}`,
+      t('gacha.pullSingle', { cost: GACHA_SINGLE_COST_GEMS }),
       margin,
       actionsY,
       buttonWidth,
@@ -173,7 +174,7 @@ export class GachaScene implements ClientScene {
     );
     this.root.addChild(this.singleButton.sprite);
     this.tenButton = createButtonEx(
-      `Pull ×10 · ${GACHA_TEN_COST_GEMS}`,
+      t('gacha.pullTen', { cost: GACHA_TEN_COST_GEMS }),
       margin + buttonWidth + theme.SPACE_SM,
       actionsY,
       buttonWidth,
@@ -182,7 +183,7 @@ export class GachaScene implements ClientScene {
     );
     this.root.addChild(this.tenButton.sprite);
     this.backButton = createButtonEx(
-      'Back to lobby',
+      t('gacha.back'),
       margin + (buttonWidth + theme.SPACE_SM) * 2,
       actionsY,
       buttonWidth,
@@ -269,7 +270,7 @@ export class GachaScene implements ClientScene {
     this.tabButtons = [];
     const buttonWidth = (this.width - theme.SCREEN_MARGIN * 2 - theme.SPACE_SM) / Math.max(pools.length, 1);
     pools.forEach((pool, index) => {
-      const label = pool.poolId === GACHA_CARD_POOL_ID ? 'Card Totem' : 'Character Totem';
+      const label = pool.poolId === GACHA_CARD_POOL_ID ? t('gacha.pool.cards') : t('gacha.pool.characters');
       const button = createButtonEx(
         label,
         index * (buttonWidth + theme.SPACE_SM),
@@ -296,8 +297,11 @@ export class GachaScene implements ClientScene {
     const odds = order
       .map((rarity) => `${RARITY_LABELS[rarity]} ${gachaPercent(mirror.weights[rarity], total)}`)
       .join(' · ');
-    const kindLine = pool.kind === 'character' ? '52 player shots · A1/A2/B1/B2' : '20-card catalog';
-    return `${kindLine}\n${odds}\ncost ${pool.costGems} ×1 / ${pool.costTenGems} ×10 · x10 guarantees one SSR+`;
+    const kindLine = pool.kind === 'character' ? t('gacha.kind.characters') : t('gacha.kind.cards');
+    return [
+      t('gacha.odds', { kind: kindLine, odds }),
+      t('gacha.costLine', { single: pool.costGems, ten: pool.costTenGems }),
+    ].join('\n');
   }
 
   private pityLine(
@@ -311,19 +315,19 @@ export class GachaScene implements ClientScene {
     const counter = counters[pool.poolId];
     const rareLeft = Math.max(mirror.pity.rareEvery - (counter?.rareCounter ?? 0), 0);
     const epicLeft = Math.max(mirror.pity.epicEvery - (counter?.epicCounter ?? 0), 0);
-    return `pity · SSR+ in ≤${rareLeft} pull(s) · UR in ≤${epicLeft} pull(s) · ten-pull rare+ guaranteed`;
+    return t('gacha.pity', { rare: rareLeft, epic: epicLeft });
   }
 
   private walletLine(wallet: Record<string, number>, faith: number): string {
     const gems = wallet['gems'] ?? 0;
     const dust = wallet['card_dust'] ?? 0;
-    return `gems ${gems} · faith ${faith} · card dust ${dust}`;
+    return t('gacha.wallet', { gems, faith, dust });
   }
 
   private rebuildResults(lastPull: LobbyFlowSnapshot['gachaLastPull']): void {
     this.resultHost.removeChildren();
     if (lastPull === null || lastPull.results.length === 0) {
-      const empty = this.makeText('No pulls yet — the server owns every roll.', this.width, theme.COLOR_TEXT_DISABLED, false, 0);
+      const empty = this.makeText(t('gacha.noPulls'), this.width, theme.COLOR_TEXT_DISABLED, false, 0);
       empty.fontSize = theme.FONT_SIZE_CAPTION;
       this.resultHost.addChild(empty);
       return;
@@ -355,14 +359,14 @@ export class GachaScene implements ClientScene {
     if (result.kind === 'character') {
       const name = shotLabel(result.shotId);
       if (result.isNew) {
-        return `[${rarity}] ${name} — NEW`;
+        return t('gacha.result.new', { rarity, name });
       }
-      return `[${rarity}] ${name} — dupe → +${result.faithGained} faith`;
+      return t('gacha.result.dupeFaith', { rarity, name, faith: result.faithGained });
     }
     if (result.isNew) {
-      return `[${rarity}] ${result.cardId} — NEW`;
+      return t('gacha.result.new', { rarity, name: result.cardId });
     }
-    return `[${rarity}] ${result.cardId} — dupe → +${result.dust} dust`;
+    return t('gacha.result.dupeDust', { rarity, name: result.cardId, dust: result.dust });
   }
 
   private rebuildRoster(roster: CharacterRosterView | null): void {
@@ -371,11 +375,12 @@ export class GachaScene implements ClientScene {
       this.exchangeHost.removeChildren();
       return;
     }
-    const total = 52;
     this.rosterText.text =
-      `owned ${roster.shots.length}/${total} shots · faith ${roster.faith}` +
-      ` · exchange cost ${roster.exchangeCostFaith || GACHA_FAITH_EXCHANGE_COST} faith` +
-      ` · starter: 博丽灵梦 A`;
+      t('gacha.rosterLine', {
+        owned: roster.shots.length,
+        faith: roster.faith,
+        cost: roster.exchangeCostFaith || GACHA_FAITH_EXCHANGE_COST,
+      });
     this.rebuildExchange(roster);
   }
 
@@ -383,7 +388,7 @@ export class GachaScene implements ClientScene {
     this.exchangeHost.removeChildren();
     const locked = roster.lockedShotIds;
     if (locked.length === 0) {
-      const done = this.makeText('All 52 shots unlocked.', this.width, theme.COLOR_SUCCESS, false, 0);
+      const done = this.makeText(t('gacha.allUnlocked'), this.width, theme.COLOR_SUCCESS, false, 0);
       done.fontSize = theme.FONT_SIZE_CAPTION;
       this.exchangeHost.addChild(done);
       return;
@@ -391,8 +396,8 @@ export class GachaScene implements ClientScene {
     const affordable = roster.faith >= GACHA_FAITH_EXCHANGE_COST;
     const caption = this.makeText(
       affordable
-        ? `Faith exchange — pick a locked shot (${GACHA_FAITH_EXCHANGE_COST} faith):`
-        : `Faith exchange — need ${GACHA_FAITH_EXCHANGE_COST} faith (have ${roster.faith}); pull to earn 1 per draw.`,
+        ? t('gacha.exchangePick', { cost: GACHA_FAITH_EXCHANGE_COST })
+        : t('gacha.exchangeNeed', { cost: GACHA_FAITH_EXCHANGE_COST, faith: roster.faith }),
       this.width,
       affordable ? theme.COLOR_TEXT_MUTED : theme.COLOR_TEXT_DISABLED,
       false,
