@@ -42,6 +42,7 @@
 
 import * as theme from '../view/theme';
 import { VectorPainter, mix } from '../view/sprites';
+import { drawArtIcon, iconNameForLabel, type ArtIconName } from '../view/art_icons';
 
 // ---------------------------------------------------------------------------
 // Handles
@@ -214,6 +215,7 @@ function createButtonInternal(
   onClick: () => void,
   variant: ButtonVariant,
   initialHeight: number,
+  iconName?: ArtIconName,
 ): ButtonHandle {
   // Mutable so `setSize` can resize an existing handle instead of the caller
   // having to tear it down and rebuild it (which used to lose hover/pressed
@@ -232,49 +234,78 @@ function createButtonInternal(
 
   const label = new Laya.Text();
   label.text = text;
-  label.fontSize = theme.FONT_SIZE_BODY;
-  label.align = 'center';
+  label.font = theme.FONT_DISPLAY;
+  label.fontSize = theme.FONT_SIZE_BUTTON;
+  label.align = 'left';
   label.valign = 'middle';
   label.width = width;
   label.height = height;
   label.pos(0, 0);
+
+  // The seal plate: a vermillion rounded square carrying the icon. An icon is
+  // derived from the label when the caller does not name one, so a scene that
+  // only passes text still stops being a bare rectangle.
+  const icon: ArtIconName | null = iconName ?? iconNameForLabel(text);
+  const iconLayer = new Laya.Sprite();
+  sprite.addChild(iconLayer);
 
   const palette = variantPalette(variant);
   let enabled = true;
   let hover = false;
   let pressed = false;
 
+  // Plaque geometry. `pad` insets the seal plate; the label starts after it.
+  const pad = Math.max(7, Math.round(height * 0.18));
+  const sealSize = height - pad * 2;
+  const sealRadius = Math.round(sealSize * 0.28);
+  const labelX = icon === null ? pad : pad + sealSize + Math.round(sealSize * 0.45);
+
   const redraw = (): void => {
     const g = sprite.graphics;
     g.clear();
-    const radius = theme.RADIUS_SM;
+    iconLayer.graphics.clear();
+    // A soft plaque, not a 4-px square corner: this is what makes the row of
+    // buttons read as carved plaques instead of form fields.
+    const radius = Math.max(theme.RADIUS_MD, Math.round(height * 0.34));
     if (!enabled) {
-      VectorPainter.roundedPanel(
-        g,
-        0,
-        0,
-        width,
-        height,
-        radius,
-        palette.disabled,
-        theme.COLOR_DIVIDER,
-        1,
-      );
+      VectorPainter.roundedPanel(g, 0, 0, width, height, radius, palette.disabled, theme.COLOR_DIVIDER, 1);
       label.color = theme.COLOR_TEXT_DISABLED;
+      if (icon !== null) {
+        drawArtIcon(iconLayer.graphics, icon, pad + sealSize / 2, pad + sealSize / 2, sealSize * 0.62, theme.COLOR_TEXT_DISABLED);
+      }
       return;
     }
     // Lighten on hover, darken while pressed.
     let base = palette.base;
     let border = palette.border;
+    let sealFill = theme.COLOR_SEAL;
+    let sealEdge = theme.COLOR_SEAL_DEEP;
+    let labelTone = palette.text;
     if (pressed) {
-      base = mix(palette.base, theme.COLOR_VOID, 0.28);
+      base = mix(palette.base, theme.COLOR_VOID, 0.3);
       border = mix(palette.border, theme.COLOR_VOID, 0.18);
+      sealFill = theme.COLOR_SEAL_DEEP;
+      labelTone = mix(palette.text, theme.COLOR_VOID, 0.25);
     } else if (hover) {
       base = mix(palette.base, theme.COLOR_ACCENT, 0.14);
-      border = mix(palette.border, theme.COLOR_ACCENT, 0.5);
+      border = theme.COLOR_ACCENT;
+      sealFill = mix(theme.COLOR_SEAL, theme.COLOR_ACCENT, 0.22);
+      labelTone = theme.COLOR_ACCENT;
     }
     VectorPainter.roundedPanel(g, 0, 0, width, height, radius, base, border, 2);
-    label.color = palette.text;
+    // A hairline of accent along the top edge: the plaque's lit rim.
+    g.drawLine(radius * 0.5, 1.5, width - radius * 0.5, 1.5, mix(border, theme.COLOR_VOID, 0.35), 1);
+    // Seal tail: a short diagonal stroke off the top-right corner.
+    g.drawLine(width - radius - 6, 3, width - 6, 3 + radius * 0.5, theme.COLOR_ACCENT_DIM, 1);
+
+    if (icon !== null) {
+      const sealX = pad;
+      const sealY = pad;
+      VectorPainter.roundedPanel(iconLayer.graphics, sealX, sealY, sealSize, sealSize, sealRadius, sealFill, sealEdge, 1.5);
+      drawArtIcon(iconLayer.graphics, icon, sealX + sealSize / 2, sealY + sealSize / 2, sealSize * 0.6, theme.COLOR_SEAL_TEXT);
+    }
+    label.color = labelTone;
+    label.x = labelX;
   };
   redraw();
 
@@ -337,7 +368,7 @@ function createButtonInternal(
       // both must track the new box or the button paints one size and reacts at
       // another.
       sprite.size(width, height);
-      label.width = width;
+      label.width = Math.max(10, width - labelX - pad);
       label.height = height;
       label.pos(0, 0);
       redraw();
@@ -354,6 +385,24 @@ export function createButton(
   onClick: () => void,
 ): ButtonHandle {
   return createButtonInternal(text, x, y, width, onClick, 'primary', theme.BUTTON_HEIGHT);
+}
+
+/**
+ * Art-direction builder: name the icon explicitly when the label alone cannot
+ * pick the right one (e.g. a "Go" button that should show the queue icon), or
+ * pass `null` for a text-only plaque.
+ */
+export function createArtButton(
+  text: string,
+  x: number,
+  y: number,
+  width: number,
+  onClick: () => void,
+  icon: ArtIconName | null,
+  variant: ButtonVariant = 'primary',
+  height = theme.BUTTON_HEIGHT,
+): ButtonHandle {
+  return createButtonInternal(text, x, y, width, onClick, variant, height, icon ?? undefined);
 }
 
 /** Extended builder: pick a variant and/or a custom height. */

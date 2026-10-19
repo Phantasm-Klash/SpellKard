@@ -148,7 +148,7 @@ declare namespace Laya {
     drawLine(fromX: number, fromY: number, toX: number, toY: number, lineColor: string, lineWidth?: number): Graphics;
     drawLines(x: number, y: number, points: number[], lineColor: string, lineWidth?: number): Graphics;
     drawCurves(x: number, y: number, points: number[], lineColor: string, lineWidth?: number): Graphics;
-    drawPath(x: number, y: number, paths: unknown[], brush?: unknown, pen?: unknown): Graphics;
+    drawPath(x: number, y: number, paths: unknown[], brush?: unknown, pen?: unknown, lineWidth?: number): Graphics;
 
     // --- text ---
     fillText(text: string, x: number, y: number, font: string, color: string, textAlign?: string): Graphics;

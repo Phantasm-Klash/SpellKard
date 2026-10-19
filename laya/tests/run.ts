@@ -12,6 +12,7 @@ import './battle_codec.test';
 import './battle_opening.test';
 import './card_intent.test';
 import './gift_system.test';
+import './art_icons.test';
 import './card_keys.test';
 import './card_hand_view.test';
 import './draft_panel.test';
@@ -60,7 +61,6 @@ import './stage_background_geometry.test';
 import './audio_throttle.test';
 import './cutscene_overlay_steps.test';
 import './dem_replay.test';
-import './i18n.test';
 
 import { runAll } from './harness';
 

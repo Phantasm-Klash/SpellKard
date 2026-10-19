@@ -108,6 +108,19 @@ export const RADIUS_MD = 8;
 
 // --- typography ---
 export const FONT_FAMILY = 'Arial';
+/**
+ * Display stack for art-direction text (titles, buttons, badges). A calligraphic
+ * face where the platform has one (KaiTi on Windows, STKaiti on macOS), serif
+ * elsewhere — never the UI sans, which is what made every button read as a form
+ * field instead of a plaque.
+ */
+export const FONT_DISPLAY = "'KaiTi','STKaiti','Kaiti SC','楷体','SimSun','Songti SC',serif";
+/** Button label size: one step above body so the plaque reads at a glance. */
+export const FONT_SIZE_BUTTON = 19;
+/** Seal-plate vermillion: the accent that carries the guofeng vocabulary. */
+export const COLOR_SEAL = '#c8392f';
+export const COLOR_SEAL_DEEP = '#8e241c';
+export const COLOR_SEAL_TEXT = '#f6ecd8';
 export const FONT_SIZE_TITLE = 30;
 export const FONT_SIZE_HEADING = 22;
 export const FONT_SIZE_BODY = 17;
