@@ -32,7 +32,7 @@ import { BOSS_RACE_DEFAULT_BOSS_HP, BOSS_RACE_DEFAULT_MAX_TICKS, BOSS_RACE_TICK_
 import { SettingsStore } from '../../core/settings';
 import type { ShortcutAction } from '../../core/input/shortcuts';
 import { applyAudioSettings } from './audio';
-import { setLanguage } from '../core/game/i18n';
+import { setLanguage } from '../../core/game/i18n';
 import { applyDisplaySettings, createFpsOverlay, type FpsOverlayHandle } from './display';
 import { toggleFullscreen, fullscreenDebugState } from './fullscreen';
 import { LayaInput } from './laya_input';

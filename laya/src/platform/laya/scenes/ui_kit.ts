@@ -128,6 +128,10 @@ export function createTitle(text: string, width: number, subtitle?: string): Lay
   label.fontSize = theme.FONT_SIZE_TITLE;
   label.color = theme.COLOR_TITLE;
   label.bold = true;
+  // Display type: a title is the one place the calligraphic stack reads as
+  // lettering rather than a form label. Where the platform has no KaiTi the
+  // serif fallback still carries the guofeng register.
+  label.font = theme.FONT_DISPLAY;
   label.align = 'center';
   label.width = width;
   label.pos(0, theme.SPACE_LG);
@@ -622,6 +626,8 @@ export function createBadge(text: string, x: number, y: number, opts?: BadgeOpti
   const label = new Laya.Text();
   label.text = text;
   label.fontSize = theme.FONT_SIZE_CAPTION;
+  // Display type: a badge reads as a stamped seal, not a form chip.
+  label.font = theme.FONT_DISPLAY;
   label.align = 'center';
   label.valign = 'middle';
   label.height = BADGE_HEIGHT;
@@ -640,16 +646,19 @@ export function createBadge(text: string, x: number, y: number, opts?: BadgeOpti
     // any caller laying badges out right-to-left positions them wrongly.
     sprite.size(width, BADGE_HEIGHT);
     sprite.graphics.clear();
-    VectorPainter.roundedPanel(
-      sprite.graphics,
-      0,
-      0,
-      width,
-      BADGE_HEIGHT,
-      BADGE_HEIGHT / 2,
-      palette.fill,
-      palette.fill,
-      0,
+    // A seal stamp, not a pill: a softly rounded plate with its own darker rim,
+    // so a row of badges reads as a set of chops rather than a tag cloud.
+    const sealRadius = Math.round(BADGE_HEIGHT * 0.26);
+    const g = sprite.graphics;
+    VectorPainter.roundedPanel(g, 0, 0, width, BADGE_HEIGHT, sealRadius, palette.fill, palette.fill, 0);
+    g.drawRect(
+      1.5,
+      1.5,
+      width - 3,
+      BADGE_HEIGHT - 3,
+      null,
+      mix(palette.fill, theme.COLOR_VOID, 0.45),
+      1,
     );
     label.width = width;
     label.pos(0, 0);
