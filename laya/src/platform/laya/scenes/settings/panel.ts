@@ -32,6 +32,7 @@ import { DisplaySection } from './section_display';
 import { HudSection } from './section_hud';
 import { KeysSection } from './section_keys';
 import { OtherSection } from './section_other';
+import { LanguageSection } from './section_language';
 import { ROW_HEIGHT } from './widgets';
 
 const CARD_MAX_WIDTH = 560;
@@ -108,6 +109,9 @@ export class SettingsPanel {
     this.height = options.height;
 
     this.sections = [
+      // Language first: it is the setting a player looks for before anything
+      // else when the UI is not in their language.
+      new LanguageSection(this.store),
       new DisplaySection(this.store),
       new KeysSection(this.store),
       new AudioSection(this.store),
