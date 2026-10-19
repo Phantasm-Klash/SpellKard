@@ -435,6 +435,91 @@ export interface ChestOpenResultView {
   raw: Record<string, unknown>;
 }
 
+/** One gacha pool (`core.GachaPool` in `runtime/core/gacha.go`). */
+export interface GachaPoolView {
+  poolId: string;
+  /** `card` (draws from the 20-card catalog) or `character` (52 player shots). */
+  kind: string;
+  name: string;
+  nameKey: string;
+  costGems: number;
+  costTenGems: number;
+  weights: Record<string, number>;
+  pity: { rareEvery: number; epicEvery: number };
+  featured: string[];
+  enabled: boolean;
+}
+
+/** One unlocked shot (`core.CharacterOwnership`). */
+export interface CharacterOwnershipView {
+  shotId: string;
+  chara: string;
+  /** `default` | `gacha` | `faith_exchange`. */
+  source: string;
+  dupes: number;
+  obtainedAtMs: number;
+}
+
+/** `core.CharacterRosterSnapshot`. */
+export interface CharacterRosterView {
+  userId: string;
+  shots: CharacterOwnershipView[];
+  bombs: string[];
+  faith: number;
+  pityCounters: Record<string, { rareCounter: number; epicCounter: number }>;
+  lockedShotIds: string[];
+  exchangeCostFaith: number;
+  serverAuthoritative: boolean;
+  serverTimeMs: number;
+}
+
+/** `GET /v1/gacha/pools` (`core.GachaPoolsResponse`). */
+export interface GachaPoolsView {
+  pools: GachaPoolView[];
+  wallet: Record<string, number>;
+  faith: number;
+  pityCounters: Record<string, { rareCounter: number; epicCounter: number }>;
+  serverTimeMs: number;
+  raw: Record<string, unknown>;
+}
+
+/** One draw inside a pull response (`core.GachaPullResult`). */
+export interface GachaPullResultView {
+  id: string;
+  kind: string;
+  cardId: string;
+  shotId: string;
+  chara: string;
+  nameKey: string;
+  rarity: string;
+  isNew: boolean;
+  dust: number;
+  faithGained: number;
+}
+
+/** `POST /v1/gacha/pull` (`core.GachaPullResponse`). */
+export interface GachaPullView {
+  poolId: string;
+  count: number;
+  results: GachaPullResultView[];
+  wallet: Record<string, number>;
+  faith: number;
+  characters: CharacterRosterView;
+  serverTimeMs: number;
+  raw: Record<string, unknown>;
+}
+
+/** `POST /v1/gacha/faith-exchange` (`core.FaithExchangeResponse`). */
+export interface FaithExchangeView {
+  itemId: string;
+  faith: number;
+  faithSpent: number;
+  characters: CharacterRosterView;
+  wallet: Record<string, number>;
+  serverTimeMs: number;
+  raw: Record<string, unknown>;
+}
+
 export interface DeckRecordView {
   deckId: string;
   name: string;
@@ -1569,6 +1654,92 @@ export class LobbyClient {
     };
   }
 
+  /**
+   * `GET /v1/gacha/pools` — the dual gacha pools plus wallet and pity state.
+   *
+   * Lookup-only: the server owns every roll, this is the catalog view.
+   */
+  async fetchGachaPools(): Promise<GachaPoolsView | null> {
+    const response = await this.call('gacha.pools');
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    return {
+      pools: Array.isArray(payload.pools) ? payload.pools.filter(isRecord).map((pool) => gachaPoolFromPayload(pool)) : [],
+      wallet: numberRecordField(payload, 'wallet'),
+      faith: numberField(payload, 'faith'),
+      pityCounters: pityCounterRecordField(payload, 'pity_counters', 'pityCounters'),
+      serverTimeMs: timeFieldMs(payload, 'server_time', 'serverTime'),
+      raw: payload,
+    };
+  }
+
+  /**
+   * `POST /v1/gacha/pull` — pull once or ten times from a pool.
+   *
+   * The client only selects `pool_id` and `count` (1 or 10); every result in
+   * the response was rolled server-side.
+   */
+  async pullGacha(poolId: string, count: number): Promise<GachaPullView | null> {
+    if (poolId === '') {
+      this.lastError = 'gacha_pull_missing_pool';
+      return null;
+    }
+    if (count !== 1 && count !== 10) {
+      this.lastError = 'gacha_pull_invalid_count';
+      return null;
+    }
+    const response = await this.call('gacha.pull', { pool_id: poolId, count });
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    return {
+      poolId: stringField(payload, 'pool_id', 'poolId') || poolId,
+      count: numberField(payload, 'count') || count,
+      results: Array.isArray(payload.results)
+        ? payload.results.filter(isRecord).map((result) => gachaPullResultFromPayload(result))
+        : [],
+      wallet: numberRecordField(payload, 'wallet'),
+      faith: numberField(payload, 'faith'),
+      characters: characterRosterFromPayload(isRecord(payload.characters) ? payload.characters : {}),
+      serverTimeMs: timeFieldMs(payload, 'server_time', 'serverTime'),
+      raw: payload,
+    };
+  }
+
+  /** `GET /v1/gacha/roster` — owned shots, bombs, faith and locked ids. */
+  async fetchGachaRoster(): Promise<CharacterRosterView | null> {
+    const response = await this.call('gacha.roster');
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    return characterRosterFromPayload(response.payload);
+  }
+
+  /** `POST /v1/gacha/faith-exchange` — unlock one locked shot with faith. */
+  async exchangeGachaFaith(itemId: string): Promise<FaithExchangeView | null> {
+    if (itemId === '') {
+      this.lastError = 'gacha_exchange_missing_item';
+      return null;
+    }
+    const response = await this.call('gacha.faith.exchange', { item_id: itemId });
+    if (!response.ok || !isRecord(response.payload)) {
+      return null;
+    }
+    const payload = response.payload;
+    return {
+      itemId: stringField(payload, 'item_id', 'itemId') || itemId,
+      faith: numberField(payload, 'faith'),
+      faithSpent: numberField(payload, 'faith_spent', 'faithSpent'),
+      characters: characterRosterFromPayload(isRecord(payload.characters) ? payload.characters : {}),
+      wallet: numberRecordField(payload, 'wallet'),
+      serverTimeMs: timeFieldMs(payload, 'server_time', 'serverTime'),
+      raw: payload,
+    };
+  }
+
   /** `GET /v1/decks` — saved decks and the active deck id. */
   async fetchDecks(): Promise<DecksView | null> {
     const response = await this.call('decks.list');
@@ -2149,6 +2320,11 @@ const REST_ROUTES: Record<string, RestRoute> = {
   'shop.purchase': { method: 'POST', path: () => '/v1/shop/purchase' },
   'chests.get': { method: 'GET', path: () => '/v1/chests' },
   'records.get': { method: 'GET', path: () => '/v1/records' },
+  // --- gacha totems (cards + characters) ---
+  'gacha.pools': { method: 'GET', path: () => '/v1/gacha/pools' },
+  'gacha.pull': { method: 'POST', path: () => '/v1/gacha/pull' },
+  'gacha.roster': { method: 'GET', path: () => '/v1/gacha/roster' },
+  'gacha.faith.exchange': { method: 'POST', path: () => '/v1/gacha/faith-exchange' },
 };
 
 /** Configuration for {@link WsLobbyTransport}. */
@@ -2617,6 +2793,89 @@ function checkinDayFromPayload(payload: Record<string, unknown>): CheckinDayView
     reward: numberRecordField(payload, 'reward'),
     claimed: booleanField(payload, 'claimed'),
     claimable: booleanField(payload, 'claimable'),
+  };
+}
+
+/** Pity counters keyed by pool id (`core.ChestPityState`). */
+function pityCounterRecordField(
+  source: Record<string, unknown>,
+  ...keys: string[]
+): Record<string, { rareCounter: number; epicCounter: number }> {
+  for (const key of keys) {
+    const value = source[key];
+    if (!isRecord(value)) {
+      continue;
+    }
+    const out: Record<string, { rareCounter: number; epicCounter: number }> = {};
+    for (const [poolId, counter] of Object.entries(value)) {
+      if (!isRecord(counter)) {
+        continue;
+      }
+      out[poolId] = {
+        rareCounter: numberField(counter, 'rare_counter', 'rareCounter'),
+        epicCounter: numberField(counter, 'epic_counter', 'epicCounter'),
+      };
+    }
+    return out;
+  }
+  return {};
+}
+
+/** One gacha pool (`core.GachaPool`). */
+function gachaPoolFromPayload(payload: Record<string, unknown>): GachaPoolView {
+  return {
+    poolId: stringField(payload, 'pool_id', 'poolId'),
+    kind: stringField(payload, 'kind'),
+    name: stringField(payload, 'name'),
+    nameKey: stringField(payload, 'name_key', 'nameKey'),
+    costGems: numberField(payload, 'cost_gems', 'costGems'),
+    costTenGems: numberField(payload, 'cost_ten_gems', 'costTenGems'),
+    weights: numberRecordField(payload, 'weights'),
+    pity: {
+      rareEvery: numberField(isRecord(payload.pity) ? payload.pity : {}, 'rare_every', 'rareEvery'),
+      epicEvery: numberField(isRecord(payload.pity) ? payload.pity : {}, 'epic_every', 'epicEvery'),
+    },
+    featured: stringArrayField(payload, 'featured'),
+    enabled: booleanField(payload, 'enabled'),
+  };
+}
+
+/** One draw inside a pull response (`core.GachaPullResult`). */
+function gachaPullResultFromPayload(payload: Record<string, unknown>): GachaPullResultView {
+  return {
+    id: stringField(payload, 'id'),
+    kind: stringField(payload, 'kind'),
+    cardId: stringField(payload, 'card_id', 'cardId'),
+    shotId: stringField(payload, 'shot_id', 'shotId'),
+    chara: stringField(payload, 'chara'),
+    nameKey: stringField(payload, 'name_key', 'nameKey'),
+    rarity: stringField(payload, 'rarity'),
+    isNew: booleanField(payload, 'is_new', 'isNew'),
+    dust: numberField(payload, 'dust'),
+    faithGained: numberField(payload, 'faith_gained', 'faithGained'),
+  };
+}
+
+/** The character roster projection (`core.CharacterRosterSnapshot`). */
+function characterRosterFromPayload(payload: Record<string, unknown>): CharacterRosterView {
+  return {
+    userId: stringField(payload, 'user_id', 'userId'),
+    shots: Array.isArray(payload.shots)
+      ? payload.shots.filter(isRecord).map((shot) => ({
+          shotId: stringField(shot, 'shot_id', 'shotId'),
+          chara: stringField(shot, 'chara'),
+          source: stringField(shot, 'source'),
+          dupes: numberField(shot, 'dupes'),
+          obtainedAtMs: timeFieldMs(shot, 'obtained_at', 'obtainedAt'),
+        }))
+      : [],
+    bombs: stringArrayField(payload, 'bombs'),
+    faith: numberField(payload, 'faith'),
+    pityCounters: pityCounterRecordField(payload, 'pity_counters', 'pityCounters'),
+    lockedShotIds: stringArrayField(payload, 'locked_shot_ids', 'lockedShotIds'),
+    exchangeCostFaith: numberField(payload, 'exchange_cost_faith', 'exchangeCostFaith'),
+    serverAuthoritative: booleanField(payload, 'server_authoritative', 'serverAuthoritative'),
+    serverTimeMs: timeFieldMs(payload, 'server_time', 'serverTime'),
   };
 }
 

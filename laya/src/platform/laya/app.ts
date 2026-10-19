@@ -50,6 +50,7 @@ import { RecordsScene } from './scenes/records_scene';
 import { ResultScene } from './scenes/result_scene';
 import { DemPlayerScene } from './scenes/dem_player';
 import { RoomScene } from './scenes/room_scene';
+import { GachaScene } from './scenes/gacha_scene';
 import { ShopScene } from './scenes/shop_scene';
 import { isShortcutCapable, type ClientScene } from './scenes/scene';
 import { LayaHttpClient } from './laya_http_client';
@@ -124,6 +125,7 @@ export class SpellKardApp {
   private readonly resultScene: ResultScene;
   private readonly checkinScene: CheckinScene;
   private readonly shopScene: ShopScene;
+  private readonly gachaScene: GachaScene;
   private readonly inventoryScene: InventoryScene;
   private readonly recordsScene: RecordsScene;
   private readonly demPlayerScene: DemPlayerScene;
@@ -337,6 +339,7 @@ export class SpellKardApp {
     // same `LobbyFlow` snapshot, so wiring is just construction + the switch.
     this.checkinScene = new CheckinScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
     this.shopScene = new ShopScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
+    this.gachaScene = new GachaScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
     this.inventoryScene = new InventoryScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
     this.recordsScene = new RecordsScene({
       width: config.stageWidth,
@@ -452,6 +455,7 @@ export class SpellKardApp {
       this.resultScene,
       this.checkinScene,
       this.shopScene,
+      this.gachaScene,
       this.inventoryScene,
       this.recordsScene,
       this.demPlayerScene,
@@ -488,6 +492,9 @@ export class SpellKardApp {
         break;
       case LobbyScreen.Shop:
         this.shopScene.applySnapshot(snapshot);
+        break;
+      case LobbyScreen.Gacha:
+        this.gachaScene.applySnapshot(snapshot);
         break;
       case LobbyScreen.Inventory:
         this.inventoryScene.applySnapshot(snapshot);
@@ -717,6 +724,8 @@ export class SpellKardApp {
         return this.checkinScene;
       case LobbyScreen.Shop:
         return this.shopScene;
+      case LobbyScreen.Gacha:
+        return this.gachaScene;
       case LobbyScreen.Inventory:
         return this.inventoryScene;
       case LobbyScreen.Records:
@@ -752,6 +761,7 @@ export class SpellKardApp {
     result: ResultScene;
     checkin: CheckinScene;
     shop: ShopScene;
+    gacha: GachaScene;
     inventory: InventoryScene;
     records: RecordsScene;
     demPlayer: DemPlayerScene;
@@ -778,6 +788,7 @@ export class SpellKardApp {
       result: this.resultScene,
       checkin: this.checkinScene,
       shop: this.shopScene,
+      gacha: this.gachaScene,
       inventory: this.inventoryScene,
       records: this.recordsScene,
       demPlayer: this.demPlayerScene,

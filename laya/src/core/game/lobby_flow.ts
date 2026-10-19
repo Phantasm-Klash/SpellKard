@@ -10,7 +10,10 @@
 import type {
   BattleAllocationView,
   BattleTicketView,
+  CharacterRosterView,
   CheckinView,
+  GachaPoolsView,
+  GachaPullView,
   InventoryView,
   LobbyClient,
   MatchmakingTicketView,
@@ -33,6 +36,7 @@ export enum LobbyScreen {
   Result = 'result',
   Checkin = 'checkin',
   Shop = 'shop',
+  Gacha = 'gacha',
   Inventory = 'inventory',
   Records = 'records',
   Error = 'error',
@@ -89,6 +93,12 @@ export interface LobbyFlowSnapshot {
   checkin: CheckinView | null;
   /** Shop listings + wallet, loaded while the shop screen is open. */
   shop: ShopView | null;
+  /** Gacha pools + wallet + pity, loaded while the gacha screen is open. */
+  gacha: GachaPoolsView | null;
+  /** Character roster (owned shots/bombs/faith), refreshed by every pull. */
+  gachaRoster: CharacterRosterView | null;
+  /** Result of the most recent pull, rendered by the gacha screen. */
+  gachaLastPull: GachaPullView | null;
   /** Owned card stacks, loaded while the inventory screen is open. */
   inventory: InventoryView | null;
   /** Personal records dashboard, loaded while the records screen is open. */
@@ -146,6 +156,9 @@ export class LobbyFlow {
   private result: MatchResultInfo | null = null;
   private checkin: CheckinView | null = null;
   private shop: ShopView | null = null;
+  private gacha: GachaPoolsView | null = null;
+  private gachaRoster: CharacterRosterView | null = null;
+  private gachaLastPull: GachaPullView | null = null;
   private inventory: InventoryView | null = null;
   private records: RecordsView | null = null;
   private authMode: AuthMode = 'login';
@@ -226,6 +239,9 @@ export class LobbyFlow {
       result: this.result,
       checkin: this.checkin,
       shop: this.shop,
+      gacha: this.gacha,
+      gachaRoster: this.gachaRoster,
+      gachaLastPull: this.gachaLastPull,
       inventory: this.inventory,
       records: this.records,
       authMode: this.authMode,
@@ -770,6 +786,73 @@ export class LobbyFlow {
     this.statusText = `Bought ${purchase.count}× ${purchase.itemId}`;
     this.notify();
     await this.openShop();
+    return true;
+  }
+
+  /**
+   * Opens the gacha screen: loads both pools, the wallet, the pity counters
+   * and the character roster.
+   */
+  async openGacha(): Promise<boolean> {
+    this.statusText = 'Loading totems…';
+    this.setScreen(LobbyScreen.Gacha);
+    const pools = await this.client.fetchGachaPools();
+    if (pools === null) {
+      this.fail(`Gacha load failed: ${this.client.lastError}`);
+      return false;
+    }
+    const roster = await this.client.fetchGachaRoster();
+    if (roster === null) {
+      this.fail(`Roster load failed: ${this.client.lastError}`);
+      return false;
+    }
+    this.gacha = pools;
+    this.gachaRoster = roster;
+    this.lastError = '';
+    this.statusText = `Totems: ${pools.pools.length} pool(s) · ${roster.shots.length} shot(s) · faith ${roster.faith}`;
+    this.notify();
+    return true;
+  }
+
+  /**
+   * Pulls from a gacha pool (1 or 10). The server rolls; the flow only keeps
+   * the response so the scene can render it.
+   */
+  async pullGacha(poolId: string, count: number): Promise<boolean> {
+    const pull = await this.client.pullGacha(poolId, count);
+    if (pull === null) {
+      this.fail(`Pull failed: ${this.client.lastError}`);
+      return false;
+    }
+    this.gachaLastPull = pull;
+    if (this.gacha !== null) {
+      this.gacha = { ...this.gacha, wallet: pull.wallet, faith: pull.faith };
+    }
+    this.gachaRoster = pull.characters;
+    this.lastError = '';
+    this.statusText =
+      count === 1
+        ? `Pulled 1× ${pull.poolId}`
+        : `Pulled ${pull.count}× ${pull.poolId}`;
+    this.notify();
+    return true;
+  }
+
+  /** Unlocks one locked shot with faith and refreshes the roster. */
+  async exchangeGachaFaith(itemId: string): Promise<boolean> {
+    const exchange = await this.client.exchangeGachaFaith(itemId);
+    if (exchange === null) {
+      this.fail(`Exchange failed: ${this.client.lastError}`);
+      return false;
+    }
+    this.gachaRoster = exchange.characters;
+    this.gachaLastPull = null;
+    if (this.gacha !== null) {
+      this.gacha = { ...this.gacha, wallet: exchange.wallet, faith: exchange.faith };
+    }
+    this.lastError = '';
+    this.statusText = `Unlocked ${exchange.itemId} for ${exchange.faithSpent} faith`;
+    this.notify();
     return true;
   }
 

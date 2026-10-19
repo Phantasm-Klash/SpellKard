@@ -38,6 +38,7 @@ import './checkin_shop.test';
 import './card_effects.test';
 import './lobby_rng.test';
 import './records_view.test';
+import './gacha_model.test';
 import './native_udp_datagram.test';
 import './native_window.test';
 import './laya_http_client.test';

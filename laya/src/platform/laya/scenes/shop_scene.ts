@@ -40,6 +40,7 @@ export class ShopScene implements ClientScene {
   private readonly listHost: Laya.Sprite;
   private readonly listBottom: number;
   private readonly backButton: ButtonHandle;
+  private readonly gachaButton: ButtonHandle;
   private busy = false;
 
   constructor(private readonly options: ShopSceneOptions) {
@@ -95,13 +96,24 @@ export class ShopScene implements ClientScene {
 
     this.backButton = createButtonEx(
       'Back to lobby',
-      margin,
+      margin + (contentWidth + theme.SPACE_SM) / 2,
       actionsY,
-      contentWidth,
+      (contentWidth - theme.SPACE_SM) / 2,
       () => this.options.flow.backToLobby(),
       'ghost',
     );
     this.root.addChild(this.backButton.sprite);
+    // Gacha entry lives here (not on the main menu, which stays at five
+    // buttons): the totems are an economy screen next to the shop.
+    this.gachaButton = createButtonEx(
+      'Totems · 寻觅',
+      margin,
+      actionsY,
+      (contentWidth - theme.SPACE_SM) / 2,
+      () => void this.openGacha(),
+      'primary',
+    );
+    this.root.addChild(this.gachaButton.sprite);
   }
 
   onEnter(): void {
@@ -205,6 +217,11 @@ export class ShopScene implements ClientScene {
     row.addChild(buy.sprite);
 
     return { sprite: row };
+  }
+
+  /** Opens the gacha totems screen (cards + characters). */
+  private async openGacha(): Promise<void> {
+    await this.options.flow.openGacha();
   }
 
   private async reload(): Promise<void> {
