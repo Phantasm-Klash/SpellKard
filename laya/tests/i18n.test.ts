@@ -60,8 +60,8 @@ test('t() substitutes params and leaves unknown ones visible', () => {
 });
 
 test('the language switch changes the resolved strings', () => {
-  setLanguage('zh');
-  expectEqual(language(), 'zh');
+  setLanguage('zh-Hans');
+  expectEqual(language(), 'zh-Hans');
   expectEqual(t('ui.play'), '开始');
   expectEqual(t('gift.heart'), '心愿');
   expectEqual(t('gift.announce', { from: 'Marisa', to: 'Reimu', gift: '心愿' }), 'Marisa 向 Reimu 送出了 心愿');

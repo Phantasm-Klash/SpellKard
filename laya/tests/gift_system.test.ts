@@ -150,11 +150,11 @@ test('the remaining-charge count clamps into the budget', () => {
 test('the announcement names both sides and the gift, in every language', () => {
   // The line is composed through i18n, so the assertion is the composed string
   // per language rather than one hardcoded sentence.
-  setLanguage('zh');
+  setLanguage('zh-Hans');
   expectEqual(giftAnnouncement('heart', 'Marisa', 'Reimu'), 'Marisa 向 Reimu 送出了 心愿');
   setLanguage('en');
   expectEqual(giftAnnouncement('heart', 'Marisa', 'Reimu'), 'Marisa sent Reimu a Heartfelt Wish');
-  setLanguage('zh');
+  setLanguage('zh-Hans');
   // Unknown ids and empty names must still read as a sentence.
   expectEqual(giftAnnouncement('mystery', '', ''), '对手 向 对手 送出了 mystery');
   setLanguage('en');
