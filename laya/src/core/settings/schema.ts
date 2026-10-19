@@ -15,6 +15,13 @@ import type { UpscalerBackendId } from '../render/upscaler';
 // --- enumerations -----------------------------------------------------------
 
 /** Graphics quality tiers, cheapest first. Drives bullet trails / glow / fx. */
+import { FALLBACK_LOCALE, SUPPORTED_LOCALES, type LocaleId } from '../i18n';
+
+export { SUPPORTED_LOCALES } from '../i18n';
+export type { LocaleId } from '../i18n';
+
+export const LOCALES = SUPPORTED_LOCALES;
+
 export const EFFECT_LEVELS = ['low', 'medium', 'high'] as const;
 export type EffectLevel = (typeof EFFECT_LEVELS)[number];
 
@@ -132,6 +139,8 @@ export interface PluginSettings {
 }
 
 export interface GameSettings {
+  /** The UI language. Persisted with the rest of the settings. */
+  locale: LocaleId;
   display: DisplaySettings;
   audio: AudioSettings;
   hud: HudSettings;
@@ -142,6 +151,7 @@ export interface GameSettings {
 
 /** A deep-partial update; `SettingsStore.update` merges it into the current state. */
 export interface SettingsPatch {
+  locale?: LocaleId;
   display?: Partial<DisplaySettings>;
   audio?: Partial<AudioSettings>;
   hud?: Partial<HudSettings>;
@@ -158,6 +168,7 @@ export interface SettingsPatch {
  */
 export function defaultSettings(): GameSettings {
   return {
+    locale: FALLBACK_LOCALE,
     display: {
       renderScale: 1,
       effectLevel: 'high',

@@ -20,7 +20,9 @@ import {
   FRAME_CAPS,
   NETWORK_MODES,
   RENDER_SCALES,
+  SUPPORTED_LOCALES,
   defaultSettings,
+  type LocaleId,
   type AudioSettings,
   type DisplaySettings,
   type EffectLevel,
@@ -183,6 +185,7 @@ export function isLoadableModuleUrl(url: string): boolean {
 export function normalizeSettings(raw: unknown, fallback: GameSettings = defaultSettings()): GameSettings {
   const source = isRecord(raw) ? raw : {};
   return {
+    locale: readEnum<LocaleId>(source.locale, SUPPORTED_LOCALES, fallback.locale),
     display: normalizeDisplay(source.display, fallback.display),
     audio: normalizeAudio(source.audio, fallback.audio),
     hud: normalizeHud(source.hud, fallback.hud),
