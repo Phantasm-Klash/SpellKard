@@ -193,7 +193,8 @@ test('room create/join/leave use the documented payload fields', async () => {
 
   void transport.call({
     id: 'rooms.create',
-    payload: { room_code: 'RACE01', mode_id: 'mvp_boss_race', host_user_id: 'host-1' },
+    // boss_id 是房间 boss 选择：WS 载荷曾漏传导致 boss 永远默认（回归用例）。
+    payload: { room_code: 'RACE01', mode_id: 'mvp_boss_race', host_user_id: 'host-1', boss_id: 'tian' },
   });
   const create = socket.frame(0);
   expectEqual(create.type, LOBBY_MESSAGE.RoomCreateRequest);
@@ -204,6 +205,7 @@ test('room create/join/leave use the documented payload fields', async () => {
     host_user_id: 'host-1',
     loadout: { user_id: 'host-1', player_id: '', character_id: '', stage_id: '', rating_code: '' },
     mode_params: {},
+    boss_id: 'tian',
   });
 
   void transport.call({ id: 'rooms.join', payload: { room_code: 'RACE01', user_id: 'guest-1', player_id: 'p-2' } });
