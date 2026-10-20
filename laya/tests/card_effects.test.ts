@@ -15,6 +15,8 @@ import {
   NEW_CARD_IDS,
   cardEffectDefinition,
   describeCardEffect,
+  type CardEffectKind,
+  type CardRarity,
   effectTarget,
   invulnerableRemainingTicks,
   isCardEffectKind,
@@ -162,6 +164,46 @@ test('rarity and effect descriptions are player-facing strings', () => {
   expect(purgeRadiusMilli(120) === 120000, 'purge radius converts px → milli');
 });
 
+
+
+test('every lobby card resolves and matches the Go catalog exactly', () => {
+  // 20 ids verbatim from `serverCardCatalog` (Gensoulkyo/runtime/core/service.go).
+  const LOBBY_CATALOG: ReadonlyArray<readonly [string, string, number, number, number, number, number, string]> = [
+    ['focus_lens', 'self', 2, 240, 360, 12, 18, 'common'],
+    ['hitbox_charm', 'self', 3, 420, 300, 14, 20, 'uncommon'],
+    ['density_surge', 'pattern', 4, 540, 420, 30, 32, 'rare'],
+    ['tempo_break', 'pattern', 3, 480, 300, 22, 26, 'uncommon'],
+    ['bomb_amplifier', 'self', 2, 360, 480, 16, 18, 'common'],
+    ['guard_seal', 'self', 5, 720, 900, 18, 30, 'rare'],
+    ['graze_engine', 'economy', 2, 300, 360, 10, 20, 'common'],
+    ['draw_sigil', 'economy', 1, 420, 1, 0, 12, 'common'],
+    ['aim_baffle', 'pattern', 4, 600, 360, 28, 32, 'rare'],
+    ['purge_charm', 'self', 3, 540, 480, 18, 24, 'uncommon'],
+    ['curve_prism', 'pattern', 3, 500, 360, 24, 28, 'uncommon'],
+    ['last_arc', 'finisher', 6, 900, 420, 48, 60, 'epic'],
+    ['mirror_lance', 'opponent_pattern', 4, 540, 360, 26, 30, 'rare'],
+    ['purge_bell', 'bullet_purge', 3, 480, 1, 0, 22, 'uncommon'],
+    ['aegis_ward', 'invulnerable', 5, 720, 180, 0, 20, 'rare'],
+    ['finale_arc', 'finisher', 6, 900, 1, 60, 80, 'epic'],
+    ['frost_arc', 'bullet_purge', 2, 360, 1, 0, 18, 'uncommon'],
+    ['ember_lance', 'opponent_pattern', 3, 300, 240, 20, 24, 'uncommon'],
+    ['iron_veil', 'invulnerable', 4, 480, 120, 0, 16, 'uncommon'],
+    ['thunder_fall', 'finisher', 4, 420, 1, 30, 40, 'epic'],
+  ];
+  expectEqual(LOBBY_CATALOG.length, 20);
+  for (const [id, kind, cost, cooldown, duration, damage, score, rarity] of LOBBY_CATALOG) {
+    const definition = cardEffectDefinition(id);
+    expect(definition !== null, `lobby card ${id} must resolve in the client mirror`);
+    if (definition === null) continue;
+    expectEqual(definition.effectKind, kind as CardEffectKind, `${id} effectKind`);
+    expectEqual(definition.cost, cost, `${id} cost`);
+    expectEqual(definition.cooldownTicks, cooldown, `${id} cooldownTicks`);
+    expectEqual(definition.durationTicks, duration, `${id} durationTicks`);
+    expectEqual(definition.damage, damage, `${id} damage`);
+    expectEqual(definition.scoreBonus, score, `${id} scoreBonus`);
+    expectEqual(definition.rarity, rarity as CardRarity, `${id} rarity`);
+  }
+});
 
 test('the 16 -> 20 expansion cards match the lobby catalog exactly', () => {
   expectDeepEqual(EXPANSION_CARD_IDS, ['frost_arc', 'ember_lance', 'iron_veil', 'thunder_fall']);

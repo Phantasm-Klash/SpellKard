@@ -5,8 +5,9 @@
  * card set and its effects; the C++ battle server does not implement card
  * effects at all (it only forwards `deck_card_ids`). This module is the client
  * side of that contract: the effect-kind vocabulary plus the static definition
- * of the four new cards, so the battle view and the inventory screen can talk
- * about a card without guessing at server-only constants.
+ * of **all 20 catalog cards** (base 12 + contract 4 + expansion 4), so the
+ * battle view and the inventory screen can talk about a card without guessing
+ * at server-only constants.
  *
  * ★ 字段名 / 取值必须与 `card_records_spec.md` §1.1–§1.3 一致：服务端在并行
  * 实现同一份契约，改这里的 `cardId` / `effectKind` / 数值就等于改 wire 契约。
@@ -66,6 +67,139 @@ export interface CardEffectDefinition {
   /** How many bullets are removed (`bullet_purge` only). */
   purgeCount?: number;
 }
+
+/**
+ * The twelve base-catalog cards, values verbatim from the lobby's
+ * `serverCardCatalog` (`Gensoulkyo/runtime/core/service.go`, same numbers as
+ * C++ `kCatalog` in `card_hand.cpp`). Every id in the 20-card catalog must
+ * resolve here or in {@link NEW_CARD_EFFECTS} / {@link EXPANSION_CARD_EFFECTS},
+ * otherwise battle events and the hand view silently drop the card.
+ *
+ * `draw_sigil`'s `energy_gain` (0.75) and `draw_cards` (1) are simulation-side
+ * only; the lobby owns that math, this mirror only renders.
+ */
+export const BASE_CARD_EFFECTS: Readonly<Record<string, CardEffectDefinition>> = {
+  focus_lens: {
+    cardId: 'focus_lens',
+    effectKind: 'self',
+    cost: 2,
+    cooldownTicks: 240,
+    durationTicks: 360,
+    damage: 12,
+    scoreBonus: 18,
+    rarity: 'common',
+  },
+  hitbox_charm: {
+    cardId: 'hitbox_charm',
+    effectKind: 'self',
+    cost: 3,
+    cooldownTicks: 420,
+    durationTicks: 300,
+    damage: 14,
+    scoreBonus: 20,
+    rarity: 'uncommon',
+  },
+  density_surge: {
+    cardId: 'density_surge',
+    effectKind: 'pattern',
+    cost: 4,
+    cooldownTicks: 540,
+    durationTicks: 420,
+    damage: 30,
+    scoreBonus: 32,
+    rarity: 'rare',
+  },
+  tempo_break: {
+    cardId: 'tempo_break',
+    effectKind: 'pattern',
+    cost: 3,
+    cooldownTicks: 480,
+    durationTicks: 300,
+    damage: 22,
+    scoreBonus: 26,
+    rarity: 'uncommon',
+  },
+  bomb_amplifier: {
+    cardId: 'bomb_amplifier',
+    effectKind: 'self',
+    cost: 2,
+    cooldownTicks: 360,
+    durationTicks: 480,
+    damage: 16,
+    scoreBonus: 18,
+    rarity: 'common',
+  },
+  guard_seal: {
+    cardId: 'guard_seal',
+    effectKind: 'self',
+    cost: 5,
+    cooldownTicks: 720,
+    durationTicks: 900,
+    damage: 18,
+    scoreBonus: 30,
+    rarity: 'rare',
+  },
+  graze_engine: {
+    cardId: 'graze_engine',
+    effectKind: 'economy',
+    cost: 2,
+    cooldownTicks: 300,
+    durationTicks: 360,
+    damage: 10,
+    scoreBonus: 20,
+    rarity: 'common',
+  },
+  draw_sigil: {
+    cardId: 'draw_sigil',
+    effectKind: 'economy',
+    cost: 1,
+    cooldownTicks: 420,
+    durationTicks: 1,
+    damage: 0,
+    scoreBonus: 12,
+    rarity: 'common',
+  },
+  aim_baffle: {
+    cardId: 'aim_baffle',
+    effectKind: 'pattern',
+    cost: 4,
+    cooldownTicks: 600,
+    durationTicks: 360,
+    damage: 28,
+    scoreBonus: 32,
+    rarity: 'rare',
+  },
+  purge_charm: {
+    cardId: 'purge_charm',
+    effectKind: 'self',
+    cost: 3,
+    cooldownTicks: 540,
+    durationTicks: 480,
+    damage: 18,
+    scoreBonus: 24,
+    rarity: 'uncommon',
+  },
+  curve_prism: {
+    cardId: 'curve_prism',
+    effectKind: 'pattern',
+    cost: 3,
+    cooldownTicks: 500,
+    durationTicks: 360,
+    damage: 24,
+    scoreBonus: 28,
+    rarity: 'uncommon',
+  },
+  last_arc: {
+    cardId: 'last_arc',
+    effectKind: 'finisher',
+    cost: 6,
+    cooldownTicks: 900,
+    durationTicks: 420,
+    damage: 48,
+    scoreBonus: 60,
+    rarity: 'epic',
+  },
+};
 
 /** The four cards added by the card-records contract. */
 export const NEW_CARD_IDS = ['mirror_lance', 'purge_bell', 'aegis_ward', 'finale_arc'] as const;
@@ -228,7 +362,7 @@ export function effectTarget(kind: string): CardEffectTarget {
 
 /** The static definition for a card id, or `null` when the card is unknown. */
 export function cardEffectDefinition(cardId: string): CardEffectDefinition | null {
-  const tables = [NEW_CARD_EFFECTS, EXPANSION_CARD_EFFECTS] as Readonly<Record<string, CardEffectDefinition>>[];
+  const tables = [BASE_CARD_EFFECTS, NEW_CARD_EFFECTS, EXPANSION_CARD_EFFECTS] as Readonly<Record<string, CardEffectDefinition>>[];
   for (const table of tables) {
     const definition = table[cardId];
     if (definition !== undefined) {

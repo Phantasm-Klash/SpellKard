@@ -347,6 +347,8 @@ export interface Messages {
   'gacha.result.new': string;
   'gacha.result.dupeFaith': string;
   'gacha.result.dupeDust': string;
+  'screen.gacha.cards': string;
+  'screen.gacha.characters': string;
   'ui.shop': string;
   'ui.settings': string;
   'ui.back': string;
@@ -708,6 +710,8 @@ const ZH_HANS: Messages = {
   'gacha.result.new': '[{rarity}] {name} —— 新获得',
   'gacha.result.dupeFaith': '[{rarity}] {name} —— 重复 → +{faith} 信仰',
   'gacha.result.dupeDust': '[{rarity}] {name} —— 重复 → +{dust} 卡尘',
+  'screen.gacha.cards': '卡牌池',
+  'screen.gacha.characters': '角色池',
   'ui.shop': '商店',
   'ui.settings': '设置',
   'ui.back': '返回',
@@ -1034,6 +1038,8 @@ const ZH_HANT: Messages = {
   'gacha.result.new': '[{rarity}] {name} —— 新獲得',
   'gacha.result.dupeFaith': '[{rarity}] {name} —— 重複 → +{faith} 信仰',
   'gacha.result.dupeDust': '[{rarity}] {name} —— 重複 → +{dust} 卡塵',
+  'screen.gacha.cards': '卡牌池',
+  'screen.gacha.characters': '角色池',
   'ui.shop': '商店',
   'ui.settings': '設定',
   'ui.back': '返回',
@@ -1360,6 +1366,8 @@ const JA: Messages = {
   'gacha.result.new': '[{rarity}] {name} — 新規',
   'gacha.result.dupeFaith': '[{rarity}] {name} — 重複 → +{faith} 信仰',
   'gacha.result.dupeDust': '[{rarity}] {name} — 重複 → +{dust} ダスト',
+  'screen.gacha.cards': 'カード',
+  'screen.gacha.characters': 'キャラクター',
   'ui.shop': '商店',
   'ui.settings': '設定',
   'ui.back': '戻る',
@@ -1699,6 +1707,8 @@ const EN: Messages = {
   'gacha.result.new': '[{rarity}] {name} — NEW',
   'gacha.result.dupeFaith': '[{rarity}] {name} — dupe → +{faith} faith',
   'gacha.result.dupeDust': '[{rarity}] {name} — dupe → +{dust} dust',
+  'screen.gacha.cards': 'Card Totem',
+  'screen.gacha.characters': 'Character Totem',
   'ui.shop': 'Shop',
   'ui.settings': 'Settings',
   'ui.back': 'Back',
