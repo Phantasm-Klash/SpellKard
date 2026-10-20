@@ -684,6 +684,11 @@ export class BattleScene implements ClientScene {
     this.relayout(width, height);
   }
 
+  /** 合作模式当前帧（诊断/单测用；同时让该字段成为「被读取」，满足 noUnusedLocals）。 */
+  get currentCoopFrame(): CoopFrame | null {
+    return this.coopFrame;
+  }
+
   get currentFrame(): BossRaceFrame | null {
     return this.frame;
   }
