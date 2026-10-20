@@ -2662,6 +2662,9 @@ export class WsLobbyTransport implements LobbyTransport {
           host_user_id: stringField(payload, 'host_user_id', 'hostUserId') || userId,
           loadout: loadoutPayload(userId, playerId, payload),
           mode_params: stringRecordField(payload, 'mode_params', 'modeParams'),
+          // 房间 boss 选择：lobbyws.RoomCreateRequest 有 boss_id 字段，此前漏传
+          // ⇒ WS 建房路径下 boss 永远是默认 timeline（REST 路径正常）。
+          boss_id: stringField(payload, 'boss_id', 'bossId'),
         };
       case 'rooms.join':
         return {
