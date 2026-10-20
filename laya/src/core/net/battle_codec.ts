@@ -43,6 +43,8 @@ import { BattlePayloadType, emptyVersionStamp } from '../protocol/types';
 import { codec } from '../protocol/codec';
 import type { BossRaceBullet, BossRaceSnapshot, BossRaceState } from '../sim/boss_race';
 import { BossRaceState as BossRaceStateEnum } from '../sim/boss_race';
+import type { CoopBossBullet, CoopBossPlayerSnapshot, CoopBossSnapshot } from '../sim/coop_boss';
+import { CoopBossState as CoopBossStateEnum } from '../sim/coop_boss';
 
 const TEXT_ENCODER_LIMIT = 0xffff;
 
@@ -462,6 +464,79 @@ export function decodeBossRaceSnapshot(payload: Uint8Array): BossRaceSnapshot | 
         // number to pick the orientation family.
         bulletKind: optionalNumberAt(bullet, 'bullet_kind'),
         motionFunc: optionalNumberAt(bullet, 'motion_func'),
+      }),
+    ),
+  };
+}
+
+function parseCoopBossState(text: string): CoopBossStateEnum {
+  switch (text) {
+    case 'running':
+      return CoopBossStateEnum.Running;
+    case 'finished':
+      return CoopBossStateEnum.Finished;
+    default:
+      return CoopBossStateEnum.Waiting;
+  }
+}
+
+/**
+ * 合作模式快照（payload 字节 12，JSON 体）。
+ *
+ * 字段与服务端 `EncodeCoopBossSnapshotPayload`（COOP_MODE_CONTRACT.md §2.4）
+ * 一一对应；畸形输入返回 null（与 `decodeBossRaceSnapshot` 同纪律）。
+ */
+export function decodeCoopBossSnapshot(payload: Uint8Array): CoopBossSnapshot | null {
+  if (payload.length < 2 || payload[0] !== BattlePayloadType.COOP_SNAPSHOT) {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(decodeUtf8(payload.subarray(1)));
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    return null;
+  }
+  const source = parsed as Record<string, unknown>;
+  const players = Array.isArray(source.players) ? source.players : [];
+  const bullets = Array.isArray(source.bullets) ? source.bullets : [];
+  return {
+    tick: numberAt(source, 'tick'),
+    state: parseCoopBossState(stringAt(source, 'state')),
+    bossHp: numberAt(source, 'boss_hp'),
+    bossMaxHp: numberAt(source, 'boss_max_hp'),
+    seatCount: numberAt(source, 'seat_count'),
+    shieldDirMask: numberAt(source, 'shield_dir_mask'),
+    lockDir: numberAt(source, 'lock_dir'),
+    lockUntilTick: numberAt(source, 'lock_until_tick'),
+    spiralActive: source.spiral_active === true,
+    stateHash: stringAt(source, 'state_hash'),
+    players: players.filter(isRecord).map(
+      (player): CoopBossPlayerSnapshot => ({
+        playerId: stringAt(player, 'player_id'),
+        seat: numberAt(player, 'seat'),
+        xMilli: numberAt(player, 'x_milli'),
+        yMilli: numberAt(player, 'y_milli'),
+        facingMilliDeg: numberAt(player, 'facing_millideg'),
+        damageDealt: numberAt(player, 'damage_dealt'),
+        connected: player.connected !== false,
+        locked: player.locked === true,
+        shielded: player.shielded === true,
+      }),
+    ),
+    bullets: bullets.filter(isRecord).map(
+      (bullet): CoopBossBullet => ({
+        bulletId: stringAt(bullet, 'bullet_id'),
+        ownerPlayerId: stringAt(bullet, 'owner_player_id'),
+        xMilli: numberAt(bullet, 'x_milli'),
+        yMilli: numberAt(bullet, 'y_milli'),
+        vxMilli: numberAt(bullet, 'vx_milli'),
+        vyMilli: numberAt(bullet, 'vy_milli'),
+        radiusMilli: numberAt(bullet, 'radius_milli'),
+        kind: numberAt(bullet, 'kind'),
+        patternId: stringAt(bullet, 'pattern_id'),
       }),
     ),
   };

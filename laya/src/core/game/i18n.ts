@@ -81,6 +81,7 @@ export interface Messages {
   'room.boss.default': string;
   'room.boss.tian': string;
   'room.boss.hui': string;
+  'room.coop.players': string;
   'room.players': string;
   'room.waitingForPlayers': string;
   'room.ready': string;
@@ -451,6 +452,7 @@ const ZH_HANS: Messages = {
   'room.boss.default': '默认',
   'room.boss.tian': '天',
   'room.boss.hui': '辉',
+  'room.coop.players': '合作 {count} 人',
   'room.players': '玩家',
   'room.waitingForPlayers': '等待玩家加入…',
   'room.ready': '准备',
@@ -779,6 +781,7 @@ const ZH_HANT: Messages = {
   'room.boss.default': '預設',
   'room.boss.tian': '天',
   'room.boss.hui': '輝',
+  'room.coop.players': '合作 {count} 人',
   'room.players': '玩家',
   'room.waitingForPlayers': '等待玩家加入…',
   'room.ready': '準備',
@@ -1107,6 +1110,7 @@ const JA: Messages = {
   'room.boss.default': 'デフォルト',
   'room.boss.tian': '天',
   'room.boss.hui': '輝',
+  'room.coop.players': '協力 {count} 人',
   'room.players': 'プレイヤー',
   'room.waitingForPlayers': 'プレイヤーを待っています…',
   'room.ready': '準備',
@@ -1437,6 +1441,7 @@ const EN: Messages = {
   'room.boss.default': 'Default',
   'room.boss.tian': '天 / tian',
   'room.boss.hui': '辉 / hui',
+  'room.coop.players': 'Co-op {count}P',
   'room.players': 'Players',
   'room.waitingForPlayers': 'Waiting for players…',
   'room.ready': 'Ready',

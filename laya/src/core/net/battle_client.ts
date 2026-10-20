@@ -16,6 +16,7 @@
 import type { BossRaceSeed } from '../math/boss_race_seed';
 import { deriveDevKcpConv } from '../math/hash64';
 import type { BossRaceSnapshot } from '../sim/boss_race';
+import type { CoopBossSnapshot } from '../sim/coop_boss';
 import {
   BossRaceSimulation,
   BOSS_RACE_HARD_SNAP_ERROR_MILLI,
@@ -27,6 +28,7 @@ import { emptyVersionStamp } from '../protocol/types';
 import {
   decodeBattleResult,
   decodeBossRaceSnapshot,
+  decodeCoopBossSnapshot,
   encodeBattleInput,
   encodeBattleInputWithTicket,
   peekPayloadType,
@@ -117,6 +119,9 @@ export class BattleClient {
   private sessionInfo: BattleSessionInfo | null = null;
 
   private snapshotListeners: SnapshotListener[] = [];
+  // 合作模式快照（payload 字节 12）单独一条监听链：race 与 coop 的帧模型
+  // 完全不同，混在一条链上会让每个消费者都要做类型判断。
+  private coopSnapshotListeners: Array<(snapshot: CoopBossSnapshot) => void> = [];
   private resultListeners: ResultListener[] = [];
 
   private seq = 0;
@@ -188,6 +193,17 @@ export class BattleClient {
       const index = this.snapshotListeners.indexOf(listener);
       if (index >= 0) {
         this.snapshotListeners.splice(index, 1);
+      }
+    };
+  }
+
+  /** 合作模式快照（mode_id = coop_boss 时由字节 12 载荷驱动）。 */
+  onCoopSnapshot(listener: (snapshot: CoopBossSnapshot) => void): () => void {
+    this.coopSnapshotListeners.push(listener);
+    return () => {
+      const index = this.coopSnapshotListeners.indexOf(listener);
+      if (index >= 0) {
+        this.coopSnapshotListeners.splice(index, 1);
       }
     };
   }
@@ -372,6 +388,16 @@ export class BattleClient {
         const snapshot = decodeBossRaceSnapshot(payload);
         if (snapshot !== null) {
           this.applySnapshot(snapshot);
+        }
+        break;
+      }
+      case 12: {
+        // CoopSnapshot（合作模式；JSON 体）
+        const coop = decodeCoopBossSnapshot(payload);
+        if (coop !== null) {
+          for (const listener of this.coopSnapshotListeners) {
+            listener(coop);
+          }
         }
         break;
       }

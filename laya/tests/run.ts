@@ -64,9 +64,14 @@ import './audio_throttle.test';
 import './cutscene_overlay_steps.test';
 import './dem_replay.test';
 
+import './coop_view_model.test';
+import './coop_layout.test';
+import './coop_codec.test';
+
 import { runAll } from './harness';
 
 void runAll().catch((error: unknown) => {
   console.log(`TEST RUN FAILED: ${String(error)}`);
   throw error;
 });
+

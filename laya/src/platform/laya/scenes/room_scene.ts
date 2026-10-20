@@ -95,6 +95,9 @@ export class RoomScene implements ClientScene {
   private readonly bossButton: ButtonHandle;
   private readonly shotButton: ButtonHandle;
   private readonly bombButton: ButtonHandle;
+  /** 合作人数（coop_boss 房主选项：2/4）。 */
+  private readonly coopButton: ButtonHandle;
+  private coopPlayers = 2;
   private bossIndex = 0;
   private shotIndex = 0;
   private bombIndex = 0;
@@ -144,7 +147,7 @@ export class RoomScene implements ClientScene {
     this.setupText.y = setupY + theme.FONT_SIZE_CAPTION + theme.SPACE_XS;
     this.root.addChild(this.setupText);
     const setupRowY = this.setupText.y + theme.FONT_SIZE_CAPTION + theme.SPACE_XS;
-    const setupButtonWidth = Math.floor((contentWidth - theme.SPACE_SM * 2) / 3);
+    const setupButtonWidth = Math.floor((contentWidth - theme.SPACE_SM * 3) / 4);
     this.bossButton = createButtonEx(t('room.boss'), margin, setupRowY, setupButtonWidth, () => void this.cycleBoss(), 'ghost');
     this.root.addChild(this.bossButton.sprite);
     this.shotButton = createButtonEx(
@@ -165,6 +168,16 @@ export class RoomScene implements ClientScene {
       'ghost',
     );
     this.root.addChild(this.bombButton.sprite);
+    this.coopButton = createButtonEx(
+      t('room.coop.players', { count: 2 }),
+      margin + (setupButtonWidth + theme.SPACE_SM) * 3,
+      setupRowY,
+      setupButtonWidth,
+      () => void this.cycleCoopPlayers(),
+      'ghost',
+    );
+    this.coopButton.sprite.visible = false;
+    this.root.addChild(this.coopButton.sprite);
 
     // --- roster band: dynamic player cards rebuilt per snapshot ---
     const rosterCaptionY = codeY + codeHeight + SETUP_BLOCK_HEIGHT;
@@ -347,18 +360,30 @@ export class RoomScene implements ClientScene {
       bomb: bomb || t('room.default'),
     });
     this.setupText.color = isHost ? theme.COLOR_INFO : theme.COLOR_TEXT_MUTED;
+    // 合作人数：仅 coop_boss 房显示（房主可改；guest 只读展示）。
+    const isCoop = room.modeId === 'coop_boss';
+    this.coopPlayers = room.coopPlayers ?? 2;
+    this.coopButton.sprite.visible = isCoop;
+    this.coopButton.setText(t('room.coop.players', { count: this.coopPlayers }));
   }
 
   private setSetupEnabled(enabled: boolean): void {
     this.bossButton.setEnabled(enabled);
     this.shotButton.setEnabled(enabled);
     this.bombButton.setEnabled(enabled);
+    this.coopButton.setEnabled(enabled);
   }
 
   /** Cycles the room boss (host only) by re-creating the room with the new id. */
   private async cycleBoss(): Promise<void> {
     this.bossIndex = (this.bossIndex + 1) % ROOM_BOSS_OPTIONS.length;
     await this.reconfigure({ bossId: ROOM_BOSS_OPTIONS[this.bossIndex].id });
+  }
+
+  /** 切换合作人数（2 ↔ 4）；服务端以重建房间落定（同 boss 选择的机制）。 */
+  private async cycleCoopPlayers(): Promise<void> {
+    this.coopPlayers = this.coopPlayers === 2 ? 4 : 2;
+    await this.reconfigure({ coopPlayers: this.coopPlayers });
   }
 
   private async cycleShot(): Promise<void> {
@@ -376,6 +401,7 @@ export class RoomScene implements ClientScene {
     bossId?: string;
     shotType?: string;
     bombType?: string;
+    coopPlayers?: number;
   }): Promise<void> {
     const room = this.options.flow.snapshot().room;
     if (room === null) {
@@ -387,7 +413,12 @@ export class RoomScene implements ClientScene {
     const bombType = selection.bombType ?? me?.bombType ?? '';
     this.busy = true;
     this.applySnapshot(this.options.flow.snapshot());
-    await this.options.flow.reconfigureRoom({ bossId, shotType, bombType });
+    await this.options.flow.reconfigureRoom({
+      bossId,
+      shotType,
+      bombType,
+      coopPlayers: selection.coopPlayers ?? this.coopPlayers,
+    });
     this.busy = false;
     this.applySnapshot(this.options.flow.snapshot());
   }

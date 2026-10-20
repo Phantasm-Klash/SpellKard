@@ -197,12 +197,16 @@ export interface RoomView {
   bossId: string;
   /** 房间舞台 id（自机/关卡选择的一部分）。 */
   stageId: string;
+  /** 合作人数（coop_boss 房主选项：2/4；其他模式 undefined）。 */
+  coopPlayers?: number;
 }
 
 /** `rooms.create` 的可选房间配置（boss + 自机 loadout）。 */
 export interface RoomCreateOptions {
   /** 房间 boss（仅房主可设）。空 = 不指定。 */
   bossId?: string;
+  /** 合作人数（coop_boss 房主可设：2/4；服务端缺省 2）。 */
+  coopPlayers?: number;
   stageId?: string;
   characterId?: string;
   shotType?: string;
@@ -228,6 +232,7 @@ function roomModeParams(options: RoomCreateOptions | RoomJoinOptions | undefined
     ['character_id', options.characterId],
     ['shot_type', options.shotType],
     ['bomb_type', options.bombType],
+    ['coop_players', 'coopPlayers' in options && options.coopPlayers !== undefined ? String(options.coopPlayers) : undefined],
   ];
   for (const [key, value] of fields) {
     if (value !== undefined && value !== '') {
@@ -235,6 +240,17 @@ function roomModeParams(options: RoomCreateOptions | RoomJoinOptions | undefined
     }
   }
   return params;
+}
+
+/** 从房间载荷的 `mode_params.coop_players` 读出合作人数（无/非法 = undefined）。 */
+function coopPlayersFromRoomPayload(payload: Record<string, unknown>): number | undefined {
+  const params = stringRecordField(payload, 'mode_params', 'modeParams');
+  const raw = params['coop_players'];
+  if (raw === undefined) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 export interface BattleAllocationView {
@@ -1926,6 +1942,7 @@ export class LobbyClient {
       rulesetVersion: stringField(payload, 'ruleset_version', 'rulesetVersion'),
       bossId: stringField(payload, 'boss_id', 'bossId'),
       stageId: stringField(payload, 'stage_id', 'stageId'),
+      coopPlayers: coopPlayersFromRoomPayload(payload),
       players: Array.isArray(payload.players)
         ? payload.players.filter(isRecord).map((player) => this.playerFromPayload(player))
         : [],

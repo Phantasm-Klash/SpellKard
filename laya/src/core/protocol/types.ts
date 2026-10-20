@@ -258,6 +258,9 @@ export enum BattlePayloadType {
   RESULT = 8,
   MODE_ACTION = 9,
   BOSS_RACE_STATE = 10,
+  DANMAKU_SPAWN = 11,
+  /** 合作模式快照（JSON 体；字段见 COOP_MODE_CONTRACT.md §2.4）。 */
+  COOP_SNAPSHOT = 12,
 }
 
 export interface BattlePacketHeader {

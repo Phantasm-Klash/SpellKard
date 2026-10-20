@@ -17,6 +17,9 @@ import { BattleConnectionState } from '../../../core/net/battle_client';
 import type { TimerLike } from '../../../core/net/transport';
 import { battleLayout, type BattleLayout } from '../../../core/game/battle_layout';
 import { buildBossRaceFrame, type BossRaceFrame, type PlayerRenderItem, type RenderPoint, PlayfieldTransform, bossOriginPixels } from '../../../core/game/boss_race_view_model';
+import { buildCoopFrame, coopArenaDirectionBits, coopLocalSeat, type CoopFrame } from '../../../core/game/coop_view_model';
+import { coopBattleLayout } from '../../../core/game/coop_layout';
+import { COOP_MODE_ID, type CoopBossSnapshot } from '../../../core/sim/coop_boss';
 import { describeDirectionBits, encodeInput } from '../../../core/game/input';
 import { HandBarController } from '../../../core/game/card_hand_view';
 import { DraftPanelController, localGrantCardId } from '../../../core/game/draft_panel_view';
@@ -49,6 +52,7 @@ import {
 import type { LayaInput } from '../laya_input';
 import { BattleAudioManager } from '../audio_manager';
 import { BossRaceView } from '../view/boss_race_view';
+import { CoopView } from '../view/coop_view';
 import { AtlasBulletRenderer } from '../view/bullets';
 import { sharedTnaFrameSource } from '../view/bullet_atlas';
 import { sharedGiftIconSource } from '../view/gift_icons';
@@ -260,6 +264,11 @@ export class BattleScene implements ClientScene {
   private readonly activeEffects: ActiveCardEffect[] = [];
   private lastFinisherDamage = 0;
   private authoritative: BossRaceSnapshot | null = null;
+  // 合作模式（coop_boss）：快照来自字节 12，渲染走 CoopView，座位决定视野旋转。
+  private coopAuthoritative: CoopBossSnapshot | null = null;
+  private coopFrame: CoopFrame | null = null;
+  private coopView: CoopView | null = null;
+  private coopSeatCount = 2;
   private tickHandle = 0;
   private running = false;
   private paused = false;
@@ -275,7 +284,7 @@ export class BattleScene implements ClientScene {
   constructor(options: BattleSceneOptions) {
     this.options = options;
     const { width, height } = this.stageSize();
-    this.geometry = battleLayout(width, height);
+    this.geometry = this.computeGeometry(width, height);
     this.root = new Laya.Sprite();
     this.root.size(width, height);
     this.root.visible = false;
@@ -388,6 +397,11 @@ export class BattleScene implements ClientScene {
         this.matchEnded = true;
         this.options.onMatchEnd?.(snapshot.winnerPlayerId);
       }
+    });
+
+    // 合作模式快照：只有 mode_id = coop_boss 的对局会收到。
+    this.options.battle.onCoopSnapshot((snapshot) => {
+      this.coopAuthoritative = snapshot;
     });
 
     // Apply the stage-sized layout once so the first frame already matches the
@@ -604,7 +618,7 @@ export class BattleScene implements ClientScene {
    * bullet art scale track the window instead of freezing at boot.
    */
   private relayout(width: number, height: number): void {
-    this.geometry = battleLayout(width, height);
+    this.geometry = this.computeGeometry(width, height);
     this.root.size(width, height);
     this.pauseOverlay.size(width, height);
     // The background is the reference 320x480 stage model mapped onto the
@@ -847,9 +861,17 @@ export class BattleScene implements ClientScene {
     const tick = (battle.simulationRef?.getCurrentTick() ?? 0) + 1;
     // A clicked slot wins over the keyboard's slot for exactly this one packet.
     const cardSlot = clickedSlot >= 0 ? clickedSlot : encoded.cardSlot;
+    // 合作模式：视图方向（本地恒朝上）→ 战场方向（服务端协议零改动）。
+    const directionBits = this.isCoopMode()
+      ? coopArenaDirectionBits(
+          encoded.directionBits,
+          coopLocalSeat(this.coopAuthoritative, this.options.localPlayerId()),
+          this.coopSeatCount,
+        )
+      : encoded.directionBits;
     battle.sendInput(
       tick,
-      encoded.directionBits,
+      directionBits,
       encoded.slow,
       encoded.shoot,
       encoded.bomb,
@@ -882,7 +904,54 @@ export class BattleScene implements ClientScene {
     }
   }
 
+  /** 合作模式判定（对局信息里的 mode_id）。 */
+  private isCoopMode(): boolean {
+    return (this.options.battle.info?.modeId ?? '') === COOP_MODE_ID;
+  }
+
+  /** 布局：4 人合作房用方形战场，其余（含 2 人合作）沿用 2:3 竖屏。 */
+  private computeGeometry(width: number, height: number): BattleLayout {
+    return this.isCoopMode() ? coopBattleLayout(width, height, this.coopSeatCount) : battleLayout(width, height);
+  }
+
+  /** 懒建合作视图（首次收到 coop 快照时挂到场景根上）。 */
+  private ensureCoopView(): CoopView {
+    if (this.coopView === null) {
+      const { width, height } = this.stageSize();
+      this.coopView = new CoopView({ stageWidth: width, stageHeight: height });
+      this.root.addChild(this.coopView.root);
+    }
+    return this.coopView;
+  }
+
   private renderFrame(): void {
+    if (this.isCoopMode()) {
+      const coop = this.coopAuthoritative;
+      if (coop !== null) {
+        if (coop.seatCount > 0 && coop.seatCount !== this.coopSeatCount) {
+          this.coopSeatCount = coop.seatCount;
+          const size = this.stageSize();
+          this.relayout(size.width, size.height);
+        }
+        const coopFrame = buildCoopFrame(coop, {
+          layout: this.geometry.playfield,
+          localPlayerId: this.options.localPlayerId(),
+          bossMaxHp: this.options.bossMaxHp,
+        });
+        this.coopFrame = coopFrame;
+        const view = this.ensureCoopView();
+        view.setVisible(true);
+        this.view.root.visible = false;
+        view.layout(
+          this.geometry.playfieldX,
+          this.geometry.playfieldY,
+          this.geometry.playfield.width,
+          this.geometry.playfield.height,
+        );
+        view.render(coopFrame);
+        return;
+      }
+    }
     const battle = this.options.battle;
     const source = this.authoritative ?? battle.simulationRef?.snapshot() ?? null;
     if (source === null) {
