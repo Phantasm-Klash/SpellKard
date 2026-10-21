@@ -223,7 +223,9 @@ export function buildCoopFrame(snapshot: CoopBossSnapshot, options: CoopFrameOpt
     tick: snapshot.tick,
     state: snapshot.state,
     bossHp: snapshot.bossHp,
-    bossMaxHp: options.bossMaxHp !== undefined && options.bossMaxHp > 0 ? options.bossMaxHp : snapshot.bossMaxHp,
+    // 合作模式 boss 上限由服务端按人数缩放（5000×座位数），快照值权威；
+    // 静态 boss 目录值（单人演示关卡基准）仅在快照缺 max 时兜底。
+    bossMaxHp: snapshot.bossMaxHp > 0 ? snapshot.bossMaxHp : options.bossMaxHp ?? 0,
     seatCount: snapshot.seatCount,
     localSeat,
     rotationRad,

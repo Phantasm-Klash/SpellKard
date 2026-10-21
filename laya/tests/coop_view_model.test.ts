@@ -113,6 +113,21 @@ test('local player is always bottom-most and faces up in its own view', () => {
   }
 });
 
+test('boss max hp prefers the server-authoritative snapshot over the static option', () => {
+  // 2 人合作上限 = 5000×2 = 10000（服务端缩放）；静态 boss 目录值 6000 只能兜底，
+  // 否则 HUD 显示 "10000 / 6000" 且血条比例全错（2026-10-22 直播录制实见）。
+  const snapshot = makeSnapshot(2);
+  const frame = buildCoopFrame(snapshot, {
+    layout: LAYOUT,
+    localPlayerId: 'p0',
+    bossMaxHp: 6000,
+  });
+  expectEqual(frame.bossMaxHp, snapshot.bossMaxHp, 'snapshot max must win over the static option');
+  const legacy = { ...makeSnapshot(2), bossMaxHp: 0 };
+  const fallback = buildCoopFrame(legacy, { layout: LAYOUT, localPlayerId: 'p0', bossMaxHp: 6000 });
+  expectEqual(fallback.bossMaxHp, 6000, 'static option remains the fallback when the snapshot omits max');
+});
+
 test('translucent allies and their bullets; local and public bullets opaque', () => {
   const snapshot = makeSnapshot(4);
   const frame = buildCoopFrame(snapshot, { layout: LAYOUT, localPlayerId: 'p0' });
