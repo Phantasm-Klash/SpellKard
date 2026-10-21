@@ -43,6 +43,7 @@ import './native_udp_datagram.test';
 import './native_window.test';
 import './laya_http_client.test';
 import './ws_relay_url.test';
+import './page_params.test';
 import './battle_layout.test';
 import './tna_atlas_frames.test';
 import './lobby_auth.test';

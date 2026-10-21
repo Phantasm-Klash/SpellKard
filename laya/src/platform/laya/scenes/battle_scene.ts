@@ -14,6 +14,7 @@
 
 import type { BattleClient, BattleCorrectionMetrics } from '../../../core/net/battle_client';
 import { BattleConnectionState } from '../../../core/net/battle_client';
+import { pageNumberParam } from '../page_params';
 import type { TimerLike } from '../../../core/net/transport';
 import { battleLayout, type BattleLayout } from '../../../core/game/battle_layout';
 import { buildBossRaceFrame, type BossRaceFrame, type PlayerRenderItem, type RenderPoint, PlayfieldTransform, bossOriginPixels } from '../../../core/game/boss_race_view_model';
@@ -99,6 +100,15 @@ export interface BattleSceneOptions {
   matchTickLimit?: number;
   /** Tick rate for the countdown clock. Defaults to the simulation's 60Hz. */
   tickRateHz?: number;
+  /**
+   * Input-tick latency lead in ticks (60Hz). The battle server's `SubmitInput`
+   * only accepts ticks in `(server_current, server_current + 8]`; an input
+   * anchored to a snapshot that arrived one RTT ago is already stale, so a
+   * high-latency route (cross-border demo: ~150ms RTT ≈ 9 ticks) silently
+   * drops every input — the local player never moves and deals no damage.
+   * 0 keeps the plain `anchor + 1` behaviour (low-latency links).
+   */
+  inputLeadTicks?: number;
   /**
    * Explicit override for the purge RNG seed, as decimal text. Intended for
    * tests and offline demos; in a real match the seed comes from
@@ -844,6 +854,20 @@ export class BattleScene implements ClientScene {
     }
   }
 
+  /**
+   * Latency lead for the input tick (ticks @60Hz). {@link BattleSceneOptions.inputLeadTicks}
+   * wins when set; otherwise the demo harness can pass `?inputLead=N` on the
+   * page URL (a local relay to a cross-border battle server runs ~150ms RTT
+   * ≈ 9 ticks). Absent or invalid → 0, the plain anchor+1 behaviour.
+   */
+  private inputLeadTicks(): number {
+    const fromOptions = this.options.inputLeadTicks;
+    if (fromOptions !== undefined && fromOptions > 0) {
+      return Math.floor(fromOptions);
+    }
+    return pageNumberParam('inputLead', 0);
+  }
+
   /** One simulation tick: read input, send it, advance prediction, render. */
   step(): void {
     // The performance overlays animate off this same fixed-tick clock, so they
@@ -863,7 +887,16 @@ export class BattleScene implements ClientScene {
     }
     const raw = this.options.input.snapshot();
     const encoded = encodeInput(raw);
-    const tick = (battle.simulationRef?.getCurrentTick() ?? 0) + 1;
+    // 输入 tick 必须落在服务端接收窗口 (server_current, server_current+8]。
+    // 合作模式的权威帧走独立监听链，本地 BossRaceSimulation 永远收不到服务端
+    // 状态——其时钟从连接时的 0 起算且随渲染帧率漂移，直接沿用会被
+    // `tick <= current_tick` 整段丢弃（玩家不动、零伤害）。因此合作模式锚定
+    // 最新权威快照的 tick；MVP 路径的本地模拟每帧快照 alignTick，行为不变。
+    // inputLeadTicks 补偿链路 RTT（跨境演示 ~150ms ≈ 9 tick，见选项注释）。
+    const anchor = this.isCoopMode() && this.coopAuthoritative !== null
+      ? this.coopAuthoritative.tick
+      : (battle.simulationRef?.getCurrentTick() ?? 0);
+    const tick = anchor + 1 + this.inputLeadTicks();
     // A clicked slot wins over the keyboard's slot for exactly this one packet.
     const cardSlot = clickedSlot >= 0 ? clickedSlot : encoded.cardSlot;
     // 合作模式：视图方向（本地恒朝上）→ 战场方向（服务端协议零改动）。
