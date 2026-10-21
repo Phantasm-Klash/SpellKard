@@ -66,8 +66,10 @@ test('at tick 45 the TNA path spawns the kusabi ring for both players', () => {
   const snapshot = sim.snapshot();
   expectEqual(snapshot.tick, 45);
 
-  // `kusabi_gap_ring` = two waves of 12, one per player ⇒ 48 bullets.
-  expectEqual(snapshot.bullets.length, 48);
+  // `kusabi_gap_ring` runs on a 90-tick internal period, so its two rings land
+  // on phases 0 and 45 instead of overlapping on one tick. Tick 45 is therefore
+  // the second ring only: 12 bullets, one set per player ⇒ 24.
+  expectEqual(snapshot.bullets.length, 24);
   for (const bullet of snapshot.bullets) {
     expectEqual(bullet.bulletKind, 9, 'kusabi_01');
     expectEqual(bullet.motionFunc, 0, 'straight-line family');
@@ -76,15 +78,15 @@ test('at tick 45 the TNA path spawns the kusabi ring for both players', () => {
 
   // Bullet ids are allocated globally, in `std::map` (sorted player id) order.
   expectEqual(snapshot.bullets[0].bulletId, 'b1');
+  expectEqual(snapshot.bullets[11].bulletId, 'b12');
+  expectEqual(snapshot.bullets[12].bulletId, 'b13');
   expectEqual(snapshot.bullets[23].bulletId, 'b24');
-  expectEqual(snapshot.bullets[24].bulletId, 'b25');
-  expectEqual(snapshot.bullets[47].bulletId, 'b48');
   expectEqual(snapshot.bullets[0].ownerPlayerId, 'p1');
-  expectEqual(snapshot.bullets[47].ownerPlayerId, 'p2');
+  expectEqual(snapshot.bullets[23].ownerPlayerId, 'p2');
 
   // Both Boss copies fire the same pattern from the same origin.
-  expectEqual(snapshot.bullets[0].xMilli, snapshot.bullets[24].xMilli);
-  expectEqual(snapshot.bullets[0].yMilli, snapshot.bullets[24].yMilli);
+  expectEqual(snapshot.bullets[0].xMilli, snapshot.bullets[12].xMilli);
+  expectEqual(snapshot.bullets[0].yMilli, snapshot.bullets[12].yMilli);
 });
 
 test('the bullet set keeps growing as the schedule advances', () => {

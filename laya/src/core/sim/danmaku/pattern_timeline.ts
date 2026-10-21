@@ -183,6 +183,13 @@ function makeTemplate(kind: number, funcNo: number, speed: number): BulletTempla
  * 顺序即 `BossRaceSimulation` 的调度顺序（`pattern_index = (tick/45) % 10`），
  * 因此**不得重排**：顺序变了 `pattern_id` 与 `pattern_index` 都会错位，
  * `DeterministicRng` 的输入随之改变，哈希必然不匹配。
+ *
+ * 节奏：调度每 45 tick 一次，传进来的 tick 恒为 45 的倍数。若 `period_ticks`
+ * 也取 45，相位恒为 0，只有 `tick_offset === 0` 的波会发；每个模式都变成"每
+ * 45 tick 齐射一次"。因此需要变化的模式取 `period_ticks = 90`
+ * （45k % 90 ∈ {0, 45}），并备好 offset 0 与 45 两波：每个调度点仍有弹，
+ * 但相邻两点是不同的一波。**必须与 PhK-BattleServer 的
+ * src/danmaku/pattern_timeline.cpp 完全一致**，否则 state hash 不等。
  */
 export function bossRacePatternLibrary(): readonly PatternDef[] {
   const lib: PatternDef[] = [];
@@ -191,11 +198,19 @@ export function bossRacePatternLibrary(): readonly PatternDef[] {
   lib.push({
     id: 'kome_ring',
     family: 'A 初始化/直线',
-    period_ticks: 45,
+    period_ticks: 90,
     waves: [
       {
         tick_offset: 0,
         command: makeCommand(45 /* kome_01 */, 0, 0, 16, 3.0),
+        tmpl: makeTemplate(45, 0, 3.0),
+        aim: AimMode.None,
+        spin_per_tick_deg: 0,
+      },
+      {
+        // 半格错位环：45k % 90 == 45 时发。
+        tick_offset: 45,
+        command: makeCommand(45, 11.25, 0, 16, 3.0),
         tmpl: makeTemplate(45, 0, 3.0),
         aim: AimMode.None,
         spin_per_tick_deg: 0,
@@ -207,7 +222,7 @@ export function bossRacePatternLibrary(): readonly PatternDef[] {
   lib.push({
     id: 'kusabi_gap_ring',
     family: 'A 初始化/直线',
-    period_ticks: 45,
+    period_ticks: 90,
     waves: [
       {
         tick_offset: 0,
@@ -217,7 +232,8 @@ export function bossRacePatternLibrary(): readonly PatternDef[] {
         spin_per_tick_deg: 0,
       },
       {
-        tick_offset: 0,
+        // 缺口真正错开：第二环在相位 45 发，而不是与第一环同一 tick 重叠。
+        tick_offset: 45,
         command: makeCommand(9, 15, 0, 12, 2.8),
         tmpl: makeTemplate(9, 0, 2.8),
         aim: AimMode.None,
@@ -246,11 +262,18 @@ export function bossRacePatternLibrary(): readonly PatternDef[] {
   lib.push({
     id: 'ring_spiral',
     family: 'A 初始化/直线',
-    period_ticks: 45,
+    period_ticks: 90,
     waves: [
       {
         tick_offset: 0,
         command: makeCommand(27 /* ring_01 */, 0, 0, 4, 3.4),
+        tmpl: makeTemplate(27, 0, 3.4),
+        aim: AimMode.None,
+        spin_per_tick_deg: 13.0,
+      },
+      {
+        tick_offset: 45,
+        command: makeCommand(27, 180, 0, 4, 3.4),
         tmpl: makeTemplate(27, 0, 3.4),
         aim: AimMode.None,
         spin_per_tick_deg: 13.0,
@@ -267,11 +290,19 @@ export function bossRacePatternLibrary(): readonly PatternDef[] {
     lib.push({
       id: 'kome_homing',
       family: 'D 追踪/限速转向',
-      period_ticks: 45,
+      period_ticks: 90,
       waves: [
         {
           tick_offset: 0,
           command: makeCommand(45, 90, 12, 2, 2.6),
+          tmpl,
+          aim: AimMode.None,
+          spin_per_tick_deg: 0,
+        },
+        {
+          // 紧扇形之后换一束 45° 外扩 30° 的宽扇形。
+          tick_offset: 45,
+          command: makeCommand(45, 45, 30, 2, 2.6),
           tmpl,
           aim: AimMode.None,
           spin_per_tick_deg: 0,
@@ -286,15 +317,24 @@ export function bossRacePatternLibrary(): readonly PatternDef[] {
     tmpl.angle_init = 0.0;
     tmpl.xacc = 6.0; // X：正弦频率
     tmpl.xacc_cap = 1.5; // XC：正弦幅度
+    // 第二波正弦起点推半周期（A0 = 180），并且发射角转 45°。
+    const flipped = { ...tmpl, angle_init: 180.0 };
     lib.push({
       id: 'heart_sine_speed',
       family: 'C 正弦调速',
-      period_ticks: 45,
+      period_ticks: 90,
       waves: [
         {
           tick_offset: 0,
           command: makeCommand(174, 90, 0, 8, 3.0),
           tmpl,
+          aim: AimMode.None,
+          spin_per_tick_deg: 0,
+        },
+        {
+          tick_offset: 45,
+          command: makeCommand(174, 135, 0, 8, 3.0),
+          tmpl: flipped,
           aim: AimMode.None,
           spin_per_tick_deg: 0,
         },
@@ -306,11 +346,18 @@ export function bossRacePatternLibrary(): readonly PatternDef[] {
   lib.push({
     id: 'kunai_bounce',
     family: 'F 边界反弹',
-    period_ticks: 45,
+    period_ticks: 90,
     waves: [
       {
         tick_offset: 0,
         command: makeCommand(126 /* kunai_01 */, 60, 20, 6, 3.2),
+        tmpl: makeTemplate(126, 1, 3.2),
+        aim: AimMode.None,
+        spin_per_tick_deg: 0,
+      },
+      {
+        tick_offset: 45,
+        command: makeCommand(126, 120, 20, 6, 3.2),
         tmpl: makeTemplate(126, 1, 3.2),
         aim: AimMode.None,
         spin_per_tick_deg: 0,
@@ -326,15 +373,24 @@ export function bossRacePatternLibrary(): readonly PatternDef[] {
     tmpl.prev_angle = 4.0; // PA
     tmpl.xacc_cap = 1.2; // XC
     tmpl.p2 = 1;
+    // 第二波半径正弦反向（A0 + pi），发射角转 45°。字面量与 C++ 一致。
+    const mirrored = { ...tmpl, angle_init: 3.64159265358979 };
     lib.push({
       id: 'sizuku_sine_radius',
       family: 'C 正弦半径',
-      period_ticks: 45,
+      period_ticks: 90,
       waves: [
         {
           tick_offset: 0,
           command: makeCommand(99, 90, 8, 5, 2.4),
           tmpl,
+          aim: AimMode.None,
+          spin_per_tick_deg: 0,
+        },
+        {
+          tick_offset: 45,
+          command: makeCommand(99, 135, 8, 5, 2.4),
+          tmpl: mirrored,
           aim: AimMode.None,
           spin_per_tick_deg: 0,
         },
@@ -348,15 +404,24 @@ export function bossRacePatternLibrary(): readonly PatternDef[] {
     tmpl.angle_init = 45.0; // A0
     tmpl.p1 = 1; // 奇 → 镜像
     tmpl.p2 = 30; // 偏移
+    // 第二波镜轴转四分之一圈（A0 = 135），发射角同时转 90°。
+    const rotated = { ...tmpl, angle_init: 135.0 };
     lib.push({
       id: 'stama_mirror',
       family: 'F 镜像',
-      period_ticks: 45,
+      period_ticks: 90,
       waves: [
         {
           tick_offset: 0,
           command: makeCommand(36, 0, 0, 10, 3.0),
           tmpl,
+          aim: AimMode.None,
+          spin_per_tick_deg: 0,
+        },
+        {
+          tick_offset: 45,
+          command: makeCommand(36, 90, 0, 10, 3.0),
+          tmpl: rotated,
           aim: AimMode.None,
           spin_per_tick_deg: 0,
         },

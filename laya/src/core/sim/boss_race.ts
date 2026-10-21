@@ -305,7 +305,18 @@ export function defaultTnaBossRaceConfig(
   return {
     ...defaultBossRaceConfig(matchId, matchSeed),
     rulesetVersion: TNA_RULESET_VERSION,
-    patternPeriodTicks: BOSS_RACE_TNA_PATTERNS[0]?.period_ticks ?? BOSS_RACE_PATTERN_PERIOD_TICKS,
+    // The schedule period is NOT the first pattern's period_ticks.
+    //
+    // It used to be `BOSS_RACE_TNA_PATTERNS[0].period_ticks`, which was
+    // indistinguishable from the constant only because every pattern happened to
+    // use 45. The two are different things: `patternPeriodTicks` is how often the
+    // scheduler fires and picks the next pattern (server:
+    // `config_.pattern_period_ticks`, defaulted to `kBossRacePatternPeriodTicks`
+    // and never taken from a pattern), while a pattern's own `period_ticks`
+    // decides its internal phase. Coupling them meant giving a pattern a
+    // different internal period silently rescheduled every pattern and reindexed
+    // the whole library. They stay decoupled, matching the server.
+    patternPeriodTicks: BOSS_RACE_PATTERN_PERIOD_TICKS,
   };
 }
 

@@ -232,11 +232,24 @@ test('the library ships the server\'s ten patterns in scheduler order', () => {
     ]),
     'the order IS the schedule — reordering it changes every pattern_index',
   );
+  // The scheduler fires every 45 ticks and the ticks it passes in are always
+  // multiples of 45, so a pattern's internal period has to divide into that grid.
+  // 45 and 90 are the two in use. A 90-tick period only ever sees phases {0, 45}
+  // (45k % 90), which is why such a pattern must carry a wave on each of those
+  // offsets -- with only offset 0 it would skip every other scheduling tick.
   for (const def of bossRacePatternLibraryCached()) {
-    expectEqual(def.period_ticks, 45, `${def.id} period`);
+    expect(
+      def.period_ticks === 45 || def.period_ticks === 90,
+      `${def.id} period ${def.period_ticks} is not on the 45-tick grid`,
+    );
     expect(def.waves.length >= 1, `${def.id} has no waves`);
+    const offsets = new Set(def.waves.map((wave) => wave.tick_offset));
     for (const wave of def.waves) {
-      expectEqual(wave.tick_offset, 0, `${def.id} waves fire on the period boundary`);
+      expectEqual(wave.tick_offset % 45, 0, `${def.id} wave offset is off the scheduling grid`);
+      expect(wave.tick_offset < def.period_ticks, `${def.id} wave offset is past its period`);
+    }
+    if (def.period_ticks === 90) {
+      expect(offsets.has(0) && offsets.has(45), `${def.id} must fire on both of its phases`);
     }
   }
 });
@@ -250,28 +263,41 @@ test('nothing fires between period boundaries', () => {
   expectEqual(emitPatternTick(def, 45, ctx, createMotionTargets()).length, 16, 'tick 45 fires');
 });
 
-test('kome_ring fires 16 kome bullets from the Boss origin', () => {
+test('kome_ring fires 16 kome bullets and alternates two half-turn rings', () => {
   const def = bossRacePatternLibraryCached()[0];
-  const shots = emitPatternTick(def, 45, { emitter_x: 320, emitter_y: 420 }, createMotionTargets());
-  expectEqual(shots.length, 16);
-  expectEqual(shots[0].bullet_kind, 45);
-  expectEqual(shots[0].bullet_func_no, 0);
-  expectEqual(shots[0].x, 320, 'emitter x (Boss origin)');
-  expectEqual(shots[0].y, 420, 'emitter y = 480 + (-60)');
-  expectEqual(shots[0].speed, 3);
-  expectEqual(shots[0].angle, 0);
-  expectClose(shots[1].angle, 22.5, 1e-12);
+  const ctx = { emitter_x: 320, emitter_y: 420 };
+
+  const at0 = emitPatternTick(def, 0, ctx, createMotionTargets());
+  expectEqual(at0.length, 16);
+  expectEqual(at0[0].bullet_kind, 45);
+  expectEqual(at0[0].bullet_func_no, 0);
+  expectEqual(at0[0].x, 320, 'emitter x (Boss origin)');
+  expectEqual(at0[0].y, 420, 'emitter y = 480 + (-60)');
+  expectEqual(at0[0].speed, 3);
+  expectEqual(at0[0].angle, 0);
+  expectClose(at0[1].angle, 22.5, 1e-12);
+
+  // period 90 => phase 45 on the next scheduling tick, which is the second ring.
+  const at45 = emitPatternTick(def, 45, ctx, createMotionTargets());
+  expectEqual(at45.length, 16, 'the second ring is another full circle');
+  expectClose(at45[0].angle, 11.25, 1e-12, 'second ring starts half a sector round');
 });
 
-test('kusabi_gap_ring fires both offset waves on the same tick', () => {
+test('kusabi_gap_ring splits its two rings across the scheduling ticks', () => {
   const def = bossRacePatternLibraryCached()[1];
-  const shots = emitPatternTick(def, 45, { emitter_x: 320, emitter_y: 420 }, createMotionTargets());
-  expectEqual(shots.length, 24, 'two waves of 12');
-  expectEqual(shots[0].bullet_kind, 9);
-  expectEqual(shots[0].angle, 0);
-  expectEqual(shots[12].bullet_kind, 9);
-  // The second wave is offset by +15° in its base angle.
-  expectClose(shots[12].angle, 15, 1e-12, 'second wave base = 15');
+  const ctx = { emitter_x: 320, emitter_y: 420 };
+
+  // period 90 puts the rings on phases 0 and 45, so they no longer overlap on
+  // one tick -- that overlap was what made the "gap" invisible.
+  const at0 = emitPatternTick(def, 0, ctx, createMotionTargets());
+  expectEqual(at0.length, 12, 'first ring on phase 0');
+  expectEqual(at0[0].bullet_kind, 9);
+  expectEqual(at0[0].angle, 0);
+
+  const at45 = emitPatternTick(def, 45, ctx, createMotionTargets());
+  expectEqual(at45.length, 12, 'second ring on phase 45');
+  expectEqual(at45[0].bullet_kind, 9);
+  expectClose(at45[0].angle, 15, 1e-12, 'second ring base = 15');
 });
 
 test('arrow_aimed_fan re-aims the base angle at the ship, then sweeps the full circle', () => {
@@ -318,7 +344,10 @@ test('ring_spiral spins the base angle by 13° per tick', () => {
   for (const tick of [0, 45, 90, 135]) {
     const shots = emitPatternTick(def, tick, ctx, createMotionTargets());
     expectEqual(shots.length, 4, `tick ${tick} fires four`);
-    const expected = f32(normalizeDeg(0 + 13 * tick));
+    // period 90 alternates between a 0-degree and a 180-degree starting burst,
+    // and the spiral keeps turning from whichever base this phase uses.
+    const base = tick % 90 === 45 ? 180 : 0;
+    const expected = f32(normalizeDeg(base + 13 * tick));
     expectEqual(shots[0].angle, normalizeDeg(expected - 0), `tick ${tick} base angle`);
   }
   // Tick 90 → 1170 → 90 after normalisation; the four spokes are 90/180/270/0.
