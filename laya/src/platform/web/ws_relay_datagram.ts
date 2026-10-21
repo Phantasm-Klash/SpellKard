@@ -24,6 +24,14 @@ export interface RelaySessionDescriptor {
   battleServerId: string;
   /** Signed battle ticket id presented to the relay for authorization. */
   ticketId: string;
+  /**
+   * Advisory: the battle-server endpoint (`host:port`) the match was allocated
+   * to. The lobby relay resolves the match server-side and ignores this hint,
+   * but a dumb relay (e.g. the local WS-to-UDP demo relay, which has no session
+   * token and cannot call the allocation REST) dials it directly instead of
+   * falling back to a hard-coded port that may host a stale match.
+   */
+  endpoint?: string;
 }
 
 export function buildRelayUrl(descriptor: RelaySessionDescriptor): string {
@@ -32,6 +40,7 @@ export function buildRelayUrl(descriptor: RelaySessionDescriptor): string {
     ['player_id', descriptor.playerId],
     ['battle_server_id', descriptor.battleServerId],
     ['ticket_id', descriptor.ticketId],
+    ['endpoint', descriptor.endpoint ?? ''],
   ];
   // `match_id` is mandatory server-side; the rest are omitted when unknown so the
   // URL stays stable and the server never sees empty-valued hints.
@@ -106,7 +115,9 @@ export class WsRelayDatagramFactory {
  * relay-backed datagram channel. `open(endpoint, session)` treats `endpoint` as
  * the relay base URL when no explicit `relayUrl` was configured, and forwards the
  * match identity from `session` so the lobby can route to the right battle
- * server.
+ * server. The resolved `endpoint` is also forwarded as an advisory query hint
+ * (`endpoint=host:port`): the lobby relay ignores it, while a local demo relay
+ * dials it directly instead of guessing a fallback port.
  */
 export class RelayDatagramFactory implements DatagramFactory {
   constructor(
@@ -121,6 +132,7 @@ export class RelayDatagramFactory implements DatagramFactory {
       playerId: session.playerId ?? '',
       battleServerId: session.battleServerId ?? '',
       ticketId: session.ticketId ?? '',
+      endpoint,
     };
     return new WsRelayDatagramFactory((url) => this.sockets.connect(url), descriptor).open();
   }
