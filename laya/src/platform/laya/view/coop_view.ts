@@ -144,6 +144,9 @@ export class CoopView {
     this.root.size(width, height);
     this.width = width;
     this.height = height;
+    // 裁剪到战场矩形：背景图集按 256×256 平铺并旋转，若不外裁会溢出到 HUD
+    // 与舞台留白区（截图里表现为硬边旋转方块）。
+    this.root.scrollRect = width > 0 && height > 0 ? new Laya.Rectangle(0, 0, width, height) : null;
     this.background.relayout(width, height);
     this.telegraph.size(width, height);
     this.bulletLayer.size(width, height);

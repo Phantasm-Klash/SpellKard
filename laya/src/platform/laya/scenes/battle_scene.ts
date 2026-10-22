@@ -1021,6 +1021,9 @@ export class BattleScene implements ClientScene {
     if (source === null) {
       return;
     }
+    // 非合作对局：MVP 视图是唯一渲染者（合作视图若曾创建则收起）。
+    this.view.root.visible = true;
+    this.coopView?.setVisible(false);
     // The playfield is a 2:3 portrait rectangle on the left; the status panel is
     // the vertical strip on the right. `buildBossRaceFrame` scales the milli-
     // unit arena uniformly from the playfield width, so only the playfield
