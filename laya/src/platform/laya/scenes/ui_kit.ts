@@ -42,7 +42,9 @@
 
 import * as theme from '../view/theme';
 import { VectorPainter, mix } from '../view/sprites';
+import { TnaUiImage } from '../view/tna_ui';
 import { drawArtIcon, iconNameForLabel, type ArtIconName } from '../view/art_icons';
+import { titlePlaque, type UiPlaqueId } from '../../../core/game/ui_assets';
 
 // ---------------------------------------------------------------------------
 // Handles
@@ -120,6 +122,47 @@ export interface BadgeOptions {
 // ---------------------------------------------------------------------------
 // Primitives
 // ---------------------------------------------------------------------------
+
+/** Handle for a screen-title plaque (TNA `ui/bar_*.png`). */
+export interface TitlePlaqueHandle {
+  readonly sprite: Laya.Sprite;
+  /** Resolves `true` once the art is on screen (and the text fallback hidden). */
+  readonly ready: Promise<boolean>;
+}
+
+/**
+ * Puts a TNA title plaque over a screen's text heading.
+ *
+ * Per `docs/ART_POLICY.md` the screen titles are the APK's baked `bar_*`
+ * plaques, not client-side type. The text heading stays in the tree as the
+ * fallback for a build with no art (or an offline fetch) and is hidden exactly
+ * when the plaque lands, so the two never show at the same time.
+ *
+ * @param fallback 文本标题（贴图到位后隐藏）
+ * @param id       标题牌 id（见 `core/game/ui_assets` 的 `titlePlaque`）
+ * @param x        贴图左边缘（标题牌左对齐）
+ * @param centerY  贴图垂直中心
+ * @param height   贴图显示高度
+ */
+export function createTitlePlaque(
+  fallback: Laya.Text,
+  id: UiPlaqueId,
+  x: number,
+  centerY: number,
+  height: number,
+): TitlePlaqueHandle {
+  const image = new TnaUiImage();
+  image.setAnchor(0, 0.5);
+  image.sprite.pos(x, centerY);
+  image.setImage(titlePlaque(id), height);
+  const ready = image.whenSettled().then((ok) => {
+    if (ok) {
+      fallback.visible = false;
+    }
+    return ok;
+  });
+  return { sprite: image.sprite, ready };
+}
 
 /** Heading-sized title text, optionally with a subtitle and accent rule. */
 export function createTitle(text: string, width: number, subtitle?: string): Laya.Text {

@@ -11,7 +11,9 @@
 
 import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow';
 import { t } from '../../../core/game/i18n';
+import { titlePlaque } from '../../../core/game/ui_assets';
 import * as theme from '../view/theme';
+import { TnaUiImage } from '../view/tna_ui';
 import {
   createArtButton,
   createBadge,
@@ -49,6 +51,13 @@ export class ResultScene implements ClientScene {
   readonly shortcutScope: ShortcutScope = 'result';
 
   private readonly width: number;
+  /** 文本标题（TNA 标题牌到位后隐藏，作缺图兜底）。 */
+  private readonly titleText: Laya.Text;
+  /**
+   * 结算标题牌：胜利用 `ui/bar_stage_clear.png`，失败用 `ui/bar_game_over.png`
+   * ——APK 把两种结局各烘焙了一张，所以标题随结果切换而不是固定一张。
+   */
+  private readonly titlePlaque: TnaUiImage;
   private readonly headline: Laya.Text;
   private readonly badgeHost: Laya.Sprite;
   private readonly leftCard: Laya.Sprite;
@@ -78,6 +87,14 @@ export class ResultScene implements ClientScene {
     const title = this.makeText(t('result.title'), theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
     title.y = margin;
     this.root.addChild(title);
+    this.titleText = title;
+    this.titlePlaque = new TnaUiImage();
+    this.titlePlaque.setAnchor(0, 0.5);
+    this.titlePlaque.sprite.pos(margin, margin + theme.FONT_SIZE_TITLE / 2);
+    this.root.addChild(this.titlePlaque.sprite);
+    // 默认先挂胜利牌（无结果时也显示「STAGE CLEAR」会误导，所以只有拿到结果
+    // 才真正点亮，见 `showTitlePlaque`）。
+    this.titlePlaque.sprite.visible = false;
     this.root.addChild(createDivider(margin, title.y + theme.FONT_SIZE_TITLE + theme.SPACE_SM, contentWidth));
 
     // --- headline band: big accent/danger outcome word plus a status badge ---
@@ -183,9 +200,22 @@ export class ResultScene implements ClientScene {
     return false;
   }
 
+  /**
+   * 挂上结算标题牌（胜利 `bar_stage_clear` / 失败 `bar_game_over`）。
+   *
+   * 贴图到位后收起文本标题；缺图时文本继续显示，所以标题永远不会空着。
+   */
+  private showTitlePlaque(id: 'stageClear' | 'gameOver'): void {
+    this.titlePlaque.setImage(titlePlaque(id), theme.FONT_SIZE_TITLE * 1.6);
+    void this.titlePlaque.whenSettled().then((ready) => {
+      this.titleText.visible = !ready;
+    });
+  }
+
   applySnapshot(snapshot: LobbyFlowSnapshot): void {
     const result = snapshot.result;
     if (result === null) {
+      this.titlePlaque.hide();
       this.headline.text = t('result.noResult');
       this.headline.color = theme.COLOR_TEXT_DISABLED;
       this.badgeHost.visible = false;
@@ -223,6 +253,7 @@ export class ResultScene implements ClientScene {
     const won = localId !== '' && result.winnerPlayerId === localId;
     this.headline.text = won ? t('result.victory') : t('result.defeat');
     this.headline.color = won ? theme.COLOR_ACCENT : theme.COLOR_DANGER;
+    this.showTitlePlaque(won ? 'stageClear' : 'gameOver');
 
     this.badgeHost.removeChildren();
     const badge = createBadge(won ? t('result.badge.victory') : t('result.badge.defeat'), 0, 0, { tone: won ? 'success' : 'danger' });

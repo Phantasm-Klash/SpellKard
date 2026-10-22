@@ -17,7 +17,7 @@ import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow
 import { t } from '../../../core/game/i18n';
 import type { MatchHistoryEntryView } from '../../../core/net/lobby_client';
 import * as theme from '../view/theme';
-import { createArtButton, createButtonEx, createCaption, createDivider, createPanel, type ButtonHandle } from './ui_kit';
+import { createArtButton, createButtonEx, createCaption, createDivider, createPanel, createTitlePlaque, type ButtonHandle } from './ui_kit';
 import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
 import type { ClientScene } from './scene';
 
@@ -69,6 +69,10 @@ export class RecordsScene implements ClientScene {
     const title = this.makeText(t('ui.records'), theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
     title.y = margin;
     this.root.addChild(title);
+    // TNA 标题牌（`ui/bar_player_data.png`）盖住文本标题；缺图时文本兜底。
+    this.root.addChild(
+      createTitlePlaque(title, 'playerData', margin, margin + theme.FONT_SIZE_TITLE / 2, theme.FONT_SIZE_TITLE * 1.6).sprite,
+    );
     this.root.addChild(createDivider(margin, title.y + theme.FONT_SIZE_TITLE + theme.SPACE_SM, contentWidth));
 
     // --- summary block ---

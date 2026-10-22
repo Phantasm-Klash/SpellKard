@@ -65,6 +65,8 @@ export class InventoryScene implements ClientScene {
     const title = this.makeText('Inventory', theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
     title.y = margin;
     this.root.addChild(title);
+    // 背包没有对应的 TNA 标题牌（APK 只烘焙了角色选择/关卡选择等），所以这里
+    // 保留文本标题——`docs/ART_POLICY.md` 不允许拿语义不符的贴图硬套。
     this.root.addChild(createDivider(margin, title.y + theme.FONT_SIZE_TITLE + theme.SPACE_SM, contentWidth));
 
     // --- card stacks ---
