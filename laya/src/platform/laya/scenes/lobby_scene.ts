@@ -5,12 +5,13 @@
  * The lobby is two levels inside a single scene, switched by `page` and grouped
  * visibility rather than separate screens:
  *
- *   - `menu` — the main menu: six buttons (Sign in/Sign out / Play / Check-in /
- *     Shop / Inventory / Records) plus the shared profile card. The first button
- *     is context-sensitive: it reads `Sign in` (and opens the login screen)
- *     while signed out, and `Sign out` while signed in. Switching accounts is
- *     deliberately *not* a separate entry — `Sign out` already lands on the
- *     login form, and the menu stays at six buttons on purpose.
+ *   - `menu` — the main menu: five buttons (Play / Check-in / Shop / Inventory /
+ *     Records). The account control lives in the profile card above them, not
+ *     as a menu row: a signed-in player must never see "Sign out" sitting next
+ *     to "Play", and the menu's button count and keyboard order stay the same
+ *     whether or not a session exists. The card's button is context-sensitive —
+ *     it reads `Sign in` (and opens the login screen) while signed out and
+ *     `Sign out` while signed in.
  *   - `play` — the play sub-page: the room-code card, create/join room, and the
  *     matchmaking queue controls, plus a Back button that returns to the menu.
  *
@@ -172,16 +173,35 @@ export class LobbyScene implements ClientScene {
     const profileY = this.pageText.y + theme.FONT_SIZE_CAPTION + theme.SPACE_MD;
     const profileHeight = 96;
     this.root.addChild(createPanel(margin, profileY, contentWidth, profileHeight));
+    // The account control shares the profile card instead of taking a row in
+    // the menu: a signed-in player must never see "Sign out" sitting next to
+    // "Play" (the menu is game actions, the card is who you are). It reads
+    // "Sign in" while signed out and "Sign out" once a session exists.
+    const accountButtonWidth = 96;
+    const accountButtonX = margin + contentWidth - theme.SPACE_MD - accountButtonWidth;
+    this.signInButton = createArtButton(
+      t('ui.signIn'),
+      accountButtonX,
+      profileY + theme.SPACE_SM,
+      accountButtonWidth,
+      () => this.onAccountButton(),
+      null,
+      'ghost',
+      30,
+    );
+    this.root.addChild(this.signInButton.sprite);
+
+    const textWidth = Math.max(0, contentWidth - theme.SPACE_MD * 2 - accountButtonWidth - theme.SPACE_MD);
     this.profileText = this.makeText(t('lobby.notSignedIn'), theme.FONT_SIZE_LABEL, theme.COLOR_TEXT, false, margin + theme.SPACE_MD);
     this.profileText.y = profileY + theme.SPACE_SM;
-    this.profileText.width = contentWidth - theme.SPACE_MD * 2;
+    this.profileText.width = textWidth;
     this.profileText.wordWrap = true;
     this.profileText.leading = 4;
     this.root.addChild(this.profileText);
 
     this.statusText = this.makeText('', theme.FONT_SIZE_CAPTION, theme.COLOR_INFO, false, margin + theme.SPACE_MD);
     this.statusText.y = profileY + profileHeight - theme.SPACE_LG;
-    this.statusText.width = contentWidth - theme.SPACE_MD * 2;
+    this.statusText.width = textWidth;
     this.statusText.wordWrap = true;
     this.statusText.leading = 4;
     this.root.addChild(this.statusText);
@@ -192,17 +212,11 @@ export class LobbyScene implements ClientScene {
     const contentY = profileY + profileHeight + sectionGap;
     const buttonX = margin;
 
-    // --- menu page: six buttons ---
+    // --- menu page: five buttons, game actions only ---
+    // The account control lives in the profile card above, so this list never
+    // changes with the session: no button appears or disappears mid-session and
+    // the keyboard order stays stable.
     let y = contentY;
-    // Context-sensitive: "Sign in" opens the login screen while signed out;
-    // "Sign out" drops the session while signed in (see `refresh`). One button
-    // covers both so the menu never grows past six entries. Icons are named
-    // explicitly (not derived from the label) so a language switch cannot drop
-    // them: `iconNameForLabel` matches English substrings.
-    this.signInButton = createArtButton(t('ui.signIn'), buttonX, y, contentWidth, () => this.onAccountButton(), 'account');
-    this.addToPage(this.menuSprites, this.signInButton.sprite);
-    y += step;
-
     this.playButton = createArtButton(t('ui.play'), buttonX, y, contentWidth, () => this.setPage('play'), 'play');
     this.addToPage(this.menuSprites, this.playButton.sprite);
     y += step;
@@ -370,8 +384,10 @@ export class LobbyScene implements ClientScene {
   /** Buttons on the visible page, in visual order, each paired with its click action. */
   private focusableButtons(): { handle: ButtonHandle; activate: () => void }[] {
     if (this.page === 'menu') {
+      // The account control is not a menu entry (see the constructor): it lives
+      // in the profile card and is pointer-only, so the keyboard order covers
+      // the five game actions and never shifts when the session changes.
       return [
-        { handle: this.signInButton, activate: () => this.onAccountButton() },
         { handle: this.playButton, activate: () => this.setPage('play') },
         { handle: this.checkinButton, activate: () => void this.openCheckin() },
         { handle: this.shopButton, activate: () => this.openShop() },
