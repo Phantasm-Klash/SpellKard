@@ -30,8 +30,9 @@
 
 import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow';
 import { describeMatchmakingQueue } from '../../../core/game/lobby_flow';
-import { t } from '../../../core/game/i18n';
+import { t, language } from '../../../core/game/i18n';
 import { lobbyTitle } from '../../../core/game/game_identity';
+import { titleLogoFor } from '../../../core/game/ui_assets';
 import { coverFit } from '../../../core/game/login_assets';
 import { isNativeAssetRuntime } from '../../../core/game/tna_assets';
 import {
@@ -47,6 +48,7 @@ import { SETTINGS_BUTTON_SIZE, createSettingsButton, type SettingsButtonHandle }
 import type { SettingsStore } from '../../../core/settings';
 import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
 import { resizeTextureSprite } from '../view/texture_sprite';
+import { TnaUiImage } from '../view/tna_ui';
 import type { ClientScene } from './scene';
 
 const PRESET_ROOM_CODES = ['RACE01', 'RACE02', 'RACE03', 'DUEL'];
@@ -78,6 +80,11 @@ export class LobbyScene implements ClientScene {
   private backgroundRect = { x: 0, y: 0, width: 0, height: 0 };
   /** Title painted in the header band (the localised product name). */
   private readonly title: Laya.Text;
+  /**
+   * TNA 标题 logo（`ui/title_logo*.png`）。按 `docs/ART_POLICY.md`，标题美术也
+   * 来自 APK：logo 一旦贴上就收起文本标题；贴不上（缺图/离线）时文本继续兜底。
+   */
+  private readonly titleLogo: TnaUiImage;
   /** Top-right gear button, and the modal it opens. */
   private readonly settingsButton: SettingsButtonHandle;
   /**
@@ -149,6 +156,10 @@ export class LobbyScene implements ClientScene {
     this.title = this.makeText(lobbyTitle(), theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
     this.title.y = margin;
     this.root.addChild(this.title);
+    // 标题 logo 与文本标题同高、水平居中；纹理到位后文本才收起（见 `loadTitleLogo`）。
+    this.titleLogo = new TnaUiImage();
+    this.titleLogo.sprite.pos(width / 2, margin + theme.FONT_SIZE_TITLE / 2);
+    this.root.addChild(this.titleLogo.sprite);
     const dividerY = this.title.y + theme.FONT_SIZE_TITLE + theme.SPACE_SM;
     this.root.addChild(this.divider(margin, dividerY, contentWidth));
 
@@ -286,6 +297,7 @@ export class LobbyScene implements ClientScene {
     this.refresh();
     this.relayoutBackground();
     void this.loadArt();
+    void this.loadTitleLogo();
   }
 
   onEnter(): void {
@@ -564,6 +576,20 @@ export class LobbyScene implements ClientScene {
       }
     }
     this.relayoutBackground();
+  }
+
+  /**
+   * 载入 TNA 标题 logo。中文用 `title_logo_ch`、英文用 `title_logo_en_2`、
+   * 其余（含日文）用日文原版——APK 把三种语言各烘焙了一张图。
+   *
+   * logo 到位后收起文本标题，避免「图 + 字」重复；缺图时文本继续显示，所以
+   * 离线 / 资源未打包的场景也不会出现空标题。
+   */
+  private async loadTitleLogo(): Promise<void> {
+    this.titleLogo.setImage(titleLogoFor(language()), theme.FONT_SIZE_TITLE * 1.7);
+    if (await this.titleLogo.whenSettled()) {
+      this.title.visible = false;
+    }
   }
 
   /** Loads one image URL as a texture; returns `null` on any failure. */

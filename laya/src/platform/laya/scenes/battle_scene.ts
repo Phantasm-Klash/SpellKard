@@ -67,6 +67,8 @@ import { GIFT_CHARGE_BUDGET, giftDefinition } from '../../../core/game/gift_cata
 import { t } from '../../../core/game/i18n';
 import { giftViewFromEvent } from '../../../core/game/battle_events';
 import { StageBackgroundLayer } from '../view/stage_background';
+import { TnaUiImage } from '../view/tna_ui';
+import { UI_PAUSE_ICON } from '../../../core/game/ui_assets';
 import * as theme from '../view/theme';
 import { WatermarkLayer } from '../view/watermark';
 import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
@@ -240,6 +242,12 @@ export class BattleScene implements ClientScene {
   /** Full-stage banner shown while the tick loop is held by `battle.pause`. */
   private readonly pauseOverlay: Laya.Text;
   /**
+   * TNA `ui/btn_pause.png` shown above the PAUSED banner. Per
+   * `docs/ART_POLICY.md` the pause state is carried by the imported art, not by
+   * a vector glyph; the text banner stays as the readable label.
+   */
+  private readonly pauseIcon: TnaUiImage;
+  /**
    * Card-effect overlay, layered between the playfield view and the pause
    * banner. Draws the aimed-curtain warning, the purge ring, the invulnerability
    * aura and the finisher flash; it owns no game state beyond the effect list.
@@ -400,6 +408,12 @@ export class BattleScene implements ClientScene {
     this.pauseOverlay.size(width, height);
     this.pauseOverlay.visible = false;
     this.root.addChild(this.pauseOverlay);
+
+    // Pause icon sits above the banner text; it loads on first pause only, so a
+    // match that is never paused costs no fetch.
+    this.pauseIcon = new TnaUiImage(this.bulletAtlas);
+    this.pauseIcon.sprite.visible = false;
+    this.root.addChild(this.pauseIcon.sprite);
 
     this.options.battle.onSnapshot((snapshot) => {
       this.authoritative = snapshot;
@@ -634,6 +648,10 @@ export class BattleScene implements ClientScene {
     this.geometry = this.computeGeometry(width, height);
     this.root.size(width, height);
     this.pauseOverlay.size(width, height);
+    // The icon rides above the centred PAUSED text (which the engine draws with
+    // `valign = 'middle'`), so it is parked a fixed distance up from centre.
+    this.pauseIcon.setImage(UI_PAUSE_ICON, theme.FONT_SIZE_TITLE * 2.2);
+    this.pauseIcon.sprite.pos(width / 2, height / 2 - theme.FONT_SIZE_TITLE * 2.4);
     // The background is the reference 320x480 stage model mapped onto the
     // playfield; the watermark and cutscene cover the whole stage, HUD included.
     this.stageBackground.root.pos(this.geometry.playfieldX, this.geometry.playfieldY);
@@ -857,6 +875,11 @@ export class BattleScene implements ClientScene {
   private setPaused(paused: boolean): void {
     this.paused = paused;
     this.pauseOverlay.visible = paused;
+    if (paused) {
+      this.pauseIcon.show();
+    } else {
+      this.pauseIcon.hide();
+    }
     if (paused) {
       this.stop();
     } else {

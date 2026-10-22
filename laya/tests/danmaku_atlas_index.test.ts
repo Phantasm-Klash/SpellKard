@@ -13,6 +13,7 @@
 import { BULLET_KINDS } from '../src/core/sim/danmaku/bullet_kind';
 import { TNA_BACKGROUND_IMAGE, allActorFrames } from '../src/core/game/tna_actor_frames';
 import { allCoopArtFrames } from '../src/core/game/coop_art';
+import { allUiAssets } from '../src/core/game/ui_assets';
 import { expect, expectEqual, suite, test } from './harness';
 
 declare const require: (id: string) => unknown;
@@ -46,6 +47,7 @@ interface AtlasIndex {
   kinds: Record<string, { atlas: string; frame: string }>;
   players: string[];
   backgrounds?: string[];
+  ui?: string[];
 }
 
 const index = require(`${__dirname}/../../layaide/assets/resources/tna/index.json`) as AtlasIndex;
@@ -139,4 +141,25 @@ test('every coop art frame (boss / ships / bullets) exists in the atlas', () => 
 test('the playfield backdrop image is listed in the index', () => {
   expect(index.backgrounds !== undefined, 'index has no backgrounds list');
   expect(index.backgrounds!.includes(TNA_BACKGROUND_IMAGE), `missing backdrop ${TNA_BACKGROUND_IMAGE}`);
+});
+
+test('every UI asset is listed in the index and exists on disk', () => {
+  // Pins `core/game/ui_assets.ts` to the imported tree: the UI art is imported
+  // as standalone PNGs under `tna/ui/` (plus the menu backdrop, which lives at
+  // the tree root and is registered in `backgrounds`), so a missing file means
+  // a blank widget. Both lists count as "listed".
+  expect(index.ui !== undefined, 'index has no ui list');
+  const listed = new Set([...index.ui!, ...(index.backgrounds ?? [])]);
+  const fs = require('fs') as { existsSync(path: string): boolean };
+  for (const asset of allUiAssets()) {
+    expect(listed.has(asset), `ui asset ${asset} is not listed in index.ui / index.backgrounds`);
+    const file = `${__dirname}/../../layaide/assets/resources/tna/${asset}`;
+    expect(fs.existsSync(file), `missing ui file ${asset}`);
+  }
+});
+
+test('the imported UI set keeps the menu backdrop and the pause icon', () => {
+  expect(index.ui!.includes('ui/btn_pause.png'), 'missing pause icon');
+  expect(index.ui!.includes('ui/e_life_bar_2.png'), 'missing boss life ring');
+  expect(index.backgrounds!.includes('bg_menu.png'), 'missing menu backdrop');
 });

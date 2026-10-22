@@ -29,14 +29,22 @@ import {
   type CoopArtFrame,
 } from '../../../core/game/coop_art';
 import type { CoopFrame, CoopPlayerItem } from '../../../core/game/coop_view_model';
+import { UI_BOSS_LIFE_RING, UI_BOSS_LIFE_RING_INNER } from '../../../core/game/ui_assets';
 import { sharedTnaFrameSource, type LayaAtlasFrameSource } from './bullet_atlas';
 import { StageBackgroundLayer } from './stage_background';
+import { TnaUiImage } from './tna_ui';
 import * as theme from './theme';
 import { fade } from './sprites';
 
 const BOSS_RADIUS_RATIO = 0.075;
 /** Boss 美术显示高度 = 判定半径 × 该系数（TNA 立绘比判定圈大一圈）。 */
 const BOSS_ART_HEIGHT_RATIO = 4;
+/**
+ * Boss 血环直径 = 判定半径 × 该系数。血环用 TNA 的 `ui/e_life_bar_2.png`
+ * （128×128 圆环），套在立绘外圈缓慢旋转——它同时承担「Boss 血条」的视觉，
+ * 因此不再另画自制圆环。
+ */
+const BOSS_RING_RATIO = 2.9;
 const SHIELD_ARC_RADIUS_RATIO = 0.3;
 const HP_BAR_HEIGHT = 10;
 /** TNA 自机精灵原始高度（`player_0N.png` 为 32×48）。 */
@@ -64,6 +72,9 @@ export class CoopView {
   private readonly bulletLayer: Laya.Sprite;
   /** 角色精灵层（Boss + 自机）。 */
   private readonly actorLayer: Laya.Sprite;
+  /** Boss 血环（TNA `ui/e_life_bar_2/1.png`），画在立绘下面。 */
+  private readonly bossRing: TnaUiImage;
+  private readonly bossRingInner: TnaUiImage;
   private readonly bossSprite: Laya.Sprite;
   private readonly playerSprites: Laya.Sprite[] = [];
   private readonly bulletSprites: Laya.Sprite[] = [];
@@ -98,6 +109,13 @@ export class CoopView {
     this.actorLayer = new Laya.Sprite();
     this.actorLayer.mouseEnabled = false;
     this.root.addChild(this.actorLayer);
+
+    this.bossRing = new TnaUiImage(source);
+    this.bossRing.sprite.visible = false;
+    this.actorLayer.addChild(this.bossRing.sprite);
+    this.bossRingInner = new TnaUiImage(source);
+    this.bossRingInner.sprite.visible = false;
+    this.actorLayer.addChild(this.bossRingInner.sprite);
 
     this.bossSprite = new Laya.Sprite();
     this.bossSprite.mouseEnabled = false;
@@ -223,6 +241,8 @@ export class CoopView {
 
   private hideActors(): void {
     this.bossSprite.visible = false;
+    this.bossRing.hide();
+    this.bossRingInner.hide();
     for (const ship of this.playerSprites) {
       ship.visible = false;
     }
@@ -237,6 +257,8 @@ export class CoopView {
     const side = Math.min(this.width, this.height);
     const radius = side * BOSS_RADIUS_RATIO;
     const defeated = frame.state === CoopBossState.Finished && frame.bossHp === 0;
+    const hpRatio = frame.bossMaxHp > 0 ? Math.max(0, Math.min(1, frame.bossHp / frame.bossMaxHp)) : 0;
+    this.drawBossRings(cx, cy, radius, hpRatio, defeated, frame.tick);
     const art = defeated ? COOP_BOSS_DEFEATED_ART : COOP_BOSS_ART;
     this.bossSprite.pos(cx, cy);
     this.bossSprite.rotation = 0;
@@ -258,6 +280,24 @@ export class CoopView {
         2,
       );
     }
+  }
+
+  /**
+   * Boss 血环：TNA `ui/e_life_bar_2.png`（外环）+ `ui/e_life_bar_1.png`（内环），
+   * 反向缓慢旋转。血量比例只影响**透明度**，不裁切圆环——圆环不是进度条，
+   * 真正的数值仍在 HUD 文本与顶部血条上（可读性优先）。
+   */
+  private drawBossRings(cx: number, cy: number, radius: number, hpRatio: number, defeated: boolean, tick: number): void {
+    const diameter = radius * BOSS_RING_RATIO;
+    this.bossRing.setImage(UI_BOSS_LIFE_RING, diameter);
+    this.bossRing.sprite.pos(cx, cy);
+    this.bossRing.sprite.rotation = (tick * 0.6) % 360;
+    this.bossRing.sprite.alpha = defeated ? 0.2 : 0.35 + 0.55 * hpRatio;
+
+    this.bossRingInner.setImage(UI_BOSS_LIFE_RING_INNER, diameter * 0.82);
+    this.bossRingInner.sprite.pos(cx, cy);
+    this.bossRingInner.sprite.rotation = (-tick * 0.9) % 360;
+    this.bossRingInner.sprite.alpha = defeated ? 0.15 : 0.3 + 0.45 * hpRatio;
   }
 
   private drawPlayers(frame: CoopFrame): void {
