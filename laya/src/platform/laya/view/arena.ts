@@ -38,18 +38,22 @@ const RETICLE_RADIUS_RATIO = 0.18;
  * `drawLine`/`drawRect` have no per-command alpha, so low-contrast lines are
  * produced by blending the stroke colour toward `COLOR_VOID` via `fade`.
  *
- * @param drawBackdrop when false the gradient bands are skipped, because a real
- *                     backdrop texture is painted underneath by the view; the
- *                     grid, reticle and border are still drawn on top.
+ * @param drawBackdrop when false a real TNA backdrop already covers the field
+ *                     (a `bg_XX_01/02` layer or the starfield texture), so the
+ *                     whole synthetic treatment — gradient bands, grid, reticle
+ *                     and inner glow — is skipped. Only the thin outer border
+ *                     stays, because that is a UI frame, not scene art. Drawing
+ *                     the grid over the imported art is exactly the "self-made
+ *                     art" the art policy forbids.
  */
 export function drawPlayfield(g: Laya.Graphics, width: number, height: number, drawBackdrop = true): void {
   if (width <= 0 || height <= 0) {
     return;
   }
 
-  // 1. Backdrop. LayaAir's `Graphics` has no gradient primitive, so the sky is
-  //    approximated with discrete vertical bands that read as a gradient.
   if (drawBackdrop) {
+    // 1. Backdrop. LayaAir's `Graphics` has no gradient primitive, so the sky is
+    //    approximated with discrete vertical bands that read as a gradient.
     const bands = 8;
     for (let i = 0; i < bands; i += 1) {
       const t = i / (bands - 1);
@@ -57,43 +61,44 @@ export function drawPlayfield(g: Laya.Graphics, width: number, height: number, d
       const bandH = height / bands + 1;
       g.drawRect(0, bandY, width, bandH, mix(theme.COLOR_PLAYFIELD, theme.COLOR_VOID, t * 0.75));
     }
+
+    // 2. Faint square grid. Two passes (coarse + finer) give a sense of depth.
+    const gridColor = fade(theme.COLOR_PLAYFIELD_EDGE, 0.35);
+    const gridColorDeep = fade(theme.COLOR_PLAYFIELD_EDGE, 0.6);
+    for (let x = GRID_STEP; x < width; x += GRID_STEP) {
+      const strong = x % (GRID_STEP * 4) === 0;
+      g.drawLine(x, 0, x, height, strong ? gridColorDeep : gridColor, 1);
+    }
+    for (let y = GRID_STEP; y < height; y += GRID_STEP) {
+      const strong = y % (GRID_STEP * 4) === 0;
+      g.drawLine(0, y, width, y, strong ? gridColorDeep : gridColor, 1);
+    }
+
+    // 3. Centre reticle: a big faint circle, an inner ring and cross ticks, so
+    //    the boss anchor area reads as "the place to be".
+    const cx = width / 2;
+    const cy = height / 2;
+    const reticle = Math.min(width, height) * RETICLE_RADIUS_RATIO;
+    g.drawCircle(cx, cy, reticle, null, fade(theme.COLOR_ACCENT, 0.55), 1);
+    g.drawCircle(cx, cy, reticle * 0.62, null, fade(theme.COLOR_ACCENT, 0.7), 1);
+    const tickLen = Math.min(width, height) * 0.03;
+    g.drawLine(cx - reticle - tickLen, cy, cx - reticle, cy, fade(theme.COLOR_ACCENT, 0.6), 1);
+    g.drawLine(cx + reticle, cy, cx + reticle + tickLen, cy, fade(theme.COLOR_ACCENT, 0.6), 1);
+    g.drawLine(cx, cy - reticle - tickLen, cx, cy - reticle, fade(theme.COLOR_ACCENT, 0.6), 1);
+    g.drawLine(cx, cy + reticle, cx, cy + reticle + tickLen, fade(theme.COLOR_ACCENT, 0.6), 1);
+
+    // 4. Inner-glow edge frame: several nested strokes, brightest at the very
+    //    edge and fading inward, which fakes a soft interior vignette.
+    const layers = 5;
+    for (let i = 0; i < layers; i += 1) {
+      const inset = i * 3;
+      const strength = 1 - i / layers;
+      const color = mix(theme.COLOR_PLAYFIELD_EDGE, theme.COLOR_BORDER, strength * 0.5);
+      g.drawRect(inset, inset, width - inset * 2, height - inset * 2, null, color, 2);
+    }
   }
 
-  // 2. Faint square grid. Two passes (coarse + finer) give a sense of depth.
-  const gridColor = fade(theme.COLOR_PLAYFIELD_EDGE, 0.35);
-  const gridColorDeep = fade(theme.COLOR_PLAYFIELD_EDGE, 0.6);
-  for (let x = GRID_STEP; x < width; x += GRID_STEP) {
-    const strong = x % (GRID_STEP * 4) === 0;
-    g.drawLine(x, 0, x, height, strong ? gridColorDeep : gridColor, 1);
-  }
-  for (let y = GRID_STEP; y < height; y += GRID_STEP) {
-    const strong = y % (GRID_STEP * 4) === 0;
-    g.drawLine(0, y, width, y, strong ? gridColorDeep : gridColor, 1);
-  }
-
-  // 3. Centre reticle: a big faint circle, an inner ring and cross ticks, so
-  //    the boss anchor area reads as "the place to be".
-  const cx = width / 2;
-  const cy = height / 2;
-  const reticle = Math.min(width, height) * RETICLE_RADIUS_RATIO;
-  g.drawCircle(cx, cy, reticle, null, fade(theme.COLOR_ACCENT, 0.55), 1);
-  g.drawCircle(cx, cy, reticle * 0.62, null, fade(theme.COLOR_ACCENT, 0.7), 1);
-  const tickLen = Math.min(width, height) * 0.03;
-  g.drawLine(cx - reticle - tickLen, cy, cx - reticle, cy, fade(theme.COLOR_ACCENT, 0.6), 1);
-  g.drawLine(cx + reticle, cy, cx + reticle + tickLen, cy, fade(theme.COLOR_ACCENT, 0.6), 1);
-  g.drawLine(cx, cy - reticle - tickLen, cx, cy - reticle, fade(theme.COLOR_ACCENT, 0.6), 1);
-  g.drawLine(cx, cy + reticle, cx, cy + reticle + tickLen, fade(theme.COLOR_ACCENT, 0.6), 1);
-
-  // 4. Inner-glow edge frame: several nested strokes, brightest at the very
-  //    edge and fading inward, which fakes a soft interior vignette.
-  const layers = 5;
-  for (let i = 0; i < layers; i += 1) {
-    const inset = i * 3;
-    const strength = 1 - i / layers;
-    const color = mix(theme.COLOR_PLAYFIELD_EDGE, theme.COLOR_BORDER, strength * 0.5);
-    g.drawRect(inset, inset, width - inset * 2, height - inset * 2, null, color, 2);
-  }
-  // Final crisp outer border on top.
+  // Final crisp outer border on top (UI frame, kept over real art too).
   g.drawRect(0, 0, width, height, null, theme.COLOR_BORDER, 2);
 }
 

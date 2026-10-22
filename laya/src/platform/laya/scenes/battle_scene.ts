@@ -467,6 +467,8 @@ export class BattleScene implements ClientScene {
     this.stop();
     this.clearCardEffects();
     this.view.destroy();
+    this.coopView?.destroy();
+    this.coopView = null;
     this.stageBackground.destroy();
     this.watermark.destroy();
     this.cutscene.destroy();
@@ -489,6 +491,7 @@ export class BattleScene implements ClientScene {
    */
   setStage(stage: number): void {
     this.stageBackground.setStage(stage);
+    this.coopView?.setStage(stage);
     this.stageTitle = stage >= 1 ? `STAGE ${stage}` : 'BATTLE';
   }
 
@@ -672,6 +675,13 @@ export class BattleScene implements ClientScene {
       stageWidth: width,
       stageHeight: height,
     });
+    // 合作视图（若已创建）跟着同一套几何走：它自己持有 TNA 背景与精灵层。
+    this.coopView?.layout(
+      this.geometry.playfieldX,
+      this.geometry.playfieldY,
+      this.geometry.playfield.width,
+      this.geometry.playfield.height,
+    );
     // Real art is authored for a 640-wide playfield; keep it in step with ours.
     this.bulletRenderer.setArtScale(this.geometry.playfield.width / 640);
     this.renderFrame();
@@ -924,6 +934,7 @@ export class BattleScene implements ClientScene {
   /** Advances the background, watermark and cutscene by one tick. */
   private updateOverlays(dtMs: number): void {
     this.stageBackground.update(dtMs);
+    this.coopView?.update(dtMs);
     this.watermark.update(dtMs);
     this.cutscene.update(dtMs);
   }
@@ -952,43 +963,58 @@ export class BattleScene implements ClientScene {
     return this.isCoopMode() ? coopBattleLayout(width, height, this.coopSeatCount) : battleLayout(width, height);
   }
 
-  /** 懒建合作视图（首次收到 coop 快照时挂到场景根上）。 */
+  /**
+   * 懒建合作视图。合作模式在**首个快照到达前**就创建并显示它（背景先渲染），
+   * 这样进入对局时不会先出现 MVP 视图的 TNA 美术、再被矢量合作视图替换——
+   * 那个「一闪而过」正是两套美术风格在切换。
+   */
   private ensureCoopView(): CoopView {
     if (this.coopView === null) {
       const { width, height } = this.stageSize();
       this.coopView = new CoopView({ stageWidth: width, stageHeight: height });
+      this.coopView.setStage(this.stageNumber());
       this.root.addChild(this.coopView.root);
     }
     return this.coopView;
   }
 
+  /** 大厅 stage 号（`setStage` 的入参），未设置时按 1 号背景。 */
+  private stageNumber(): number {
+    const match = /^STAGE (\d+)$/.exec(this.stageTitle);
+    return match === null ? 1 : Number(match[1]);
+  }
+
   private renderFrame(): void {
     if (this.isCoopMode()) {
       const coop = this.coopAuthoritative;
-      if (coop !== null) {
-        if (coop.seatCount > 0 && coop.seatCount !== this.coopSeatCount) {
-          this.coopSeatCount = coop.seatCount;
-          const size = this.stageSize();
-          this.relayout(size.width, size.height);
-        }
-        const coopFrame = buildCoopFrame(coop, {
-          layout: this.geometry.playfield,
-          localPlayerId: this.options.localPlayerId(),
-          bossMaxHp: this.options.bossMaxHp,
-        });
-        this.coopFrame = coopFrame;
-        const view = this.ensureCoopView();
-        view.setVisible(true);
-        this.view.root.visible = false;
-        view.layout(
-          this.geometry.playfieldX,
-          this.geometry.playfieldY,
-          this.geometry.playfield.width,
-          this.geometry.playfield.height,
-        );
-        view.render(coopFrame);
+      if (coop !== null && coop.seatCount > 0 && coop.seatCount !== this.coopSeatCount) {
+        this.coopSeatCount = coop.seatCount;
+        const size = this.stageSize();
+        this.relayout(size.width, size.height);
+      }
+      // 合作模式一律走 TNA 美术视图；快照未到时只画 TNA 背景，绝不回落到
+      // MVP 视图（那会让千夜贴美术先闪一下再被另一种风格覆盖）。
+      const view = this.ensureCoopView();
+      view.setVisible(true);
+      this.view.root.visible = false;
+      view.layout(
+        this.geometry.playfieldX,
+        this.geometry.playfieldY,
+        this.geometry.playfield.width,
+        this.geometry.playfield.height,
+      );
+      if (coop === null) {
+        view.render(null);
         return;
       }
+      const coopFrame = buildCoopFrame(coop, {
+        layout: this.geometry.playfield,
+        localPlayerId: this.options.localPlayerId(),
+        bossMaxHp: this.options.bossMaxHp,
+      });
+      this.coopFrame = coopFrame;
+      view.render(coopFrame);
+      return;
     }
     const battle = this.options.battle;
     const source = this.authoritative ?? battle.simulationRef?.snapshot() ?? null;

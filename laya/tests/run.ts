@@ -69,6 +69,7 @@ import './dem_replay.test';
 import './coop_view_model.test';
 import './coop_layout.test';
 import './coop_codec.test';
+import './coop_art.test';
 
 import { runAll } from './harness';
 

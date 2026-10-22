@@ -12,6 +12,7 @@
 
 import { BULLET_KINDS } from '../src/core/sim/danmaku/bullet_kind';
 import { TNA_BACKGROUND_IMAGE, allActorFrames } from '../src/core/game/tna_actor_frames';
+import { allCoopArtFrames } from '../src/core/game/coop_art';
 import { expect, expectEqual, suite, test } from './harness';
 
 declare const require: (id: string) => unknown;
@@ -122,6 +123,16 @@ test('every Boss / player actor frame the view requests exists in the atlas', ()
   for (const actor of allActorFrames()) {
     const key = `${actor.atlas}/${actor.frame}`;
     expect(index.frames[key] !== undefined, `missing actor frame ${key}`);
+  }
+});
+
+test('every coop art frame (boss / ships / bullets) exists in the atlas', () => {
+  // Pins `core/game/coop_art.ts` to the imported index. The coop view draws real
+  // TNA sprites only, so a missing frame would leave a blank actor instead of a
+  // vector fallback — fail the build rather than ship a hole.
+  for (const art of allCoopArtFrames()) {
+    const key = `${art.atlas}/${art.frame}`;
+    expect(index.frames[key] !== undefined, `missing coop art frame ${key}`);
   }
 });
 
