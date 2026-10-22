@@ -32,7 +32,7 @@ import { BOSS_RACE_DEFAULT_BOSS_HP, BOSS_RACE_DEFAULT_MAX_TICKS, BOSS_RACE_TICK_
 import { SettingsStore } from '../../core/settings';
 import type { ShortcutAction } from '../../core/input/shortcuts';
 import { applyAudioSettings } from './audio';
-import { setLanguage } from '../../core/game/i18n';
+import { isLanguageCode, setLanguage } from '../../core/game/i18n';
 import { applyDisplaySettings, createFpsOverlay, type FpsOverlayHandle } from './display';
 import { toggleFullscreen, fullscreenDebugState } from './fullscreen';
 import { LayaInput } from './laya_input';
@@ -86,6 +86,11 @@ export interface ClientConfig {
    * nothing is persisted.
    */
   settings?: SettingsStore;
+  /**
+   * Forces the UI language at boot (`?lang=…` on the web build). Empty or
+   * absent keeps the persisted setting, which defaults to Simplified Chinese.
+   */
+  language?: string;
 }
 
 export class SpellKardApp {
@@ -155,6 +160,15 @@ export class SpellKardApp {
     // restored from storage is honoured before the first frame (the same reason
     // display and audio are applied above). Every view resolves its strings per
     // frame, so a switch takes effect immediately.
+    //
+    // `?lang=` wins over the stored value: the E2E harnesses assert against the
+    // English copy while the shipped default is Chinese, and a screenshot run
+    // must not depend on whatever a previous run persisted. It goes through the
+    // store (not straight into `setLanguage`) so the settings panel shows the
+    // language the UI is actually in.
+    if (config.language !== undefined && config.language !== '' && isLanguageCode(config.language)) {
+      this.settings.update({ language: config.language });
+    }
     setLanguage(this.settings.get().language);
 
     this.fpsOverlay = createFpsOverlay();

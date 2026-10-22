@@ -38,6 +38,17 @@ import type { DisplaySettings } from '../../core/settings';
  */
 const CAP_TOLERANCE_MS = 2;
 
+/**
+ * Bounds on the render-scale multiplier.
+ *
+ * Below 0.5 the UI text stops being legible; above 2 the backing store grows
+ * quadratically for no visible gain (and a 4K window at 2x is already 33M
+ * pixels per frame). The setter clamps rather than rejects so a corrupt stored
+ * value cannot blank the canvas.
+ */
+const MIN_RENDER_SCALE = 0.5;
+const MAX_RENDER_SCALE = 2;
+
 /** Live render-scale factor read by the patched `getPixelRatio`. */
 let renderScaleFactor = 1;
 let pixelRatioPatched = false;
@@ -80,11 +91,49 @@ export function applyFrameCap(cap: number): void {
   };
 }
 
-/** Sets the render-resolution multiplier and nudges the canvas to re-measure. */
+/**
+ * Sets the render-resolution multiplier and re-measures the canvas.
+ *
+ * Three things have to line up for this to actually change the sample count:
+ *
+ *  1. **`Config.useRetinalCanvas` must be on.** It defaults to `false`, and with
+ *     it off `Stage.setScreenSize` sizes the backing store from the *design*
+ *     size and lets the CSS matrix do the fitting — so the canvas was always
+ *     900x1200 no matter what the setting said. This was the bug: the slider
+ *     moved, the stored value changed, and nothing on screen ever did.
+ *  2. **`getPixelRatio` must report device ratio × scale**, which is what
+ *     {@link patchPixelRatio} installs. The engine multiplies the backing store
+ *     by it and divides the draw scale back out, so the on-screen size is
+ *     unchanged and only the pixel count moves.
+ *  3. **The stage must re-measure**, which `updateCanvasSize` does; the engine
+ *     only calls it on a real window resize, so we ask for it directly.
+ */
 export function applyRenderScale(scale: number): void {
-  renderScaleFactor = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  renderScaleFactor = clampRenderScale(scale);
+  enableRetinalCanvas();
   patchPixelRatio();
   requestCanvasResize();
+}
+
+/** Clamps the multiplier into {@link MIN_RENDER_SCALE}..{@link MAX_RENDER_SCALE}. */
+export function clampRenderScale(scale: number): number {
+  if (!Number.isFinite(scale) || scale <= 0) {
+    return 1;
+  }
+  return Math.min(MAX_RENDER_SCALE, Math.max(MIN_RENDER_SCALE, scale));
+}
+
+/**
+ * Turns on `Config.useRetinalCanvas` so `pixelRatio` reaches the backing store.
+ *
+ * Safe to call repeatedly; a runtime without `Config` is left alone (the
+ * setting then behaves as it did before — no resolution change, no crash).
+ */
+function enableRetinalCanvas(): void {
+  const config = (Laya as unknown as { Config?: { useRetinalCanvas?: boolean } }).Config;
+  if (config !== undefined) {
+    config.useRetinalCanvas = true;
+  }
 }
 
 /**
@@ -116,12 +165,18 @@ function patchPixelRatio(): void {
  * Re-runs the engine's canvas sizing so a new render scale becomes visible
  * immediately.
  *
- * The engine re-measures on a window `resize`, so synthesising one is the only
- * public way to ask for it. This is deliberately best-effort: if the runtime
- * has no DOM event constructor (LayaNative) the call is skipped and the new
- * scale simply takes effect at the next real resize, which is harmless.
+ * `Stage.updateCanvasSize` is the engine's own entry point (it is what the
+ * window `resize` handler calls); we hit it directly because a synthetic
+ * `resize` event is not guaranteed to reach `PAL.browser`'s listener. The
+ * event dispatch is kept as the fallback for runtimes that only react to the
+ * real thing.
  */
 function requestCanvasResize(): void {
+  const stage = (Laya as unknown as { stage?: { updateCanvasSize?: (delay?: boolean) => void } }).stage;
+  if (typeof stage?.updateCanvasSize === 'function') {
+    stage.updateCanvasSize(true);
+    return;
+  }
   const win = Laya.Browser.window as {
     dispatchEvent?: (event: unknown) => void;
     Event?: new (type: string) => unknown;

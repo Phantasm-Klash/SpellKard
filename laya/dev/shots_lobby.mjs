@@ -35,7 +35,7 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 675, height: 900 }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 
-await page.goto(`http://127.0.0.1:${PORT}/index.html?debug=1`, { waitUntil: 'load' });
+await page.goto(`http://127.0.0.1:${PORT}/index.html?debug=1&lang=en`, { waitUntil: 'load' });
 await page.waitForFunction(() => !!window.__PK_SCENES__, { timeout: 20000 });
 // Let the lobby art settle (the loader probes two roots).
 await page.waitForTimeout(2000);
@@ -108,7 +108,7 @@ console.log('after resize:', JSON.stringify(resized));
 // through the query overrides, so the wide backdrop renders for real.
 const widePage = await browser.newPage({ viewport: { width: 1333, height: 750 }, deviceScaleFactor: 1 });
 widePage.on('pageerror', (e) => console.log('[wide pageerror]', e.message));
-await widePage.goto(`http://127.0.0.1:${PORT}/index.html?debug=1&stageWidth=1333&stageHeight=750`, { waitUntil: 'load' });
+await widePage.goto(`http://127.0.0.1:${PORT}/index.html?debug=1&lang=en&stageWidth=1333&stageHeight=750`, { waitUntil: 'load' });
 await widePage.waitForFunction(() => !!window.__PK_SCENES__, { timeout: 20000 });
 await widePage.waitForTimeout(2000);
 const wide = await widePage.evaluate(async (menuSrc) => {

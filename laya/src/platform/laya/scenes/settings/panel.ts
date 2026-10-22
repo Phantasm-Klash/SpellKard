@@ -22,6 +22,7 @@
 import type { SettingsStore } from '../../../../core/settings';
 import { normalizeKey } from '../../../../core/input/shortcuts';
 import type { ShortcutAction } from '../../../../core/input/shortcuts';
+import { t } from '../../../../core/game/i18n';
 import { titlePlaque } from '../../../../core/game/ui_assets';
 import * as theme from '../../view/theme';
 import { VectorPainter } from '../../view/sprites';
@@ -108,10 +109,13 @@ export class SettingsPanel {
   private dragStartY = 0;
   private dragStartScroll = 0;
   private releaseArmed = false;
+  /** Language the shell's own labels were painted in; see {@link applyLanguage}. */
+  private paintedLanguage: string;
 
   constructor(options: SettingsPanelOptions) {
     this.options = options;
     this.store = options.store;
+    this.paintedLanguage = this.store.get().language;
     this.width = options.width;
     this.height = options.height;
 
@@ -139,13 +143,13 @@ export class SettingsPanel {
     this.card.mouseEnabled = true;
     this.root.addChild(this.card);
 
-    this.heading = makeLabel('Settings', theme.FONT_SIZE_HEADING, theme.COLOR_TITLE, true);
+    this.heading = makeLabel(t('settings.title'), theme.FONT_SIZE_HEADING, theme.COLOR_TITLE, true);
     this.card.addChild(this.heading);
     this.headingPlaque = new TnaUiImage();
     this.headingPlaque.setAnchor(0, 0.5);
     this.card.addChild(this.headingPlaque.sprite);
 
-    this.closeButton = createButtonEx('Close', 0, 0, 72, () => this.hide(), 'ghost', HEADER_H - 6);
+    this.closeButton = createButtonEx(t('settings.close'), 0, 0, 72, () => this.hide(), 'ghost', HEADER_H - 6);
     this.card.addChild(this.closeButton.sprite);
 
     for (const section of this.sections) {
@@ -178,7 +182,7 @@ export class SettingsPanel {
     this.card.addChild(this.scrollThumb);
 
     this.resetButton = createButtonEx(
-      'Restore defaults',
+      t('settings.restoreDefaults'),
       0,
       0,
       150,
@@ -190,6 +194,12 @@ export class SettingsPanel {
 
     // Tapping the dimmed area outside the card closes the panel.
     this.scrim.on(Laya.Event.CLICK, undefined, () => this.hide());
+
+    // The shell owns the tab bar, the header and the footer, and those are
+    // painted once from `t()` at construction. Switching language would
+    // therefore leave a panel whose tabs are Chinese and whose Close button is
+    // still English, so repaint the shell whenever the stored language moves.
+    this.store.subscribe(() => this.applyLanguage());
 
     this.bindScroll();
     this.selectTab(0);
@@ -210,6 +220,7 @@ export class SettingsPanel {
     this.root.visible = true;
     // Re-read the store: something outside the panel (a reset, a URL override)
     // may have changed it while the panel was closed.
+    this.applyLanguage();
     this.sections[this.activeIndex].refresh();
     this.scrollTop = 0;
     this.applyScroll();
@@ -371,6 +382,33 @@ export class SettingsPanel {
       section.refresh();
     }
     this.scrollTop = 0;
+    this.applyScroll();
+  }
+
+  /**
+   * Repaints the shell's own strings in the current language.
+   *
+   * The tab bar, the header and the footer are built once from `t()` at
+   * construction, while the section bodies resolve their strings on every
+   * rebuild. Switching language therefore left a half-translated panel — the
+   * tabs in the new language, `Close` still in the old one — so this re-texts
+   * the shell in place and rebuilds the visible section. It is a no-op unless
+   * the language actually moved, which keeps it safe to call from `show()`.
+   */
+  private applyLanguage(): void {
+    const code = this.store.get().language;
+    if (code === this.paintedLanguage) {
+      return;
+    }
+    this.paintedLanguage = code;
+    this.heading.text = t('settings.title');
+    this.closeButton.setText(t('settings.close'));
+    this.resetButton.setText(t('settings.restoreDefaults'));
+    for (let i = 0; i < this.tabButtons.length; i += 1) {
+      this.tabButtons[i].setText(this.sections[i].title);
+    }
+    this.subtitleText.text = this.sections[this.activeIndex].subtitle;
+    this.sections[this.activeIndex].refresh();
     this.applyScroll();
   }
 

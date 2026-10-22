@@ -31,7 +31,7 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 720, height: 1280 }, deviceScaleFactor: 2 });
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 
-await page.goto(`http://127.0.0.1:${PORT}/index.html?debug=1`, { waitUntil: 'load' });
+await page.goto(`http://127.0.0.1:${PORT}/index.html?debug=1&lang=en`, { waitUntil: 'load' });
 await page.waitForFunction(() => !!window.__PK_SCENES__, { timeout: 20000 });
 await page.waitForTimeout(400);
 

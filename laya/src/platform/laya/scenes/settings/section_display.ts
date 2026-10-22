@@ -30,32 +30,46 @@ import {
   type OptionChoice,
   type RowHandle,
 } from './widgets';
+import { t } from '../../../../core/game/i18n';
 
 // Choice lists are module-level so a rebuild (tab switch, window resize, reset)
 // reuses the same arrays instead of allocating new ones on every `build()`.
-const RENDER_SCALE_CHOICES: readonly OptionChoice<RenderScale>[] = [
-  { id: 0.5, label: '0.5×' },
-  { id: 0.75, label: '0.75×' },
-  { id: 1, label: '1×' },
-  { id: 1.5, label: '1.5×' },
-];
+// The numeric labels are language-neutral; only the named ones go through `t()`,
+// which is why this is a function rather than a constant — a rebuild after a
+// language switch has to re-read the table.
+function renderScaleChoices(): readonly OptionChoice<RenderScale>[] {
+  return [
+    { id: 0.5, label: '0.5×' },
+    { id: 0.75, label: '0.75×' },
+    { id: 1, label: '1×' },
+    { id: 1.5, label: '1.5×' },
+  ];
+}
 
-const EFFECT_CHOICES: readonly OptionChoice<EffectLevel>[] = [
-  { id: 'low', label: 'Low' },
-  { id: 'medium', label: 'Medium' },
-  { id: 'high', label: 'High' },
-];
+function effectChoices(): readonly OptionChoice<EffectLevel>[] {
+  return [
+    { id: 'low', label: t('settings.display.effect.low') },
+    { id: 'medium', label: t('settings.display.effect.medium') },
+    { id: 'high', label: t('settings.display.effect.high') },
+  ];
+}
 
-const FRAME_CAP_CHOICES: readonly OptionChoice<FrameCap>[] = [
-  { id: 30, label: '30 FPS' },
-  { id: 60, label: '60 FPS' },
-  { id: 120, label: '120 FPS' },
-  { id: 0, label: 'Uncapped' },
-];
+function frameCapChoices(): readonly OptionChoice<FrameCap>[] {
+  return [
+    { id: 30, label: '30 FPS' },
+    { id: 60, label: '60 FPS' },
+    { id: 120, label: '120 FPS' },
+    { id: 0, label: t('settings.display.frameCap.uncapped') },
+  ];
+}
 
 export class DisplaySection extends BaseSettingsSection {
-  readonly title = 'Display';
-  readonly subtitle = '画面与性能 · Resolution, effects, frame rate';
+  get title(): string {
+    return t('settings.tab.display');
+  }
+  get subtitle(): string {
+    return t('settings.subtitle.display');
+  }
 
   protected build(width: number): RowHandle[] {
     const display = this.store.get().display;
@@ -77,9 +91,8 @@ export class DisplaySection extends BaseSettingsSection {
     // never by rebuilding, which would tear the row down under the pointer.
     const sharpnessRow = createSliderRow({
       width,
-      label: 'Sharpening',
-      description:
-        'Contrast-adaptive sharpening applied after the software upscale. 0% is a plain bilinear upscale.',
+      label: t('settings.display.sharpening'),
+      description: t('settings.display.sharpening.desc'),
       value: display.upscalerSharpness,
       step: 0.05,
       onChange: (upscalerSharpness) => {
@@ -90,9 +103,8 @@ export class DisplaySection extends BaseSettingsSection {
 
     const upscalerRow = createOptionRow<UpscalerBackendId>({
       width,
-      label: 'Upscaler',
-      description:
-        'Post-process upscaling backend. Only backends this build can actually run are selectable; the rest are listed below.',
+      label: t('settings.display.upscaler'),
+      description: t('settings.display.upscaler.desc'),
       choices: availableChoices,
       value: display.upscaler,
       onChange: (upscaler) => {
@@ -102,13 +114,12 @@ export class DisplaySection extends BaseSettingsSection {
     });
 
     const rows: RowHandle[] = [
-      createGroupHeading('Display', width),
+      createGroupHeading(t('settings.tab.display'), width),
       createOptionRow<RenderScale>({
         width,
-        label: 'Resolution scale',
-        description:
-          'Render resolution multiplier. Lower values render fewer pixels and are cheaper on weak GPUs.',
-        choices: RENDER_SCALE_CHOICES,
+        label: t('settings.display.resolutionScale'),
+        description: t('settings.display.resolutionScale.desc'),
+        choices: renderScaleChoices(),
         value: display.renderScale,
         onChange: (renderScale) => {
           this.store.update({ display: { renderScale } });
@@ -116,9 +127,9 @@ export class DisplaySection extends BaseSettingsSection {
       }),
       createOptionRow<EffectLevel>({
         width,
-        label: 'Effects',
-        description: 'Bullet trails, glow and impact effects.',
-        choices: EFFECT_CHOICES,
+        label: t('settings.display.effects'),
+        description: t('settings.display.effects.desc'),
+        choices: effectChoices(),
         value: display.effectLevel,
         onChange: (effectLevel) => {
           this.store.update({ display: { effectLevel } });
@@ -126,10 +137,9 @@ export class DisplaySection extends BaseSettingsSection {
       }),
       createOptionRow<FrameCap>({
         width,
-        label: 'Frame rate limit',
-        description:
-          'Caps how often the game redraws. Gameplay stays server-authoritative, so this never changes the simulation.',
-        choices: FRAME_CAP_CHOICES,
+        label: t('settings.display.frameRate'),
+        description: t('settings.display.frameRate.desc'),
+        choices: frameCapChoices(),
         value: display.frameCap,
         onChange: (frameCap) => {
           this.store.update({ display: { frameCap } });
@@ -137,8 +147,8 @@ export class DisplaySection extends BaseSettingsSection {
       }),
       createToggleRow({
         width,
-        label: 'Show frame rate',
-        description: 'Draws a frame-rate counter in the corner of the battle screen.',
+        label: t('settings.display.showFps'),
+        description: t('settings.display.showFps.desc'),
         value: display.showFps,
         onChange: (showFps) => {
           this.store.update({ display: { showFps } });
@@ -146,20 +156,17 @@ export class DisplaySection extends BaseSettingsSection {
       }),
       // The two controls differ in when they take effect, and that is not
       // obvious from the rows above, so say it plainly.
-      createNoteRow(
-        width,
-        'The frame-rate limit applies immediately by gating the engine render loop. The resolution ' +
-          'scale is applied to the canvas backing store, so it only takes visible effect after the ' +
-          'next window resize or a restart.',
-      ),
-      createGroupHeading('Upscaling', width),
+      createNoteRow(width, t('settings.display.note')),
+      createGroupHeading(t('settings.display.upscaling'), width),
       upscalerRow,
     ];
 
     // Unavailable backends are shown so the player can see what exists and why it
     // cannot run here, but they are not part of the selectable option row.
     for (const descriptor of unavailable) {
-      rows.push(createInfoRow(width, `${descriptor.shortLabel} (unavailable)`, ''));
+      rows.push(
+        createInfoRow(width, t('settings.display.unavailable', { label: descriptor.shortLabel }), ''),
+      );
     }
 
     rows.push(sharpnessRow);
@@ -167,20 +174,17 @@ export class DisplaySection extends BaseSettingsSection {
     // note is never paraphrased here.
     rows.push(createNoteRow(width, upscalerSummary(selected)));
     if (selected.id === 'software') {
-      rows.push(
-        createNoteRow(
-          width,
-          'This is a spatial approximation implemented in the browser. It is not DLSS and not FSR — see the notes above.',
-        ),
-      );
+      rows.push(createNoteRow(width, t('settings.display.softwareNote')));
     }
     if (unavailable.length > 0) {
       rows.push(
         createNoteRow(
           width,
-          `Not available in this build — ${unavailable
-            .map((descriptor) => `${descriptor.shortLabel}: ${descriptor.unavailableReason}`)
-            .join(' ')}`,
+          t('settings.display.unavailableNote', {
+            details: unavailable
+              .map((descriptor) => `${descriptor.shortLabel}: ${descriptor.unavailableReason}`)
+              .join(' '),
+          }),
         ),
       );
     }

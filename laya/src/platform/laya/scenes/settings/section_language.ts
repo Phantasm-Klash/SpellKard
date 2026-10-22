@@ -12,8 +12,12 @@ import { BaseSettingsSection } from './section';
 import { createNoteRow, createOptionRow, type RowHandle } from './widgets';
 
 export class LanguageSection extends BaseSettingsSection {
-  readonly title = t('settings.language');
-  readonly subtitle = 'Interface language · 界面语言 · インターフェース言語';
+  get title(): string {
+    return t('settings.language');
+  }
+  get subtitle(): string {
+    return t('settings.subtitle.language');
+  }
 
   protected build(width: number): RowHandle[] {
     // The store keeps the language as a plain string (it round-trips through

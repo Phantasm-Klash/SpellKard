@@ -10,6 +10,7 @@
  */
 
 import { listShortcuts } from '../../../../core/input/shortcuts';
+import { t } from '../../../../core/game/i18n';
 import { BaseSettingsSection } from './section';
 import {
   createGroupHeading,
@@ -18,24 +19,31 @@ import {
   type RowHandle,
 } from './widgets';
 
-/** Capitalises a scope id for its group heading (`global` → `Global`). */
+/**
+ * Group heading for a scope id, translated when the table knows the scope.
+ *
+ * The scope ids are a closed set (`global`, `login`, `lobby`, …) that the i18n
+ * tables carry one key each, so a new scope added to the binding table without
+ * a translation still renders something readable instead of the raw key.
+ */
 function scopeHeading(scope: string): string {
+  const translated = t(`settings.keys.scope.${scope}`);
+  if (!translated.startsWith('settings.keys.scope.')) {
+    return translated;
+  }
   return scope.charAt(0).toUpperCase() + scope.slice(1);
 }
 
 export class KeysSection extends BaseSettingsSection {
-  readonly title = 'Keys';
-  readonly subtitle = '键盘快捷键 · Every binding the client ships';
+  get title(): string {
+    return t('settings.tab.keys');
+  }
+  get subtitle(): string {
+    return t('settings.subtitle.keys');
+  }
 
   protected build(width: number): RowHandle[] {
-    const rows: RowHandle[] = [
-      createNoteRow(
-        width,
-        'This list is generated from the single binding table the dispatcher ' +
-          'matches against, so it can never drift from the code. Keys that stay ' +
-          'live while a text field has focus are marked in the note at the end.',
-      ),
-    ];
+    const rows: RowHandle[] = [createNoteRow(width, t('settings.keys.intro'))];
 
     // `listShortcuts` already returns global first, then the other scopes in a
     // fixed order, so a heading is emitted each time the scope changes.
@@ -48,13 +56,7 @@ export class KeysSection extends BaseSettingsSection {
       rows.push(createInfoRow(width, entry.label, entry.chords));
     }
 
-    rows.push(
-      createNoteRow(
-        width,
-        'While a text field has focus only the bindings marked allowInTextInput ' +
-          'fire — Tab, Shift+Tab, Enter, Escape, Alt+Enter, Ctrl+Tab.',
-      ),
-    );
+    rows.push(createNoteRow(width, t('settings.keys.textInputNote')));
 
     return rows;
   }

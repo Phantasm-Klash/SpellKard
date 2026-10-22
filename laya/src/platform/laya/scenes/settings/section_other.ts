@@ -26,16 +26,19 @@ import {
   type RowHandle,
 } from './widgets';
 import type { NetworkMode } from '../../../../core/settings';
+import { t } from '../../../../core/game/i18n';
 
 /**
- * Module-level so every `build()` reuses the same choice objects instead of
- * allocating three fresh ones per rebuild.
+ * Rebuilt per `build()` rather than kept at module level: the labels come from
+ * `t()`, so a cached array would keep the language it was created in.
  */
-const NETWORK_CHOICES: readonly OptionChoice<NetworkMode>[] = [
-  { id: 'official', label: 'Official' },
-  { id: 'lan', label: 'LAN' },
-  { id: 'custom', label: 'Third-party' },
-];
+function networkChoices(): readonly OptionChoice<NetworkMode>[] {
+  return [
+    { id: 'official', label: t('settings.network.official') },
+    { id: 'lan', label: t('settings.network.lan') },
+    { id: 'custom', label: t('settings.network.thirdParty') },
+  ];
+}
 
 /**
  * Splits the typed URL list on whitespace and applies the same rule
@@ -59,8 +62,12 @@ function parseModuleUrls(text: string): string[] {
 }
 
 export class OtherSection extends BaseSettingsSection {
-  readonly title = 'Other';
-  readonly subtitle = '其他设置 · Connection mode and mods';
+  get title(): string {
+    return t('settings.tab.other');
+  }
+  get subtitle(): string {
+    return t('settings.subtitle.other');
+  }
 
   protected build(width: number): RowHandle[] {
     const { network, mods, plugins } = this.store.get();
@@ -69,9 +76,8 @@ export class OtherSection extends BaseSettingsSection {
     // grey them without a forward reference.
     const lanRow = createTextRow({
       width,
-      label: 'LAN host',
-      description:
-        'Host or host:port of a Gensoulkyo server on your local network. The lobby WebSocket and battle relay paths are derived from it.',
+      label: t('settings.network.lanHost'),
+      description: t('settings.network.lanHost.desc'),
       placeholder: '192.168.1.10:7350',
       value: network.lanHost,
       onChange: (lanHost) => {
@@ -81,8 +87,8 @@ export class OtherSection extends BaseSettingsSection {
 
     const httpRow = createTextRow({
       width,
-      label: 'Lobby HTTP base',
-      description: 'REST base of the third-party deployment.',
+      label: t('settings.network.httpBase'),
+      description: t('settings.network.httpBase.desc'),
       placeholder: 'https://lobby.example',
       value: network.customHttpBase,
       onChange: (customHttpBase) => {
@@ -92,7 +98,7 @@ export class OtherSection extends BaseSettingsSection {
 
     const wsRow = createTextRow({
       width,
-      label: 'Lobby WebSocket URL',
+      label: t('settings.network.wsUrl'),
       placeholder: 'wss://lobby.example/ws',
       value: network.customWsUrl,
       onChange: (customWsUrl) => {
@@ -102,7 +108,7 @@ export class OtherSection extends BaseSettingsSection {
 
     const relayRow = createTextRow({
       width,
-      label: 'Battle relay URL',
+      label: t('settings.network.relayUrl'),
       placeholder: 'wss://lobby.example/relay',
       value: network.customRelayUrl,
       onChange: (customRelayUrl) => {
@@ -124,10 +130,9 @@ export class OtherSection extends BaseSettingsSection {
 
     const modeRow = createOptionRow<NetworkMode>({
       width,
-      label: 'Connection',
-      description:
-        'Which lobby server the client talks to. The choice is stored immediately and used the next time the client connects.',
-      choices: NETWORK_CHOICES,
+      label: t('settings.network.connection'),
+      description: t('settings.network.connection.desc'),
+      choices: networkChoices(),
       value: network.mode,
       onChange: (mode) => {
         this.store.update({ network: { mode } });
@@ -137,8 +142,8 @@ export class OtherSection extends BaseSettingsSection {
 
     const workshopRow = createToggleRow({
       width,
-      label: 'Creative workshop',
-      description: 'Browse and install community mods. Reserved — no loader ships yet.',
+      label: t('settings.mods.workshop'),
+      description: t('settings.mods.workshop.desc'),
       value: mods.workshopEnabled,
       onChange: (workshopEnabled) => {
         this.store.update({ mods: { workshopEnabled } });
@@ -147,7 +152,7 @@ export class OtherSection extends BaseSettingsSection {
 
     const modFolderRow = createTextRow({
       width,
-      label: 'Mod folder',
+      label: t('settings.mods.folder'),
       placeholder: './mods',
       value: mods.customModPath,
       onChange: (customModPath) => {
@@ -157,8 +162,8 @@ export class OtherSection extends BaseSettingsSection {
 
     const customModsRow = createToggleRow({
       width,
-      label: 'Custom mods',
-      description: 'Load mods from a folder you choose.',
+      label: t('settings.mods.custom'),
+      description: t('settings.mods.custom.desc'),
       value: mods.customModsEnabled,
       onChange: (customModsEnabled) => {
         this.store.update({ mods: { customModsEnabled } });
@@ -174,9 +179,8 @@ export class OtherSection extends BaseSettingsSection {
     // is inert until the player pastes a URL.
     const autoLoadRow = createToggleRow({
       width,
-      label: 'Auto-load external modules',
-      description:
-        'Load every module URL below as soon as the client starts, without asking per module.',
+      label: t('settings.plugins.autoLoad'),
+      description: t('settings.plugins.autoLoad.desc'),
       value: plugins.autoLoad,
       onChange: (autoLoad) => {
         this.store.update({ plugins: { autoLoad } });
@@ -185,8 +189,8 @@ export class OtherSection extends BaseSettingsSection {
 
     const moduleUrlsRow = createTextRow({
       width,
-      label: 'Module URLs',
-      description: 'One or more ES module URLs, separated by spaces. Nothing is fetched until you add one here.',
+      label: t('settings.plugins.moduleUrls'),
+      description: t('settings.plugins.moduleUrls.desc'),
       placeholder: 'https://example.com/upscaler.js /dlc/backend.js',
       value: plugins.moduleUrls.join(' '),
       maxChars: 512,
@@ -196,40 +200,23 @@ export class OtherSection extends BaseSettingsSection {
     });
 
     return [
-      createGroupHeading('Network', width),
+      createGroupHeading(t('settings.network.heading'), width),
       modeRow,
       lanRow,
       httpRow,
       wsRow,
       relayRow,
-      createNoteRow(
-        width,
-        'Official uses the lobby and battle relay endpoints compiled into this build. LAN derives http://<host>, ws://<host>/ws and ws://<host>/relay from the host you enter, so only the host is needed.',
-      ),
-      createGroupHeading('Mods', width),
+      createNoteRow(width, t('settings.network.officialNote')),
+      createGroupHeading(t('settings.mods.heading'), width),
       workshopRow,
       customModsRow,
       modFolderRow,
-      createNoteRow(
-        width,
-        'No mod loader is implemented yet. These preferences are stored so a future loader can honour them; nothing is loaded today.',
-      ),
-      createGroupHeading('External modules (DLC)', width),
+      createNoteRow(width, t('settings.mods.note')),
+      createGroupHeading(t('settings.plugins.heading'), width),
       autoLoadRow,
       moduleUrlsRow,
-      createNoteRow(
-        width,
-        'Nothing is downloaded unless a URL is entered here. Each URL must serve an ES module that ' +
-          'exports createUpscaler() (or upscaler / descriptor / register(registry)). A module loaded ' +
-          'this way can only ever register an external upscaler backend, and it cannot make DLSS or ' +
-          'FSR possible on this renderer — it can only supply a real backend for a platform that ' +
-          'already has one.',
-      ),
-      createNoteRow(
-        width,
-        'Only http(s):// URLs and root-relative /path URLs are accepted. Anything else — file:, ' +
-          'data:, a bare hostname — is rejected before it is stored or imported.',
-      ),
+      createNoteRow(width, t('settings.plugins.note1')),
+      createNoteRow(width, t('settings.plugins.note2')),
     ];
   }
 }

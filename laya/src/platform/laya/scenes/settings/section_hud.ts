@@ -12,22 +12,27 @@
 
 import { BaseSettingsSection } from './section';
 import { createGroupHeading, createNoteRow, createToggleRow, type RowHandle, type ToggleRowHandle } from './widgets';
+import { t } from '../../../../core/game/i18n';
 
 export class HudSection extends BaseSettingsSection {
-  readonly title = 'HUD';
-  readonly subtitle = 'HUD 显示内容 · Which battle overlays to draw';
+  get title(): string {
+    return t('settings.tab.hud');
+  }
+  get subtitle(): string {
+    return t('settings.subtitle.hud');
+  }
 
   protected build(width: number): RowHandle[] {
     const hud = this.store.get().hud;
     const rows: RowHandle[] = [];
 
-    rows.push(createGroupHeading('Battle HUD', width));
+    rows.push(createGroupHeading(t('settings.hud.heading'), width));
 
     rows.push(
       createToggleRow({
         width,
-        label: 'Opponent HUD',
-        description: "The rival's Boss HP panel.",
+        label: t('settings.hud.opponentHud'),
+        description: t('settings.hud.opponentHud.desc'),
         value: hud.showOpponentHud,
         onChange: (value) => {
           this.store.update({ hud: { showOpponentHud: value } });
@@ -38,8 +43,8 @@ export class HudSection extends BaseSettingsSection {
     rows.push(
       createToggleRow({
         width,
-        label: 'Damage numbers',
-        description: 'Floating damage values over the Boss.',
+        label: t('settings.hud.damageNumbers'),
+        description: t('settings.hud.damageNumbers.desc'),
         value: hud.showDamageNumbers,
         onChange: (value) => {
           this.store.update({ hud: { showDamageNumbers: value } });
@@ -50,8 +55,8 @@ export class HudSection extends BaseSettingsSection {
     rows.push(
       createToggleRow({
         width,
-        label: 'Score card',
-        description: 'Your score and combo readout.',
+        label: t('settings.hud.scoreCard'),
+        description: t('settings.hud.scoreCard.desc'),
         value: hud.showScoreCard,
         onChange: (value) => {
           this.store.update({ hud: { showScoreCard: value } });
@@ -62,8 +67,8 @@ export class HudSection extends BaseSettingsSection {
     rows.push(
       createToggleRow({
         width,
-        label: 'Ultimate meter',
-        description: 'Charge meter for bombs and spell cards.',
+        label: t('settings.hud.ultMeter'),
+        description: t('settings.hud.ultMeter.desc'),
         value: hud.showUltMeter,
         onChange: (value) => {
           this.store.update({ hud: { showUltMeter: value } });
@@ -82,8 +87,8 @@ export class HudSection extends BaseSettingsSection {
     rows.push(
       createToggleRow({
         width,
-        label: 'Status card',
-        description: 'The main readout strip: HP, lives and bullet count.',
+        label: t('settings.hud.statusCard'),
+        description: t('settings.hud.statusCard.desc'),
         value: hud.showStatusCard,
         onChange: (value) => {
           this.store.update({ hud: { showStatusCard: value } });
@@ -94,8 +99,8 @@ export class HudSection extends BaseSettingsSection {
 
     const bullet = createToggleRow({
       width,
-      label: 'Bullet count',
-      description: 'The BULLETS row inside the status card.',
+      label: t('settings.hud.bulletCount'),
+      description: t('settings.hud.bulletCount.desc'),
       value: hud.showBulletCount,
       onChange: (value) => {
         this.store.update({ hud: { showBulletCount: value } });
@@ -111,8 +116,8 @@ export class HudSection extends BaseSettingsSection {
     rows.push(
       createToggleRow({
         width,
-        label: 'Countdown',
-        description: 'Remaining match time.',
+        label: t('settings.hud.countdown'),
+        description: t('settings.hud.countdown.desc'),
         value: hud.showCountdown,
         onChange: (value) => {
           this.store.update({ hud: { showCountdown: value } });
@@ -123,8 +128,8 @@ export class HudSection extends BaseSettingsSection {
     rows.push(
       createToggleRow({
         width,
-        label: 'Network footer',
-        description: 'Ping and reconciliation readout along the bottom edge.',
+        label: t('settings.hud.networkFooter'),
+        description: t('settings.hud.networkFooter.desc'),
         value: hud.showDebugFooter,
         onChange: (value) => {
           this.store.update({ hud: { showDebugFooter: value } });
@@ -133,12 +138,7 @@ export class HudSection extends BaseSettingsSection {
     );
 
     rows.push(
-      createNoteRow(
-        width,
-        'Hidden blocks are re-flowed away instead of leaving empty gaps, so the HUD stays compact. ' +
-          'The damage-number and ultimate-meter overlays are still being built out: those two switches ' +
-          'are stored now and take effect as each overlay lands.',
-      ),
+      createNoteRow(width, t('settings.hud.note')),
     );
 
     return rows;

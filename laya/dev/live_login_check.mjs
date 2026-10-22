@@ -88,7 +88,7 @@ page.on('response', (r) => {
 });
 
 const url =
-  `http://127.0.0.1:${PORT}/index.html?debug=1` +
+  `http://127.0.0.1:${PORT}/index.html?debug=1&lang=en` +
   `&lobbyHttpBase=${encodeURIComponent(LOBBY)}` +
   `&lobbyWsUrl=${encodeURIComponent(WS)}`;
 console.log(`lobby: ${LOBBY}`);

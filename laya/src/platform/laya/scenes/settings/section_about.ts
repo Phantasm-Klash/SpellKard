@@ -27,6 +27,7 @@ import {
   createNoteRow,
   type RowHandle,
 } from './widgets';
+import { t } from '../../../../core/game/i18n';
 
 /** Opens `url` in a new tab, or does nothing when there is no URL yet. */
 function openExternal(url: string): void {
@@ -40,16 +41,20 @@ function openExternal(url: string): void {
 }
 
 export class AboutSection extends BaseSettingsSection {
-  readonly title = 'About';
-  readonly subtitle = '关于 · Copyright, version, credits';
+  get title(): string {
+    return t('settings.tab.about');
+  }
+  get subtitle(): string {
+    return t('settings.subtitle.about');
+  }
 
   protected build(width: number): RowHandle[] {
     const hasRepo = PROJECT_URL !== '';
     const repositoryRow = createActionRow(
       width,
-      'Repository',
-      hasRepo ? PROJECT_URL : 'Not published yet',
-      'Open',
+      t('settings.about.repository'),
+      hasRepo ? PROJECT_URL : t('settings.about.notPublished'),
+      t('settings.about.open'),
       () => openExternal(PROJECT_URL),
       'ghost',
     );
@@ -60,17 +65,17 @@ export class AboutSection extends BaseSettingsSection {
     }
 
     return [
-      createGroupHeading('Product', width),
-      createInfoRow(width, 'Game', gameNameLine()),
-      createInfoRow(width, 'Version', GAME_VERSION),
-      createInfoRow(width, 'Build', BUILD_LABEL),
-      createGroupHeading('Licences', width),
-      createInfoRow(width, 'Code', CODE_LICENSE),
-      createInfoRow(width, 'Assets', ASSET_LICENSE),
-      createInfoRow(width, 'Copyright', COPYRIGHT_LINE),
-      createGroupHeading('Source', width),
+      createGroupHeading(t('settings.about.heading.product'), width),
+      createInfoRow(width, t('settings.about.game'), gameNameLine()),
+      createInfoRow(width, t('settings.about.version'), GAME_VERSION),
+      createInfoRow(width, t('settings.about.build'), BUILD_LABEL),
+      createGroupHeading(t('settings.about.heading.licences'), width),
+      createInfoRow(width, t('settings.about.code'), CODE_LICENSE),
+      createInfoRow(width, t('settings.about.assets'), ASSET_LICENSE),
+      createInfoRow(width, t('settings.about.copyright'), COPYRIGHT_LINE),
+      createGroupHeading(t('settings.about.heading.source'), width),
       repositoryRow,
-      createGroupHeading('Credits', width),
+      createGroupHeading(t('settings.about.heading.credits'), width),
       ...CREDITS.map((line) => createNoteRow(width, line)),
     ];
   }

@@ -46,6 +46,11 @@ export interface BrowserRuntimeConfig {
    */
   battleTransport: 'auto' | 'relay' | 'udp';
   backgroundColor: string;
+  /**
+   * Forces the UI language (`?lang=zh-Hans` etc.). Empty keeps the persisted
+   * setting, which defaults to Simplified Chinese.
+   */
+  language: string;
 }
 
 declare global {
@@ -71,6 +76,9 @@ const DEFAULT_CONFIG: BrowserRuntimeConfig = {
   relayUrl: '',
   battleTransport: 'auto',
   backgroundColor: '#0b0716',
+  // Empty = "no override": the persisted setting (default Simplified Chinese)
+  // decides. The E2E harnesses pass `?lang=en` because they assert English copy.
+  language: '',
 };
 
 function pickNumber(value: string | null, fallback: number): number {
@@ -120,7 +128,8 @@ export function resolveRuntimeConfig(search = window.location.search): BrowserRu
       params.get('battleTransport'),
       fromWindow.battleTransport ?? DEFAULT_CONFIG.battleTransport,
     ),
-    backgroundColor: pickString(params.get('backgroundColor'), fromWindow.backgroundColor ?? DEFAULT_CONFIG.backgroundColor),
+    
+    language: pickString(params.get('lang'), fromWindow.language ?? DEFAULT_CONFIG.language),backgroundColor: pickString(params.get('backgroundColor'), fromWindow.backgroundColor ?? DEFAULT_CONFIG.backgroundColor),
   };
 }
 
@@ -245,6 +254,7 @@ export function startClient(config: BrowserRuntimeConfig): SpellKardApp {
     timer,
     logger: consoleLogger,
     settings,
+    language: config.language,
   });
   app.start();
   return app;

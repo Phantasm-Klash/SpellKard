@@ -368,11 +368,18 @@ export interface Messages {
 export type LanguageCode = 'zh-Hans' | 'zh-Hant' | 'ja' | 'en';
 
 /**
- * Language shown when nothing is persisted. `en` because the shipped UI text is
- * English — switching the default would move every label out from under the
- * existing screens in one commit.
+ * Language shown when nothing is persisted.
+ *
+ * Simplified Chinese, because the game ships as a Chinese product (the lobby
+ * header, the title logo and the store copy are all 中文-first) and a player who
+ * has never opened the settings should land on the language the game is
+ * marketed in. Every table is complete, so switching to any other code — or
+ * overriding this one with `?lang=` — is still a one-line change at runtime.
+ *
+ * The English column stays verbatim: the E2E harnesses assert against it, and
+ * they pin `?lang=en` explicitly rather than relying on this default.
  */
-export const DEFAULT_LANGUAGE: LanguageCode = 'en';
+export const DEFAULT_LANGUAGE: LanguageCode = 'zh-Hans';
 
 export interface LanguageInfo {
   readonly code: LanguageCode;
@@ -554,7 +561,7 @@ const ZH_HANS: Messages = {
   'settings.display.showFps': '显示帧率',
   'settings.display.showFps.desc': '在对局画面角落显示帧率计数器。',
   'settings.display.note':
-    '帧率上限通过控制引擎渲染循环立即生效。分辨率倍率作用于画布后备存储，需要在下一次窗口缩放或重启后才看到效果。',
+    '帧率上限与分辨率倍率都会立即生效：前者限制引擎渲染循环，后者重设画布后备存储。',
   'settings.display.upscaling': '放大',
   'settings.display.unavailable': '{label}（不可用）',
   'settings.display.softwareNote': '这是在浏览器中实现的空间近似算法。它不是 DLSS，也不是 FSR —— 详见上方说明。',
@@ -883,7 +890,7 @@ const ZH_HANT: Messages = {
   'settings.display.showFps': '顯示訊框率',
   'settings.display.showFps.desc': '在對局畫面角落顯示訊框率計數器。',
   'settings.display.note':
-    '訊框率上限透過控制引擎渲染迴圈立即生效。解析度倍率作用於畫布後備儲存，需要在下一次視窗縮放或重啟後才看到效果。',
+    '幀率上限與解析度倍率都會立即生效：前者限制引擎渲染迴圈，後者重設畫布後備儲存。',
   'settings.display.upscaling': '放大',
   'settings.display.unavailable': '{label}（不可用）',
   'settings.display.softwareNote': '這是在瀏覽器中實作的空間近似演算法。它不是 DLSS，也不是 FSR —— 詳見上方說明。',

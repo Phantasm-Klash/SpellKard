@@ -123,6 +123,15 @@ export interface BadgeOptions {
 // Primitives
 // ---------------------------------------------------------------------------
 
+/**
+ * Smallest font a button label may shrink to while fitting its plaque.
+ *
+ * Below this the label stops being legible, so the text is allowed to clip
+ * instead (a clipped label still reads as "this button is too narrow", while a
+ * 6px label just looks broken).
+ */
+const MIN_BUTTON_FONT = 10;
+
 /** Handle for a screen-title plaque (TNA `ui/bar_*.png`). */
 export interface TitlePlaqueHandle {
   readonly sprite: Laya.Sprite;
@@ -285,6 +294,10 @@ function createButtonInternal(
   label.fontSize = theme.FONT_SIZE_BUTTON;
   label.align = 'left';
   label.valign = 'middle';
+  // A button label is one line by contract: wrapping turned narrow buttons
+  // (the seven settings tabs) into two stacked lines that overflowed the
+  // plaque. `fitLabel` shrinks the type instead, down to a legible floor.
+  label.wordWrap = false;
   label.width = width;
   label.height = height;
   label.pos(0, 0);
@@ -306,6 +319,30 @@ function createButtonInternal(
   const sealSize = height - pad * 2;
   const sealRadius = Math.round(sealSize * 0.28);
   const labelX = icon === null ? pad : pad + sealSize + Math.round(sealSize * 0.45);
+
+  /**
+   * Shrinks the label until it fits on one line, down to a legible floor.
+   *
+   * The engine's own `textWidth` is the measurement (`get textWidth()` calls
+   * `typeset()`), so this stays exact for CJK and Latin alike — a button whose
+   * text does not fit would otherwise wrap into a second line and paint outside
+   * its plaque. Text that still overflows at the floor is left clipped rather
+   * than shrunk into unreadable type.
+   */
+  const fitLabel = (): void => {
+    const available = Math.max(8, width - labelX - pad);
+    let size = theme.FONT_SIZE_BUTTON;
+    label.fontSize = size;
+    // `textWidth` is computed by the engine's `typeset()` on read, but the
+    // bundled `laya.core.d.ts` does not declare it — hence the cast.
+    const measured = label as unknown as { textWidth?: number };
+    while (size > MIN_BUTTON_FONT && (measured.textWidth ?? 0) > available) {
+      size -= 1;
+      label.fontSize = size;
+    }
+    label.width = available;
+    label.height = height;
+  };
 
   const redraw = (): void => {
     const g = sprite.graphics;
@@ -354,6 +391,7 @@ function createButtonInternal(
     label.color = labelTone;
     label.x = labelX;
   };
+  fitLabel();
   redraw();
 
   sprite.on(Laya.Event.MOUSE_OVER, undefined, () => {
@@ -407,6 +445,9 @@ function createButtonInternal(
     },
     setText(value: string): void {
       label.text = value;
+      // A longer label has to re-fit, otherwise a runtime rename (`Sign in` →
+      // `Sign out`) silently overflows the plaque it was measured for.
+      fitLabel();
     },
     setSize(nextWidth: number, nextHeight: number): void {
       width = nextWidth;
@@ -415,9 +456,8 @@ function createButtonInternal(
       // both must track the new box or the button paints one size and reacts at
       // another.
       sprite.size(width, height);
-      label.width = Math.max(10, width - labelX - pad);
-      label.height = height;
       label.pos(0, 0);
+      fitLabel();
       redraw();
     },
   };

@@ -37,7 +37,7 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 675, height: 900 }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 
-await page.goto(`http://127.0.0.1:${PORT}/index.html?debug=1`, { waitUntil: 'load' });
+await page.goto(`http://127.0.0.1:${PORT}/index.html?debug=1&lang=en`, { waitUntil: 'load' });
 await page.waitForFunction(() => !!window.__PK_SCENES__, { timeout: 20000 });
 // Let the login art settle (the loader probes two roots).
 await page.waitForTimeout(2000);
@@ -71,14 +71,20 @@ const FIND_INPUTS = `(function findInputs(node, acc, skip) {
   return acc;
 })`;
 
-// Finds a button by its label. A button is a sized `Sprite` whose single child
-// is the centred `Laya.Text`, so the label is matched one level down.
+// Finds a button by its label.
+//
+// A `ui_kit` button is a mouse-enabled `Sprite` whose direct children are the
+// seal layer and the `Laya.Text` label, so the label is matched one level down.
+// The match is restricted to mouse-enabled sprites because the read-only hint
+// rows are also two-text sprites and would otherwise shadow the real control.
 const FIND_BUTTON = `(function findButton(node, label) {
   for (let i = 0; i < node.numChildren; i++) {
     const child = node.getChildAt(i);
-    if (child instanceof Laya.Sprite && !(child instanceof Laya.Text) && child.numChildren === 1) {
-      const inner = child.getChildAt(0);
-      if (inner instanceof Laya.Text && inner.text === label) return child;
+    if (child.mouseEnabled && child.numChildren > 0) {
+      for (let j = 0; j < child.numChildren; j++) {
+        const inner = child.getChildAt(j);
+        if (inner instanceof Laya.Text && inner.text === label) return child;
+      }
     }
     if (child.numChildren) { const found = findButton(child, label); if (found) return found; }
   }
@@ -100,7 +106,8 @@ console.log('login mode:', JSON.stringify(login.state));
 
 // --- 1b. settings modal ----------------------------------------------------
 // The gear button lives in the top-right corner; clicking it must open the
-// shared modal on top of the whole screen. It opens on the Display tab, and the
+// shared modal on top of the whole screen. It opens on the Language tab (the
+// first thing a player looks for when the UI is not in their language), and the
 // product facts the old single-page panel used to show now live on About.
 const settings = await page.evaluate(async (collectSrc) => {
   const collect = eval(collectSrc);
@@ -116,7 +123,7 @@ const settings = await page.evaluate(async (collectSrc) => {
   // Walk every tab and record its metrics: this is what proves each section
   // builds real rows instead of rendering an empty card.
   const tabs = [];
-  for (const title of ['Display', 'Keys', 'Audio', 'HUD', 'Other', 'About']) {
+  for (const title of ['Language', 'Display', 'Keys', 'Audio', 'HUD', 'Other', 'About']) {
     login.settings.selectTabByTitle(title);
     await new Promise((r) => setTimeout(r, 60));
     const s = login.settings.debugState();
@@ -129,6 +136,13 @@ const settings = await page.evaluate(async (collectSrc) => {
     });
   }
 
+  // The walk ends on About, so revisit Display and keep its labels: the
+  // assertions below pin that tab's own rows, not whatever tab happens to be
+  // open when the panel first appears.
+  login.settings.selectTabByTitle('Display');
+  await new Promise((r) => setTimeout(r, 120));
+  const displayLabels = collect(login.root, []);
+
   login.settings.selectTabByTitle('About');
   await new Promise((r) => setTimeout(r, 120));
   const about = login.settings.debugState();
@@ -140,7 +154,7 @@ const settings = await page.evaluate(async (collectSrc) => {
   await new Promise((r) => setTimeout(r, 120));
   const keysTab = login.settings.debugState();
   const keysLabels = collect(login.root, []);
-  return { state, labels, tabs, about, aboutLabels, keysTab, keysLabels };
+  return { state, labels, tabs, displayLabels, about, aboutLabels, keysTab, keysLabels };
 }, COLLECT);
 console.log('settings modal:', JSON.stringify(settings.state));
 console.log('settings tabs:', JSON.stringify(settings.tabs));
@@ -221,6 +235,13 @@ const persisted = await page.evaluate(async () => {
   // Restore the shipped defaults so the later pages in this browser context
   // (which share localStorage) boot from a known state.
   scenes.settings.reset();
+  // A reset puts *every* knob back to the shipped default, and the shipped
+  // default language is Simplified Chinese — so the whole UI flips language
+  // here. This harness asserts against the English copy, so re-pin the same
+  // `?lang=` override the page booted with; otherwise every `prompt`/label
+  // comparison below silently starts looking for English in a Chinese UI.
+  scenes.settings.update({ language: 'en' });
+  await new Promise((r) => setTimeout(r, 80));
   return raw;
 });
 console.log('persisted:', persisted);
@@ -319,7 +340,10 @@ await page.evaluate(async () => {
 // inconsistent and is only good for reading numbers).
 const widePage = await browser.newPage({ viewport: { width: 1333, height: 750 }, deviceScaleFactor: 1 });
 widePage.on('pageerror', (e) => console.log('[wide pageerror]', e.message));
-await widePage.goto(`http://127.0.0.1:${PORT}/index.html?debug=1&stageWidth=1333&stageHeight=750`, { waitUntil: 'load' });
+await widePage.goto(`http://127.0.0.1:${PORT}/index.html?debug=1&lang=en&stageWidth=1333&stageHeight=750`, {
+  waitUntil: 'load',
+  timeout: 60000,
+});
 await widePage.waitForFunction(() => !!window.__PK_SCENES__, { timeout: 20000 });
 await widePage.waitForTimeout(2000);
 const wide = await widePage.evaluate(async () => {
@@ -332,13 +356,20 @@ const wide = await widePage.evaluate(async () => {
 await widePage.waitForTimeout(200);
 await widePage.screenshot({ path: resolve(OUT, 'login-wide.png') });
 console.log('wide stage:', JSON.stringify(wide));
+// Release the page: every extra live page holds a swiftshader WebGL context,
+// and three of them at once starve the renderer badly enough that the next
+// `goto` never reaches `load` (this used to time out here).
+await widePage.close();
 
 // --- 3b. ultra-wide stage (halo must still fit) ----------------------------
 // A wider window keeps the portrait pinned near the right edge; the halo disc
 // must be clamped inside the stage instead of being clipped by it.
 const ultraPage = await browser.newPage({ viewport: { width: 1920, height: 750 }, deviceScaleFactor: 1 });
 ultraPage.on('pageerror', (e) => console.log('[ultra pageerror]', e.message));
-await ultraPage.goto(`http://127.0.0.1:${PORT}/index.html?debug=1&stageWidth=1920&stageHeight=750`, { waitUntil: 'load' });
+await ultraPage.goto(`http://127.0.0.1:${PORT}/index.html?debug=1&lang=en&stageWidth=1920&stageHeight=750`, {
+  waitUntil: 'load',
+  timeout: 60000,
+});
 await ultraPage.waitForFunction(() => !!window.__PK_SCENES__, { timeout: 20000 });
 await ultraPage.waitForTimeout(2000);
 const ultra = await ultraPage.evaluate(async () => {
@@ -361,6 +392,8 @@ const ultraSettings = await ultraPage.evaluate(async () => {
 });
 console.log('ultra settings:', JSON.stringify({ cardRect: ultraSettings.cardRect }));
 await ultraPage.screenshot({ path: resolve(OUT, 'login-ultrawide-settings.png') });
+// Same reason as the wide page: hand the WebGL context back before the next one.
+await ultraPage.close();
 
 // --- 4. real typing into the first field -----------------------------------
 // Focus the field through the engine's own text-input adapter (setting
@@ -423,8 +456,8 @@ console.log('busy:', JSON.stringify({ clicked: busy.clicked, after: busy.after }
 const endpointPage = await browser.newPage({ viewport: { width: 675, height: 900 }, deviceScaleFactor: 1 });
 endpointPage.on('pageerror', (e) => console.log('[endpoint pageerror]', e.message));
 await endpointPage.goto(
-  `http://127.0.0.1:${PORT}/index.html?debug=1&lobbyHttpBase=${encodeURIComponent('https://fake-lobby.invalid')}`,
-  { waitUntil: 'load' },
+  `http://127.0.0.1:${PORT}/index.html?debug=1&lang=en&lobbyHttpBase=${encodeURIComponent('https://fake-lobby.invalid')}`,
+  { waitUntil: 'load', timeout: 60000 },
 );
 await endpointPage.waitForFunction(() => !!window.__PK_SCENES__, { timeout: 20000 });
 await endpointPage.waitForTimeout(1500);
@@ -437,13 +470,17 @@ const endpoint = await endpointPage.evaluate(async (collectSrc) => {
 }, COLLECT);
 console.log('endpoint labels:', JSON.stringify(endpoint.labels.filter((t) => t.startsWith('Lobby:'))));
 await endpointPage.screenshot({ path: resolve(OUT, 'login-endpoint.png') });
+await endpointPage.close();
 
 // --- 7. narrow / tall stage ------------------------------------------------
 // 480x1280 is far taller than the design ratio; the layout must still produce
 // non-negative rectangles (no NaN, no negatives) in register mode (tallest card).
 const narrowPage = await browser.newPage({ viewport: { width: 480, height: 1280 }, deviceScaleFactor: 1 });
 narrowPage.on('pageerror', (e) => console.log('[narrow pageerror]', e.message));
-await narrowPage.goto(`http://127.0.0.1:${PORT}/index.html?debug=1&stageWidth=480&stageHeight=1280`, { waitUntil: 'load' });
+await narrowPage.goto(`http://127.0.0.1:${PORT}/index.html?debug=1&lang=en&stageWidth=480&stageHeight=1280`, {
+  waitUntil: 'load',
+  timeout: 60000,
+});
 await narrowPage.waitForFunction(() => !!window.__PK_SCENES__, { timeout: 20000 });
 await narrowPage.waitForTimeout(1500);
 const narrow = await narrowPage.evaluate(async () => {
@@ -466,6 +503,7 @@ const narrowSettings = await narrowPage.evaluate(async () => {
 });
 console.log('narrow settings:', JSON.stringify({ cardRect: narrowSettings.cardRect, tabs: narrowSettings.tabs }));
 await narrowPage.screenshot({ path: resolve(OUT, 'login-narrow-settings.png') });
+await narrowPage.close();
 
 // --- 8. sigil fallback -----------------------------------------------------
 // Block the optional sigil art so it never arrives: the scene must fall back to
@@ -474,7 +512,7 @@ const fallbackPage = await browser.newPage({ viewport: { width: 675, height: 900
 const fallbackErrors = [];
 fallbackPage.on('pageerror', (e) => fallbackErrors.push(e.message));
 await fallbackPage.route('**/login_sigil.png', (route) => route.abort());
-await fallbackPage.goto(`http://127.0.0.1:${PORT}/index.html?debug=1`, { waitUntil: 'load' });
+await fallbackPage.goto(`http://127.0.0.1:${PORT}/index.html?debug=1&lang=en`, { waitUntil: 'load', timeout: 60000 });
 await fallbackPage.waitForFunction(() => !!window.__PK_SCENES__, { timeout: 20000 });
 await fallbackPage.waitForTimeout(2000);
 const fallback = await fallbackPage.evaluate(async () => {
@@ -485,6 +523,7 @@ const fallback = await fallbackPage.evaluate(async () => {
 });
 console.log('sigil fallback:', JSON.stringify(fallback));
 await fallbackPage.screenshot({ path: resolve(OUT, 'login-sigil-fallback.png') });
+await fallbackPage.close();
 
 // --- 9. keyboard shortcuts -------------------------------------------------
 // The table and the matcher are unit-tested in `tests/shortcuts.test.ts`; this
@@ -857,19 +896,22 @@ const checks = [
   ['login: settings modal starts closed', login.state.settings.open === false],
   ['settings: opens from the gear button', settings.state.open === true],
   ['settings: card is inside the 900x1200 stage', settingsCardInside(settings.state, 900, 1200)],
-  ['settings: opens on the Display tab', settings.state.activeTab === 'Display'],
+  ['settings: opens on the Language tab', settings.state.activeTab === 'Language'],
   [
-    'settings: exposes the six tabs in order',
-    JSON.stringify(settings.state.tabs) === JSON.stringify(['Display', 'Keys', 'Audio', 'HUD', 'Other', 'About']),
+    'settings: exposes the seven tabs in order',
+    JSON.stringify(settings.state.tabs) ===
+      JSON.stringify(['Language', 'Display', 'Keys', 'Audio', 'HUD', 'Other', 'About']),
   ],
   [
     'settings: the Display tab builds its rows',
-    settings.state.labels.includes('Resolution scale') &&
-      settings.state.labels.includes('Effects') &&
-      settings.state.labels.includes('Frame rate limit'),
+    settings.displayLabels.includes('Resolution scale') &&
+      settings.displayLabels.includes('Effects') &&
+      settings.displayLabels.includes('Frame rate limit'),
   ],
   ['settings: every tab builds content', settings.tabs.every((t) => t.contentHeight > 0 && t.rows > 3)],
-  ['settings: every tab has a bilingual subtitle', settings.tabs.every((t) => t.subtitle.includes('·'))],
+  // Subtitles used to be a single bilingual string (`中文 · English`). They are
+  // now resolved through `t()`, so the contract is "every tab has one".
+  ['settings: every tab has a subtitle', settings.tabs.every((t) => t.subtitle.length > 0)],
   ['settings: the HUD tab overflows and is scrollable', settings.tabs.find((t) => t.title === 'HUD').scrollable === true],
   ['settings: About tab lists both product names', settings.aboutLabels.includes('纷争幻想 · Phantasm Klash')],
   ['settings: About tab shows the version', settings.aboutLabels.includes('0.1.0')],
@@ -881,11 +923,14 @@ const checks = [
   ],
   [
     'settings: card has a heading and a Close button',
+    // The heading is read from the debug snapshot, not from the visible-text
+    // walk: once the TNA `bar_config` plaque loads it *replaces* the text, so a
+    // walk-based check would only pass until the art arrived.
     settings.state.labels.includes('Settings') && settings.labels.includes('Close'),
   ],
   [
     'settings: the open modal is visible in the scene tree',
-    settings.labels.includes('Settings') && settings.labels.includes('Resolution scale'),
+    settings.state.open === true && settings.displayLabels.includes('Resolution scale'),
   ],
   ['settings: Close hides the modal again', settingsClosed.open === false && settingsClosed.rootVisible === false],
   ['display: the default frame cap is installed on the render loop', applied.beforeCap === 'function'],
@@ -954,7 +999,7 @@ const checks = [
   ['narrow: no negative geometry', narrowOk],
   ['narrow: settings card fits the 480x1280 stage', settingsCardInside(narrowSettings, 480, 1280)],
   ['narrow: settings card is clamped to the narrow stage', narrowSettings.cardRect.width < 560],
-  ['narrow: settings still exposes six tabs', narrowSettings.tabs.length === 6],
+  ['narrow: settings still exposes every tab', narrowSettings.tabs.length === 7],
   ['ultra: settings card fits the 1920x750 stage', settingsCardInside(ultraSettings, 1920, 750)],
   ['ultra: settings card keeps its max width', ultraSettings.cardRect.width === 560],
   ['fallback: sigil missing leaves the ellipse', fallback.sigilLoaded === false],

@@ -22,10 +22,15 @@ import {
   createToggleRow,
   type RowHandle,
 } from './widgets';
+import { t } from '../../../../core/game/i18n';
 
 export class AudioSection extends BaseSettingsSection {
-  readonly title = 'Audio';
-  readonly subtitle = '声音 · Music, graze, shot and skill volumes';
+  get title(): string {
+    return t('settings.tab.audio');
+  }
+  get subtitle(): string {
+    return t('settings.subtitle.audio');
+  }
 
   protected build(width: number): RowHandle[] {
     const audio = this.store.get().audio;
@@ -34,34 +39,34 @@ export class AudioSection extends BaseSettingsSection {
     // the returned array (not creation) is what sets the on-screen order.
     const master = createSliderRow({
       width,
-      label: 'Master volume',
+      label: t('settings.audio.master'),
       value: audio.masterVolume,
       onChange: (value) => this.store.update({ audio: { masterVolume: value } }),
     });
     const bgm = createSliderRow({
       width,
-      label: 'BGM volume',
+      label: t('settings.audio.bgm'),
       value: audio.bgmVolume,
       onChange: (value) => this.store.update({ audio: { bgmVolume: value } }),
     });
     const graze = createSliderRow({
       width,
-      label: 'Graze',
-      description: '擦弹 — the near-miss cue when a bullet passes close to your hitbox.',
+      label: t('settings.audio.graze'),
+      description: t('settings.audio.graze.desc'),
       value: audio.grazeVolume,
       onChange: (value) => this.store.update({ audio: { grazeVolume: value } }),
     });
     const playerShot = createSliderRow({
       width,
-      label: 'Player shot',
-      description: '自机音效 — your own ship\u2019s shot cues.',
+      label: t('settings.audio.playerShot'),
+      description: t('settings.audio.playerShot.desc'),
       value: audio.playerShotVolume,
       onChange: (value) => this.store.update({ audio: { playerShotVolume: value } }),
     });
     const skill = createSliderRow({
       width,
-      label: 'Skill',
-      description: '技能音效 — bombs and spell cards.',
+      label: t('settings.audio.skill'),
+      description: t('settings.audio.skill.desc'),
       value: audio.skillVolume,
       onChange: (value) => this.store.update({ audio: { skillVolume: value } }),
     });
@@ -70,9 +75,8 @@ export class AudioSection extends BaseSettingsSection {
 
     const mute = createToggleRow({
       width,
-      label: 'Mute all',
-      description:
-        'Silences every channel without losing the mix below, so un-muting restores it exactly.',
+      label: t('settings.audio.muteAll'),
+      description: t('settings.audio.muteAll.desc'),
       value: audio.muted,
       onChange: (value) => {
         this.store.update({ audio: { muted: value } });
@@ -90,19 +94,16 @@ export class AudioSection extends BaseSettingsSection {
     }
 
     return [
-      createGroupHeading('Audio', width),
+      createGroupHeading(t('settings.audio.heading.audio'), width),
       mute,
       master,
-      createGroupHeading('Music', width),
+      createGroupHeading(t('settings.audio.heading.music'), width),
       bgm,
-      createGroupHeading('Sound effects', width),
+      createGroupHeading(t('settings.audio.heading.sfx'), width),
       graze,
       playerShot,
       skill,
-      createNoteRow(
-        width,
-        'No audio files ship with this build. The levels below are stored and pushed to the engine\u2019s mixer, but nothing will be audible until sound assets are added.',
-      ),
+      createNoteRow(width, t('settings.audio.noAssetsNote')),
     ];
   }
 }

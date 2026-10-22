@@ -213,7 +213,7 @@ await page.route('**/*', async (route) => {
 });
 
 const target =
-  `${LOBBY}/index.html?debug=1` +
+  `${LOBBY}/index.html?debug=1&lang=en` +
   `&lobbyHttpBase=${encodeURIComponent(LOBBY)}` +
   `&lobbyWsUrl=${encodeURIComponent(LOBBY_WS)}` +
   `&relayUrl=${encodeURIComponent(RELAY)}`;
