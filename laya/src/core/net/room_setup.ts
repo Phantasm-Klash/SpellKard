@@ -216,3 +216,103 @@ export function roomSetupSummary(state: RoomSetupState): string {
   }
   return parts.join(' · ');
 }
+
+/** 面板里的一行（纯数据，不含任何绘制）。 */
+export interface SetupRow {
+  readonly key: string;
+  readonly label: string;
+  /** 当前值的显示文本。 */
+  readonly valueText: string;
+  /** 房主专属（guest 看得到但改不了）。 */
+  readonly hostOnly: boolean;
+  /** 可点（房主 + waiting + 该模式提供这个选项）。 */
+  readonly editable: boolean;
+  /** 不可选的原因，如「即将推出」。 */
+  readonly lockedReason: string;
+}
+
+export interface SetupRowsContext {
+  readonly isHost: boolean;
+  readonly roomStatus: string;
+}
+
+/**
+ * 计算面板要显示的每一行。
+ *
+ * 这是纯函数、不碰 LayaAir：面板真正的坑是「哪几行、能不能点、为什么不能点」，
+ * 而不是怎么画。放在这里，这些判断就有测试。
+ *
+ * 模式未实现时用 `lockedReason` 标「即将推出」而不是把整行藏掉——玩家应该看得到
+ * 有这个模式、知道它还没做好，而不是以为游戏里没有这个玩法。
+ */
+export function setupRows(state: RoomSetupState, ctx: SetupRowsContext): SetupRow[] {
+  const editable = roomSetupEditable(ctx.isHost, ctx.roomStatus);
+  const rows: SetupRow[] = [];
+  const push = (
+    key: string,
+    label: string,
+    valueText: string,
+    hostOnly: boolean,
+    enabled: boolean,
+    lockedReason: string,
+  ): void => {
+    rows.push({ key, label, valueText, hostOnly, editable: enabled, lockedReason });
+  };
+
+  push('mode_id', '模式', state.modeId, true, false, isPlayableMode(state.modeId) ? '' : '即将推出');
+  push('boss_id', 'Boss', state.bossId === '' ? '默认' : state.bossId, true, editable, '');
+  push('stage_id', 'Stage', state.stageId === '' ? '默认' : state.stageId, false, editable, '');
+  if (state.modeId === 'coop_boss') {
+    push('coop_players', '人数', `${state.coopPlayers}人`, true, editable, '');
+  }
+  push('max_ticks', '时长', state.maxTicks > 0 ? `${Math.round(state.maxTicks / 60)}秒` : '默认', true, editable, '');
+  push('boss_health', 'Boss 血量', state.bossHealth > 0 ? String(state.bossHealth) : '默认', true, editable, '');
+
+  const allowed = ROOM_SETUP_OPTIONS.filter(
+    (option) => !option.modes || option.modes.indexOf(state.modeId) >= 0,
+  ).map((option) => option.key);
+  return rows.filter((row) => row.key === 'mode_id' || allowed.indexOf(row.key) >= 0);
+}
+
+/**
+ * 点一下「切换」后的下一个值，循环到头回到默认（0 / 空串 = 用默认）。
+ *
+ * 时长按 5 秒一档、血量翻倍，都是为了让面板点几下就能到常用值，而不是让玩家从
+ * 最小值一路按到想要的地方。
+ */
+export function nextSetupValue(state: RoomSetupState, key: string): RoomSetupState {
+  const out: RoomSetupState = { ...state };
+  switch (key) {
+    case 'boss_id': {
+      const options = ['', 'tian', 'hui'];
+      out.bossId = options[(options.indexOf(state.bossId) + 1) % options.length];
+      return out;
+    }
+    case 'max_ticks': {
+      if (state.maxTicks <= 0) {
+        out.maxTicks = MIN_MAX_TICKS;
+      } else if (state.maxTicks >= MAX_MAX_TICKS) {
+        out.maxTicks = 0;
+      } else {
+        out.maxTicks = Math.min(MAX_MAX_TICKS, state.maxTicks + MAX_TICKS_STEP * 5);
+      }
+      return out;
+    }
+    case 'boss_health': {
+      if (state.bossHealth <= 0) {
+        out.bossHealth = MIN_BOSS_HEALTH;
+      } else if (state.bossHealth >= MAX_BOSS_HEALTH) {
+        out.bossHealth = 0;
+      } else {
+        out.bossHealth = Math.min(MAX_BOSS_HEALTH, state.bossHealth * 2);
+      }
+      return out;
+    }
+    case 'coop_players': {
+      out.coopPlayers = state.coopPlayers === 2 ? 4 : 2;
+      return out;
+    }
+    default:
+      return state;
+  }
+}

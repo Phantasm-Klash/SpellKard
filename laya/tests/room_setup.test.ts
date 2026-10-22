@@ -9,7 +9,9 @@ import {
   defaultRoomSetup,
   isPlayableMode,
   modeAvailability,
+  nextSetupValue,
   resolvePlayableModes,
+  setupRows,
   roomSetupEditable,
   roomSetupFromModeParams,
   roomSetupSummary,
@@ -161,4 +163,79 @@ test('availability distinguishes playable from declared-but-not-built', () => {
 
   const unknown = modeAvailability('not_a_mode', undefined);
   expect(!unknown.playable && !unknown.declared, 'unknown mode is neither');
+});
+
+test('the panel lists only the options a mode offers', () => {
+  const race = setupRows(defaultRoomSetup('mvp_boss_race'), { isHost: true, roomStatus: 'waiting' });
+  const keys = race.map((row) => row.key);
+  expect(keys.indexOf('mode_id') === 0, 'mode comes first');
+  expect(keys.indexOf('coop_players') < 0, 'a race room has no seat option');
+  expect(keys.indexOf('max_ticks') >= 0, 'match length is offered');
+
+  const coop = setupRows(defaultRoomSetup('coop_boss'), { isHost: true, roomStatus: 'waiting' });
+  expect(coop.map((row) => row.key).indexOf('coop_players') >= 0, 'a coop room has a seat option');
+});
+
+test('an unbuilt mode is shown as coming soon, not hidden', () => {
+  const rows = setupRows(defaultRoomSetup('world_boss'), { isHost: true, roomStatus: 'waiting' });
+  expectEqual(rows[0].key, 'mode_id', 'the mode row is present');
+  expectEqual(rows[0].lockedReason, '即将推出', 'and it says why it cannot be picked');
+  expect(!rows[0].editable, 'it is not selectable');
+});
+
+test('nothing is editable unless the host is still waiting', () => {
+  const host = setupRows(defaultRoomSetup('mvp_boss_race'), { isHost: true, roomStatus: 'waiting' });
+  const hostAfter = setupRows(defaultRoomSetup('mvp_boss_race'), { isHost: true, roomStatus: 'found' });
+  const guest = setupRows(defaultRoomSetup('mvp_boss_race'), { isHost: false, roomStatus: 'waiting' });
+
+  const hostOptions = host.filter((row) => row.key !== 'mode_id');
+  const hostAfterOptions = hostAfter.filter((row) => row.key !== 'mode_id');
+  const guestOptions = guest.filter((row) => row.key !== 'mode_id');
+  expect(hostOptions.every((row) => row.editable), 'the host can edit while waiting');
+  expect(hostAfterOptions.every((row) => !row.editable), 'locked once a match is found');
+  expect(guestOptions.every((row) => !row.editable), 'a guest edits nothing');
+});
+
+test('cycling a value returns to default at the end', () => {
+  let state = defaultRoomSetup('mvp_boss_race');
+  expectEqual(state.bossId, '', 'starts at default');
+  state = nextSetupValue(state, 'boss_id');
+  expectEqual(state.bossId, 'tian', 'first pick');
+  state = nextSetupValue(state, 'boss_id');
+  expectEqual(state.bossId, 'hui', 'second pick');
+  state = nextSetupValue(state, 'boss_id');
+  expectEqual(state.bossId, '', 'and back to default');
+});
+
+test('match length steps in whole seconds and wraps to default', () => {
+  let state = defaultRoomSetup('mvp_boss_race');
+  state = nextSetupValue(state, 'max_ticks');
+  expectEqual(state.maxTicks, MIN_MAX_TICKS, 'first pick is the minimum');
+  const before = state.maxTicks;
+  state = nextSetupValue(state, 'max_ticks');
+  expectEqual(state.maxTicks - before, 300, 'each step is five seconds');
+});
+
+test('boss health doubles until it passes the maximum, then defaults', () => {
+  let state = defaultRoomSetup('mvp_boss_race');
+  state = nextSetupValue(state, 'boss_health');
+  expectEqual(state.bossHealth, MIN_BOSS_HEALTH, 'first pick is the minimum');
+  state = nextSetupValue(state, 'boss_health');
+  expectEqual(state.bossHealth, MIN_BOSS_HEALTH * 2, 'then it doubles');
+});
+
+test('the seat option toggles between two and four', () => {
+  let state = defaultRoomSetup('coop_boss');
+  expectEqual(state.coopPlayers, 2, 'coop defaults to two');
+  state = nextSetupValue(state, 'coop_players');
+  expectEqual(state.coopPlayers, 4, 'toggles to four');
+  state = nextSetupValue(state, 'coop_players');
+  expectEqual(state.coopPlayers, 2, 'and back');
+});
+
+test('an unknown key leaves the state untouched', () => {
+  const state = defaultRoomSetup('mvp_boss_race');
+  const after = nextSetupValue(state, 'not_an_option');
+  expectEqual(after.bossId, state.bossId, 'nothing changed');
+  expectEqual(after.maxTicks, state.maxTicks, 'nothing changed');
 });
