@@ -31,6 +31,12 @@ export class TnaUiImage {
   private height = 0;
   /** 请求序号：每次 `setImage` 递增，用于丢弃迟到的加载结果。 */
   private token = 0;
+  /** 锚点（0..1，默认居中）。左对齐的标题牌用 `setAnchor(0, 0.5)`。 */
+  private anchorX = 0.5;
+  private anchorY = 0.5;
+  /** 最近一次贴上的纹理原始尺寸，`setAnchor` 用它重算 pivot。 */
+  private sourceW = 0;
+  private sourceH = 0;
   /** 当前请求的落定结果（`true` = 纹理已贴上）。 */
   private pending: Promise<boolean> = Promise.resolve(false);
   private resolvePending: ((value: boolean) => void) | null = null;
@@ -79,6 +85,18 @@ export class TnaUiImage {
       return;
     }
     void this.apply(this.token);
+  }
+
+  /**
+   * 设置锚点：`(0, 0.5)` = 左边中点对齐，`(0.5, 0.5)`（默认）= 居中。
+   * 左对齐的标题牌用它，就不必先知道缩放后的宽度。
+   */
+  setAnchor(x: number, y: number): void {
+    this.anchorX = x;
+    this.anchorY = y;
+    if (this.isReady) {
+      this.repivot();
+    }
   }
 
   /**
@@ -142,12 +160,21 @@ export class TnaUiImage {
   private paint(texture: Laya.Texture): void {
     const sourceW = texture.sourceWidth || texture.width || 1;
     const sourceH = texture.sourceHeight || texture.height || 1;
+    this.sourceW = sourceW;
+    this.sourceH = sourceH;
     this.sprite.texture = texture;
-    // 以原始尺寸的中心为锚点，调用方只负责 `pos()` 与 `rotation`。
-    this.sprite.pivot(sourceW / 2, sourceH / 2);
+    this.repivot();
     const scale = this.height > 0 ? this.height / sourceH : 1;
     this.sprite.scaleX = scale;
     this.sprite.scaleY = scale;
     this.sprite.visible = true;
+  }
+
+  /** 按当前锚点把 pivot 落在原始尺寸上（缩放不改变 pivot 的比例关系）。 */
+  private repivot(): void {
+    if (this.sourceW <= 0 || this.sourceH <= 0) {
+      return;
+    }
+    this.sprite.pivot(this.sourceW * this.anchorX, this.sourceH * this.anchorY);
   }
 }

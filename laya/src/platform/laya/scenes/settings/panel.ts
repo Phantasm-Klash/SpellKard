@@ -22,8 +22,10 @@
 import type { SettingsStore } from '../../../../core/settings';
 import { normalizeKey } from '../../../../core/input/shortcuts';
 import type { ShortcutAction } from '../../../../core/input/shortcuts';
+import { titlePlaque } from '../../../../core/game/ui_assets';
 import * as theme from '../../view/theme';
 import { VectorPainter } from '../../view/sprites';
+import { TnaUiImage } from '../../view/tna_ui';
 import { createButtonEx, type ButtonHandle } from '../ui_kit';
 import { BaseSettingsSection, type SettingsSection } from './section';
 import { AboutSection } from './section_about';
@@ -80,6 +82,11 @@ export class SettingsPanel {
   private readonly scrim: Laya.Sprite;
   private readonly card: Laya.Sprite;
   private readonly heading: Laya.Text;
+  /**
+   * TNA `ui/bar_config.png`：APK 烘焙的「CONFIG」标题牌。它到位后收起文本
+   * 标题（`docs/ART_POLICY.md`：标题美术也来自 APK），缺图时文本继续兜底。
+   */
+  private readonly headingPlaque: TnaUiImage;
   private readonly subtitleText: Laya.Text;
   private readonly viewport: Laya.Sprite;
   private readonly content: Laya.Sprite;
@@ -134,6 +141,9 @@ export class SettingsPanel {
 
     this.heading = makeLabel('Settings', theme.FONT_SIZE_HEADING, theme.COLOR_TITLE, true);
     this.card.addChild(this.heading);
+    this.headingPlaque = new TnaUiImage();
+    this.headingPlaque.setAnchor(0, 0.5);
+    this.card.addChild(this.headingPlaque.sprite);
 
     this.closeButton = createButtonEx('Close', 0, 0, 72, () => this.hide(), 'ghost', HEADER_H - 6);
     this.card.addChild(this.closeButton.sprite);
@@ -278,6 +288,12 @@ export class SettingsPanel {
     // --- header ---
     this.heading.pos(CARD_PAD, CARD_PAD);
     this.heading.width = Math.max(0, innerW - 84);
+    // 标题牌左对齐到标题的位置、垂直居中于标题行；贴图一到就收起文本标题。
+    this.headingPlaque.sprite.pos(CARD_PAD, CARD_PAD + theme.FONT_SIZE_HEADING / 2);
+    this.headingPlaque.setImage(titlePlaque('config'), theme.FONT_SIZE_HEADING * 1.6);
+    void this.headingPlaque.whenSettled().then((ready) => {
+      this.heading.visible = !ready;
+    });
     this.closeButton.setSize(72, HEADER_H - 6);
     this.closeButton.sprite.pos(cardWidth - CARD_PAD - 72, CARD_PAD - 2);
 

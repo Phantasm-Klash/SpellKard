@@ -68,7 +68,7 @@ import { t } from '../../../core/game/i18n';
 import { giftViewFromEvent } from '../../../core/game/battle_events';
 import { StageBackgroundLayer } from '../view/stage_background';
 import { TnaUiImage } from '../view/tna_ui';
-import { UI_PAUSE_ICON } from '../../../core/game/ui_assets';
+import { UI_PAUSE_ICON, titlePlaque } from '../../../core/game/ui_assets';
 import * as theme from '../view/theme';
 import { WatermarkLayer } from '../view/watermark';
 import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
@@ -248,6 +248,11 @@ export class BattleScene implements ClientScene {
    */
   private readonly pauseIcon: TnaUiImage;
   /**
+   * TNA `ui/bar_pause_menu.png`——APK 烘焙好的「Pause Menu」标题牌，压在
+   * 暂停横幅中央；它到位后 `pauseOverlay` 的文本只作缺图兜底。
+   */
+  private readonly pausePlaque: TnaUiImage;
+  /**
    * Card-effect overlay, layered between the playfield view and the pause
    * banner. Draws the aimed-curtain warning, the purge ring, the invulnerability
    * aura and the finisher flash; it owns no game state beyond the effect list.
@@ -414,6 +419,9 @@ export class BattleScene implements ClientScene {
     this.pauseIcon = new TnaUiImage(this.bulletAtlas);
     this.pauseIcon.sprite.visible = false;
     this.root.addChild(this.pauseIcon.sprite);
+    this.pausePlaque = new TnaUiImage(this.bulletAtlas);
+    this.pausePlaque.sprite.visible = false;
+    this.root.addChild(this.pausePlaque.sprite);
 
     this.options.battle.onSnapshot((snapshot) => {
       this.authoritative = snapshot;
@@ -652,6 +660,9 @@ export class BattleScene implements ClientScene {
     // `valign = 'middle'`), so it is parked a fixed distance up from centre.
     this.pauseIcon.setImage(UI_PAUSE_ICON, theme.FONT_SIZE_TITLE * 2.2);
     this.pauseIcon.sprite.pos(width / 2, height / 2 - theme.FONT_SIZE_TITLE * 2.4);
+    // 标题牌压在横幅正中；它的贴图到位后文本横幅收起（见 `setPaused`）。
+    this.pausePlaque.setImage(titlePlaque('pauseMenu'), theme.FONT_SIZE_TITLE * 1.4);
+    this.pausePlaque.sprite.pos(width / 2, height / 2);
     // The background is the reference 320x480 stage model mapped onto the
     // playfield; the watermark and cutscene cover the whole stage, HUD included.
     this.stageBackground.root.pos(this.geometry.playfieldX, this.geometry.playfieldY);
@@ -874,11 +885,19 @@ export class BattleScene implements ClientScene {
   /** Holds or resumes the tick loop and mirrors the state on the banner. */
   private setPaused(paused: boolean): void {
     this.paused = paused;
-    this.pauseOverlay.visible = paused;
+    // 暂停横幅由 TNA 美术承载：标题牌在中央、暂停图标在上方；两者都缺图时
+    // 才显示文本 PAUSED（`pausePlaque` 的纹理一到，文本就让位）。
     if (paused) {
       this.pauseIcon.show();
+      this.pausePlaque.show();
+      void this.pausePlaque.whenSettled().then((ready) => {
+        this.pauseOverlay.visible = this.paused && !ready;
+      });
+      this.pauseOverlay.visible = !this.pausePlaque.isReady;
     } else {
       this.pauseIcon.hide();
+      this.pausePlaque.hide();
+      this.pauseOverlay.visible = false;
     }
     if (paused) {
       this.stop();

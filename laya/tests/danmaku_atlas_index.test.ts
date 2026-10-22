@@ -13,7 +13,7 @@
 import { BULLET_KINDS } from '../src/core/sim/danmaku/bullet_kind';
 import { TNA_BACKGROUND_IMAGE, allActorFrames } from '../src/core/game/tna_actor_frames';
 import { allCoopArtFrames } from '../src/core/game/coop_art';
-import { allUiAssets } from '../src/core/game/ui_assets';
+import { allUiAssets, titlePlaque, type UiPlaqueId } from '../src/core/game/ui_assets';
 import { expect, expectEqual, suite, test } from './harness';
 
 declare const require: (id: string) => unknown;
@@ -162,4 +162,31 @@ test('the imported UI set keeps the menu backdrop and the pause icon', () => {
   expect(index.ui!.includes('ui/btn_pause.png'), 'missing pause icon');
   expect(index.ui!.includes('ui/e_life_bar_2.png'), 'missing boss life ring');
   expect(index.backgrounds!.includes('bg_menu.png'), 'missing menu backdrop');
+});
+
+test('every UI plaque id resolves to a listed ui/ asset', () => {
+  // The `bar_*` plaques are the APK's baked screen titles ("CONFIG",
+  // "Pause Menu", ...). A typo in `titlePlaque` would silently drop a screen
+  // back to its text heading, so pin every id to the imported index.
+  const ids: UiPlaqueId[] = [
+    'pauseMenu',
+    'config',
+    'stageClear',
+    'gameOver',
+    'retryMenu',
+    'playerData',
+    'charaSelect',
+    'stageSelect',
+    'levelSelect',
+    'spellPractice',
+    'bossPractice',
+    'howToPlay',
+    'musicRoom',
+    'option',
+  ];
+  for (const id of ids) {
+    const asset = titlePlaque(id);
+    expect(asset.startsWith('ui/'), `plaque ${id} is not under ui/ (${asset})`);
+    expect(index.ui!.includes(asset), `plaque ${id} -> ${asset} is not listed in index.ui`);
+  }
 });

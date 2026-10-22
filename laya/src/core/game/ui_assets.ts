@@ -40,6 +40,66 @@ export const UI_BOSS_LIFE_RING_INNER = 'ui/e_life_bar_1.png';
 export const UI_MENU_BACKGROUND = 'bg_menu.png';
 
 /**
+ * 界面标题牌（APK 把每个子页面的英文标题烘焙成了 205×~40 的贴图）。
+ *
+ * 这些是**标题美术**，不是进度条：`bar_*` 里的 "bar" 指 banner/plaque。子页面
+ * 的标题优先用它们，文本标题只作缺图兜底。
+ */
+export const UI_TITLE_PLAQUE_PAUSE_MENU = 'ui/bar_pause_menu.png';
+export const UI_TITLE_PLAQUE_CONFIG = 'ui/bar_config.png';
+export const UI_TITLE_PLAQUE_STAGE_CLEAR = 'ui/bar_stage_clear.png';
+export const UI_TITLE_PLAQUE_GAME_OVER = 'ui/bar_game_over.png';
+export const UI_TITLE_PLAQUE_RETRY_MENU = 'ui/bar_retry_menu.png';
+export const UI_TITLE_PLAQUE_PLAYER_DATA = 'ui/bar_player_data.png';
+export const UI_TITLE_PLAQUE_CHARA_SELECT = 'ui/bar_chara_select.png';
+export const UI_TITLE_PLAQUE_STAGE_SELECT = 'ui/bar_stage_select.png';
+export const UI_TITLE_PLAQUE_LEVEL_SELECT = 'ui/bar_level_select.png';
+export const UI_TITLE_PLAQUE_SPELL_PRACTICE = 'ui/bar_spell_practice.png';
+export const UI_TITLE_PLAQUE_BOSS_PRACTICE = 'ui/bar_boss_practice.png';
+export const UI_TITLE_PLAQUE_HOW_TO_PLAY = 'ui/bar_how_to_play.png';
+export const UI_TITLE_PLAQUE_MUSIC_ROOM = 'ui/bar_music_room.png';
+export const UI_TITLE_PLAQUE_OPTION = 'ui/bar_option.png';
+
+/** 客户端子页面 → 标题牌贴图。`''` 表示该页面没有对应贴图（用文本标题）。 */
+export type UiPlaqueId =
+  | 'pauseMenu'
+  | 'config'
+  | 'stageClear'
+  | 'gameOver'
+  | 'retryMenu'
+  | 'playerData'
+  | 'charaSelect'
+  | 'stageSelect'
+  | 'levelSelect'
+  | 'spellPractice'
+  | 'bossPractice'
+  | 'howToPlay'
+  | 'musicRoom'
+  | 'option';
+
+const PLAQUES: Readonly<Record<UiPlaqueId, string>> = {
+  pauseMenu: UI_TITLE_PLAQUE_PAUSE_MENU,
+  config: UI_TITLE_PLAQUE_CONFIG,
+  stageClear: UI_TITLE_PLAQUE_STAGE_CLEAR,
+  gameOver: UI_TITLE_PLAQUE_GAME_OVER,
+  retryMenu: UI_TITLE_PLAQUE_RETRY_MENU,
+  playerData: UI_TITLE_PLAQUE_PLAYER_DATA,
+  charaSelect: UI_TITLE_PLAQUE_CHARA_SELECT,
+  stageSelect: UI_TITLE_PLAQUE_STAGE_SELECT,
+  levelSelect: UI_TITLE_PLAQUE_LEVEL_SELECT,
+  spellPractice: UI_TITLE_PLAQUE_SPELL_PRACTICE,
+  bossPractice: UI_TITLE_PLAQUE_BOSS_PRACTICE,
+  howToPlay: UI_TITLE_PLAQUE_HOW_TO_PLAY,
+  musicRoom: UI_TITLE_PLAQUE_MUSIC_ROOM,
+  option: UI_TITLE_PLAQUE_OPTION,
+};
+
+/** 取一个子页面的标题牌贴图（TNA 根相对路径）。 */
+export function titlePlaque(id: UiPlaqueId): string {
+  return PLAQUES[id];
+}
+
+/**
  * 标题 logo 变体：APK 按语言烘焙了不同文字，三张都是 300px 宽的成品图。
  *
  * - `title_logo.png`（300×80）= 日文「東方千夜帖」
@@ -88,5 +148,6 @@ export function allUiAssets(): readonly string[] {
     UI_TITLE_LOGO_ZH,
     UI_TITLE_LOGO_EN,
     UI_TITLE_LOGO_ALT,
+    ...Object.values(PLAQUES),
   ];
 }
