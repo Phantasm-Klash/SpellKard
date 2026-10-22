@@ -150,10 +150,13 @@ const checks = [
   ['lobby: settings button is in the top-right corner', settingsButtonTopRight(menu.state, 900)],
   ['lobby: settings modal starts closed', menu.state.settings.open === false],
   ['lobby settings: opens from the gear button', settings.state.open === true],
-  ['lobby settings: opens on the Display tab', settings.state.activeTab === 'Display'],
+  // Language leads the tab strip: it is the first thing a player looks for when
+  // the UI is not in their language (see `SettingsPanel`'s section order).
+  ['lobby settings: opens on the Language tab', settings.state.activeTab === 'Language'],
   [
-    'lobby settings: exposes the six tabs in order',
-    JSON.stringify(settings.state.tabs) === JSON.stringify(['Display', 'Keys', 'Audio', 'HUD', 'Other', 'About']),
+    'lobby settings: exposes the seven tabs in order',
+    JSON.stringify(settings.state.tabs) ===
+      JSON.stringify(['Language', 'Display', 'Keys', 'Audio', 'HUD', 'Other', 'About']),
   ],
   ['lobby settings: About tab lists both product names', settings.about.labels.includes('纷争幻想 · Phantasm Klash')],
   ['lobby settings: About tab shows the version', settings.about.labels.includes('0.1.0')],

@@ -37,6 +37,11 @@ export class TnaUiImage {
   /** 最近一次贴上的纹理原始尺寸，`setAnchor` 用它重算 pivot。 */
   private sourceW = 0;
   private sourceH = 0;
+  /** 非等比拉伸目标（宽高都为 0 = 关闭，走等比缩放）。 */
+  private stretchW = 0;
+  private stretchH = 0;
+  /** 左裁比例（1 = 不裁）。 */
+  private crop = 1;
   /** 当前请求的落定结果（`true` = 纹理已贴上）。 */
   private pending: Promise<boolean> = Promise.resolve(false);
   private resolvePending: ((value: boolean) => void) | null = null;
@@ -74,6 +79,9 @@ export class TnaUiImage {
     }
     this.name = name;
     this.height = height;
+    // 等比缩放模式：清掉之前可能设过的拉伸目标（后调用者生效）。
+    this.stretchW = 0;
+    this.stretchH = 0;
     this.token += 1;
     // 上一个请求的等待者不能永远悬着：先按「当前是否已有纹理」落定它。
     this.settle(this.isReady);
@@ -111,6 +119,32 @@ export class TnaUiImage {
   /** 隐藏（不清除请求，再次 `setImage` 同一张图会立即复用已加载纹理）。 */
   hide(): void {
     this.sprite.visible = false;
+  }
+
+  /**
+   * 非等比拉伸到给定宽高（条状图专用：滑杆轨道/填充段这类横向可拉伸的图）。
+   *
+   * 与 `setImage(name, displayHeight)` 的等比缩放互斥——后调用者生效。
+   */
+  setStretched(width: number, height: number): void {
+    this.stretchW = Math.max(0, width);
+    this.stretchH = Math.max(0, height);
+    this.height = 0;
+    if (this.isReady) {
+      this.applyTransform();
+    }
+  }
+
+  /**
+   * 只显示纹理左侧 `fraction`（0..1）的部分，用于「已填充」的进度段。
+   *
+   * 用 `scrollRect` 裁剪而不是横向压缩：压缩会把胶囊端头挤成椭圆。
+   */
+  setCrop(fraction: number): void {
+    this.crop = Math.max(0, Math.min(1, fraction));
+    if (this.isReady) {
+      this.applyTransform();
+    }
   }
 
   /**
@@ -164,10 +198,28 @@ export class TnaUiImage {
     this.sourceH = sourceH;
     this.sprite.texture = texture;
     this.repivot();
-    const scale = this.height > 0 ? this.height / sourceH : 1;
-    this.sprite.scaleX = scale;
-    this.sprite.scaleY = scale;
+    this.applyTransform();
     this.sprite.visible = true;
+  }
+
+  /** 应用缩放与裁剪（等比缩放 / 拉伸 / 左裁三种模式都在这里收口）。 */
+  private applyTransform(): void {
+    if (this.sourceW <= 0 || this.sourceH <= 0) {
+      return;
+    }
+    if (this.stretchW > 0 && this.stretchH > 0) {
+      this.sprite.scaleX = this.stretchW / this.sourceW;
+      this.sprite.scaleY = this.stretchH / this.sourceH;
+    } else {
+      const scale = this.height > 0 ? this.height / this.sourceH : 1;
+      this.sprite.scaleX = scale;
+      this.sprite.scaleY = scale;
+    }
+    if (this.crop < 1) {
+      this.sprite.scrollRect = new Laya.Rectangle(0, 0, this.sourceW * this.crop, this.sourceH);
+    } else {
+      this.sprite.scrollRect = null;
+    }
   }
 
   /** 按当前锚点把 pivot 落在原始尺寸上（缩放不改变 pivot 的比例关系）。 */

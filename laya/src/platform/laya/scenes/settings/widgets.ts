@@ -15,8 +15,25 @@
 
 import * as theme from '../../view/theme';
 import { VectorPainter, mix } from '../../view/sprites';
+import { TnaUiImage } from '../../view/tna_ui';
+import {
+  UI_SLIDER_PROGRESS,
+  UI_SLIDER_THUMB,
+  UI_SLIDER_TRACK,
+} from '../../../../core/game/ui_assets';
 import { createButton, type ButtonHandle } from '../ui_kit';
 import { attachCaretPlacement } from '../../text_input';
+
+/**
+ * 请求一张 TNA 条状贴图并把它非等比拉伸到给定尺寸。
+ *
+ * 先 `setImage` 触发加载、再 `setStretched` 设定拉伸目标——`setImage` 会清掉
+ * 之前的拉伸（保证「后调用者生效」），所以顺序不能反。
+ */
+function stretchArt(image: TnaUiImage, name: string, width: number, height: number): void {
+  image.setImage(name, 0);
+  image.setStretched(width, height);
+}
 
 /**
  * Minimum row height, used when the text fits on one line.
@@ -596,6 +613,21 @@ export function createSliderRow(options: SliderRowOptions): SliderRowHandle {
   track.mouseEnabled = true;
   row.sprite.addChild(track);
 
+  // TNA 滑杆三件套（`ui/sliderTrack|Progress|Thumb.png`）：轨道与已填充段
+  // 用非等比拉伸 + 左裁（不压扁胶囊端头），滑块等比缩放。三者都到位才替换
+  // 矢量轨道；缺图时保留原来的矢量绘制（`docs/ART_POLICY.md` 的骨架例外）。
+  const trackArt = new TnaUiImage();
+  trackArt.setAnchor(0, 0.5);
+  track.addChild(trackArt.sprite);
+  const fillArt = new TnaUiImage();
+  fillArt.setAnchor(0, 0.5);
+  track.addChild(fillArt.sprite);
+  const knobArt = new TnaUiImage();
+  track.addChild(knobArt.sprite);
+  stretchArt(trackArt, UI_SLIDER_TRACK, SLIDER_W, SLIDER_BAR_H);
+  stretchArt(fillArt, UI_SLIDER_PROGRESS, SLIDER_W, SLIDER_BAR_H);
+  knobArt.setImage(UI_SLIDER_THUMB, SLIDER_KNOB_R * 2);
+
   const valueText = makeText(format(options.value), theme.FONT_SIZE_CAPTION, theme.COLOR_INFO, false);
   valueText.align = 'right';
   valueText.width = SLIDER_VALUE_W;
@@ -611,17 +643,32 @@ export function createSliderRow(options: SliderRowOptions): SliderRowHandle {
     const g = track.graphics;
     g.clear();
     const barY = (SLIDER_HIT_H - SLIDER_BAR_H) / 2;
-    VectorPainter.roundedPanel(g, 0, barY, SLIDER_W, SLIDER_BAR_H, SLIDER_BAR_H / 2, theme.COLOR_PANEL_DEEP, theme.COLOR_DIVIDER, 1);
     const filled = Math.round(SLIDER_W * value);
+    const knobX = Math.min(SLIDER_W - SLIDER_KNOB_R, Math.max(SLIDER_KNOB_R, filled));
+    // TNA 美术优先：轨道 + 已填充段 + 滑块都就绪时不再画矢量条。
+    if (trackArt.isReady && fillArt.isReady && knobArt.isReady) {
+      const centerY = barY + SLIDER_BAR_H / 2;
+      trackArt.sprite.pos(0, centerY);
+      fillArt.sprite.pos(0, centerY);
+      fillArt.setCrop(value);
+      fillArt.sprite.visible = value > 0;
+      fillArt.sprite.alpha = enabled ? 1 : 0.45;
+      knobArt.sprite.pos(knobX, SLIDER_HIT_H / 2);
+      knobArt.sprite.alpha = enabled ? 1 : 0.45;
+      valueText.text = format(value);
+      return;
+    }
+    VectorPainter.roundedPanel(g, 0, barY, SLIDER_W, SLIDER_BAR_H, SLIDER_BAR_H / 2, theme.COLOR_PANEL_DEEP, theme.COLOR_DIVIDER, 1);
     if (filled > 0) {
       const fill = enabled ? theme.COLOR_ACCENT : theme.COLOR_TEXT_DISABLED;
       VectorPainter.roundedPanel(g, 0, barY, Math.max(SLIDER_BAR_H, filled), SLIDER_BAR_H, SLIDER_BAR_H / 2, fill, undefined, 0);
     }
-    const knobX = Math.min(SLIDER_W - SLIDER_KNOB_R, Math.max(SLIDER_KNOB_R, filled));
     g.drawCircle(knobX, SLIDER_HIT_H / 2, SLIDER_KNOB_R, enabled ? theme.COLOR_TEXT : theme.COLOR_TEXT_DISABLED);
     valueText.text = format(value);
   };
   paint();
+  // 美术是异步到的：到位后重画一次，把矢量条换成 TNA 条。
+  void Promise.all([trackArt.whenSettled(), fillArt.whenSettled(), knobArt.whenSettled()]).then(() => paint());
 
   /** Maps a local x inside the track onto a quantised 0..1 value. */
   const applyFromLocalX = (localX: number): void => {
