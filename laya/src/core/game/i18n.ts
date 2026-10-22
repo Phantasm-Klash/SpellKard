@@ -293,6 +293,7 @@ export interface Messages {
   'checkin.claimed': string;
   'checkin.loading': string;
   'checkin.streak': string;
+  'checkin.day': string;
 
   // --- error surface (lobby error codes -> player-facing text) ---
   'error.generic': string;
@@ -674,6 +675,7 @@ const ZH_HANS: Messages = {
   'checkin.claimed': '已领取',
   'checkin.loading': '正在加载签到…',
   'checkin.streak': '{days} 天连续签到 · {cycle}',
+  'checkin.day': '第 {day} 天',
 
   'error.generic': '出了点问题，请稍后再试。',
   'error.network': '网络连接失败。',
@@ -1010,6 +1012,7 @@ const ZH_HANT: Messages = {
   'checkin.claimed': '已領取',
   'checkin.loading': '正在載入簽到…',
   'checkin.streak': '{days} 天連續簽到 · {cycle}',
+  'checkin.day': '第 {day} 天',
 
   'error.generic': '發生了一點問題，請稍後再試。',
   'error.network': '網路連線失敗。',
@@ -1346,6 +1349,7 @@ const JA: Messages = {
   'checkin.claimed': '受取済み',
   'checkin.loading': 'ログイン報酬を読み込み中…',
   'checkin.streak': '{days} 日連続 · {cycle}',
+  'checkin.day': '{day} 日目',
 
   'error.generic': '問題が発生しました。しばらくしてからお試しください。',
   'error.network': 'ネットワーク接続に失敗しました。',
@@ -1695,6 +1699,7 @@ const EN: Messages = {
   'checkin.claimed': 'CLAIMED',
   'checkin.loading': 'Loading check-in…',
   'checkin.streak': '{days}-day streak · {cycle}',
+  'checkin.day': 'Day {day}',
 
   'error.generic': 'Something went wrong. Please try again later.',
   'error.network': 'Network connection failed.',

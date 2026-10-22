@@ -165,7 +165,7 @@ export class CheckinScene implements ClientScene {
     sprite.pos(x, y);
     sprite.size(this.cellWidth, CELL_HEIGHT);
 
-    const dayText = this.makeText(`Day ${index + 1}`, this.cellWidth, theme.COLOR_TITLE, true, 0);
+    const dayText = this.makeText(t('checkin.day', { day: index + 1 }), this.cellWidth, theme.COLOR_TITLE, true, 0);
     dayText.fontSize = theme.FONT_SIZE_CAPTION;
     dayText.y = theme.SPACE_SM;
     sprite.addChild(dayText);
