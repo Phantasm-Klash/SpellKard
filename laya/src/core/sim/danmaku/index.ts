@@ -11,3 +11,4 @@ export * from './bullet_motion';
 export * from './spawn_command';
 export * from './player_loadout';
 export * from './pattern_timeline';
+export * from './chain_split';

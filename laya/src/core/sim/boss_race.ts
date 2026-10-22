@@ -40,6 +40,14 @@ import {
   toPixels,
 } from '../math/float_lib';
 import {
+  CHAIN_SPLIT_CHILDREN_PER_HOST,
+  CHAIN_SPLIT_HOSTS_PER_PLAYER_PER_TICK,
+  CHAIN_SPLIT_MAX_GENERATION,
+  chainSplitRequested,
+  computeChainSplitChildren,
+  makeChainSplitChildMotion,
+} from './danmaku/chain_split';
+import {
   createBulletMotion,
   createMotionTargets,
   DeterministicRng,
@@ -362,6 +370,11 @@ interface LiveBullet {
   patternId: string;
   patternIndex: number;
   spawnIndex: number;
+  /**
+   * 链式分裂代数：0 = pattern 波次直生（宿主），子子弹 = 宿主 + 1，上限
+   * `CHAIN_SPLIT_MAX_GENERATION`。仅服务端/本地重推内部使用，不进快照/wire。
+   */
+  generation: number;
   motion: BulletMotion;
 }
 
@@ -407,6 +420,35 @@ export class BossRaceSimulation {
   readonly config: BossRaceConfig;
 
   private currentTick = 0;
+  /**
+   * 测试/调试注入：绕过 pattern 库直接放入一颗带完整运动学的子弹。
+   *
+   * 默认 10 个 pattern 均不使用 `bulletFunc31`，链式分裂路径无法经产品发射
+   * 自然触发，故开此口仅供测试（生产路径与 .dem 重放都不调用）。
+   * 对应服务端 `BossRaceSimulation::InjectLiveBulletForTest`。
+   * 受每玩家总量上限与玩家存在性约束；返回是否注入成功。
+   */
+  injectLiveBulletForTest(ownerPlayerId: string, motion: BulletMotion, generation = 0): boolean {
+    const owner = this.players.get(ownerPlayerId);
+    if (owner === undefined) {
+      return false;
+    }
+    if (this.emittedBulletsFor(ownerPlayerId) >= BOSS_RACE_MAX_BULLETS_PER_PLAYER) {
+      return false;
+    }
+    this.liveBullets.push({
+      bulletId: `b${this.nextBulletId}`,
+      ownerPlayerId,
+      patternId: 'injected',
+      patternIndex: 0,
+      spawnIndex: 0,
+      generation,
+      motion,
+    });
+    this.nextBulletId += 1;
+    return true;
+  }
+
   private nextBulletId = 1;
   private state = BossRaceState.Waiting;
   private winnerPlayerId = '';
@@ -805,6 +847,7 @@ export class BossRaceSimulation {
           patternId: def.id,
           patternIndex,
           spawnIndex: spawnIndex++,
+          generation: 0,
           motion,
         });
         this.nextBulletId += 1;
@@ -866,6 +909,7 @@ export class BossRaceSimulation {
           patternId,
           patternIndex,
           spawnIndex: spawnIndex++,
+          generation: 0,
           motion,
         });
         this.nextBulletId += 1;
@@ -966,7 +1010,22 @@ export class BossRaceSimulation {
     const bossOffset = this.bossOffsetForTick(tick);
     const enemyX = SCREEN_CENTER_X_PX + toPixels(BOSS_ORIGIN_X_MILLI + bossOffset.xMilli);
     const enemyY = SCREEN_CENTER_Y_PX + toPixels(BOSS_ORIGIN_Y_MILLI + bossOffset.yMilli);
-    for (const live of this.liveBullets) {
+
+    // 第一趟：运动学更新 + 收集 H 族（bulletFunc31）分裂请求。
+    // 不能边遍历边 push 子子弹：数组增长会失效遍历语义，且子子弹必须晚于全部
+    // 宿主更新后入场（与主发射一致：子子弹从下一帧才开始运动）。
+    // 判据只认 func31 + p2 !== 0：bulletFunc42/55 同样写 p2，但不是分裂族。
+    const requests: {
+      index: number;
+      ownerPlayerId: string;
+      patternIndex: number;
+      spawnIndex: number;
+      generation: number;
+    }[] = [];
+    const hostBudget = new Map<string, number>();
+
+    for (let i = 0; i < this.liveBullets.length; i += 1) {
+      const live = this.liveBullets[i];
       const targets = createMotionTargets({
         has_enemy: true,
         enemy_x: enemyX,
@@ -984,7 +1043,60 @@ export class BossRaceSimulation {
       live.motion.x += live.motion.vx;
       live.motion.y += live.motion.vy;
       live.motion.t += 1;
+
+      if (chainSplitRequested(live.motion)) {
+        // p2 是单帧事件标志（func31 仅在 t === p1 置位一次）：本帧一律消费，
+        // 服务或丢弃都在本帧决定，绝不推迟——否则残留标记会撞上「每 tick 预算
+        // 重置」把一次事件摊成多次。叶子代不消费：残留 p2 无行为影响。
+        live.motion.p2 = 0;
+        if (live.generation < CHAIN_SPLIT_MAX_GENERATION) {
+          const used = hostBudget.get(live.ownerPlayerId) ?? 0;
+          if (used < CHAIN_SPLIT_HOSTS_PER_PLAYER_PER_TICK) {
+            hostBudget.set(live.ownerPlayerId, used + 1);
+            requests.push({
+              index: i,
+              ownerPlayerId: live.ownerPlayerId,
+              patternIndex: live.patternIndex,
+              spawnIndex: live.spawnIndex,
+              generation: live.generation,
+            });
+          }
+        }
+      }
     }
+
+    // 第二趟：按请求顺序生成子子弹。请求顺序 = 第一趟遍历顺序，因此 bulletId
+    // 分配顺序与快照子弹顺序两端一致。钳制链：每玩家总量 384 决定 max_children。
+    for (const request of requests) {
+      const host = this.liveBullets[request.index];
+      const room = BOSS_RACE_MAX_BULLETS_PER_PLAYER - this.emittedBulletsFor(request.ownerPlayerId);
+      const maxChildren = Math.min(room, CHAIN_SPLIT_CHILDREN_PER_HOST);
+      const children = computeChainSplitChildren(
+        host.motion,
+        this.config.matchSeed,
+        tick,
+        request.patternIndex,
+        request.spawnIndex,
+        maxChildren,
+      );
+      for (const child of children) {
+        if (this.emittedBulletsFor(request.ownerPlayerId) >= BOSS_RACE_MAX_BULLETS_PER_PLAYER) {
+          break;
+        }
+        this.liveBullets.push({
+          bulletId: `b${this.nextBulletId}`,
+          ownerPlayerId: request.ownerPlayerId,
+          patternId: host.patternId,
+          patternIndex: request.patternIndex,
+          spawnIndex: child.spawnIndex,
+          generation: request.generation + 1,
+          motion: makeChainSplitChildMotion(host.motion, child),
+        });
+        this.nextBulletId += 1;
+      }
+    }
+
+    // 第三趟：出界剔除（与链式分裂落地前完全相同的谓词）。
     this.liveBullets = this.liveBullets.filter((live) => BossRaceSimulation.keepsBullet(live));
   }
 
