@@ -16,6 +16,7 @@ import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow
 import type { CheckinDayView } from '../../../core/net/lobby_client';
 import * as theme from '../view/theme';
 import { VectorPainter, mix } from '../view/sprites';
+import { t } from '../../../core/game/i18n';
 import { createButtonEx, createCaption, createDivider, createPanel, type ButtonHandle } from './ui_kit';
 import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
 import type { ClientScene } from './scene';
@@ -62,7 +63,7 @@ export class CheckinScene implements ClientScene {
     const contentWidth = width - margin * 2;
 
     // --- title band ---
-    const title = this.makeText('Check-in', theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
+    const title = this.makeText(t('checkin.title'), theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
     title.y = margin;
     this.root.addChild(title);
     this.root.addChild(createDivider(margin, title.y + theme.FONT_SIZE_TITLE + theme.SPACE_SM, contentWidth));
@@ -84,7 +85,7 @@ export class CheckinScene implements ClientScene {
 
     // --- cycle grid ---
     const gridCaptionY = streakY + 64 + theme.SPACE_MD;
-    const gridCaption = createCaption('This cycle', contentWidth, gridCaptionY);
+    const gridCaption = createCaption(t('checkin.cycle'), contentWidth, gridCaptionY);
     gridCaption.x = margin;
     this.root.addChild(gridCaption);
 
@@ -101,10 +102,10 @@ export class CheckinScene implements ClientScene {
 
     // --- action band ---
     const actionsY = height - margin - theme.BUTTON_HEIGHT * 2 - theme.SPACE_MD;
-    this.claimButton = createButtonEx('Claim', margin, actionsY, contentWidth, () => void this.claim());
+    this.claimButton = createButtonEx(t('checkin.claim'), margin, actionsY, contentWidth, () => void this.claim());
     this.root.addChild(this.claimButton.sprite);
     this.backButton = createButtonEx(
-      'Back to lobby',
+      t('ui.backToLobby'),
       margin,
       actionsY + theme.BUTTON_HEIGHT + theme.SPACE_MD,
       contentWidth,
@@ -132,13 +133,13 @@ export class CheckinScene implements ClientScene {
     const view = snapshot.checkin;
     if (view === null) {
       this.streakText.text = '—';
-      this.statusText.text = snapshot.lastError === '' ? 'Loading check-in…' : snapshot.lastError;
+      this.statusText.text = snapshot.lastError === '' ? t('checkin.loading') : snapshot.lastError;
       this.statusText.color = snapshot.lastError === '' ? theme.COLOR_TEXT_MUTED : theme.COLOR_DANGER;
       this.renderDays([]);
       this.claimButton.setEnabled(false);
       return;
     }
-    this.streakText.text = `${view.streak}-day streak · ${view.cycleId}`;
+    this.streakText.text = t('checkin.streak', { days: view.streak, cycle: view.cycleId });
     this.streakText.color = theme.COLOR_ACCENT;
     if (snapshot.lastError !== '') {
       this.statusText.text = snapshot.lastError;
@@ -192,7 +193,7 @@ export class CheckinScene implements ClientScene {
       this.paintCell(cell, state.fill, state.border);
       if (view === undefined) {
         cell.rewardText.text = '—';
-        cell.stateText.text = 'LOCKED';
+        cell.stateText.text = t('checkin.locked');
         cell.stateText.color = theme.COLOR_TEXT_DISABLED;
         continue;
       }
@@ -274,7 +275,7 @@ function cellState(day: CheckinDayView | undefined): CellState {
     return {
       fill: theme.COLOR_PANEL_DEEP,
       border: theme.COLOR_DIVIDER,
-      label: 'LOCKED',
+      label: t('checkin.locked'),
       labelColor: theme.COLOR_TEXT_DISABLED,
     };
   }
@@ -282,7 +283,7 @@ function cellState(day: CheckinDayView | undefined): CellState {
     return {
       fill: mix(theme.COLOR_PANEL, theme.COLOR_SUCCESS, 0.22),
       border: theme.COLOR_SUCCESS,
-      label: 'CLAIMED',
+      label: t('checkin.claimed'),
       labelColor: theme.COLOR_SUCCESS,
     };
   }
@@ -290,14 +291,14 @@ function cellState(day: CheckinDayView | undefined): CellState {
     return {
       fill: mix(theme.COLOR_PANEL, theme.COLOR_ACCENT, 0.28),
       border: theme.COLOR_ACCENT,
-      label: 'CLAIM',
+      label: t('checkin.claim'),
       labelColor: theme.COLOR_ACCENT,
     };
   }
   return {
     fill: theme.COLOR_PANEL_DEEP,
     border: theme.COLOR_DIVIDER,
-    label: 'LOCKED',
+    label: t('checkin.locked'),
     labelColor: theme.COLOR_TEXT_DISABLED,
   };
 }

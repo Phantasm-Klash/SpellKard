@@ -285,6 +285,15 @@ export interface Messages {
   'settings.keys.scope.records': string;
   'settings.keys.scope.settings': string;
 
+  // --- check-in surface ---
+  'checkin.title': string;
+  'checkin.cycle': string;
+  'checkin.claim': string;
+  'checkin.locked': string;
+  'checkin.claimed': string;
+  'checkin.loading': string;
+  'checkin.streak': string;
+
   // --- error surface (lobby error codes -> player-facing text) ---
   'error.generic': string;
   'error.network': string;
@@ -658,6 +667,13 @@ const ZH_HANS: Messages = {
   'settings.keys.scope.inventory': '背包',
   'settings.keys.scope.records': '战绩',
   'settings.keys.scope.settings': '设置',
+  'checkin.title': '签到',
+  'checkin.cycle': '本期',
+  'checkin.claim': '领取',
+  'checkin.locked': '未解锁',
+  'checkin.claimed': '已领取',
+  'checkin.loading': '正在加载签到…',
+  'checkin.streak': '{days} 天连续签到 · {cycle}',
 
   'error.generic': '出了点问题，请稍后再试。',
   'error.network': '网络连接失败。',
@@ -987,6 +1003,13 @@ const ZH_HANT: Messages = {
   'settings.keys.scope.inventory': '背包',
   'settings.keys.scope.records': '戰績',
   'settings.keys.scope.settings': '設定',
+  'checkin.title': '簽到',
+  'checkin.cycle': '本期',
+  'checkin.claim': '領取',
+  'checkin.locked': '未解鎖',
+  'checkin.claimed': '已領取',
+  'checkin.loading': '正在載入簽到…',
+  'checkin.streak': '{days} 天連續簽到 · {cycle}',
 
   'error.generic': '發生了一點問題，請稍後再試。',
   'error.network': '網路連線失敗。',
@@ -1316,6 +1339,13 @@ const JA: Messages = {
   'settings.keys.scope.inventory': '所持品',
   'settings.keys.scope.records': '戦績',
   'settings.keys.scope.settings': '設定',
+  'checkin.title': 'デイリーログイン',
+  'checkin.cycle': '今回の期間',
+  'checkin.claim': '受け取る',
+  'checkin.locked': '未解放',
+  'checkin.claimed': '受取済み',
+  'checkin.loading': 'ログイン報酬を読み込み中…',
+  'checkin.streak': '{days} 日連続 · {cycle}',
 
   'error.generic': '問題が発生しました。しばらくしてからお試しください。',
   'error.network': 'ネットワーク接続に失敗しました。',
@@ -1658,6 +1688,13 @@ const EN: Messages = {
   'settings.keys.scope.inventory': 'Inventory',
   'settings.keys.scope.records': 'Records',
   'settings.keys.scope.settings': 'Settings',
+  'checkin.title': 'Check-in',
+  'checkin.cycle': 'This cycle',
+  'checkin.claim': 'Claim',
+  'checkin.locked': 'LOCKED',
+  'checkin.claimed': 'CLAIMED',
+  'checkin.loading': 'Loading check-in…',
+  'checkin.streak': '{days}-day streak · {cycle}',
 
   'error.generic': 'Something went wrong. Please try again later.',
   'error.network': 'Network connection failed.',
