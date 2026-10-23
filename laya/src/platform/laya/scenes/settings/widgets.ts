@@ -614,14 +614,12 @@ export function createToggleRow(options: ToggleRowOptions): ToggleRowHandle {
     if (!enabled) {
       return;
     }
-    // On the official prefab the widget owns the state: it toggles `selected`
-    // on its own click, so the value is read back from it rather than mirrored
-    // in a local. That keeps one source of truth when the engine's own
-    // behaviour changes.
+    // On the official prefab the widget owns the state: **it toggles
+    // `selected` itself on CLICK** (verified live: false → true → false over
+    // two clicks), so the value is only read back. Toggling it here as well
+    // would cancel the widget's own change and leave the switch dead.
     if (official !== null) {
-      const before = officialSelected(official);
-      value = !before;
-      setOfficialSelected(official, value);
+      value = officialSelected(official);
       options.onChange(value);
       return;
     }
