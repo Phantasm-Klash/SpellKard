@@ -18,6 +18,7 @@ import { SettingsStore, createStoragePersistence, type StorageLike } from '../..
 import { NativeUdpDatagramFactory, resolveNativeUdpModule } from '../native/native_udp_datagram';
 import { RelayDatagramFactory } from '../web/ws_relay_datagram';
 import { SpellKardApp } from './app';
+import { preloadOfficialWidgets } from './ui/official_widgets';
 import { LayaSocketFactory } from './laya_socket';
 import { LayaTimer } from './laya_timer';
 import type { LobbySessionStore } from '../../core/net/lobby_client';
@@ -243,6 +244,12 @@ export function startClient(config: BrowserRuntimeConfig): SpellKardApp {
 
   const sockets = new LayaSocketFactory();
   const timer = new LayaTimer();
+  // Fire-and-forget: the official widget prefabs (`internal/UI/*.lh`) load
+  // asynchronously, but the settings panel is only reachable after the player
+  // signs in, so the cache is warm long before a widget is built. A miss is
+  // not fatal — `scenes/settings/widgets.ts` keeps a hand-painted fallback per
+  // control, so a failed load degrades to today's look instead of a blank row.
+  void preloadOfficialWidgets();
   // One store for the whole session: the settings modal writes it, the app
   // applies it, and it survives a reload through `localStorage`.
   const settings = new SettingsStore({ persistence: createStoragePersistence(resolveStorage()) });

@@ -14,6 +14,7 @@ import './card_intent.test';
 import './gift_system.test';
 import './art_icons.test';
 import './i18n.test';
+import './i18n_flow_migration.test';
 import './card_keys.test';
 import './card_hand_view.test';
 import './draft_panel.test';

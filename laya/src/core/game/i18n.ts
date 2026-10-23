@@ -373,6 +373,104 @@ export interface Messages {
   'ui.backToLobby': string;
   'ui.downloadDem': string;
   'ui.matchLabel': string;
+
+  // --- lobby flow status (`core/game/lobby_flow.ts`) -------------------------
+  // The flow used to hard-code English status lines, so every language showed
+  // English while signing in, creating a room and settling a match.
+  'flow.notConnected': string;
+  'flow.signingIn': string;
+  'flow.loadingProfile': string;
+  'flow.signedInAs': string;
+  'flow.signInFailed': string;
+  'flow.loginFailed': string;
+  'flow.bootstrapFailed': string;
+  'flow.enterEmailPassword': string;
+  'flow.enterEmail': string;
+  'flow.enterUsernameEmailPassword': string;
+  'flow.sendingCode': string;
+  'flow.codeSent': string;
+  'flow.codeSendFailed': string;
+  'flow.creatingAccount': string;
+  'flow.accountCreated': string;
+  'flow.signUpFailed': string;
+  'flow.signedOut': string;
+  'flow.creatingRoom': string;
+  'flow.createRoomFailed': string;
+  'flow.joiningRoom': string;
+  'flow.joinRoomFailed': string;
+  'flow.roomStatus': string;
+  'flow.matchStarting': string;
+  'flow.matchResult': string;
+  'flow.transportClosed': string;
+  'flow.queueIdle': string;
+  'flow.queueStatus': string;
+
+  // --- auth error codes (`core/game/auth_messages.ts`) ------------------------
+  'auth.unauthorized': string;
+  'auth.accountExists': string;
+  'auth.usernameRequired': string;
+  'auth.emailRequired': string;
+  'auth.passwordRequired': string;
+  'auth.usernameInvalid': string;
+  'auth.emailInvalid': string;
+  'auth.passwordWeak': string;
+  'auth.usernameTaken': string;
+  'auth.emailTaken': string;
+  'auth.emailNotVerified': string;
+  'auth.codeRequired': string;
+  'auth.codeInvalid': string;
+  'auth.codeExpired': string;
+  'auth.codeRateLimited': string;
+  'auth.mailUnavailable': string;
+  'auth.accountsUnavailable': string;
+  'auth.invalidRequest': string;
+  'auth.storageUnavailable': string;
+  'auth.loginMissingSession': string;
+  'auth.transportError': string;
+  'auth.sessionReplaced': string;
+  'auth.sessionExpired': string;
+
+  // --- keyboard shortcut reference (core/input/shortcuts.ts) ---------------
+  // The binding table carries the i18n key; `core/` stays engine-agnostic and
+  // the settings panel resolves it with `t()`. Every language must ship a value
+  // for each key, or the reference list silently falls back to Simplified
+  // Chinese — which is exactly how a Chinese label reached an English screen.
+  'shortcuts.app.fullscreen': string;
+  'shortcuts.app.settings': string;
+  'shortcuts.app.settingsClose': string;
+  'shortcuts.battle.back': string;
+  'shortcuts.battle.forfeit': string;
+  'shortcuts.battle.pause': string;
+  'shortcuts.battle.toggleHud': string;
+  'shortcuts.gacha.nextPool': string;
+  'shortcuts.gacha.prevPool': string;
+  'shortcuts.gacha.pullOne': string;
+  'shortcuts.lobby.activate': string;
+  'shortcuts.lobby.menuNext': string;
+  'shortcuts.lobby.menuPrev': string;
+  'shortcuts.lobby.playPage': string;
+  'shortcuts.login.back': string;
+  'shortcuts.login.focusNext': string;
+  'shortcuts.login.focusPrev': string;
+  'shortcuts.login.sendCode': string;
+  'shortcuts.login.submit': string;
+  'shortcuts.login.toggleMode': string;
+  'shortcuts.room.leave': string;
+  'shortcuts.room.ready': string;
+  'shortcuts.settings.reset': string;
+  'shortcuts.settings.scrollBottom': string;
+  'shortcuts.settings.scrollDown': string;
+  'shortcuts.settings.scrollTop': string;
+  'shortcuts.settings.scrollUp': string;
+  'shortcuts.settings.tabNext': string;
+  'shortcuts.settings.tabPrev': string;
+  'shortcuts.shop.buy': string;
+  'shortcuts.ui.back': string;
+  'shortcuts.ui.confirm': string;
+  'shortcuts.ui.continue': string;
+  'shortcuts.ui.next': string;
+  'shortcuts.ui.prev': string;
+  'shortcuts.ui.use': string;
 }
 
 export type LanguageCode = 'zh-Hans' | 'zh-Hant' | 'ja' | 'en';
@@ -741,6 +839,60 @@ const ZH_HANS: Messages = {
   'screen.gacha.characters': '角色池',
   'ui.shop': '商店',
   'ui.settings': '设置',
+
+  // --- lobby flow status -----------------------------------------------------
+  'flow.notConnected': '未连接',
+  'flow.signingIn': '正在登录…',
+  'flow.loadingProfile': '正在加载资料…',
+  'flow.signedInAs': '已登录：{name}',
+  'flow.signInFailed': '登录失败',
+  'flow.loginFailed': '登录失败：{reason}',
+  'flow.bootstrapFailed': '初始化失败：{reason}',
+  'flow.enterEmailPassword': '请输入邮箱和密码',
+  'flow.enterEmail': '请输入邮箱地址',
+  'flow.enterUsernameEmailPassword': '请输入用户名、邮箱和密码',
+  'flow.sendingCode': '正在发送验证码…',
+  'flow.codeSent': '验证码已发送至 {email}',
+  'flow.codeSendFailed': '验证码发送失败',
+  'flow.creatingAccount': '正在创建账号…',
+  'flow.accountCreated': '账号已创建 —— 已登录：{name}',
+  'flow.signUpFailed': '注册失败',
+  'flow.signedOut': '已退出登录',
+  'flow.creatingRoom': '正在创建房间 {code}…',
+  'flow.createRoomFailed': '创建房间失败：{reason}',
+  'flow.joiningRoom': '正在加入房间 {code}…',
+  'flow.joinRoomFailed': '加入房间失败：{reason}',
+  'flow.roomStatus': '房间 {code}：{count} 人',
+  'flow.matchStarting': '对局 {id} 即将开始',
+  'flow.matchResult': '胜者：{winner}',
+  'flow.transportClosed': '大厅连接已关闭：{reason}',
+  'flow.queueIdle': '匹配队列：空闲',
+  'flow.queueStatus': '匹配队列：{status}',
+
+  // --- auth error codes ------------------------------------------------------
+  'auth.unauthorized': '邮箱或密码错误',
+  'auth.accountExists': '该账号已注册',
+  'auth.usernameRequired': '请输入用户名',
+  'auth.emailRequired': '请输入邮箱地址',
+  'auth.passwordRequired': '请输入密码',
+  'auth.usernameInvalid': '用户名须为 3-24 位字母、数字或下划线',
+  'auth.emailInvalid': '该邮箱地址无效',
+  'auth.passwordWeak': '密码至少需要 8 个字符',
+  'auth.usernameTaken': '该用户名已被占用',
+  'auth.emailTaken': '该邮箱已注册 —— 请直接登录',
+  'auth.emailNotVerified': '请先验证邮箱再登录',
+  'auth.codeRequired': '请输入我们发送到邮箱的 6 位验证码',
+  'auth.codeInvalid': '验证码不正确',
+  'auth.codeExpired': '验证码已过期 —— 请重新获取',
+  'auth.codeRateLimited': '请稍候再请求新的验证码',
+  'auth.mailUnavailable': '大厅暂时无法发送邮件 —— 请稍后重试',
+  'auth.accountsUnavailable': '账号服务暂不可用 —— 请稍后重试',
+  'auth.invalidRequest': '用户名须为 3-24 位字母、数字或下划线，密码至少 8 个字符',
+  'auth.storageUnavailable': '大厅暂时无法连接数据库 —— 请稍后重试',
+  'auth.loginMissingSession': '大厅已接受登录，但未返回会话',
+  'auth.transportError': '无法连接大厅 —— 请确认服务正在运行',
+  'auth.sessionReplaced': '该账号已在其他设备登录',
+  'auth.sessionExpired': '登录已过期，请重新登录',
   'ui.back': '返回',
   'ui.gift': '送礼',
   'ui.deck': '卡组',
@@ -752,6 +904,43 @@ const ZH_HANS: Messages = {
   'ui.backToLobby': '返回大厅',
   'ui.downloadDem': '下载 .dem',
   'ui.matchLabel': '对局 {id}',
+  'shortcuts.app.fullscreen': '切换全屏',
+  'shortcuts.app.settings': '打开设置',
+  'shortcuts.app.settingsClose': '关闭设置 / 返回',
+  'shortcuts.battle.back': '返回大厅',
+  'shortcuts.battle.forfeit': '认输并返回',
+  'shortcuts.battle.pause': '暂停 / 继续',
+  'shortcuts.battle.toggleHud': '切换 HUD',
+  'shortcuts.gacha.nextPool': '下一个卡池',
+  'shortcuts.gacha.prevPool': '上一个卡池',
+  'shortcuts.gacha.pullOne': '单抽',
+  'shortcuts.lobby.activate': '激活选中项',
+  'shortcuts.lobby.menuNext': '下一个菜单项',
+  'shortcuts.lobby.menuPrev': '上一个菜单项',
+  'shortcuts.lobby.playPage': '打开对战页面',
+  'shortcuts.login.back': '返回主菜单',
+  'shortcuts.login.focusNext': '下一个输入框',
+  'shortcuts.login.focusPrev': '上一个输入框',
+  'shortcuts.login.sendCode': '发送邮箱验证码',
+  'shortcuts.login.submit': '登录 / 创建账号',
+  'shortcuts.login.toggleMode': '切换登录 / 注册',
+  'shortcuts.room.leave': '离开房间',
+  'shortcuts.room.ready': '准备 / 开始',
+  'shortcuts.settings.reset': '恢复所有默认设置',
+  'shortcuts.settings.scrollBottom': '滚动到底部',
+  'shortcuts.settings.scrollDown': '向下滚动一页',
+  'shortcuts.settings.scrollTop': '滚动到顶部',
+  'shortcuts.settings.scrollUp': '向上滚动一页',
+  'shortcuts.settings.tabNext': '下一个标签页',
+  'shortcuts.settings.tabPrev': '上一个标签页',
+  'shortcuts.shop.buy': '购买',
+  'shortcuts.ui.back': '返回',
+  'shortcuts.ui.confirm': '确认',
+  'shortcuts.ui.continue': '继续',
+  'shortcuts.ui.next': '下一个',
+  'shortcuts.ui.prev': '上一个',
+  'shortcuts.ui.use': '使用',
+
 };
 
 const ZH_HANT: Messages = {
@@ -1089,6 +1278,97 @@ const ZH_HANT: Messages = {
   'ui.backToLobby': '返回大廳',
   'ui.downloadDem': '下載 .dem',
   'ui.matchLabel': '對局 {id}',
+
+  // --- lobby flow status -----------------------------------------------------
+  'flow.notConnected': '未連線',
+  'flow.signingIn': '正在登入…',
+  'flow.loadingProfile': '正在載入資料…',
+  'flow.signedInAs': '已登入：{name}',
+  'flow.signInFailed': '登入失敗',
+  'flow.loginFailed': '登入失敗：{reason}',
+  'flow.bootstrapFailed': '初始化失敗：{reason}',
+  'flow.enterEmailPassword': '請輸入電子郵件和密碼',
+  'flow.enterEmail': '請輸入電子郵件地址',
+  'flow.enterUsernameEmailPassword': '請輸入使用者名稱、電子郵件和密碼',
+  'flow.sendingCode': '正在傳送驗證碼…',
+  'flow.codeSent': '驗證碼已傳送至 {email}',
+  'flow.codeSendFailed': '驗證碼傳送失敗',
+  'flow.creatingAccount': '正在建立帳號…',
+  'flow.accountCreated': '帳號已建立 —— 已登入：{name}',
+  'flow.signUpFailed': '註冊失敗',
+  'flow.signedOut': '已登出',
+  'flow.creatingRoom': '正在建立房間 {code}…',
+  'flow.createRoomFailed': '建立房間失敗：{reason}',
+  'flow.joiningRoom': '正在加入房間 {code}…',
+  'flow.joinRoomFailed': '加入房間失敗：{reason}',
+  'flow.roomStatus': '房間 {code}：{count} 人',
+  'flow.matchStarting': '對局 {id} 即將開始',
+  'flow.matchResult': '勝者：{winner}',
+  'flow.transportClosed': '大廳連線已關閉：{reason}',
+  'flow.queueIdle': '配對佇列：空閒',
+  'flow.queueStatus': '配對佇列：{status}',
+
+  // --- auth error codes ------------------------------------------------------
+  'auth.unauthorized': '電子郵件或密碼錯誤',
+  'auth.accountExists': '該帳號已註冊',
+  'auth.usernameRequired': '請輸入使用者名稱',
+  'auth.emailRequired': '請輸入電子郵件地址',
+  'auth.passwordRequired': '請輸入密碼',
+  'auth.usernameInvalid': '使用者名稱須為 3-24 位字母、數字或底線',
+  'auth.emailInvalid': '該電子郵件地址無效',
+  'auth.passwordWeak': '密碼至少需要 8 個字元',
+  'auth.usernameTaken': '該使用者名稱已被占用',
+  'auth.emailTaken': '該電子郵件已註冊 —— 請直接登入',
+  'auth.emailNotVerified': '請先驗證電子郵件再登入',
+  'auth.codeRequired': '請輸入我們傳送到電子郵件的 6 位驗證碼',
+  'auth.codeInvalid': '驗證碼不正確',
+  'auth.codeExpired': '驗證碼已過期 —— 請重新取得',
+  'auth.codeRateLimited': '請稍候再請求新的驗證碼',
+  'auth.mailUnavailable': '大廳暫時無法傳送郵件 —— 請稍後重試',
+  'auth.accountsUnavailable': '帳號服務暫不可用 —— 請稍後重試',
+  'auth.invalidRequest': '使用者名稱須為 3-24 位字母、數字或底線，密碼至少 8 個字元',
+  'auth.storageUnavailable': '大廳暫時無法連線資料庫 —— 請稍後重試',
+  'auth.loginMissingSession': '大廳已接受登入，但未傳回工作階段',
+  'auth.transportError': '無法連線大廳 —— 請確認服務正在執行',
+  'auth.sessionReplaced': '該帳號已在其他裝置登入',
+  'auth.sessionExpired': '登入已過期，請重新登入',
+  'shortcuts.app.fullscreen': '全画面切り替え',
+  'shortcuts.app.settings': '設定を開く',
+  'shortcuts.app.settingsClose': '設定を閉じる / 戻る',
+  'shortcuts.battle.back': 'ロビーに戻る',
+  'shortcuts.battle.forfeit': '投了して戻る',
+  'shortcuts.battle.pause': '一時停止 / 再開',
+  'shortcuts.battle.toggleHud': 'HUD 表示切り替え',
+  'shortcuts.gacha.nextPool': '次のプール',
+  'shortcuts.gacha.prevPool': '前のプール',
+  'shortcuts.gacha.pullOne': '単発ガチャ',
+  'shortcuts.lobby.activate': '選択項目を決定',
+  'shortcuts.lobby.menuNext': '次のメニュー項目',
+  'shortcuts.lobby.menuPrev': '前のメニュー項目',
+  'shortcuts.lobby.playPage': 'プレイ画面を開く',
+  'shortcuts.login.back': 'メインメニューに戻る',
+  'shortcuts.login.focusNext': '次の入力欄',
+  'shortcuts.login.focusPrev': '前の入力欄',
+  'shortcuts.login.sendCode': '認証コードを送信',
+  'shortcuts.login.submit': 'ログイン / アカウント作成',
+  'shortcuts.login.toggleMode': 'ログイン / 登録を切り替え',
+  'shortcuts.room.leave': 'ルームを退出',
+  'shortcuts.room.ready': '準備 / 開始',
+  'shortcuts.settings.reset': 'すべての設定を初期化',
+  'shortcuts.settings.scrollBottom': '最下部へスクロール',
+  'shortcuts.settings.scrollDown': '1ページ下へスクロール',
+  'shortcuts.settings.scrollTop': '最上部へスクロール',
+  'shortcuts.settings.scrollUp': '1ページ上へスクロール',
+  'shortcuts.settings.tabNext': '次のタブ',
+  'shortcuts.settings.tabPrev': '前のタブ',
+  'shortcuts.shop.buy': '購入',
+  'shortcuts.ui.back': '戻る',
+  'shortcuts.ui.confirm': '確定',
+  'shortcuts.ui.continue': '続ける',
+  'shortcuts.ui.next': '次へ',
+  'shortcuts.ui.prev': '前へ',
+  'shortcuts.ui.use': '使う',
+
 };
 
 const JA: Messages = {
@@ -1426,6 +1706,97 @@ const JA: Messages = {
   'ui.backToLobby': 'ロビーに戻る',
   'ui.downloadDem': '.dem をダウンロード',
   'ui.matchLabel': '対局 {id}',
+
+  // --- lobby flow status -----------------------------------------------------
+  'flow.notConnected': '未接続',
+  'flow.signingIn': 'ログイン中…',
+  'flow.loadingProfile': 'プロフィールを読み込み中…',
+  'flow.signedInAs': 'ログイン済み：{name}',
+  'flow.signInFailed': 'ログインに失敗しました',
+  'flow.loginFailed': 'ログインに失敗しました：{reason}',
+  'flow.bootstrapFailed': '初期化に失敗しました：{reason}',
+  'flow.enterEmailPassword': 'メールアドレスとパスワードを入力してください',
+  'flow.enterEmail': 'メールアドレスを入力してください',
+  'flow.enterUsernameEmailPassword': 'ユーザー名・メールアドレス・パスワードを入力してください',
+  'flow.sendingCode': '確認コードを送信中…',
+  'flow.codeSent': '確認コードを {email} に送信しました',
+  'flow.codeSendFailed': '確認コードの送信に失敗しました',
+  'flow.creatingAccount': 'アカウントを作成中…',
+  'flow.accountCreated': 'アカウントを作成しました —— ログイン済み：{name}',
+  'flow.signUpFailed': '登録に失敗しました',
+  'flow.signedOut': 'ログアウトしました',
+  'flow.creatingRoom': 'ルーム {code} を作成中…',
+  'flow.createRoomFailed': 'ルームの作成に失敗しました：{reason}',
+  'flow.joiningRoom': 'ルーム {code} に参加中…',
+  'flow.joinRoomFailed': 'ルームへの参加に失敗しました：{reason}',
+  'flow.roomStatus': 'ルーム {code}：{count} 人',
+  'flow.matchStarting': '対局 {id} まもなく開始',
+  'flow.matchResult': '勝者：{winner}',
+  'flow.transportClosed': 'ロビー接続が切断されました：{reason}',
+  'flow.queueIdle': 'マッチングキュー：待機中',
+  'flow.queueStatus': 'マッチングキュー：{status}',
+
+  // --- auth error codes ------------------------------------------------------
+  'auth.unauthorized': 'メールアドレスまたはパスワードが違います',
+  'auth.accountExists': 'このアカウントは登録済みです',
+  'auth.usernameRequired': 'ユーザー名を入力してください',
+  'auth.emailRequired': 'メールアドレスを入力してください',
+  'auth.passwordRequired': 'パスワードを入力してください',
+  'auth.usernameInvalid': 'ユーザー名は 3-24 文字の英数字・アンダースコアで入力してください',
+  'auth.emailInvalid': 'このメールアドレスは無効です',
+  'auth.passwordWeak': 'パスワードは 8 文字以上で入力してください',
+  'auth.usernameTaken': 'このユーザー名は使用されています',
+  'auth.emailTaken': 'このメールアドレスは登録済みです —— ログインしてください',
+  'auth.emailNotVerified': 'ログイン前にメールアドレスを確認してください',
+  'auth.codeRequired': 'メールに送信された 6 桁の確認コードを入力してください',
+  'auth.codeInvalid': '確認コードが正しくありません',
+  'auth.codeExpired': '確認コードの有効期限が切れました —— 再取得してください',
+  'auth.codeRateLimited': 'しばらく待ってから再度お試しください',
+  'auth.mailUnavailable': 'ロビーがメールを送信できません —— しばらくしてからお試しください',
+  'auth.accountsUnavailable': 'アカウントサービスが一時的に利用できません —— しばらくしてからお試しください',
+  'auth.invalidRequest': 'ユーザー名は 3-24 文字の英数字・アンダースコア、パスワードは 8 文字以上で入力してください',
+  'auth.storageUnavailable': 'ロビーがデータベースに接続できません —— しばらくしてからお試しください',
+  'auth.loginMissingSession': 'ロビーはログインを受け付けましたが、セッションを返しませんでした',
+  'auth.transportError': 'ロビーに接続できません —— サービスが動作しているか確認してください',
+  'auth.sessionReplaced': 'このアカウントは他のデバイスでログインしています',
+  'auth.sessionExpired': 'ログインの有効期限が切れました。再度ログインしてください',
+  'shortcuts.app.fullscreen': 'Toggle fullscreen',
+  'shortcuts.app.settings': 'Open settings',
+  'shortcuts.app.settingsClose': 'Close settings / go back',
+  'shortcuts.battle.back': 'Back to the lobby',
+  'shortcuts.battle.forfeit': 'Forfeit and go back',
+  'shortcuts.battle.pause': 'Pause / resume',
+  'shortcuts.battle.toggleHud': 'Toggle the HUD',
+  'shortcuts.gacha.nextPool': 'Next pool',
+  'shortcuts.gacha.prevPool': 'Previous pool',
+  'shortcuts.gacha.pullOne': 'Pull x1',
+  'shortcuts.lobby.activate': 'Activate the highlighted entry',
+  'shortcuts.lobby.menuNext': 'Next menu entry',
+  'shortcuts.lobby.menuPrev': 'Previous menu entry',
+  'shortcuts.lobby.playPage': 'Open the Play page',
+  'shortcuts.login.back': 'Back to the main menu',
+  'shortcuts.login.focusNext': 'Next field',
+  'shortcuts.login.focusPrev': 'Previous field',
+  'shortcuts.login.sendCode': 'Send e-mail verification code',
+  'shortcuts.login.submit': 'Sign in / create account',
+  'shortcuts.login.toggleMode': 'Switch sign-in / register',
+  'shortcuts.room.leave': 'Leave the room',
+  'shortcuts.room.ready': 'Ready / start',
+  'shortcuts.settings.reset': 'Reset every setting',
+  'shortcuts.settings.scrollBottom': 'Scroll to the bottom',
+  'shortcuts.settings.scrollDown': 'Scroll down a page',
+  'shortcuts.settings.scrollTop': 'Scroll to the top',
+  'shortcuts.settings.scrollUp': 'Scroll up a page',
+  'shortcuts.settings.tabNext': 'Next tab',
+  'shortcuts.settings.tabPrev': 'Previous tab',
+  'shortcuts.shop.buy': 'Buy',
+  'shortcuts.ui.back': 'Back',
+  'shortcuts.ui.confirm': 'Confirm',
+  'shortcuts.ui.continue': 'Continue',
+  'shortcuts.ui.next': 'Next',
+  'shortcuts.ui.prev': 'Previous',
+  'shortcuts.ui.use': 'Use',
+
 };
 
 const EN: Messages = {
@@ -1776,6 +2147,98 @@ const EN: Messages = {
   'ui.backToLobby': 'Back to lobby',
   'ui.downloadDem': 'Download .dem',
   'ui.matchLabel': 'match {id}',
+
+  // --- lobby flow status -----------------------------------------------------
+  'flow.notConnected': 'Not connected',
+  'flow.signingIn': 'Signing in…',
+  'flow.loadingProfile': 'Loading profile…',
+  'flow.signedInAs': 'Signed in as {name}',
+  'flow.signInFailed': 'Sign-in failed',
+  'flow.loginFailed': 'Login failed: {reason}',
+  'flow.bootstrapFailed': 'Bootstrap failed: {reason}',
+  'flow.enterEmailPassword': 'Enter your e-mail and password',
+  'flow.enterEmail': 'Enter your e-mail address',
+  'flow.enterUsernameEmailPassword': 'Enter a username, e-mail and password',
+  'flow.sendingCode': 'Sending verification code…',
+  'flow.codeSent': 'Verification code sent to {email}',
+  'flow.codeSendFailed': 'Could not send the code',
+  'flow.creatingAccount': 'Creating account…',
+  'flow.accountCreated': 'Account created — signed in as {name}',
+  'flow.signUpFailed': 'Sign-up failed',
+  'flow.signedOut': 'Signed out',
+  'flow.creatingRoom': 'Creating room {code}…',
+  'flow.createRoomFailed': 'Create room failed: {reason}',
+  'flow.joiningRoom': 'Joining room {code}…',
+  'flow.joinRoomFailed': 'Join room failed: {reason}',
+  'flow.roomStatus': 'Room {code}: {count} player(s)',
+  'flow.matchStarting': 'Match {id} starting',
+  'flow.matchResult': 'Winner: {winner}',
+  'flow.transportClosed': 'Lobby transport closed: {reason}',
+  'flow.queueIdle': 'Matchmaking queue: idle',
+  'flow.queueStatus': 'Matchmaking queue: {status}',
+
+  // --- auth error codes ------------------------------------------------------
+  'auth.unauthorized': 'Wrong e-mail or password',
+  'auth.accountExists': 'That account is already registered',
+  'auth.usernameRequired': 'Enter a username',
+  'auth.emailRequired': 'Enter your e-mail address',
+  'auth.passwordRequired': 'Enter a password',
+  'auth.usernameInvalid': 'Username must be 3-24 letters, digits or underscores',
+  'auth.emailInvalid': 'That e-mail address is not valid',
+  'auth.passwordWeak': 'Password must be at least 8 characters',
+  'auth.usernameTaken': 'That username is already taken',
+  'auth.emailTaken': 'That e-mail is already registered — sign in instead',
+  'auth.emailNotVerified': 'Verify your e-mail before signing in',
+  'auth.codeRequired': 'Enter the 6-digit code we e-mailed you',
+  'auth.codeInvalid': 'That verification code is incorrect',
+  'auth.codeExpired': 'That code has expired — request a new one',
+  'auth.codeRateLimited': 'Please wait a moment before requesting another code',
+  'auth.mailUnavailable': 'The lobby could not send the e-mail — please try again shortly',
+  'auth.accountsUnavailable': 'Accounts are unavailable right now — please try again shortly',
+  'auth.invalidRequest':
+    'Username must be 3-24 letters, digits or underscores, and the password at least 8 characters',
+  'auth.storageUnavailable': 'The lobby cannot reach its database right now — please try again shortly',
+  'auth.loginMissingSession': 'The lobby accepted the sign-in but returned no session',
+  'auth.transportError': 'Cannot reach the lobby — check that it is running',
+  'auth.sessionReplaced': 'That account signed in on another device',
+  'auth.sessionExpired': 'Your session expired — please sign in again',
+  'shortcuts.app.fullscreen': 'Toggle fullscreen',
+  'shortcuts.app.settings': 'Open settings',
+  'shortcuts.app.settingsClose': 'Close settings / go back',
+  'shortcuts.battle.back': 'Back to the lobby',
+  'shortcuts.battle.forfeit': 'Forfeit and go back',
+  'shortcuts.battle.pause': 'Pause / resume',
+  'shortcuts.battle.toggleHud': 'Toggle the HUD',
+  'shortcuts.gacha.nextPool': 'Next pool',
+  'shortcuts.gacha.prevPool': 'Previous pool',
+  'shortcuts.gacha.pullOne': 'Pull x1',
+  'shortcuts.lobby.activate': 'Activate the highlighted entry',
+  'shortcuts.lobby.menuNext': 'Next menu entry',
+  'shortcuts.lobby.menuPrev': 'Previous menu entry',
+  'shortcuts.lobby.playPage': 'Open the Play page',
+  'shortcuts.login.back': 'Back to the main menu',
+  'shortcuts.login.focusNext': 'Next field',
+  'shortcuts.login.focusPrev': 'Previous field',
+  'shortcuts.login.sendCode': 'Send e-mail verification code',
+  'shortcuts.login.submit': 'Sign in / create account',
+  'shortcuts.login.toggleMode': 'Switch sign-in / register',
+  'shortcuts.room.leave': 'Leave the room',
+  'shortcuts.room.ready': 'Ready / start',
+  'shortcuts.settings.reset': 'Reset every setting',
+  'shortcuts.settings.scrollBottom': 'Scroll to the bottom',
+  'shortcuts.settings.scrollDown': 'Scroll down a page',
+  'shortcuts.settings.scrollTop': 'Scroll to the top',
+  'shortcuts.settings.scrollUp': 'Scroll up a page',
+  'shortcuts.settings.tabNext': 'Next tab',
+  'shortcuts.settings.tabPrev': 'Previous tab',
+  'shortcuts.shop.buy': 'Buy',
+  'shortcuts.ui.back': 'Back',
+  'shortcuts.ui.confirm': 'Confirm',
+  'shortcuts.ui.continue': 'Continue',
+  'shortcuts.ui.next': 'Next',
+  'shortcuts.ui.prev': 'Previous',
+  'shortcuts.ui.use': 'Use',
+
 };
 
 const TABLES: Readonly<Record<LanguageCode, Messages>> = {

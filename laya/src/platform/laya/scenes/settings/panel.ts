@@ -11,10 +11,12 @@
  *
  * Only the shell lives here; each tab's content is a `SettingsSection` in its
  * own file. The panel owns the scrim, the card, the tab switching, the scroll
- * and the debug snapshot the screenshot harness reads.
+ * (drag *and* mouse wheel) and the debug snapshot the screenshot harness reads.
  *
  * Scrolling is hand-rolled with `scrollRect` rather than `laya.ui`'s Panel:
- * the native runtime does not load `laya.ui`, and a drag is all this needs.
+ * the two runtimes load incompatible UI libraries (classic `laya.ui` on web,
+ * FairyGUI's `laya.ui2` on LayaNative), so a stock `Panel` exists on neither
+ * shared surface — see the note in `widgets.ts`.
  *
  * NOTE: `platform/laya/` only.
  */
@@ -27,7 +29,10 @@ import { titlePlaque } from '../../../../core/game/ui_assets';
 import * as theme from '../../view/theme';
 import { VectorPainter } from '../../view/sprites';
 import { TnaUiImage } from '../../view/tna_ui';
+import { createOfficialWidget } from '../../ui/official_widgets';
+import { skinScrollBarV } from '../../ui/official_skin';
 import { createButtonEx, type ButtonHandle } from '../ui_kit';
+import { platformTagline } from '../../platform';
 import { BaseSettingsSection, type SettingsSection } from './section';
 import { AboutSection } from './section_about';
 import { AudioSection } from './section_audio';
@@ -48,6 +53,14 @@ const SUBTITLE_H = 18;
 const FOOTER_H = 38;
 /** Width of the scroll indicator gutter inside the viewport. */
 const SCROLLBAR_W = 4;
+/**
+ * Pixels scrolled per mouse-wheel notch.
+ *
+ * The engine hands `MOUSE_WHEEL` a `delta` in notches (`deltaY * 0.025`, so a
+ * physical notch is ≈ ±3); this is the per-notch travel. Three rows is the
+ * conventional "one screen nudge" for a list this size.
+ */
+const WHEEL_NOTCH_PX = 48;
 
 export interface SettingsPanelOptions {
   width: number;
@@ -71,6 +84,12 @@ export interface SettingsPanelDebugState {
   scrollable: boolean;
   /** Scroll offset (0 = top). */
   scrollTop: number;
+  /**
+   * Platform tag from {@link platformTagline} — `"Windows · native client"`
+   * on the shipped LayaNative build. The screenshot harness records it so a
+   * shot always says which runtime produced it.
+   */
+  platform: string;
   /** Every string painted: header, tabs, subtitle, active section, footer. */
   labels: string[];
 }
@@ -92,6 +111,10 @@ export class SettingsPanel {
   private readonly viewport: Laya.Sprite;
   private readonly content: Laya.Sprite;
   private readonly scrollThumb: Laya.Sprite;
+  /** The official `ScrollBarV.lh` instance when the prefab library loaded. */
+  private officialScrollBar: Laya.Sprite | null = null;
+  /** Whether the prefab has been attempted once (a miss is not retried). */
+  private officialScrollBarTried = false;
   private readonly tabButtons: ButtonHandle[] = [];
   private readonly sections: SettingsSection[];
   /** Public so the local screenshot harness can drive the close path. */
@@ -164,16 +187,24 @@ export class SettingsPanel {
 
     // The viewport clips the section; the content sprite inside it is what
     // actually moves while dragging.
+    //
+    // ★ `mouseEnabled` is deliberately left at its default on both the
+    // viewport's content sprite and the section roots. An explicitly
+    // `mouseEnabled = false` container is skipped wholesale by
+    // `InputManager.getSpriteUnderPoint` (a `_mouseState` of 1 blocks descent
+    // into the whole subtree), which is exactly what made every row control
+    // — toggles, segmented options, sliders, buttons — unreachable. With the
+    // default state, each control's own `mouseEnabled = true` marks the
+    // ancestor chain as hit-testable (`setMouseEnabledUp`), and a press on
+    // bare row space still bubbles down to the viewport's drag-scroll below.
     this.viewport = new Laya.Sprite();
     this.viewport.mouseEnabled = true;
     this.card.addChild(this.viewport);
     this.content = new Laya.Sprite();
-    this.content.mouseEnabled = false;
     this.viewport.addChild(this.content);
     for (const section of this.sections) {
       // Sections are stacked in the content sprite; only the active one is
       // visible, which keeps every section's state alive across tab switches.
-      section.root.mouseEnabled = false;
       section.root.visible = false;
       this.content.addChild(section.root);
     }
@@ -353,6 +384,7 @@ export class SettingsPanel {
       contentHeight: section.contentHeight,
       scrollable: maxScroll > 0,
       scrollTop: this.scrollTop,
+      platform: platformTagline(),
       labels: [
         this.heading.text,
         ...this.sections.map((item) => item.title),
@@ -461,9 +493,15 @@ export class SettingsPanel {
 
   /**
    * Drag-to-scroll over the viewport. Registered on the viewport sprite, which
-   * sits *below* the rows, so a drag that starts on a row still scrolls: the
-   * rows set `mouseEnabled = false` on their own background (only their control
-   * is a target), which lets the press fall through to the viewport.
+   * sits *below* the rows, so a drag that starts on a row still scrolls: mouse
+   * events bubble up the ancestor chain, so a press on a row (or on one of its
+   * controls — the slider claims its own press with `stopPropagation`) reaches
+   * this listener too.
+   *
+   * Mouse-wheel scrolling is handled here as well. The engine dispatches
+   * `Event.MOUSE_WHEEL` on both runtimes (on LayaNative the `conch` mouse bridge
+   * synthesises the `wheel` event), with `event.delta` in notches
+   * (`deltaY * 0.025` — one physical notch is roughly ±3).
    */
   private bindScroll(): void {
     this.viewport.on(Laya.Event.MOUSE_DOWN, undefined, () => {
@@ -487,6 +525,21 @@ export class SettingsPanel {
     this.viewport.on(Laya.Event.MOUSE_UP, undefined, () => {
       this.dragging = false;
     });
+    this.viewport.on(Laya.Event.MOUSE_WHEEL, undefined, (...args: unknown[]) => {
+      if (this.maxScroll() <= 0) {
+        return;
+      }
+      // `Sprite.on` types the handler as `(...args: unknown[]) => void`, so the
+      // event is narrowed here rather than declared in the signature — a
+      // parameter typed `MouseEventLike` is not assignable to `unknown`.
+      const event = args[0] as Laya.MouseEventLike | undefined;
+      const notches = event?.delta ?? 0;
+      if (!Number.isFinite(notches) || notches === 0) {
+        return;
+      }
+      this.scrollTop = clamp(this.scrollTop + notches * WHEEL_NOTCH_PX, 0, this.maxScroll());
+      this.applyScroll();
+    });
   }
 
   /** A release outside the viewport must still end the drag (self-removing). */
@@ -508,6 +561,38 @@ export class SettingsPanel {
   }
 
   /** Pushes `scrollTop` onto the content sprite and repaints the indicator. */
+  /**
+   * Returns the official scrollbar, creating it on first use.
+   *
+   * The prefab is loaded asynchronously, so it may simply not be there yet —
+   * the caller falls back to the painted thumb in that case, and the next
+   * `applyScroll` (a tab switch, a wheel notch) picks it up once it lands.
+   */
+  private ensureOfficialScrollBar(): Laya.Sprite | null {
+    if (this.officialScrollBar !== null) {
+      return this.officialScrollBar;
+    }
+    if (this.officialScrollBarTried) {
+      return null;
+    }
+    this.officialScrollBarTried = true;
+    const created = createOfficialWidget('scrollBarV');
+    if (created === null) {
+      return null;
+    }
+    clearOfficialText(created);
+    // The prefab ships the engine's light `comp.atlas` art; repaint it in the
+    // TNA palette and drop its arrow buttons (the panel drives the offset).
+    skinScrollBarV(created);
+    // The panel owns the offset (drag / wheel / keyboard all write
+    // `scrollTop`), so the prefab's own input is switched off: leaving it on
+    // would give the scrollbar a second, competing driver.
+    created.mouseEnabled = false;
+    this.card.addChild(created);
+    this.officialScrollBar = created;
+    return created;
+  }
+
   private applyScroll(): void {
     const max = this.maxScroll();
     this.scrollTop = clamp(this.scrollTop, 0, max);
@@ -515,7 +600,19 @@ export class SettingsPanel {
 
     const viewH = this.viewportRect.height;
     this.scrollThumb.graphics.clear();
+
+    // The official `ScrollBarV.lh` prefab (`internal/UI/`) when it has loaded:
+    // it ships a track, a draggable grip and up/down buttons, all skinned from
+    // `comp.atlas`. It is used for what it is good at — the scrollbar's own
+    // look and hit box — while the panel keeps ownership of the scroll *offset*
+    // (drag, wheel and keyboard all still go through `scrollTop`), so one code
+    // path stays authoritative. The prefab's buttons are cleared of text and
+    // left unbound: wiring them would mean a second, competing scroll driver.
+    const official = this.ensureOfficialScrollBar();
     if (max <= 0 || viewH <= 0) {
+      if (official !== null) {
+        official.visible = false;
+      }
       return;
     }
     const contentH = this.sections[this.activeIndex].contentHeight;
@@ -523,6 +620,21 @@ export class SettingsPanel {
     const thumbY =
       this.viewportRect.y + Math.round((this.scrollTop / max) * Math.max(0, viewH - thumbH));
     const thumbX = this.viewportRect.x + this.viewportRect.width - SCROLLBAR_W;
+
+    if (official !== null) {
+      official.visible = true;
+      official.size(SCROLLBAR_W, viewH);
+      official.pos(thumbX, this.viewportRect.y);
+      // `grip` is the prefab's own draggable part; it is repositioned and
+      // resized to track the offset the panel computed.
+      const grip = findChildByName(official, 'grip');
+      if (grip !== null) {
+        grip.size(SCROLLBAR_W, thumbH);
+        grip.y = thumbY - this.viewportRect.y;
+      }
+      return;
+    }
+
     VectorPainter.roundedPanel(
       this.scrollThumb.graphics,
       thumbX,
@@ -545,6 +657,46 @@ function makeLabel(text: string, size: number, color: string, bold: boolean): La
   label.color = color;
   label.bold = bold;
   return label;
+}
+
+/**
+ * Clears every text child of an official widget.
+ *
+ * The `ScrollBarV.lh` prefab carries label children sized for its own layout;
+ * left alone they would paint stray text over the panel.
+ */
+function clearOfficialText(widget: Laya.Sprite): void {
+  for (let i = 0; i < widget.numChildren; i += 1) {
+    const child = widget.getChildAt(i);
+    if (child === null || child === undefined) {
+      continue;
+    }
+    const labelled = child as Laya.Sprite & { text?: unknown };
+    if (typeof labelled.text === 'string') {
+      labelled.text = '';
+    }
+  }
+}
+
+/**
+ * Finds a direct child by name, or `null`.
+ *
+ * `name` is read through a widened record: the project's Laya typings do not
+ * declare it on `Sprite`, though the engine sets it for every prefab child
+ * (`ScrollBarV.lh` names its parts `bg` / `bar` / `grip` / `up` / `down`).
+ */
+function findChildByName(widget: Laya.Sprite, name: string): Laya.Sprite | null {
+  for (let i = 0; i < widget.numChildren; i += 1) {
+    const child = widget.getChildAt(i);
+    if (child === null || child === undefined) {
+      continue;
+    }
+    const named = child as unknown as { name?: unknown };
+    if (named.name === name) {
+      return child;
+    }
+  }
+  return null;
 }
 
 function clamp(value: number, min: number, max: number): number {

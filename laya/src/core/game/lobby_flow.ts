@@ -26,6 +26,7 @@ import type {
 } from '../net/lobby_client';
 import { SESSION_EXPIRED_CODE, SESSION_REPLACED_CODE } from '../net/lobby_client';
 import { describeAuthError } from './auth_messages';
+import { t } from './i18n';
 
 export enum LobbyScreen {
   Login = 'login',
@@ -139,19 +140,19 @@ export type LobbyFlowListener = (snapshot: LobbyFlowSnapshot) => void;
 export function describeMatchmakingQueue(snapshot: LobbyFlowSnapshot): string {
   const ticket = snapshot.matchmaking;
   if (ticket === null) {
-    return 'Matchmaking queue: idle';
+    return t('flow.queueIdle');
   }
   const match = ticket.matchId === '' ? '' : ` → match ${ticket.matchId}`;
   const room = ticket.roomCode === '' ? '' : ` · room ${ticket.roomCode}`;
   return (
-    `Matchmaking queue: ${ticket.queueStatus}\n` +
-    `ticket ${ticket.ticketId || '-'} · ${ticket.modeId || '-'}${match}${room}`
+    t('flow.queueStatus', { status: ticket.queueStatus }) +
+    `\nticket ${ticket.ticketId || '-'} · ${ticket.modeId || '-'}${match}${room}`
   );
 }
 
 export class LobbyFlow {
   private screen = LobbyScreen.Login;
-  private statusText = 'Not connected';
+  private statusText = t('flow.notConnected');
   private match: MatchStartInfo | null = null;
   private result: MatchResultInfo | null = null;
   private checkin: CheckinView | null = null;
@@ -177,7 +178,7 @@ export class LobbyFlow {
     client.onEvent((event) => {
       switch (event.kind) {
         case 'room_state':
-          this.statusText = `Room ${event.room.roomCode}: ${event.room.players.length} player(s)`;
+          this.statusText = t('flow.roomStatus', { code: event.room.roomCode, count: event.room.players.length });
           if (this.screen === LobbyScreen.Lobby || this.screen === LobbyScreen.Matching) {
             this.setScreen(LobbyScreen.Room);
           } else {
@@ -194,16 +195,16 @@ export class LobbyFlow {
             modeId: this.client.room?.modeId ?? DEFAULT_MODE_ID,
             rulesetVersion: this.client.session?.rulesetVersion ?? '',
           };
-          this.statusText = `Match ${event.matchId} starting`;
+          this.statusText = t('flow.matchStarting', { id: event.matchId });
           this.setScreen(LobbyScreen.Battle);
           break;
         case 'match_result':
           this.result = event.result;
-          this.statusText = `Winner: ${event.result.winnerPlayerId}`;
+          this.statusText = t('flow.matchResult', { winner: event.result.winnerPlayerId });
           this.setScreen(LobbyScreen.Result);
           break;
         case 'transport_closed':
-          this.statusText = `Lobby transport closed: ${event.reason}`;
+          this.statusText = t('flow.transportClosed', { reason: event.reason });
           this.notify();
           break;
         case 'session_replaced':
@@ -277,15 +278,15 @@ export class LobbyFlow {
 
   /** Login + bootstrap, then land on the lobby screen. */
   async signIn(displayName = 'Player'): Promise<boolean> {
-    this.statusText = 'Signing in…';
+    this.statusText = t('flow.signingIn');
     this.notify();
     const session = this.client.session ?? (await this.client.loginAnonymous(displayName));
     if (session === null) {
       this.authErrorCode = '';
-      this.fail(`Login failed: ${this.client.lastError}`);
+      this.fail(t('flow.loginFailed', { reason: this.client.lastError }));
       return false;
     }
-    this.statusText = 'Loading profile…';
+    this.statusText = t('flow.loadingProfile');
     this.notify();
     const bootstrapped = await this.client.bootstrap(session.rulesetVersion);
     if (bootstrapped === null) {
@@ -297,7 +298,7 @@ export class LobbyFlow {
       this.inventory = null;
       this.records = null;
       this.setScreen(LobbyScreen.Login);
-      this.fail(`Bootstrap failed: ${this.client.lastError || 'bootstrap_invalid_payload'}`);
+      this.fail(t('flow.bootstrapFailed', { reason: this.client.lastError || 'bootstrap_invalid_payload' }));
       return false;
     }
     if (this.sessionLost) {
@@ -306,7 +307,7 @@ export class LobbyFlow {
       // the lobby.
       return false;
     }
-    this.statusText = `Signed in as ${this.client.session?.displayName ?? displayName}`;
+    this.statusText = t('flow.signedInAs', { name: this.client.session?.displayName ?? displayName });
     this.authErrorCode = '';
     this.sessionLost = false;
     this.setScreen(LobbyScreen.Lobby);
@@ -331,12 +332,12 @@ export class LobbyFlow {
     const address = email.trim();
     if (address === '' || password === '') {
       this.authErrorCode = '';
-      this.fail('Enter your e-mail and password');
+      this.fail(t('flow.enterEmailPassword'));
       return false;
     }
     // Echo the address back so the form keeps it after a failed attempt.
     this.authEmail = address;
-    this.statusText = 'Signing in…';
+    this.statusText = t('flow.signingIn');
     this.notify();
     const session = await this.client.loginAccount(address, password);
     if (session === null) {
@@ -344,10 +345,10 @@ export class LobbyFlow {
       // translated, so callers that inspect the code still see it verbatim.
       const code = this.client.lastError;
       this.authErrorCode = code;
-      this.fail(code !== '' ? describeAuthError(code) : 'Sign-in failed');
+      this.fail(code !== '' ? describeAuthError(code) : t('flow.signInFailed'));
       return false;
     }
-    this.statusText = 'Loading profile…';
+    this.statusText = t('flow.loadingProfile');
     this.notify();
     await this.client.bootstrap(session.rulesetVersion);
     if (this.sessionLost) {
@@ -355,7 +356,7 @@ export class LobbyFlow {
       // screen.
       return false;
     }
-    this.statusText = `Signed in as ${this.client.session?.displayName || address}`;
+    this.statusText = t('flow.signedInAs', { name: this.client.session?.displayName || address });
     this.lastError = '';
     this.authErrorCode = '';
     this.sessionLost = false;
@@ -374,22 +375,22 @@ export class LobbyFlow {
     const address = email.trim();
     if (address === '') {
       this.authErrorCode = '';
-      this.fail('Enter your e-mail address');
+      this.fail(t('flow.enterEmail'));
       return { ok: false, resendInSeconds: 0 };
     }
     this.authEmail = address;
-    this.statusText = 'Sending verification code…';
+    this.statusText = t('flow.sendingCode');
     this.notify();
     const receipt = await this.client.requestEmailCode(address);
     if (receipt === null) {
       const code = this.client.lastError;
       this.authErrorCode = code;
-      this.fail(code !== '' ? describeAuthError(code) : 'Could not send the code');
+      this.fail(code !== '' ? describeAuthError(code) : t('flow.codeSendFailed'));
       return { ok: false, resendInSeconds: 0 };
     }
     this.lastError = '';
     this.authErrorCode = '';
-    this.statusText = `Verification code sent to ${receipt.email}`;
+    this.statusText = t('flow.codeSent', { email: receipt.email });
     this.notify();
     return { ok: true, resendInSeconds: receipt.resendInSeconds };
   }
@@ -411,7 +412,7 @@ export class LobbyFlow {
     const address = email.trim();
     if (user === '' || address === '' || password === '') {
       this.authErrorCode = '';
-      this.fail('Enter a username, e-mail and password');
+      this.fail(t('flow.enterUsernameEmailPassword'));
       return false;
     }
     if (code.trim() === '') {
@@ -421,7 +422,7 @@ export class LobbyFlow {
     }
     this.authUsername = user;
     this.authEmail = address;
-    this.statusText = 'Creating account…';
+    this.statusText = t('flow.creatingAccount');
     this.notify();
     // An empty display name falls back to the username so the account is never
     // nameless in the lobby.
@@ -436,10 +437,10 @@ export class LobbyFlow {
       // As in `signInWithAccount`: translate only the player-facing text.
       const failure = this.client.lastError;
       this.authErrorCode = failure;
-      this.fail(failure !== '' ? describeAuthError(failure) : 'Sign-up failed');
+      this.fail(failure !== '' ? describeAuthError(failure) : t('flow.signUpFailed'));
       return false;
     }
-    this.statusText = 'Loading profile…';
+    this.statusText = t('flow.loadingProfile');
     this.notify();
     await this.client.bootstrap(session.rulesetVersion);
     if (this.sessionLost) {
@@ -447,7 +448,7 @@ export class LobbyFlow {
       // screen.
       return false;
     }
-    this.statusText = `Account created — signed in as ${this.client.session?.displayName || user}`;
+    this.statusText = t('flow.accountCreated', { name: this.client.session?.displayName || user });
     this.lastError = '';
     this.authErrorCode = '';
     this.sessionLost = false;
@@ -468,7 +469,7 @@ export class LobbyFlow {
     this.lastError = '';
     this.authErrorCode = '';
     this.sessionLost = false;
-    this.statusText = 'Signed out';
+    this.statusText = t('flow.signedOut');
     this.setScreen(LobbyScreen.Login);
   }
 
@@ -510,7 +511,7 @@ export class LobbyFlow {
     modeId = DEFAULT_MODE_ID,
     options: RoomCreateOptions = {},
   ): Promise<boolean> {
-    this.statusText = `Creating room ${roomCode}…`;
+    this.statusText = t('flow.creatingRoom', { code: roomCode });
     this.notify();
     const room = await this.client.createRoom(roomCode, modeId, options);
     if (room === null) {
@@ -522,7 +523,7 @@ export class LobbyFlow {
   }
 
   async joinRoom(roomCode: string, options: RoomJoinOptions = {}): Promise<boolean> {
-    this.statusText = `Joining room ${roomCode}…`;
+    this.statusText = t('flow.joiningRoom', { code: roomCode });
     this.notify();
     const room = await this.client.joinRoom(roomCode, options);
     if (room === null) {

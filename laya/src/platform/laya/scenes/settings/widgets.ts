@@ -8,7 +8,25 @@
  *
  * Kept deliberately dependency-light: `Laya` primitives, the shared `theme`
  * tokens, the `ui_kit` button and the pure text-measurement helpers below.
- * There is no `laya.ui` here on purpose — the native runtime does not load it.
+ *
+ * ## Why not `laya.ui`'s stock widgets
+ *
+ * The two runtimes this client ships on load **different, incompatible** UI
+ * libraries, so there is no single official widget API to write against:
+ *
+ *  - the browser build (`index.html`) loads `engine/libs/laya.ui.js`, the
+ *    classic set (`Laya.Button`, `Laya.CheckBox`, `Laya.Slider`, …);
+ *  - the Windows native build (`resource/index.js`) loads
+ *    `resource/libs/laya.ui2.js`, which is **FairyGUI** — it exports
+ *    `Laya.UIPackage` / `Laya.GButton` / `Laya.GSlider` / … and none of the
+ *    classic names (verified live: `typeof Laya.Button === 'undefined'` on
+ *    the native runtime).
+ *
+ * Reaching for either set would therefore crash the other runtime, and
+ * FairyGUI's default skins would replace the TNA art language this UI is
+ * built from (see `docs/ART_POLICY.md`). The engine-side pieces that *are*
+ * shared — `Laya.Sprite` hit-testing, `Laya.Event`, `Laya.Input` — are used
+ * directly instead.
  *
  * NOTE: `platform/laya/` only. Never import from `core/` except plain data.
  */
@@ -16,6 +34,8 @@
 import * as theme from '../../view/theme';
 import { VectorPainter, mix } from '../../view/sprites';
 import { TnaUiImage } from '../../view/tna_ui';
+import { createOfficialWidget } from '../../ui/official_widgets';
+import { skinButton, skinCheckBox, skinSliderH } from '../../ui/official_skin';
 import {
   UI_SLIDER_PROGRESS,
   UI_SLIDER_THUMB,
@@ -283,9 +303,18 @@ function buildRow(
 
   const sprite = new Laya.Sprite();
   sprite.size(width, height);
-  // The row itself is not a target: the control inside it is. Leaving the
-  // background click-through keeps a stray tap from being swallowed.
-  sprite.mouseEnabled = false;
+  // ★ The row MUST stay mouse-enabled (the default state). Setting
+  // `mouseEnabled = false` here looks like the right way to keep the
+  // background click-through, but in LayaAir 3 it is what made every
+  // settings control dead: `InputManager.getSpriteUnderPoint` only descends
+  // into a child whose `_mouseState` is `2` (explicitly enabled) or `0`
+  // (untouched) with `CHECK_INPUT` set — an explicitly *disabled* container
+  // hides its whole subtree from hit-testing. The toggle track, the option
+  // segments and the slider track are all children of the row, so the row
+  // being `mouseEnabled = false` swallowed every tap. Leaving the row at its
+  // default lets the control's own `mouseEnabled = true` mark the ancestor
+  // chain (`setMouseEnabledUp`), and a press on bare row space simply falls
+  // through to the panel's drag-scroll, which is the intended behaviour.
 
   let enabled = true;
   paintRow(sprite, width, height, enabled);
@@ -396,8 +425,35 @@ export function createActionRow(
 ): RowHandle {
   const buttonWidth = Math.min(150, Math.max(96, Math.round(width * 0.32)));
   const row = buildRow(width, label, description, buttonWidth);
-  const button = createButton(buttonLabel, row.controlRight - buttonWidth, 0, buttonWidth, onClick);
   const buttonH = theme.BUTTON_HEIGHT - 8;
+
+  // The official `Button.lh` prefab when it has loaded; the TNA-styled button
+  // otherwise. Unlike the toggle, a button *needs* its label, so the prefab's
+  // own text child is written rather than cleared.
+  const official = createOfficialWidget('button');
+  if (official !== null) {
+    official.size(buttonWidth, buttonH);
+    official.x = row.controlRight - buttonWidth;
+    official.y = Math.round((row.height - buttonH) / 2);
+    official.mouseEnabled = true;
+    setOfficialText(official, buttonLabel);
+    // Repaint the prefab's plate in the TNA palette (and the danger tone when
+    // asked). Sprite has no `tint` in this engine build — verified live — so
+    // the tone is carried by the fill colour instead.
+    skinButton(official, tone === 'danger');
+    official.on(Laya.Event.CLICK, undefined, () => onClick());
+    row.sprite.addChild(official);
+    return {
+      sprite: row.sprite,
+      height: row.height,
+      setEnabled(enabled: boolean): void {
+        official.mouseEnabled = enabled;
+        official.alpha = enabled ? 1 : 0.45;
+      },
+    };
+  }
+
+  const button = createButton(buttonLabel, row.controlRight - buttonWidth, 0, buttonWidth, onClick);
   button.setSize(buttonWidth, buttonH);
   button.sprite.y = Math.round((row.height - buttonH) / 2);
   if (tone === 'danger') {
@@ -405,6 +461,93 @@ export function createActionRow(
   }
   row.sprite.addChild(button.sprite);
   return { sprite: row.sprite, height: row.height, setEnabled: (v) => button.setEnabled(v) };
+}
+
+// ---------------------------------------------------------------------------
+// official-widget helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Clears the text a prefab ships with.
+ *
+ * The engine's `CheckBox.lh` / `Button.lh` carry their own label child, and a
+ * settings row already paints its own (translated) label to the left — leaving
+ * the prefab's copy would double the text. Only text-bearing children are
+ * touched, so the skin graphics survive.
+ */
+function stripOfficialLabel(widget: Laya.Sprite): void {
+  for (let i = 0; i < widget.numChildren; i += 1) {
+    const child = widget.getChildAt(i);
+    if (child === null || child === undefined) {
+      continue;
+    }
+    const text = child as Laya.Sprite & { text?: unknown };
+    if (typeof text.text === 'string') {
+      text.text = '';
+    }
+  }
+}
+
+/**
+ * Drives a prefab's `selected` state, when it has one.
+ *
+ * Defensive on purpose: the property is read off a runtime object, and a
+ * future prefab that renames it must not throw — it would take the whole
+ * settings panel down.
+ */
+function setOfficialSelected(widget: Laya.Sprite, selected: boolean): void {
+  const state = widget as Laya.Sprite & { selected?: unknown };
+  if ('selected' in state) {
+    state.selected = selected;
+  }
+}
+
+/** Reads a prefab's `selected` state; `false` when it has none. */
+function officialSelected(widget: Laya.Sprite): boolean {
+  const state = widget as Laya.Sprite & { selected?: unknown };
+  return state.selected === true;
+}
+
+/**
+ * Finds a direct child of an official widget by name.
+ *
+ * `name` is read through a widened record: the project's Laya typings do not
+ * declare it on `Sprite`, though the engine sets it for every prefab part
+ * (`SliderH.lh` names its parts `bg` / `bar` / `grip` / `title`).
+ */
+function childByName(widget: Laya.Sprite, name: string): Laya.Sprite | null {
+  for (let i = 0; i < widget.numChildren; i += 1) {
+    const child = widget.getChildAt(i);
+    if (child === null || child === undefined) {
+      continue;
+    }
+    if ((child as unknown as { name?: unknown }).name === name) {
+      return child;
+    }
+  }
+  return null;
+}
+
+/**
+ * Writes a prefab's label text, when it has one.
+ *
+ * Buttons keep their text (the row's own label sits to the left), so this is
+ * the counterpart to {@link stripOfficialLabel}. Only the first text-bearing
+ * child is written: the engine's button prefab has exactly one, and writing
+ * every text child would clobber a future subtitle.
+ */
+function setOfficialText(widget: Laya.Sprite, text: string): void {
+  for (let i = 0; i < widget.numChildren; i += 1) {
+    const child = widget.getChildAt(i);
+    if (child === null || child === undefined) {
+      continue;
+    }
+    const labelled = child as Laya.Sprite & { text?: unknown };
+    if (typeof labelled.text === 'string') {
+      labelled.text = text;
+      return;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -422,7 +565,18 @@ export interface ToggleRowOptions {
 export function createToggleRow(options: ToggleRowOptions): ToggleRowHandle {
   const row = buildRow(options.width, options.label, options.description, TOGGLE_W + theme.SPACE_MD);
 
-  const track = new Laya.Sprite();
+  // The official `CheckBox.lh` prefab (`internal/UI/`) when it has loaded; the
+  // hand-painted track otherwise. See `ui_prefabs.ts` for why the prefab — not
+  // `Laya.CheckBox`, which does not exist on this engine version — is the
+  // official widget here.
+  const official = createOfficialWidget('checkbox');
+  const track = official ?? new Laya.Sprite();
+  if (official !== null) {
+    stripOfficialLabel(official);
+    // The prefab's skin comes from `comp.atlas` (the engine's light default
+    // art); repaint it in the TNA palette so it matches the rest of the panel.
+    skinCheckBox(official);
+  }
   track.size(TOGGLE_W, TOGGLE_H);
   track.x = row.controlRight - TOGGLE_W;
   track.y = Math.round((row.height - TOGGLE_H) / 2);
@@ -433,6 +587,13 @@ export function createToggleRow(options: ToggleRowOptions): ToggleRowHandle {
   let enabled = true;
 
   const paint = (): void => {
+    if (official !== null) {
+      setOfficialSelected(official, value);
+      // The prefab has no "disabled" skin state we can drive, so the greyed
+      // look comes from alpha plus hit-testing being switched off.
+      official.alpha = enabled ? 1 : 0.45;
+      return;
+    }
     const g = track.graphics;
     g.clear();
     const on = value;
@@ -451,6 +612,17 @@ export function createToggleRow(options: ToggleRowOptions): ToggleRowHandle {
 
   const flip = (): void => {
     if (!enabled) {
+      return;
+    }
+    // On the official prefab the widget owns the state: it toggles `selected`
+    // on its own click, so the value is read back from it rather than mirrored
+    // in a local. That keeps one source of truth when the engine's own
+    // behaviour changes.
+    if (official !== null) {
+      const before = officialSelected(official);
+      value = !before;
+      setOfficialSelected(official, value);
+      options.onChange(value);
       return;
     }
     value = !value;
@@ -606,7 +778,16 @@ export function createSliderRow(options: SliderRowOptions): SliderRowHandle {
 
   // The hit box is taller than the painted bar so a drag does not fall out of
   // the control the moment the pointer drifts vertically.
-  const track = new Laya.Sprite();
+  //
+  // The official `SliderH.lh` prefab is used when it has loaded: it ships
+  // `bg`/`bar`/`grip` parts, which are repainted in the TNA palette. The row
+  // still owns the value (quantisation, `format`, `onChange`), so the prefab is
+  // the control's body and hit box, not a second source of truth.
+  const officialSlider = createOfficialWidget('sliderH');
+  const track = officialSlider ?? new Laya.Sprite();
+  if (officialSlider !== null) {
+    skinSliderH(officialSlider);
+  }
   track.size(SLIDER_W, SLIDER_HIT_H);
   track.x = row.controlRight - controlWidth;
   track.y = Math.round((row.height - SLIDER_HIT_H) / 2);
@@ -645,6 +826,24 @@ export function createSliderRow(options: SliderRowOptions): SliderRowHandle {
     const barY = (SLIDER_HIT_H - SLIDER_BAR_H) / 2;
     const filled = Math.round(SLIDER_W * value);
     const knobX = Math.min(SLIDER_W - SLIDER_KNOB_R, Math.max(SLIDER_KNOB_R, filled));
+
+    // Official prefab: drive its `bar` (fill) and `grip` (thumb) from the value.
+    // The parts are scaled/positioned rather than repainted each frame — their
+    // art was already replaced with the TNA paint by `skinSliderH`.
+    if (officialSlider !== null) {
+      const bar = childByName(officialSlider, 'bar');
+      if (bar !== null) {
+        bar.scaleX = Math.max(0.001, value);
+        bar.visible = value > 0;
+      }
+      const grip = childByName(officialSlider, 'grip');
+      if (grip !== null) {
+        grip.x = knobX - grip.width / 2;
+        grip.alpha = enabled ? 1 : 0.45;
+      }
+      valueText.text = format(value);
+      return;
+    }
     // TNA 美术优先：轨道 + 已填充段 + 滑块都就绪时不再画矢量条。
     if (trackArt.isReady && fillArt.isReady && knobArt.isReady) {
       const centerY = barY + SLIDER_BAR_H / 2;
@@ -684,7 +883,18 @@ export function createSliderRow(options: SliderRowOptions): SliderRowHandle {
 
   // `Sprite.mouseX` is the pointer in the sprite's own space, so no global
   // coordinate maths is needed (see the shim's note on `mouseX`).
-  track.on(Laya.Event.MOUSE_DOWN, undefined, () => {
+  //
+  // `stopPropagation` matters: mouse events bubble up the ancestor chain, and
+  // the panel's viewport listens for `MOUSE_DOWN` to start a drag-scroll. A
+  // slider drag that also scrolled the list would make the control unusable,
+  // so the press is claimed here. `CLICK` is a separate dispatch and still
+  // reaches the control.
+  track.on(Laya.Event.MOUSE_DOWN, undefined, (...args: unknown[]) => {
+    // `Sprite.on` types the handler as `(...args: unknown[]) => void`, so the
+    // event is narrowed here rather than declared in the signature — a
+    // parameter typed `MouseEventLike` is not assignable to `unknown`.
+    const event = args[0] as Laya.MouseEventLike | undefined;
+    event?.stopPropagation?.();
     if (!enabled) {
       return;
     }

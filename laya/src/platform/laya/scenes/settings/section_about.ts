@@ -19,6 +19,7 @@ import {
   PROJECT_URL,
   gameNameLine,
 } from '../../../../core/game/game_identity';
+import { platformTagline } from '../../platform';
 import { BaseSettingsSection } from './section';
 import {
   createActionRow,
@@ -68,7 +69,11 @@ export class AboutSection extends BaseSettingsSection {
       createGroupHeading(t('settings.about.heading.product'), width),
       createInfoRow(width, t('settings.about.game'), gameNameLine()),
       createInfoRow(width, t('settings.about.version'), GAME_VERSION),
-      createInfoRow(width, t('settings.about.build'), BUILD_LABEL),
+      // The platform tag rides on the build line: it is the one place the
+      // "which runtime am I on" answer belongs on a facts page, and
+      // `platformTagline()` is language-neutral technical text, so it needs
+      // no translation key.
+      createInfoRow(width, t('settings.about.build'), `${BUILD_LABEL} · ${platformTagline()}`),
       createGroupHeading(t('settings.about.heading.licences'), width),
       createInfoRow(width, t('settings.about.code'), CODE_LICENSE),
       createInfoRow(width, t('settings.about.assets'), ASSET_LICENSE),

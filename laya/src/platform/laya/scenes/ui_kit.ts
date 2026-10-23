@@ -45,6 +45,8 @@ import { VectorPainter, mix } from '../view/sprites';
 import { TnaUiImage } from '../view/tna_ui';
 import { drawArtIcon, iconNameForLabel, type ArtIconName } from '../view/art_icons';
 import { titlePlaque, type UiPlaqueId } from '../../../core/game/ui_assets';
+import { createOfficialWidget } from '../ui/official_widgets';
+import { skinButton, skinProgressBar } from '../ui/official_skin';
 
 // ---------------------------------------------------------------------------
 // Handles
@@ -263,6 +265,118 @@ function variantPalette(variant: ButtonVariant): VariantPalette {
   }
 }
 
+/**
+ * Wraps the official `Button.lh` prefab in the project's {@link ButtonHandle}.
+ *
+ * The prefab supplies the structure and the click behaviour; the TNA palette
+ * supplies the paint (`skinButton`). Everything the hand-painted button
+ * offered — resize in place, enable/disable, retitle — is preserved so no
+ * caller changes, and the label stays a `Laya.Text` because callers read and
+ * style it.
+ */
+function createOfficialButton(
+  official: Laya.Sprite,
+  text: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  onClick: () => void,
+  variant: ButtonVariant,
+): ButtonHandle {
+  let enabled = true;
+  let tone = variant;
+
+  official.pos(x, y);
+  official.size(width, height);
+  official.mouseEnabled = true;
+
+  // The prefab ships its own label child; it is reused so text metrics,
+  // alignment and the engine's own text layout stay in one place.
+  const label = findTextChild(official);
+  if (label !== null) {
+    label.text = text;
+    label.font = theme.FONT_DISPLAY;
+    label.fontSize = theme.FONT_SIZE_BUTTON;
+    label.color = theme.COLOR_TEXT;
+    label.align = 'center';
+    label.valign = 'middle';
+    label.width = width;
+    label.height = height;
+  }
+
+  const repaint = (): void => {
+    skinButton(official, tone === 'danger');
+    if (label !== null) {
+      label.color = enabled ? theme.COLOR_TEXT : theme.COLOR_TEXT_DISABLED;
+    }
+  };
+  repaint();
+
+  official.on(Laya.Event.CLICK, undefined, () => {
+    if (enabled) {
+      onClick();
+    }
+  });
+
+  return {
+    sprite: official,
+    label: label ?? new Laya.Text(),
+    setEnabled(next: boolean): void {
+      enabled = next;
+      official.mouseEnabled = next;
+      official.alpha = next ? 1 : 0.45;
+      repaint();
+    },
+    setText(next: string): void {
+      if (label !== null) {
+        label.text = next;
+      }
+    },
+    setVariant(next: ButtonVariant): void {
+      tone = next;
+      repaint();
+    },
+    setSize(nextWidth: number, nextHeight: number): void {
+      official.size(nextWidth, nextHeight);
+      if (label !== null) {
+        label.width = nextWidth;
+        label.height = nextHeight;
+      }
+      repaint();
+    },
+  };
+}
+
+/** First direct child with the given prefab part name, or `null`. */
+function firstChildNamed(widget: Laya.Sprite, name: string): Laya.Sprite | null {
+  for (let i = 0; i < widget.numChildren; i += 1) {
+    const child = widget.getChildAt(i);
+    if (child === null || child === undefined) {
+      continue;
+    }
+    if ((child as unknown as { name?: unknown }).name === name) {
+      return child;
+    }
+  }
+  return null;
+}
+
+/** First child carrying a `text` property — the prefab's label. */
+function findTextChild(widget: Laya.Sprite): Laya.Text | null {
+  for (let i = 0; i < widget.numChildren; i += 1) {
+    const child = widget.getChildAt(i);
+    if (child === null || child === undefined) {
+      continue;
+    }
+    const labelled = child as unknown as { text?: unknown };
+    if (typeof labelled.text === 'string') {
+      return child as Laya.Text;
+    }
+  }
+  return null;
+}
+
 function createButtonInternal(
   text: string,
   x: number,
@@ -278,6 +392,16 @@ function createButtonInternal(
   // state and re-parent the sprite on every stage resize).
   let width = initialWidth;
   let height = initialHeight;
+
+  // The official `Button.lh` prefab is used for plain text buttons. Buttons
+  // that carry an art icon stay hand-painted: the prefab has no icon slot, and
+  // dropping the icon to use it would be a visual regression, not a win.
+  if (iconName === undefined) {
+    const official = createOfficialWidget('button');
+    if (official !== null) {
+      return createOfficialButton(official, text, x, y, width, height, onClick, variant);
+    }
+  }
 
   const sprite = new Laya.Sprite();
   sprite.pos(x, y);
@@ -636,10 +760,55 @@ export function createProgressBar(
   height: number,
   opts?: ProgressBarOptions,
 ): ProgressBarHandle {
-  const sprite = new Laya.Sprite();
-  sprite.pos(x, y);
   const fill = opts?.fill ?? theme.COLOR_SUCCESS;
   const track = opts?.track ?? theme.COLOR_HP_BACK;
+
+  // The official `ProgressBar.lh` prefab when it has loaded: it brings a real
+  // `bar` part, so the ratio is expressed as the bar's own width rather than by
+  // repainting a rectangle. The label stays ours because callers format it.
+  const official = createOfficialWidget('progressBar');
+  if (official !== null) {
+    let ratio = 0;
+    official.pos(x, y);
+    official.size(width, height);
+    skinProgressBar(official, fill, track);
+    const bar = firstChildNamed(official, 'bar');
+    const label = opts?.showLabel ? findTextChild(official) : null;
+    if (label !== null) {
+      label.fontSize = theme.FONT_SIZE_CAPTION;
+      label.color = theme.COLOR_HUD;
+      label.align = 'center';
+      label.valign = 'middle';
+      label.width = width;
+      label.height = height;
+    }
+    const redrawOfficial = (): void => {
+      if (bar !== null) {
+        // Scaling the already-painted bar is the cheap path; a repaint every
+        // frame would defeat the point of using the prefab.
+        bar.scaleX = Math.max(0.001, ratio);
+        bar.visible = ratio > 0;
+      }
+      if (label !== null) {
+        label.text = `${Math.round(ratio * 100)}%`;
+        label.color = ratio > 0.5 ? theme.COLOR_VOID : theme.COLOR_HUD;
+      }
+    };
+    redrawOfficial();
+    return {
+      sprite: official,
+      get ratio(): number {
+        return ratio;
+      },
+      setRatio(next: number): void {
+        ratio = Math.max(0, Math.min(1, next));
+        redrawOfficial();
+      },
+    };
+  }
+
+  const sprite = new Laya.Sprite();
+  sprite.pos(x, y);
   let current = 0;
 
   const label = new Laya.Text();

@@ -34,6 +34,21 @@ function scopeHeading(scope: string): string {
   return scope.charAt(0).toUpperCase() + scope.slice(1);
 }
 
+/**
+ * Resolves a binding's `label`, which is an i18n key rather than copy.
+ *
+ * `core/input/shortcuts.ts` is engine-agnostic (`core/` must not import the
+ * i18n module), so the table carries `shortcuts.<action>` keys and this layer
+ * turns them into sentences. A key the tables do not carry would fall through
+ * `t()` to the Simplified-Chinese default and surface Chinese on an English
+ * screen — so an unresolved key degrades to the key itself instead, which is
+ * visible in review and covered by `tests/i18n_flow_migration.test.ts`.
+ */
+function shortcutLabel(key: string): string {
+  const translated = t(key);
+  return translated === key ? key : translated;
+}
+
 export class KeysSection extends BaseSettingsSection {
   get title(): string {
     return t('settings.tab.keys');
@@ -53,7 +68,7 @@ export class KeysSection extends BaseSettingsSection {
         currentScope = entry.scope;
         rows.push(createGroupHeading(scopeHeading(entry.scope), width));
       }
-      rows.push(createInfoRow(width, entry.label, entry.chords));
+      rows.push(createInfoRow(width, shortcutLabel(entry.label), entry.chords));
     }
 
     rows.push(createNoteRow(width, t('settings.keys.textInputNote')));

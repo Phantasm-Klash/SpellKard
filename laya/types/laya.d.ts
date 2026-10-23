@@ -68,6 +68,14 @@ declare namespace Laya {
     static readonly UNDISPLAY: string;
     /** Fullscreen state changed (browser `fullscreenchange`). */
     static readonly FULL_SCREEN_CHANGE: string;
+    /**
+     * Mouse-wheel event (`"mousewheel"`), dispatched by `InputManager` when the
+     * canvas receives a DOM `wheel` event — on LayaNative the runtime's own
+     * `conch.setMouseEvtFunction` bridge synthesises it, so the same listener
+     * works on both runtimes. The payload carries `delta` (see
+     * {@link MouseWheelEventLike}); it is **not** a raw `deltaY`.
+     */
+    static readonly MOUSE_WHEEL: string;
   }
 
   /**
@@ -91,6 +99,24 @@ declare namespace Laya {
     /** Present on the engine's own `Event` instances; stops the default action. */
     preventDefault?(): void;
   }
+
+  /**
+   * A mouse-wheel event as the engine hands it to a `MOUSE_WHEEL` handler.
+   *
+   * Verified against `engine/libs/laya.core.js` (`InputManager.handleMouse`,
+   * `type == 4`): the engine sets `event.delta = nativeEvent.deltaY * 0.025`
+   * before bubbling, so `delta` counts *notches* — one physical wheel notch
+   * (a `deltaY` of ±120) arrives as roughly ±3. Scroll by a multiple of it.
+   */
+  interface MouseWheelEventLike {
+    /** Wheel travel in notches (positive = scroll down / away). */
+    readonly delta?: number;
+    /** Stops the wheel event from bubbling to ancestor sprites. */
+    stopPropagation?(): void;
+  }
+
+  /** Any payload the engine may attach to a mouse event it dispatches. */
+  type MouseEventLike = KeyboardEventLike & MouseWheelEventLike;
 
   class Point {
     x: number;
