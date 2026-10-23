@@ -9,10 +9,9 @@
  * 别给出点了必然失败的按钮。
  */
 
-import { Laya } from 'Laya';
 import { ButtonHandle, createButton, createLabel, createPanel } from './ui_kit';
 import * as theme from '../view/theme';
-import { RoomSetupState, SetupRowsContext, roomSetupSummary, setupRows } from '../../core/net/room_setup';
+import { RoomSetupState, SetupRowsContext, roomSetupSummary, setupRows } from '../../../core/net/room_setup';
 
 export interface RoomSetupPanelOptions {
   readonly width: number;
