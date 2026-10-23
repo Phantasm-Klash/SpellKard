@@ -34,6 +34,13 @@ export interface CoopBossPlayerSnapshot {
   locked: boolean;
   /** 本方向被格挡（伤害归零）。 */
   shielded: boolean;
+  // §2.8 增补（全部可选：老服务端不下发时保持 `undefined`）。
+  vxMilli?: number;
+  vyMilli?: number;
+  lives?: number;
+  bombs?: number;
+  invulnerableUntilTick?: number;
+  graze?: number;
 }
 
 export interface CoopBossBullet {
@@ -48,6 +55,10 @@ export interface CoopBossBullet {
   /** 0=fan 1=cannon 2=spiral。 */
   kind: number;
   patternId: string;
+  /** §2.8：链 id / 代数 / 黑色帷幕隐藏标记。 */
+  chainId?: string;
+  generation?: number;
+  hidden?: boolean;
 }
 
 export interface CoopBossSnapshot {
@@ -65,6 +76,58 @@ export interface CoopBossSnapshot {
   players: CoopBossPlayerSnapshot[];
   bullets: CoopBossBullet[];
   stateHash: string;
+  /** §2.8：共享 Boss 的位置/阶段/特殊机制（老服务端不下发 → `undefined`）。 */
+  boss?: CoopBossBossState;
+  chains?: CoopBossChainState[];
+  hand?: CoopBossHandCard[];
+  deckRemaining?: number;
+  drawCooldownTicks?: number;
+  events?: CoopBossEventView[];
+  eventCursor?: number;
+}
+
+/** §2.8 共享 Boss 状态（合作模式）。 */
+export interface CoopBossBossState {
+  xMilli: number;
+  yMilli: number;
+  hp: number;
+  maxHp: number;
+  phase: number;
+  movement?: { type: string; phaseT: number };
+  effects: CoopBossEffect[];
+}
+
+export interface CoopBossEffect {
+  type: string;
+  state: string;
+  tRemaining: number;
+  x0Milli?: number;
+  y0Milli?: number;
+  dxMilli?: number;
+  dyMilli?: number;
+  lengthMilli?: number;
+  edgeYMilli?: number;
+}
+
+export interface CoopBossChainState {
+  chainId: string;
+  patternIndex: number;
+  nodeId: number;
+  generation: number;
+  rngCursor: number;
+}
+
+export interface CoopBossHandCard {
+  cardId: string;
+  slot: number;
+  selected: boolean;
+}
+
+export interface CoopBossEventView {
+  tick: number;
+  type: string;
+  playerId: string;
+  data: Record<string, unknown>;
 }
 
 /** 座位出生点（与服务端 `CoopSeatSpawnMilli` 同值）。 */

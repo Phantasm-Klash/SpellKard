@@ -314,6 +314,15 @@ export interface BattleInput {
   bomb: boolean;
   cardSlot: number;
   modeActionId: string;
+  /**
+   * 请求抽卡（§2.3）。服务端校验冷却/上限后 RNG 发牌，拒绝也回事件。
+   * 三个新字段**全部可选**：老帧不发、解码结果保持默认（`false` / `-1`）。
+   */
+  cardDraw?: boolean;
+  /** 选择手牌槽位（-1 = 取消）。 */
+  cardSelect?: number;
+  /** 使用当前选择的符卡。 */
+  cardUse?: boolean;
 }
 
 export interface BattleModeAction {

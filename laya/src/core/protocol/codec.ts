@@ -606,6 +606,12 @@ const BATTLE_INPUT = define({
     { no: 9, name: 'bomb', kind: 'bool' },
     { no: 10, name: 'cardSlot', kind: 'int32' },
     { no: 11, name: 'modeActionId', kind: 'string' },
+    // §2.3 输入面扩展（全部可选，缺省时不上 wire，字节串与旧版一致）。
+    // 注意：KCP 通道当前走 `core/net/battle_codec.ts` 的手写格式，那里才是
+    // 服务端 `EncodeBattleInputPayload` 的逐字节镜像；这里保持同一字段顺序。
+    { no: 12, name: 'cardDraw', kind: 'bool' },
+    { no: 13, name: 'cardSelect', kind: 'int32' },
+    { no: 14, name: 'cardUse', kind: 'bool' },
   ],
 });
 

@@ -20,6 +20,7 @@ import type { CoopBossSnapshot } from '../sim/coop_boss';
 import {
   BossRaceSimulation,
   BOSS_RACE_HARD_SNAP_ERROR_MILLI,
+  BOSS_RACE_TICK_RATE_HZ,
   bossRaceConfigForRuleset,
   classifyReconcile,
 } from '../sim/boss_race';
@@ -151,7 +152,7 @@ export class BattleClient {
   constructor(config: BattleClientConfig) {
     this.config = config;
     this.logger = config.logger ?? nullLogger;
-    this.tickRateHz = config.tickRateHz ?? 60;
+    this.tickRateHz = config.tickRateHz ?? BOSS_RACE_TICK_RATE_HZ;
   }
 
   get conv(): number {
@@ -280,6 +281,11 @@ export class BattleClient {
   /**
    * Queue the local player's input for a tick. The input is buffered locally and
    * sent as soon as the previous send completes.
+   *
+   * `cardDraw` / `cardSelect` / `cardUse` are the §2.3 in-match card actions.
+   * They are server-only (the local prediction ignores them) and optional, so
+   * every existing caller keeps producing byte-identical frames when it does
+   * not pass them.
    */
   sendInput(
     tick: number,
@@ -289,6 +295,9 @@ export class BattleClient {
     bomb: boolean,
     cardSlot = -1,
     modeActionId = '',
+    cardDraw = false,
+    cardSelect = -1,
+    cardUse = false,
   ): boolean {
     const info = this.sessionInfo;
     if (info === null || this.state !== BattleConnectionState.Running) {
@@ -307,6 +316,9 @@ export class BattleClient {
       bomb,
       cardSlot,
       modeActionId,
+      cardDraw,
+      cardSelect,
+      cardUse,
     };
     // Feed the local prediction *before* touching the transport. The transport
     // may be an offline/degraded channel that cannot actually send; if a send

@@ -39,6 +39,7 @@ import {
   BOSS_ORIGIN_Y_MILLI,
   BOSS_RACE_PATTERN_IDS,
   BOSS_RACE_PATTERN_PERIOD_TICKS,
+  BOSS_RACE_TICK_RATE_HZ,
   BossRaceState,
 } from '../../../core/sim/boss_race';
 import {
@@ -100,10 +101,10 @@ export interface BattleSceneOptions {
    * figure should pass it.
    */
   matchTickLimit?: number;
-  /** Tick rate for the countdown clock. Defaults to the simulation's 60Hz. */
+  /** Tick rate for the countdown clock. Defaults to the simulation's 64Hz. */
   tickRateHz?: number;
   /**
-   * Input-tick latency lead in ticks (60Hz). The battle server's `SubmitInput`
+   * Input-tick latency lead in ticks (64Hz). The battle server's `SubmitInput`
    * only accepts ticks in `(server_current, server_current + 8]`; an input
    * anchored to a snapshot that arrived one RTT ago is already stale, so a
    * high-latency route (cross-border demo: ~150ms RTT ≈ 9 ticks) silently
@@ -287,8 +288,22 @@ export class BattleScene implements ClientScene {
   private readonly activeEffects: ActiveCardEffect[] = [];
   private lastFinisherDamage = 0;
   private authoritative: BossRaceSnapshot | null = null;
+  /**
+   * §2.9 插值：上一份权威快照与它的到达时刻。
+   *
+   * `render_tick = last_snapshot_tick + frac`，`frac` = 「距上一份快照过了多少
+   * 个 tick 间隔」。玩家/Boss（无速度）用 `previous → authoritative` 差分插值，
+   * 弹幕（有速度）用最新快照的 vx/vy 外推。本地镜像模拟**不参与**这条路径。
+   */
+  private previousAuthoritative: BossRaceSnapshot | null = null;
+  private authoritativeAtMs = 0;
+  /** 相邻两份权威快照的到达间隔（ms）；0 = 还没有第二份，插值退化为直显。 */
+  private authoritativeIntervalMs = 0;
   // 合作模式（coop_boss）：快照来自字节 12，渲染走 CoopView，座位决定视野旋转。
   private coopAuthoritative: CoopBossSnapshot | null = null;
+  private previousCoopAuthoritative: CoopBossSnapshot | null = null;
+  private coopAuthoritativeAtMs = 0;
+  private coopAuthoritativeIntervalMs = 0;
   private coopFrame: CoopFrame | null = null;
   private coopView: CoopView | null = null;
   private coopSeatCount = 2;
@@ -424,7 +439,16 @@ export class BattleScene implements ClientScene {
     this.root.addChild(this.pausePlaque.sprite);
 
     this.options.battle.onSnapshot((snapshot) => {
+      const now = Date.now();
+      if (this.authoritative !== null) {
+        this.previousAuthoritative = this.authoritative;
+        const gap = now - this.authoritativeAtMs;
+        if (gap > 0) {
+          this.authoritativeIntervalMs = gap;
+        }
+      }
       this.authoritative = snapshot;
+      this.authoritativeAtMs = now;
       if (snapshot.winnerPlayerId !== '' && !this.matchEnded) {
         this.matchEnded = true;
         this.options.onMatchEnd?.(snapshot.winnerPlayerId);
@@ -433,7 +457,16 @@ export class BattleScene implements ClientScene {
 
     // 合作模式快照：只有 mode_id = coop_boss 的对局会收到。
     this.options.battle.onCoopSnapshot((snapshot) => {
+      const now = Date.now();
+      if (this.coopAuthoritative !== null) {
+        this.previousCoopAuthoritative = this.coopAuthoritative;
+        const gap = now - this.coopAuthoritativeAtMs;
+        if (gap > 0) {
+          this.coopAuthoritativeIntervalMs = gap;
+        }
+      }
       this.coopAuthoritative = snapshot;
+      this.coopAuthoritativeAtMs = now;
     });
 
     // Apply the stage-sized layout once so the first frame already matches the
@@ -907,7 +940,7 @@ export class BattleScene implements ClientScene {
   }
 
   /**
-   * Latency lead for the input tick (ticks @60Hz). {@link BattleSceneOptions.inputLeadTicks}
+   * Latency lead for the input tick (ticks @64Hz). {@link BattleSceneOptions.inputLeadTicks}
    * wins when set; otherwise the demo harness can pass `?inputLead=N` on the
    * page URL (a local relay to a cross-border battle server runs ~150ms RTT
    * ≈ 9 ticks). Absent or invalid → 0, the plain anchor+1 behaviour.
@@ -1053,6 +1086,8 @@ export class BattleScene implements ClientScene {
         layout: this.geometry.playfield,
         localPlayerId: this.options.localPlayerId(),
         bossMaxHp: this.options.bossMaxHp,
+        previous: this.previousCoopAuthoritative,
+        frac: this.renderFrac(this.coopAuthoritativeAtMs, this.coopAuthoritativeIntervalMs),
       });
       this.coopFrame = coopFrame;
       view.render(coopFrame);
@@ -1074,6 +1109,11 @@ export class BattleScene implements ClientScene {
       layout: this.geometry.playfield,
       localPlayerId: this.options.localPlayerId(),
       bossMaxHp: this.options.bossMaxHp,
+      // 只有权威快照才插值：本地预测帧没有「下一份快照」，直显即可。
+      previous: this.authoritative === null ? null : this.previousAuthoritative,
+      frac: this.authoritative === null
+        ? 0
+        : this.renderFrac(this.authoritativeAtMs, this.authoritativeIntervalMs),
     });
     // A `bullet_purge` removes its chosen bullets from the *local prediction*:
     // the simulation is untouched (the server stays authoritative), only the
@@ -1086,6 +1126,53 @@ export class BattleScene implements ClientScene {
     this.view.render(frame, this.hudLines(source), this.hudState(source));
     this.drawCardEffects(frame, source);
     this.drawGiftLayer(frame);
+    this.drawBossEffects(frame);
+  }
+
+  /**
+   * §2.9 插值分数：距上一份权威快照过了多少个「快照间隔」，夹到 `[0, 0.999]`。
+   *
+   * 用到达间隔（而不是 tick 率）当分母，是因为插值的意义就在于「两份权威
+   * 快照之间补帧」：服务端每 tick 都发快照时它自然接近 0（直显），发得稀时
+   * 才真的补出中间帧。没有第二份快照 → 0。
+   */
+  private renderFrac(snapshotAtMs: number, intervalMs: number): number {
+    if (intervalMs <= 0 || snapshotAtMs <= 0) {
+      return 0;
+    }
+    const elapsed = Date.now() - snapshotAtMs;
+    if (elapsed <= 0) {
+      return 0;
+    }
+    return Math.min(0.999, elapsed / intervalMs);
+  }
+
+  /**
+   * 特殊机制（铁拳 / 黑色帷幕）的玩法指示层。
+   *
+   * 数据全部来自快照 `boss.effects[]`（服务端权威），这里只画几何骨架：
+   * 铁拳 windup 的 telegraph 线段、帷幕 sweep 的扫屏边缘线。按 `ART_POLICY`
+   * 「只允许玩法指示自绘」，不引入第二套美术风格。画在礼图层之后，因为两者
+   * 共用 `effectLayer` 而礼图层每帧 `clear()`。
+   */
+  private drawBossEffects(frame: BossRaceFrame): void {
+    if (frame.bossEffects.length === 0) {
+      return;
+    }
+    const g = this.effectLayer.graphics;
+    for (const effect of frame.bossEffects) {
+      if (effect.type === 'iron_fist' && effect.from !== null && effect.to !== null) {
+        const charging = effect.state === 'windup';
+        const color = charging ? theme.COLOR_WARNING : theme.COLOR_DANGER;
+        g.drawLine(effect.from.x, effect.from.y, effect.to.x, effect.to.y, color, charging ? 2 : 4);
+        g.drawCircle(effect.to.x, effect.to.y, 4, color);
+        continue;
+      }
+      if (effect.type === 'black_curtain' && effect.edgeY !== null) {
+        const width = this.geometry.playfield.width;
+        g.drawLine(0, effect.edgeY, width, effect.edgeY, theme.COLOR_DANGER, 3);
+      }
+    }
   }
 
   /**
@@ -1267,7 +1354,7 @@ export class BattleScene implements ClientScene {
           }
           drawInvulnerableAura(graphics, localPlayer.position, tick, progress);
           const remaining = invulnerableRemainingTicks(effect.startTick + effect.durationTicks, tick);
-          notes.push(`INVULNERABLE ${(remaining / 60).toFixed(1)}s`);
+          notes.push(`INVULNERABLE ${(remaining / BOSS_RACE_TICK_RATE_HZ).toFixed(1)}s`);
           break;
         }
         case 'finisher': {
@@ -1345,7 +1432,7 @@ export class BattleScene implements ClientScene {
    * the HUD already degrades gracefully when the value is absent.
    */
   private ultCooldownRatio(tick: number): number {
-    const period = this.options.tickRateHz ?? 60;
+    const period = this.options.tickRateHz ?? BOSS_RACE_TICK_RATE_HZ;
     const cycle = Math.max(1, period * 8);
     const phase = ((tick % cycle) + cycle) % cycle;
     return phase / cycle;

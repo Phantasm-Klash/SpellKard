@@ -72,6 +72,7 @@ import './coop_layout.test';
 import './coop_codec.test';
 import './coop_art.test';
 import './room_setup.test';
+import './danmaku_client_engine.test';
 
 import { runAll } from './harness';
 

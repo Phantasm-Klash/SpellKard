@@ -20,6 +20,7 @@ import {
   type CoopBossPlayerSnapshot,
   type CoopBossSnapshot,
 } from '../sim/coop_boss';
+import { interpolateBetween, interpolatePos, normalizeFrac } from './interpolation';
 
 export const COOP_ALLY_ALPHA = 0.45;
 export const COOP_ALLY_BULLET_ALPHA = 0.4;
@@ -146,11 +147,18 @@ export interface CoopFrameOptions {
   layout: CoopPlayfield;
   localPlayerId: string;
   bossMaxHp?: number;
+  /** §2.9 插值：上一份权威快照（无速度实体做差分插值）。 */
+  previous?: CoopBossSnapshot | null;
+  /** §2.9 插值：`render_tick = last_snapshot_tick + frac`，`frac ∈ [0,1)`。 */
+  frac?: number;
 }
 
 /**
  * 构建可渲染帧：把战场 milli 映射到 playfield 像素，并把整场旋到本地座位
  * 朝上的视角。缩放 = min(playfield.w, playfield.h) / (2 × 90 px)。
+ *
+ * §2.9 插值：玩家（无速度）走差分插值，弹幕（有速度）走 `p_n + v_n * frac`
+ * 外推；`hidden` 子弹（黑色帷幕 hold 期）一律不进帧。
  */
 export function buildCoopFrame(snapshot: CoopBossSnapshot, options: CoopFrameOptions): CoopFrame {
   const playfield = options.layout;
@@ -159,6 +167,8 @@ export function buildCoopFrame(snapshot: CoopBossSnapshot, options: CoopFrameOpt
   const scale = side > 0 ? side / (2 * halfPx) : 0;
   const cx = playfield.width / 2;
   const cy = playfield.height / 2;
+  const frac = normalizeFrac(options.frac ?? 0);
+  const previous = options.previous ?? null;
   const localPlayer = snapshot.players.find((player) => player.playerId === options.localPlayerId) ?? null;
   const localSeat = localPlayer?.seat ?? 0;
   const rotationRad = coopViewRotationRad(localSeat, snapshot.seatCount);
@@ -169,7 +179,15 @@ export function buildCoopFrame(snapshot: CoopBossSnapshot, options: CoopFrameOpt
   };
 
   const players: CoopPlayerItem[] = snapshot.players.map((player) => {
-    const point = toScreen(player.xMilli, player.yMilli);
+    const before = previous?.players.find((entry) => entry.playerId === player.playerId) ?? null;
+    const milli = before === null
+      ? { x: player.xMilli, y: player.yMilli }
+      : interpolateBetween(
+          { x: before.xMilli, y: before.yMilli },
+          { x: player.xMilli, y: player.yMilli },
+          frac,
+        );
+    const point = toScreen(milli.x, milli.y);
     const isLocal = player.playerId === options.localPlayerId;
     return {
       playerId: player.playerId,
@@ -188,21 +206,28 @@ export function buildCoopFrame(snapshot: CoopBossSnapshot, options: CoopFrameOpt
     };
   });
 
-  const bullets: CoopBulletItem[] = snapshot.bullets.map((bullet: CoopBossBullet) => {
-    const point = toScreen(bullet.xMilli, bullet.yMilli);
-    const isPublic = bullet.ownerPlayerId === 'boss';
-    const ownedByLocal = bullet.ownerPlayerId === options.localPlayerId;
-    return {
-      bulletId: bullet.bulletId,
-      x: point.x,
-      y: point.y,
-      radius: Math.max(1, (bullet.radiusMilli / 1000) * scale),
-      kind: bullet.kind,
-      alpha: isPublic || ownedByLocal ? 1 : COOP_ALLY_BULLET_ALPHA,
-      patternId: bullet.patternId,
-      isPublic,
-    };
-  });
+  const bullets: CoopBulletItem[] = snapshot.bullets
+    .filter((bullet: CoopBossBullet) => bullet.hidden !== true)
+    .map((bullet: CoopBossBullet) => {
+      const milli = interpolatePos(
+        { x: bullet.xMilli, y: bullet.yMilli },
+        { x: bullet.vxMilli, y: bullet.vyMilli },
+        frac,
+      );
+      const point = toScreen(milli.x, milli.y);
+      const isPublic = bullet.ownerPlayerId === 'boss';
+      const ownedByLocal = bullet.ownerPlayerId === options.localPlayerId;
+      return {
+        bulletId: bullet.bulletId,
+        x: point.x,
+        y: point.y,
+        radius: Math.max(1, (bullet.radiusMilli / 1000) * scale),
+        kind: bullet.kind,
+        alpha: isPublic || ownedByLocal ? 1 : COOP_ALLY_BULLET_ALPHA,
+        patternId: bullet.patternId,
+        isPublic,
+      };
+    });
 
   const shieldArcs: CoopShieldArcItem[] = [];
   for (let seat = 0; seat < snapshot.seatCount; seat += 1) {

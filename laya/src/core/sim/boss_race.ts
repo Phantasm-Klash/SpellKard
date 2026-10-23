@@ -73,7 +73,15 @@ import {
 import { playerBombDamage, playerShotDamage } from './danmaku/player_loadout_damage';
 
 export const MVP_BOSS_RACE_MODE_ID = 'mvp_boss_race';
-export const BOSS_RACE_TICK_RATE_HZ = 60;
+/**
+ * 权威 tick 率：**64**（千夜贴引擎迁移，2026-10-24 冻结）。
+ *
+ * ★ 这是「每秒多算 4 tick」的**真实加速**，不是把原 60 采样重排：镜像层所有
+ * 「每帧」常量（速度 px/帧、角度增量 °/帧、周期 tick 数 45/90/600……）数值
+ * 原样保留，直接当「每 tick」用。**禁止**任何 ×60/64 缩放 —— 唯一改动就是
+ * 这一处（及随它派生的倒计时/秒换算）。
+ */
+export const BOSS_RACE_TICK_RATE_HZ = 64;
 export const BOSS_RACE_DEFAULT_BOSS_HP = 6000;
 export const BOSS_RACE_DAMAGE_PER_SHOT_TICK = 10;
 export const BOSS_RACE_PATTERN_PERIOD_TICKS = 45;
@@ -106,7 +114,7 @@ export function isTnaRuleset(rulesetVersion: string): boolean {
 
 /**
  * Default tick cap, matching the battle server's `--max-ticks 7200` (two
- * minutes at 60Hz). The client uses this only to render a countdown; the server
+ * minutes at 64Hz). The client uses this only to render a countdown; the server
  * still decides when a match is timed out.
  */
 export const BOSS_RACE_DEFAULT_MAX_TICKS = 7200;
@@ -119,7 +127,7 @@ export const BOSS_RACE_DEFAULT_MAX_TICKS = 7200;
  * hashing "now" can never equal the server's hash for an older tick. Keeping a
  * short history lets the client compare like with like — the hash this
  * simulation produced back when it *was* at the snapshot's tick. 120 ticks is
- * two seconds at 60 Hz, comfortably more than any relay round trip.
+ * under two seconds at 64 Hz, comfortably more than any relay round trip.
  */
 export const BOSS_RACE_HASH_HISTORY_TICKS = 120;
 
@@ -213,6 +221,15 @@ export interface BossRaceBullet {
   motionFunc?: number;
   /** 真实弹幕：当前朝向（度，仅 TNA 规则集有）。 */
   angleDeg?: number;
+  /** §2.8 链式弹幕：所属链 id（服务端未给时缺省）。 */
+  chainId?: string;
+  /** §2.8 链式弹幕：链上代数（0 = 根波次）。 */
+  generation?: number;
+  /**
+   * §2.8 黑色帷幕 `hold` 期：判定照算但**客户端不渲染**。
+   * 渲染层必须跳过 `hidden === true` 的子弹（见 `buildBossRaceFrame`）。
+   */
+  hidden?: boolean;
 }
 
 export interface BossRacePlayerSnapshot {
@@ -222,6 +239,77 @@ export interface BossRacePlayerSnapshot {
   bossCurrentHp: number;
   damageDealt: number;
   connected: boolean;
+  /** §2.8：本 tick 速度（milli/tick），供插值外推。 */
+  vxMilli?: number;
+  vyMilli?: number;
+  /** §2.8：朝向，0.01°（9000 = 90°）。 */
+  facingMillideg?: number;
+  lives?: number;
+  bombs?: number;
+  /** 服务端 tick 计时；`> tick` 表示无敌帧中。 */
+  invulnerableUntilTick?: number;
+  graze?: number;
+}
+
+/** §2.8 Boss 移动状态机（`static|move_to|move_by|sine|angle_speed`）。 */
+export interface BossRaceMovementState {
+  type: string;
+  phaseT: number;
+}
+
+/**
+ * §2.8 特殊机制（铁拳 / 黑色帷幕）的表现数据。
+ *
+ * 全部字段都是服务端下发的**玩法指示**数据；客户端只画指示，不做判定。
+ */
+export interface BossRaceEffect {
+  type: string;
+  state: string;
+  tRemaining: number;
+  /** 铁拳：telegraph 线段起点 / 方向 / 长度（milli）。 */
+  x0Milli?: number;
+  y0Milli?: number;
+  dxMilli?: number;
+  dyMilli?: number;
+  lengthMilli?: number;
+  /** 黑色帷幕：扫屏边缘 y（milli）。 */
+  edgeYMilli?: number;
+}
+
+/** §2.8 本地玩家视角的 Boss 状态。 */
+export interface BossRaceBossState {
+  xMilli: number;
+  yMilli: number;
+  hp: number;
+  maxHp: number;
+  phase: number;
+  movement?: BossRaceMovementState;
+  effects: BossRaceEffect[];
+}
+
+/** §2.8 链状态（客户端可校验重放）。 */
+export interface BossRaceChainState {
+  chainId: string;
+  patternIndex: number;
+  nodeId: number;
+  generation: number;
+  rngCursor: number;
+}
+
+/** §2.8 手牌槽位。 */
+export interface BossRaceHandCard {
+  cardId: string;
+  slot: number;
+  selected: boolean;
+}
+
+/** §2.8 判定/事件回显。 */
+export interface BossRaceEventView {
+  tick: number;
+  type: string;
+  playerId: string;
+  /** 事件其余字段（伤害、擦弹数、捕获 bonus……）原样透传。 */
+  data: Record<string, unknown>;
 }
 
 export interface BossRaceSnapshot {
@@ -232,6 +320,17 @@ export interface BossRaceSnapshot {
   players: BossRacePlayerSnapshot[];
   bullets: BossRaceBullet[];
   stateHash: string;
+  /** §2.8：本地玩家视角的 Boss 状态（老服务端不下发 → `undefined`）。 */
+  boss?: BossRaceBossState;
+  /** §2.8：活跃链状态。 */
+  chains?: BossRaceChainState[];
+  /** §2.8：手牌 / 牌库 / 抽卡冷却。 */
+  hand?: BossRaceHandCard[];
+  deckRemaining?: number;
+  drawCooldownTicks?: number;
+  /** §2.8：本快照携带的事件（与 `event_cursor` 配合）。 */
+  events?: BossRaceEventView[];
+  eventCursor?: number;
 }
 
 /**

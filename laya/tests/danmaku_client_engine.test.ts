@@ -1,0 +1,433 @@
+/**
+ * 弹幕引擎重构（P1 客户端）契约测试。
+ *
+ * 覆盖设计计划 §2.1 / §2.3 / §2.8 / §2.9 里**机器可判**的部分：
+ *  1. tick 基准 = 64，且镜像层周期常量**原样未缩放**（45/90/600 钉帧）；
+ *  2. 插值数学：`p_n + v_n * frac`、差分插值、角度最短弧；
+ *  3. 输入 wire：新字段往返，且缺省时字节串与旧版逐字节一致；
+ *  4. 快照新字段：有/无都不炸，缺省值正确；
+ *  5. 渲染帧：`hidden` 子弹不渲染、插值不改写 tick 边界值。
+ */
+
+import {
+  BOSS_RACE_DEFAULT_MAX_TICKS,
+  BOSS_RACE_PATTERN_PERIOD_TICKS,
+  BOSS_RACE_TICK_RATE_HZ,
+  BossRaceState,
+  type BossRaceBullet,
+  type BossRaceSnapshot,
+} from '../src/core/sim/boss_race';
+import { bossRacePatternLibraryCached } from '../src/core/sim/danmaku/pattern_timeline';
+import {
+  CHAIN_SPLIT_CHILDREN_PER_HOST,
+  CHAIN_SPLIT_MAX_GENERATION,
+} from '../src/core/sim/danmaku/chain_split';
+import {
+  interpolateAngleDeg,
+  interpolateBetween,
+  interpolatePos,
+  normalizeAngleDeg,
+  normalizeFrac,
+} from '../src/core/game/interpolation';
+import { buildBossRaceFrame } from '../src/core/game/boss_race_view_model';
+import { ByteWriter, decodeBattleInput, decodeBossRaceSnapshot, encodeBattleInput, encodeUtf8 } from '../src/core/net/battle_codec';
+import { BattlePayloadType, emptyVersionStamp, type BattleInput } from '../src/core/protocol/types';
+import { expectClose, expectDeepEqual, expectEqual, expect, suite, test } from './harness';
+
+suite('danmaku engine: 64 tick baseline');
+
+test('the client tick rate is 64 Hz', () => {
+  expectEqual(BOSS_RACE_TICK_RATE_HZ, 64, '§2.1: the whole simulation runs at 64 ticks/s');
+});
+
+test('per-frame constants stay unscaled (45/90 periods, 7200 tick cap)', () => {
+  // ★ 64 tick 是「每秒多跑 4 tick」的真实加速：所有「每帧」常量原样当每 tick
+  // 用。若有人把它们乘 60/64，这条断言会立刻失败。
+  expectEqual(BOSS_RACE_PATTERN_PERIOD_TICKS, 45, 'scheduler period must stay 45 ticks');
+  expectEqual(BOSS_RACE_DEFAULT_MAX_TICKS, 7200, 'the server tick cap is untouched');
+  expectEqual(CHAIN_SPLIT_MAX_GENERATION, 2, 'chain generation cap is untouched');
+  expectEqual(CHAIN_SPLIT_CHILDREN_PER_HOST, 8, 'chain fan-out is untouched');
+  for (const pattern of bossRacePatternLibraryCached()) {
+    expect(
+      pattern.period_ticks === 45 || pattern.period_ticks === 90,
+      `pattern ${pattern.id}: period_ticks ${pattern.period_ticks} must stay 45 or 90`,
+    );
+  }
+});
+
+suite('danmaku engine: interpolation');
+
+test('frac is normalised to [0,1)', () => {
+  expectEqual(normalizeFrac(0), 0);
+  expectEqual(normalizeFrac(0.25), 0.25);
+  expectEqual(normalizeFrac(1), 0, 'a whole tick belongs to the next tick');
+  expectEqual(normalizeFrac(2.5), 0.5);
+  expectEqual(normalizeFrac(-3), 0);
+  expectEqual(normalizeFrac(Number.NaN), 0);
+});
+
+test('velocity entities extrapolate as p_n + v_n * frac', () => {
+  const at0 = interpolatePos({ x: 100, y: -50 }, { x: 40, y: 20 }, 0);
+  expectDeepEqual(at0, { x: 100, y: -50 }, 'frac 0 must not move the bullet');
+  const at1 = interpolatePos({ x: 100, y: -50 }, { x: 40, y: 20 }, 1);
+  expectDeepEqual(at1, { x: 140, y: -30 }, 'frac 1 is exactly one tick of integration');
+  const half = interpolatePos({ x: 100, y: -50 }, { x: 40, y: 20 }, 0.5);
+  expectDeepEqual(half, { x: 120, y: -40 }, 'frac 0.5 is half a tick of integration');
+});
+
+test('velocity extrapolation agrees with the per-tick difference', () => {
+  // 服务端下一 tick 的位置就是 `p_n + v_n`；外推的 frac=1 端点必须等于它。
+  const p0 = { x: -1200, y: 800 };
+  const v = { x: 37, y: -11 };
+  const next = { x: p0.x + v.x, y: p0.y + v.y };
+  const extrapolated = interpolatePos(p0, v, 1);
+  expectClose(extrapolated.x, next.x, 1e-9, 'x endpoint');
+  expectClose(extrapolated.y, next.y, 1e-9, 'y endpoint');
+});
+
+test('entities without velocity interpolate between two snapshots', () => {
+  const previous = { x: 0, y: 0 };
+  const current = { x: 1000, y: -400 };
+  expectDeepEqual(interpolateBetween(previous, current, 0), { x: 0, y: 0 });
+  expectDeepEqual(interpolateBetween(previous, current, 1), { x: 1000, y: -400 });
+  expectDeepEqual(interpolateBetween(previous, current, 0.25), { x: 250, y: -100 });
+});
+
+test('angles interpolate along the shortest arc', () => {
+  // 350° → 10° 是 +20°，不是 −340°。
+  expectClose(interpolateAngleDeg(350, 10, 0.5), 0, 1e-9, '350→10 midpoint is 0/360');
+  expectClose(interpolateAngleDeg(350, 10, 0.25), 355, 1e-9, 'a quarter of +20°');
+  expectClose(interpolateAngleDeg(10, 350, 0.5), 0, 1e-9, 'the reverse direction is symmetric');
+  expectClose(interpolateAngleDeg(0, 90, 0.5), 45, 1e-9, 'ordinary quarter turn');
+  expectClose(interpolateAngleDeg(-10, 10, 0.5), 0, 1e-9, 'negative inputs are normalised');
+  expectEqual(normalizeAngleDeg(-90), 270);
+  expectEqual(normalizeAngleDeg(720), 0);
+});
+
+suite('danmaku engine: input wire (§2.3)');
+
+function legacyInput(): BattleInput {
+  return {
+    version: { ...emptyVersionStamp(), protocolVersion: 1 },
+    matchId: 'match-64',
+    playerId: 'p1',
+    tick: 64,
+    seq: 7,
+    directionBits: 0x05,
+    slow: true,
+    shoot: false,
+    bomb: true,
+    cardSlot: -1,
+    modeActionId: '',
+  };
+}
+
+test('an input without card fields is byte-identical to the legacy frame', () => {
+  const expected = new ByteWriter();
+  expected.u8(BattlePayloadType.INPUT);
+  expected.u32(1);
+  expected.string('match-64');
+  expected.string('p1');
+  expected.u64(64);
+  expected.u64(7);
+  expected.u32(0x05);
+  expected.u8(0x05); // slow + bomb
+  expected.i8(-1);
+  expected.string('');
+  const encoded = encodeBattleInput(legacyInput());
+  expectDeepEqual(
+    Array.from(encoded),
+    Array.from(expected.finish()),
+    'defaults must not append the card block',
+  );
+});
+
+test('absent card fields decode as undefined, not as zero', () => {
+  const decoded = decodeBattleInput(encodeBattleInput(legacyInput()));
+  expect(decoded !== null, 'payload should decode');
+  expectEqual(decoded!.cardDraw, undefined, 'absent card_draw stays undefined');
+  expectEqual(decoded!.cardSelect, undefined, 'absent card_select stays undefined');
+  expectEqual(decoded!.cardUse, undefined, 'absent card_use stays undefined');
+});
+
+test('card fields round-trip through the magic block', () => {
+  const bytes = encodeBattleInput(legacyInput());
+  const withCards = encodeBattleInput({ ...legacyInput(), cardDraw: true, cardSelect: 2, cardUse: true });
+  expectEqual(withCards.length, bytes.length + 4, 'magic + 3 bytes');
+  expectEqual(withCards[bytes.length], 0x43, "the block opens with 'C' (0x43)");
+  const decoded = decodeBattleInput(withCards);
+  expect(decoded !== null, 'payload should decode');
+  expectEqual(decoded!.cardDraw, true);
+  expectEqual(decoded!.cardSelect, 2);
+  expectEqual(decoded!.cardUse, true);
+  // 老字段必须一字不差。
+  expectEqual(decoded!.matchId, 'match-64');
+  expectEqual(decoded!.tick, 64);
+  expectEqual(decoded!.directionBits, 0x05);
+  expectEqual(decoded!.slow, true);
+  expectEqual(decoded!.bomb, true);
+});
+
+test('selecting slot 0 alone still writes the block', () => {
+  const bytes = encodeBattleInput({ ...legacyInput(), cardSelect: 0 });
+  const decoded = decodeBattleInput(bytes);
+  expect(decoded !== null, 'payload should decode');
+  expectEqual(decoded!.cardSelect, 0, 'slot 0 is a real selection, not "absent"');
+  expectEqual(decoded!.cardDraw, false);
+  expectEqual(decoded!.cardUse, false);
+});
+
+test('an explicit -1 selection is treated as default', () => {
+  const bytes = encodeBattleInput({ ...legacyInput(), cardSelect: -1 });
+  const legacy = encodeBattleInput(legacyInput());
+  expectEqual(bytes.length, legacy.length, 'no block for the default -1');
+});
+
+suite('danmaku engine: snapshot extensions (§2.8)');
+
+function snapshotPayload(body: unknown): Uint8Array {
+  const json = encodeUtf8(JSON.stringify(body));
+  const out = new Uint8Array(json.length + 1);
+  out[0] = BattlePayloadType.SNAPSHOT;
+  out.set(json, 1);
+  return out;
+}
+
+test('a legacy snapshot decodes with the new fields absent', () => {
+  const decoded = decodeBossRaceSnapshot(
+    snapshotPayload({
+      tick: 64,
+      state: 'running',
+      winner_player_id: '',
+      winner_tick: 0,
+      state_hash: 'abc',
+      players: [{ player_id: 'p1', x_milli: 1000, y_milli: -2000, boss_current_hp: 5000, damage_dealt: 1000 }],
+      bullets: [{ bullet_id: 'b1', owner_player_id: 'p1', x_milli: 0, y_milli: 0, vx_milli: 100, vy_milli: 0, radius_milli: 4000, pattern_id: 'pat' }],
+    }),
+  );
+  expect(decoded !== null, 'legacy snapshot must still decode');
+  expectEqual(decoded!.boss, undefined, 'no boss block → undefined');
+  expectEqual(decoded!.chains, undefined, 'no chains → undefined');
+  expectEqual(decoded!.hand, undefined, 'no hand → undefined');
+  expectEqual(decoded!.deckRemaining, undefined, 'no deck_remaining → undefined');
+  expectEqual(decoded!.drawCooldownTicks, undefined, 'no draw_cooldown_ticks → undefined');
+  expectEqual(decoded!.events, undefined, 'no events → undefined');
+  expectEqual(decoded!.eventCursor, undefined, 'no event_cursor → undefined');
+  expectEqual(decoded!.players[0].vxMilli, undefined, 'no vx → undefined');
+  expectEqual(decoded!.players[0].graze, undefined, 'no graze → undefined');
+  expectEqual(decoded!.bullets[0].hidden, undefined, 'no hidden flag → undefined');
+  expectEqual(decoded!.bullets[0].chainId, undefined, 'no chain id → undefined');
+  // 老字段照旧。
+  expectEqual(decoded!.players[0].xMilli, 1000);
+  expectEqual(decoded!.bullets[0].vxMilli ?? 0, 100);
+});
+
+test('a full snapshot carries boss/players/bullets/chains/hand/events through', () => {
+  const decoded = decodeBossRaceSnapshot(
+    snapshotPayload({
+      tick: 128,
+      state: 'running',
+      state_hash: 'def',
+      boss: {
+        x_milli: 0,
+        y_milli: -60000,
+        hp: 4200,
+        max_hp: 6000,
+        phase: 2,
+        movement: { type: 'sine', phase_t: 33 },
+        effects: [
+          { type: 'iron_fist', state: 'windup', t_remaining: 12, x0_milli: 0, y0_milli: -60000, dx_milli: 1000, dy_milli: 0, length_milli: 90000 },
+          { type: 'black_curtain', state: 'hold', t_remaining: 30, edge_y_milli: -30000 },
+        ],
+      },
+      players: [
+        {
+          player_id: 'p1',
+          x_milli: 1000,
+          y_milli: -2000,
+          boss_current_hp: 4200,
+          damage_dealt: 1800,
+          vx_milli: 3000,
+          vy_milli: -1000,
+          facing_millideg: 9000,
+          lives: 3,
+          bombs: 2,
+          invulnerable_until_tick: 200,
+          graze: 41,
+        },
+      ],
+      bullets: [
+        {
+          bullet_id: 'b1',
+          owner_player_id: 'p1',
+          x_milli: 0,
+          y_milli: 0,
+          vx_milli: 100,
+          vy_milli: 0,
+          radius_milli: 4000,
+          pattern_id: 'pat',
+          chain_id: 'chain-3',
+          generation: 1,
+          hidden: true,
+        },
+      ],
+      chains: [{ chain_id: 'chain-3', pattern_index: 2, node_id: 7, generation: 1, rng_cursor: 19 }],
+      hand: [
+        { card_id: 'card-a', slot: 0, selected: true },
+        { card_id: 'card-b', slot: 1, selected: false },
+      ],
+      deck_remaining: 12,
+      draw_cooldown_ticks: 24,
+      events: [{ tick: 126, type: 'hit', player_id: 'p1', damage: 120 }],
+      event_cursor: 9,
+    }),
+  );
+  expect(decoded !== null, 'full snapshot must decode');
+  const boss = decoded!.boss!;
+  expectEqual(boss.hp, 4200);
+  expectEqual(boss.maxHp, 6000);
+  expectEqual(boss.phase, 2);
+  expectEqual(boss.movement?.type, 'sine');
+  expectEqual(boss.movement?.phaseT, 33);
+  expectEqual(boss.effects.length, 2);
+  expectEqual(boss.effects[0].type, 'iron_fist');
+  expectEqual(boss.effects[0].state, 'windup');
+  expectEqual(boss.effects[0].tRemaining, 12);
+  expectEqual(boss.effects[0].lengthMilli, 90000);
+  expectEqual(boss.effects[1].type, 'black_curtain');
+  expectEqual(boss.effects[1].edgeYMilli, -30000);
+
+  const player = decoded!.players[0];
+  expectEqual(player.vxMilli, 3000);
+  expectEqual(player.vyMilli, -1000);
+  expectEqual(player.facingMillideg, 9000);
+  expectEqual(player.lives, 3);
+  expectEqual(player.bombs, 2);
+  expectEqual(player.invulnerableUntilTick, 200);
+  expectEqual(player.graze, 41);
+
+  const bullet = decoded!.bullets[0];
+  expectEqual(bullet.chainId, 'chain-3');
+  expectEqual(bullet.generation, 1);
+  expectEqual(bullet.hidden, true);
+
+  expectEqual(decoded!.chains?.length, 1);
+  expectEqual(decoded!.chains?.[0].rngCursor, 19);
+  expectEqual(decoded!.hand?.length, 2);
+  expectEqual(decoded!.hand?.[0].selected, true);
+  expectEqual(decoded!.deckRemaining, 12);
+  expectEqual(decoded!.drawCooldownTicks, 24);
+  expectEqual(decoded!.events?.length, 1);
+  expectEqual(decoded!.events?.[0].type, 'hit');
+  expectEqual(decoded!.events?.[0].data.damage, 120);
+  expectEqual(decoded!.eventCursor, 9);
+});
+
+suite('danmaku engine: render frame');
+
+const LAYOUT = { width: 480, height: 720 };
+
+function bullet(overrides: Partial<BossRaceBullet>): BossRaceBullet {
+  return {
+    bulletId: 'b',
+    ownerPlayerId: 'p1',
+    xMilli: 0,
+    yMilli: 0,
+    vxMilli: 0,
+    vyMilli: 0,
+    radiusMilli: 4000,
+    patternId: 'pat',
+    ...overrides,
+  };
+}
+
+function snapshotWith(bullets: BossRaceBullet[], extra: Partial<BossRaceSnapshot> = {}): BossRaceSnapshot {
+  return {
+    tick: 64,
+    state: BossRaceState.Running,
+    winnerPlayerId: '',
+    winnerTick: 0,
+    stateHash: '',
+    players: [
+      { playerId: 'p1', xMilli: 0, yMilli: 0, bossCurrentHp: 6000, damageDealt: 0, connected: true },
+      { playerId: 'p2', xMilli: 0, yMilli: 0, bossCurrentHp: 6000, damageDealt: 0, connected: true },
+    ],
+    bullets,
+    ...extra,
+  };
+}
+
+test('hidden bullets are not rendered (black curtain hold)', () => {
+  const frame = buildBossRaceFrame(
+    snapshotWith([
+      bullet({ bulletId: 'visible' }),
+      bullet({ bulletId: 'hidden', hidden: true }),
+    ]),
+    { layout: LAYOUT, localPlayerId: 'p1', bossMaxHp: 6000 },
+  );
+  expectEqual(frame.bullets.length, 1, 'hidden bullets must not reach the renderer');
+  expectEqual(frame.bullets[0].bulletId, 'visible');
+});
+
+test('frac 0 renders the authoritative tick unchanged', () => {
+  const frame = buildBossRaceFrame(snapshotWith([bullet({ xMilli: 1000, vxMilli: 2000 })]), {
+    layout: LAYOUT,
+    localPlayerId: 'p1',
+    bossMaxHp: 6000,
+  });
+  // scale = 480 / 240000 = 0.002; x=1000 → (1000+120000)*0.002 = 242
+  expectClose(frame.bullets[0].position.x, 242, 1e-9, 'authoritative x');
+});
+
+test('frac extrapolates bullets with their snapshot velocity', () => {
+  const frame = buildBossRaceFrame(snapshotWith([bullet({ xMilli: 1000, vxMilli: 2000 })]), {
+    layout: LAYOUT,
+    localPlayerId: 'p1',
+    bossMaxHp: 6000,
+    frac: 0.5,
+  });
+  // 1000 + 2000*0.5 = 2000 milli → 244 px
+  expectClose(frame.bullets[0].position.x, 244, 1e-9, 'half a tick of extrapolation');
+});
+
+test('frac interpolates players between the previous and current snapshot', () => {
+  const previous = snapshotWith([]);
+  const current = snapshotWith([]);
+  current.players[0] = { ...current.players[0], xMilli: 1000 };
+  const frame = buildBossRaceFrame(current, {
+    layout: LAYOUT,
+    localPlayerId: 'p1',
+    bossMaxHp: 6000,
+    previous,
+    frac: 0.5,
+  });
+  // 0 → 1000 milli at frac 0.5 = 500 milli → 241 px
+  expectClose(frame.players[0].position.x, 241, 1e-9, 'differential interpolation');
+});
+
+test('boss effects are mapped to playfield pixels', () => {
+  const frame = buildBossRaceFrame(
+    snapshotWith([], {
+      boss: {
+        xMilli: 0,
+        yMilli: -60000,
+        hp: 6000,
+        maxHp: 6000,
+        phase: 1,
+        effects: [
+          { type: 'iron_fist', state: 'windup', tRemaining: 10, x0Milli: 0, y0Milli: 0, dxMilli: 1000, dyMilli: 0, lengthMilli: 10000 },
+          { type: 'black_curtain', state: 'sweep', tRemaining: 5, edgeYMilli: 0 },
+        ],
+      },
+    }),
+    { layout: LAYOUT, localPlayerId: 'p1', bossMaxHp: 6000 },
+  );
+  expectEqual(frame.bossEffects.length, 2);
+  const fist = frame.bossEffects[0];
+  expectEqual(fist.type, 'iron_fist');
+  // (0,0) → 240,360；方向 +x，长度 10000 milli = 20 px
+  expectClose(fist.from!.x, 240, 1e-9);
+  expectClose(fist.to!.x, 260, 1e-9);
+  expectClose(fist.to!.y, fist.from!.y, 1e-9, 'a +x fist line stays horizontal');
+  expectClose(frame.bossEffects[1].edgeY!, 180, 1e-9, 'edge_y_milli 0 maps to the arena centre row');
+});
