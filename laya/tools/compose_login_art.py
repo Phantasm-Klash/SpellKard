@@ -110,10 +110,10 @@ NOISE_AMPLITUDE = 2              # +-2; lowered to +-1 if the PNG gets too big
 NOISE_BLOCK = 4                  # grain is generated at 1/4 res, 4x4 blocks
 
 DEFAULTS = {
-    "apk": r"D:/gotouhou-work/Touhou+ThousandNightAnamnesis_1.40_APKPure.apk",
-    "nebula": r"D:/gotouhou-work/SpellKard/laya/layaide/assets/resources/tna/bg_01_01.png",
-    "out": r"D:/gotouhou-work/SpellKard/laya/layaide/assets/resources/login",
-    "preview": r"D:/gotouhou-work/SpellKard/laya/dev/shots-login",
+    "apk": r"D:/gotouhou/apk/Touhou+ThousandNightAnamnesis_1.40_APKPure.apk",
+    "nebula": r"D:/gotouhou/SpellKard/laya/layaide/assets/resources/tna/bg_01_01.png",
+    "out": r"D:/gotouhou/SpellKard/laya/layaide/assets/resources/login",
+    "preview": r"D:/gotouhou/SpellKard/laya/dev/shots-login",
 }
 
 

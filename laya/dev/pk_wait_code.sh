@@ -19,7 +19,7 @@ TIMEOUT="${4:-180}"
 
 REQUEST="$RV/code-requested-$USER_NAME.txt"
 ANSWER="$RV/code-$USER_NAME.txt"
-RSH="D:/gotouhou-work/tools/rsh.sh"
+RSH="D:/gotouhou/tools/rsh.sh"
 FETCH="/root/gotouhou/Gensoulkyo/tools/fetch_email_code.py"
 
 rm -f "$REQUEST" "$ANSWER"

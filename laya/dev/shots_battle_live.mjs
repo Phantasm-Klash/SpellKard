@@ -29,12 +29,12 @@ const { chromium } = require('playwright');
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..');
 const OUT_DIR = resolve(HERE, 'shots-battle-live');
-const LOG_FILE = 'D:/gotouhou-work/tmp/native-run/battle_live.log';
+const LOG_FILE = 'D:/gotouhou/tmp/native-run/battle_live.log';
 
 const HOST = '121.225.78.211';
 const PORT = 7350;
 const PYTHON = 'C:/Users/wjcwqc/.workbuddy-ai/binaries/python/versions/3.13.12/python.exe';
-const BOT_SCRIPT = 'D:/gotouhou-work/tmp/native-run/bot/lobby_bot.py';
+const BOT_SCRIPT = 'D:/gotouhou/tools/lobby_bot.py';
 
 const LIVE_PNG = resolve(OUT_DIR, 'battle_live.png');
 const SYNTH_PNG = resolve(OUT_DIR, 'battle_synthetic.png');

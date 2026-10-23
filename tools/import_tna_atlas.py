@@ -28,9 +28,10 @@ LayaAir atlas 结构（v3）：
 import argparse, json, os, re, shutil, sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_WORK = os.path.dirname(os.path.dirname(_HERE))  # gotouhou-work/
-DEFAULT_ASSETS = os.path.join(_WORK, "rev", "assets")
-DEFAULT_CONTRACT = os.path.join(_WORK, "PhK-Protocol", "data", "tna_contract.json")
+_ROOT = os.path.dirname(os.path.dirname(_HERE))  # D:/gotouhou（2026-10-23 合并后的唯一工作区根）
+# 目录合并：rev/ → docs/apk-reverse-notes/（assets/ 随迁）；PhK-Protocol 在工作区根。
+DEFAULT_ASSETS = os.path.join(_ROOT, "docs", "apk-reverse-notes", "assets")
+DEFAULT_CONTRACT = os.path.join(_ROOT, "PhK-Protocol", "data", "tna_contract.json")
 DEFAULT_OUT = os.path.join(_HERE, "..", "laya", "layaide", "assets", "resources", "tna")
 DEFAULT_OUT = os.path.abspath(DEFAULT_OUT)
 

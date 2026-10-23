@@ -30,7 +30,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..');
 const HOST = process.env.PK_LOBBY_HOST ?? '121.225.78.211';
 const PORT = Number(process.env.PK_LOBBY_PORT ?? 7350);
-const OUT_ROOT = process.env.PK_DEMO_OUT ?? 'D:/gotouhou-work/tmp/demo_out';
+const OUT_ROOT = process.env.PK_DEMO_OUT ?? 'D:/gotouhou/tmp/demo_out';
 
 const ENVELOPE_OPS = new Set(['/v1/shop/purchase', '/v1/gacha/pull', '/v1/gacha/faith-exchange']);
 

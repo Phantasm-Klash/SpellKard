@@ -92,9 +92,9 @@ NOISE_AMPLITUDE = 2
 NOISE_BLOCK = 4
 
 DEFAULTS = {
-    "nebula": r"D:/gotouhou-work/SpellKard/laya/layaide/assets/resources/tna/bg_01_01.png",
-    "out": r"D:/gotouhou-work/SpellKard/laya/layaide/assets/resources/lobby",
-    "preview": r"D:/gotouhou-work/SpellKard/laya/dev/shots-lobby",
+    "nebula": r"D:/gotouhou/SpellKard/laya/layaide/assets/resources/tna/bg_01_01.png",
+    "out": r"D:/gotouhou/SpellKard/laya/layaide/assets/resources/lobby",
+    "preview": r"D:/gotouhou/SpellKard/laya/dev/shots-lobby",
 }
 
 

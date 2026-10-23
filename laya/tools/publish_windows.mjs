@@ -58,7 +58,7 @@ const SAMPLE_FILES = ['my_extension.dll', 'my_extension.layaext.json'];
 const EXTENSION_DLLS = ['spk_udp.dll', 'spk_win.dll'];
 
 /** Root of the launcher the user actually double-clicks. */
-const DEFAULT_LAUNCHER = 'D:/gotouhou-win/build/windows';
+const DEFAULT_LAUNCHER = 'D:/gotouhou/win/build/windows';
 
 function argValue(flag, fallback) {
   const index = process.argv.indexOf(flag);
@@ -123,7 +123,6 @@ async function nextVersionedOutDir(baseDir) {
 /** Where a compiled extension DLL is staged (the IDE build only ships its json). */
 function findExtensionDll(fileName) {
   const candidates = [
-    'D:/gotouhou-win/SpellKard/laya/layaide/build-templates/windows/release',
     path.join(layaideDir, 'build-templates', 'windows', 'release'),
   ];
   for (const dir of candidates) {
@@ -142,7 +141,7 @@ async function main() {
     process.exit(1);
   }
   const outArg = argValue('--out', null);
-  const out = outArg ?? (await nextVersionedOutDir('D:/gotouhou-win/build/windows'));
+  const out = outArg ?? (await nextVersionedOutDir('D:/gotouhou/win/build/windows'));
 
   console.log(`[publish-windows] cli    ${cli}`);
   console.log(`[publish-windows] out    ${out}`);
