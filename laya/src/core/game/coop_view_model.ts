@@ -181,13 +181,12 @@ export function buildCoopFrame(snapshot: CoopBossSnapshot, options: CoopFrameOpt
   const players: CoopPlayerItem[] = snapshot.players.map((player) => {
     const before = previous?.players.find((entry) => entry.playerId === player.playerId) ?? null;
     const current = { x: player.xMilli, y: player.yMilli };
-    // §2.9：`frac = 0` 必须等于权威位置，所以是前向外推（速度优先，缺速度用上一
-    // tick 位移），不是「上一份 → 本份」的滞后插值。
-    const milli = player.vxMilli !== undefined && player.vyMilli !== undefined
-      ? interpolatePos(current, { x: player.vxMilli, y: player.vyMilli }, frac)
-      : before === null
-        ? current
-        : extrapolatePos(current, { x: before.xMilli, y: before.yMilli }, frac);
+    // §2.9：`frac = 0` 必须等于权威位置，所以是前向外推。★只用上一 tick 位移，
+    // 不用快照 vx/vy：服务端在场地边界钳位位置但快照速度记意图速度，按意图
+    // 外推会把玩家画出边界（单关对齐实测，race 路径同因已修）。
+    const milli = before === null
+      ? current
+      : extrapolatePos(current, { x: before.xMilli, y: before.yMilli }, frac);
     const point = toScreen(milli.x, milli.y);
     const isLocal = player.playerId === options.localPlayerId;
     return {

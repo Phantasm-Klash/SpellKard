@@ -195,15 +195,16 @@ export function buildBossRaceFrame(
 
   for (const player of snapshot.players) {
     const isLocal = player.playerId === options.localPlayerId;
-    // §2.9 无速度实体的前向外推：优先用快照速度（§2.8 `vx_milli/vy_milli`），
-    // 没有速度就退回「上一 tick 位移」，两者都保证 `frac = 0` 等于权威位置。
+    // §2.9 无速度实体的前向外推：只用「上一 tick 位移」`(p_n - p_{n-1})`。
+    // ★不能用快照的 vx/vy 外推玩家：服务端在场地边界**钳位**位置，但快照速度
+    // 记的是意图速度（输入方向），两者在边界处分歧——按意图速度外推会让玩家
+    // 画出边界（单关对齐实测抓到：tick 32 起玩家贴底边仍被外推 3px）。
+    // 位移外推天然钳位安全；弹幕是服务端积分+剔除（不钳位），才用 p+v*frac。
     const before = prevPlayer(player.playerId);
     const current = { x: player.xMilli, y: player.yMilli };
-    const position = player.vxMilli !== undefined && player.vyMilli !== undefined
-      ? interpolatePos(current, { x: player.vxMilli, y: player.vyMilli }, frac)
-      : before === null
-        ? current
-        : extrapolatePos(current, { x: before.xMilli, y: before.yMilli }, frac);
+    const position = before === null
+      ? current
+      : extrapolatePos(current, { x: before.xMilli, y: before.yMilli }, frac);
     players.push({
       playerId: player.playerId,
       position: transform.toPixels(position.x, position.y),

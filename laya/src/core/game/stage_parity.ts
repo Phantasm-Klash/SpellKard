@@ -7,7 +7,11 @@
  *  1. **tick 边界**（`frac = 0`）：渲染实体数 == 可见弹幕数（`hidden` 不渲染），
  *     每个实体位置 == trace 位置（milli → 像素后误差 ≤1px）。
  *  2. **tick 内**（`frac ∈ {0.25, 0.5, 0.75}`）：弹幕插值位置 == `p + v * frac`
- *     （相对误差 ≤1e-6）；玩家 / Boss 落在相邻两 tick 位置线段上（距离 ≤1px）。
+ *     （相对误差 ≤1e-6），且与「当前 → 下一 tick」弦的偏差 ≤ |Δv|·frac + 容差
+ *     （线性弹紧约束、曲率弹按速度差放宽、位置跳变会抓）；玩家 / Boss 等于前向
+ *     外推公式 `p_n + (p_n - p_{n-1}) * frac`，且不超前一 tick 以上的运动（离权威
+ *     下一 tick 位置 ≤ 两个一 tick 位移之和）——即「插帧永不超出服务端核算允许
+ *     的范围」，转向 tick 也在此界内。
  *
  * 这一层刻意**不依赖 Laya**：`buildBossRaceFrame` 是引擎无关的纯函数，所以同一
  * 套断言既能在 Node 里跑 trace，也能被单元测试直接调用。
@@ -275,8 +279,9 @@ export interface ParityFailure {
     | 'count'
     | 'boundary-position'
     | 'bullet-interpolation'
-    | 'bullet-segment'
-    | 'entity-interpolation'
+    | 'bullet-trajectory'
+    | 'entity-extrapolation'
+    | 'entity-bounded-ahead'
     | 'missing-bullet';
   detail: string;
   expected?: number;
@@ -315,27 +320,6 @@ const DEFAULT_FRACS: readonly number[] = [0.25, 0.5, 0.75];
 
 function distance(ax: number, ay: number, bx: number, by: number): number {
   return Math.hypot(ax - bx, ay - by);
-}
-
-/**
- * 点到线段 `a → b` 的距离（像素）。
- *
- * tick 内的弹幕插值点必须落在这条线段附近：它既是「相邻两个权威 tick 之间的
- * 真实轨迹近似」，也是速度写错（方向/量级）时唯一会露馅的断言。
- */
-function distanceToSegment(
-  point: { x: number; y: number },
-  a: { x: number; y: number },
-  b: { x: number; y: number },
-): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const lengthSquared = dx * dx + dy * dy;
-  if (lengthSquared <= 1e-12) {
-    return distance(point.x, point.y, a.x, a.y);
-  }
-  const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared));
-  return distance(point.x, point.y, a.x + dx * t, a.y + dy * t);
 }
 
 /**
@@ -460,13 +444,16 @@ export function checkStageParity(
           });
         }
       }
-      // 玩家 / Boss：落在「当前 tick → 下一 tick」的线段上（≤1px）。
+      // 弹幕轨迹检查：插值点与「当前 → 下一 tick」弦的偏差 ≤ |Δv| * frac + 容差。
+      // 推导：弦 = p + disp·t，切线外推 = p + v_n·t，两者之差 = |v_n - disp|·t
+      // ≤ |v_n - v_{n+1}|·t（光滑运动的位移≈两 tick 速度均值）。线性弹 Δv=0 →
+      // 1px 紧约束；正弦调速/追踪转向按 Δv 放宽（曲率是服务端运动学固有属性，
+      // 不是客户端漂移）；位置跳变（传送）会被抓。
+      // 注意：自洽的快照速度谎言（v 与轨迹整体不一致）在 tick 内没有第二真值
+      // 源，客户端原理上不可见——那条归服务端单测（damage/位置钉帧）管。
       if (next === null) {
         continue;
       }
-      // 弹幕：插值点必须落在「当前 → 下一 tick」的真实轨迹线段上。这条与
-      // `p + v * frac` 是两条独立断言——速度写错（方向或量级）时前者仍然自洽，
-      // 只有这条会红。
       for (const rendered of frame.bullets) {
         const following = next.bullets.find((entry) => entry.bulletId === rendered.bulletId);
         const source = byId.get(rendered.bulletId);
@@ -475,52 +462,120 @@ export function checkStageParity(
         }
         const from = transform.toPixels(source.xMilli, source.yMilli);
         const to = transform.toPixels(following.xMilli, following.yMilli);
-        const offSegment = distanceToSegment(rendered.position, from, to);
-        if (offSegment > tolerancePx) {
+        const deltaVPx = Math.hypot(following.vxMilli - source.vxMilli, following.vyMilli - source.vyMilli) / 1000;
+        const speedPx = Math.hypot(source.vxMilli, source.vyMilli) / 1000;
+        // |Δv| 覆盖 tick 间速度变化；0.25·|v| 是 tick 内连续曲率的余量——服务端
+        // 以 tick 粒度积分，一 tick 的位移与两个端速度都可能有分数级差异
+        // （正弦调速实测 4.8px @ frac=0.75，Δv 项只给到 4.68px）。
+        const allowance = (deltaVPx + 0.25 * speedPx) * frac + tolerancePx;
+        const offChord = distanceToSegment(rendered.position, from, to);
+        if (offChord > allowance) {
           failures.push({
             tick: current.tick,
-            check: 'bullet-segment',
-            detail: `bullet ${rendered.bulletId} frac=${frac} ${offSegment.toFixed(4)}px off the tick segment`,
+            check: 'bullet-trajectory',
+            detail: `bullet ${rendered.bulletId} frac=${frac} ${offChord.toFixed(4)}px off the chord (allowance ${allowance.toFixed(4)}px)`,
             expected: to.x,
             actual: rendered.position.x,
           });
         }
       }
+      // 玩家 / Boss（无速度实体）：冻结公式是**前向外推**
+      // `p_n + (p_n - p_{n-1}) * frac`（§2.9，2026-10-24 修正）——渲染基准必须
+      // 是当前权威 tick（frac=0 逐像素等于快照），滞后插值会慢权威一拍。
+      // 两条独立断言：
+      //   1) entity-extrapolation：渲染点等于外推公式（公式实现正确性）；
+      //   2) entity-bounded-ahead：渲染点离「权威下一 tick 位置」不超过
+      //      「两个一 tick 位移」之和——渲染永不超前一 tick 以上的运动，
+      //      这是「插帧与服务端核算匹配」的上界（转向 tick 也在此内）。
       for (const player of current.players) {
-        const following = next.players.find((entry) => entry.playerId === player.playerId);
         const rendered = frame.players.find((entry) => entry.playerId === player.playerId);
-        if (following === undefined || rendered === undefined) {
+        if (rendered === undefined) {
           continue;
         }
-        const expected = transform.toPixels(
-          player.xMilli + (following.xMilli - player.xMilli) * frac,
-          player.yMilli + (following.yMilli - player.yMilli) * frac,
-        );
-        const error = distance(rendered.position.x, rendered.position.y, expected.x, expected.y);
-        interpMax = Math.max(interpMax, error);
-        if (error > tolerancePx) {
+        const nowPoint = transform.toPixels(player.xMilli, player.yMilli);
+        const prior = previous === null
+          ? undefined
+          : previous.players.find((entry) => entry.playerId === player.playerId);
+        if (prior !== undefined) {
+          const priorPoint = transform.toPixels(prior.xMilli, prior.yMilli);
+          const expected = {
+            x: nowPoint.x + (nowPoint.x - priorPoint.x) * frac,
+            y: nowPoint.y + (nowPoint.y - priorPoint.y) * frac,
+          };
+          const error = distance(rendered.position.x, rendered.position.y, expected.x, expected.y);
+          interpMax = Math.max(interpMax, error);
+          if (error > tolerancePx) {
+            failures.push({
+              tick: current.tick,
+              check: 'entity-extrapolation',
+              detail: `player ${player.playerId} frac=${frac} off by ${error.toFixed(4)}px`,
+              expected: expected.x,
+              actual: rendered.position.x,
+            });
+          }
+        }
+        if (next === null) {
+          continue;
+        }
+        const following = next.players.find((entry) => entry.playerId === player.playerId);
+        if (following === undefined) {
+          continue;
+        }
+        const nextPoint = transform.toPixels(following.xMilli, following.yMilli);
+        const oneTickPx = distance(nowPoint.x, nowPoint.y, nextPoint.x, nextPoint.y);
+        const driftPx = prior === undefined
+          ? oneTickPx
+          : distance(
+              transform.toPixels(prior.xMilli, prior.yMilli).x,
+              transform.toPixels(prior.xMilli, prior.yMilli).y,
+              nowPoint.x,
+              nowPoint.y,
+            );
+        const ahead = distance(rendered.position.x, rendered.position.y, nextPoint.x, nextPoint.y);
+        if (ahead > oneTickPx + driftPx + tolerancePx) {
           failures.push({
             tick: current.tick,
-            check: 'entity-interpolation',
-            detail: `player ${player.playerId} frac=${frac} off by ${error.toFixed(4)}px`,
-            expected: expected.x,
+            check: 'entity-bounded-ahead',
+            detail: `player ${player.playerId} frac=${frac} runs ${ahead.toFixed(4)}px ahead (bound ${(oneTickPx + driftPx).toFixed(4)}px)`,
+            expected: nextPoint.x,
             actual: rendered.position.x,
           });
         }
       }
-      if (current.boss !== undefined && next.boss !== undefined && frame.boss !== null) {
-        const expected = transform.toPixels(
-          current.boss.xMilli + (next.boss.xMilli - current.boss.xMilli) * frac,
-          current.boss.yMilli + (next.boss.yMilli - current.boss.yMilli) * frac,
-        );
-        const error = distance(frame.boss.position.x, frame.boss.position.y, expected.x, expected.y);
-        interpMax = Math.max(interpMax, error);
-        if (error > tolerancePx) {
+      if (current.boss !== undefined && next !== null && next.boss !== undefined && frame.boss !== null) {
+        const nowBoss = transform.toPixels(current.boss.xMilli, current.boss.yMilli);
+        const nextBoss = transform.toPixels(next.boss.xMilli, next.boss.yMilli);
+        const priorBoss = previous === null || previous.boss === undefined
+          ? undefined
+          : transform.toPixels(previous.boss.xMilli, previous.boss.yMilli);
+        if (priorBoss !== undefined) {
+          const expected = {
+            x: nowBoss.x + (nowBoss.x - priorBoss.x) * frac,
+            y: nowBoss.y + (nowBoss.y - priorBoss.y) * frac,
+          };
+          const error = distance(frame.boss.position.x, frame.boss.position.y, expected.x, expected.y);
+          interpMax = Math.max(interpMax, error);
+          if (error > tolerancePx) {
+            failures.push({
+              tick: current.tick,
+              check: 'entity-extrapolation',
+              detail: `boss frac=${frac} off by ${error.toFixed(4)}px`,
+              expected: expected.x,
+              actual: frame.boss.position.x,
+            });
+          }
+        }
+        const oneTickPx = distance(nowBoss.x, nowBoss.y, nextBoss.x, nextBoss.y);
+        const driftPx = priorBoss === undefined
+          ? oneTickPx
+          : distance(priorBoss.x, priorBoss.y, nowBoss.x, nowBoss.y);
+        const ahead = distance(frame.boss.position.x, frame.boss.position.y, nextBoss.x, nextBoss.y);
+        if (ahead > oneTickPx + driftPx + tolerancePx) {
           failures.push({
             tick: current.tick,
-            check: 'entity-interpolation',
-            detail: `boss frac=${frac} off by ${error.toFixed(4)}px`,
-            expected: expected.x,
+            check: 'entity-bounded-ahead',
+            detail: `boss frac=${frac} runs ${ahead.toFixed(4)}px ahead (bound ${(oneTickPx + driftPx).toFixed(4)}px)`,
+            expected: nextBoss.x,
             actual: frame.boss.position.x,
           });
         }
@@ -620,7 +675,8 @@ export function synthesizeStageTrace(tickCount = 300, layout: PlayfieldLayout = 
       tick,
       state: 'running',
       boss: {
-        xMilli: 0,
+        // 正弦移动：覆盖 Boss 前向外推在速度换向 tick 的行为（extremes at 120/240）。
+        xMilli: Math.round(30000 * Math.sin((tick / 20) * (Math.PI / 180) * 6)),
         yMilli: -60000,
         hp: Math.max(0, 6000 - tick * 10),
         maxHp: 6000,
@@ -630,11 +686,13 @@ export function synthesizeStageTrace(tickCount = 300, layout: PlayfieldLayout = 
       players: [
         {
           playerId: 'p1',
-          xMilli: playerStart + playerSpeedMilli * tick,
-          yMilli: 0,
-          vxMilli: playerSpeedMilli,
-          vyMilli: 0,
-          facingMillideg: 9000,
+          // tick 120 处 90° 转向（+x → +y）：覆盖前向外推在速度突变 tick 的
+          // 行为——滞后线段插值在这里会红，前向外推 + 有界检查不会。
+          xMilli: playerStart + playerSpeedMilli * Math.min(tick, 120),
+          yMilli: playerSpeedMilli * Math.max(0, tick - 120),
+          vxMilli: tick < 120 ? playerSpeedMilli : 0,
+          vyMilli: tick < 120 ? 0 : playerSpeedMilli,
+          facingMillideg: tick < 120 ? 9000 : 0,
           lives: 3,
           graze: tick,
           invulnerableUntilTick: 0,
@@ -692,6 +750,25 @@ export function serializeStageTrace(trace: readonly StageTraceTick[]): string {
       }),
     )
     .join('\n')}\n`;
+}
+
+/**
+ * 点到线段 `a → b` 的距离（像素）。弹幕轨迹检查的参考量：相邻两个权威 tick
+ * 之间的弦。切线与弦的偏差上界 = |Δv| * frac（见调用处推导）。
+ */
+function distanceToSegment(
+  point: { x: number; y: number },
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= 1e-12) {
+    return distance(point.x, point.y, a.x, a.y);
+  }
+  const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared));
+  return distance(point.x, point.y, a.x + dx * t, a.y + dy * t);
 }
 
 // ---------------------------------------------------------------------------

@@ -57,25 +57,35 @@ test('hidden bullets are excluded from the rendered entity count', () => {
   expectEqual(after.renderedBullets, after.visibleBullets);
 });
 
-test('a bullet whose velocity disagrees with its trajectory is flagged', () => {
+test('a bullet that teleports fails the trajectory check', () => {
   const trace = synthesizeStageTrace(60);
-  // 位置仍然自洽（边界断言照样通过），但速度翻倍：`p + v*frac` 会把插值点推到
-  // 「当前 → 下一 tick」线段之外，只有 bullet-segment 这条断言能抓到。
-  const source = trace[30].bullets[0];
-  trace[30].bullets[0] = { ...source, vxMilli: source.vxMilli * 2, vyMilli: source.vyMilli * 2 };
+  // 第 30 tick 垂直跳变 20px（ring-0 速度沿 +x，跳变沿 +y，不共线）：边界断言
+  // 仍然通过（它就是权威值），但第 29 tick 的插值点（沿速度的切线）会大幅偏离
+  // [p29, p30] 弦，只有 bullet-trajectory 能抓到这种位置跳变。
+  trace[30].bullets[0] = { ...trace[30].bullets[0], yMilli: trace[30].bullets[0].yMilli + 20000 };
   const report = checkStageParity(trace);
-  const flagged = report.ticks[30].failures.some((failure) => failure.check === 'bullet-segment');
-  expect(flagged, 'the interpolation runs off the authoritative segment');
+  const offending = report.ticks[29].failures.some((failure) => failure.check === 'bullet-trajectory');
+  expect(offending, 'tick 29 extrapolates along a tangent that the teleport invalidates');
 });
 
-test('a player that teleports fails the segment assertion', () => {
+test('a clamped player is not extrapolated past the boundary', () => {
+  // 单关对齐实测抓到的回归（服务端在场地边界钳位位置，但快照速度记的是意图
+  // 速度）：玩家贴底边、意图速度仍向下、位移为 0 —— 渲染必须钉在权威位置上，
+  // 不得按意图速度画出边界。位移外推（而非快照速度）天然满足这条。
   const trace = synthesizeStageTrace(60);
-  // 第 40 tick 突然横移 20px：边界断言仍然通过（它就是权威值），但第 39 tick 的
-  // 「当前 → 下一 tick」线段断言会把 39 的插值判为偏出容差。
-  trace[40].players[0] = { ...trace[40].players[0], xMilli: trace[40].players[0].xMilli + 20000 };
+  for (let tick = 30; tick < 60; tick += 1) {
+    trace[tick].players[0] = {
+      ...trace[tick].players[0],
+      xMilli: 0,
+      yMilli: 90000,
+      vxMilli: 0,
+      vyMilli: 3000,
+    };
+  }
   const report = checkStageParity(trace);
-  const offending = report.ticks[39].failures.some((failure) => failure.check === 'entity-interpolation');
-  expect(offending, 'tick 39 extrapolates along the wrong segment and must be flagged');
+  expectEqual(report.failedTicks, 0, `no tick may fail, got ${report.totalFailures} failures`);
+  expect(report.maxBoundaryErrorPx <= 1e-6, `boundary error ${report.maxBoundaryErrorPx}`);
+  expect(report.maxInterpErrorPx <= 1e-6, `interp error ${report.maxInterpErrorPx}`);
 });
 
 suite('stage parity: trace io');
