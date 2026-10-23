@@ -29,7 +29,7 @@ import { titlePlaque } from '../../../../core/game/ui_assets';
 import * as theme from '../../view/theme';
 import { VectorPainter } from '../../view/sprites';
 import { TnaUiImage } from '../../view/tna_ui';
-import { createOfficialWidget } from '../../ui/official_widgets';
+import { createOfficialWidget, officialWidgetKinds, officialWidgetLoadCount } from '../../ui/official_widgets';
 import { skinScrollBarV } from '../../ui/official_skin';
 import { createButtonEx, type ButtonHandle } from '../ui_kit';
 import { platformTagline } from '../../platform';
@@ -90,6 +90,16 @@ export interface SettingsPanelDebugState {
    * shot always says which runtime produced it.
    */
   platform: string;
+  /**
+   * How many of the engine's widget prefabs (`internal/UI/*.lh`) are loaded.
+   *
+   * `0` (or anything below {@link officialWidgetKinds}) means the controls fell
+   * back to their hand-painted form — usually a missing `internal/UI` in the
+   * build being run, not a skinning problem.
+   */
+  officialWidgets: number;
+  /** How many widget kinds the loader knows about, i.e. the maximum above. */
+  officialWidgetKinds: number;
   /** Every string painted: header, tabs, subtitle, active section, footer. */
   labels: string[];
 }
@@ -385,6 +395,12 @@ export class SettingsPanel {
       scrollable: maxScroll > 0,
       scrollTop: this.scrollTop,
       platform: platformTagline(),
+      // How many of the engine's widget prefabs actually loaded. `0` means
+      // every control fell back to its hand-painted form, which is the one
+      // failure mode that looks like "the skin didn't apply" but is really a
+      // missing `internal/UI` — worth surfacing rather than guessing.
+      officialWidgets: officialWidgetLoadCount(),
+      officialWidgetKinds: officialWidgetKinds().length,
       labels: [
         this.heading.text,
         ...this.sections.map((item) => item.title),
