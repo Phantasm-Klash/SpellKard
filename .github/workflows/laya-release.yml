@@ -54,14 +54,16 @@ jobs:
           cp -r engine ../release-dist/spellkard-laya-${GITHUB_REF_NAME}/engine
           cp index.html ../release-dist/spellkard-laya-${GITHUB_REF_NAME}/
           ( cd ../release-dist && tar -czf spellkard-laya-${GITHUB_REF_NAME}.tar.gz spellkard-laya-${GITHUB_REF_NAME} )
-          ( cd ../release-dist && sha256sum ./* > SHA256SUMS.txt )
+          ( cd ../release-dist && sha256sum ./*.tar.gz > SHA256SUMS.txt )
           ls -l ../release-dist
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: spellkard-laya-${{ github.ref_name }}
-          path: release-dist/*
+          path: |
+            release-dist/*.tar.gz
+            release-dist/SHA256SUMS.txt
           if-no-files-found: error
 
       - name: Publish GitHub Release
@@ -73,13 +75,13 @@ jobs:
           # Tags like v0.1.0-rc1 are prereleases, not full releases.
           case "${GITHUB_REF_NAME}" in
             *-rc*|*-beta*|*-alpha*)
-              gh release create "${GITHUB_REF_NAME}" ../release-dist/* \
+              gh release create "${GITHUB_REF_NAME}" ../release-dist/*.tar.gz ../release-dist/SHA256SUMS.txt \
                 --repo "${GITHUB_REPOSITORY}" \
                 --title "${GITHUB_REF_NAME}" \
                 --prerelease \
                 --generate-notes ;;
             *)
-              gh release create "${GITHUB_REF_NAME}" ../release-dist/* \
+              gh release create "${GITHUB_REF_NAME}" ../release-dist/*.tar.gz ../release-dist/SHA256SUMS.txt \
                 --repo "${GITHUB_REPOSITORY}" \
                 --title "${GITHUB_REF_NAME}" \
                 --generate-notes ;;
