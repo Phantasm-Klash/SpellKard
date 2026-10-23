@@ -1,8 +1,10 @@
 name: Laya Client CI
 
-# Typecheck + test the LayaAir 3 TypeScript client (laya/**).
-# The existing protocol-audit workflow only covers godot/** and tools/**, so
-# laya changes previously triggered no CI at all.
+# Typecheck, test, ide-check and build the LayaAir 3 TypeScript client
+# (laya/**). The existing protocol-audit workflow only covers godot/** and
+# tools/**, so laya changes previously triggered no CI at all. The browser
+# build mirrors the local gate: tsconfig.browser.json turns on noUnusedLocals,
+# which the typecheck/test configs do not cover.
 
 on:
   push:
@@ -25,7 +27,7 @@ defaults:
 
 jobs:
   laya-typecheck-test:
-    name: npm ci + typecheck + test
+    name: npm ci + typecheck + test + ide:check + build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -46,3 +48,9 @@ jobs:
 
       - name: Test
         run: npm run test
+
+      - name: IDE project check
+        run: npm run ide:check
+
+      - name: Build (browser)
+        run: npm run build

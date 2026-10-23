@@ -1,0 +1,86 @@
+name: Laya Client Release
+
+# Builds the browser bundle of the LayaAir client on a `v*` tag and publishes
+# it as a workflow artifact + GitHub Release asset. The bundle keeps the
+# dist/ + engine/ + index.html layout so it can be served by any static file
+# server (or laya/dev/serve.mjs). Tags containing -rc*/-beta*/-alpha* are
+# published as prereleases.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    working-directory: laya
+
+jobs:
+  build-release:
+    name: npm ci + build + publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: npm
+          cache-dependency-path: laya/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm run test
+
+      - name: Build (browser)
+        run: npm run build
+
+      - name: Package artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p ../release-dist/spellkard-laya-${GITHUB_REF_NAME}
+          cp -r dist ../release-dist/spellkard-laya-${GITHUB_REF_NAME}/dist
+          cp -r engine ../release-dist/spellkard-laya-${GITHUB_REF_NAME}/engine
+          cp index.html ../release-dist/spellkard-laya-${GITHUB_REF_NAME}/
+          ( cd ../release-dist && tar -czf spellkard-laya-${GITHUB_REF_NAME}.tar.gz spellkard-laya-${GITHUB_REF_NAME} )
+          ( cd ../release-dist && sha256sum ./* > SHA256SUMS.txt )
+          ls -l ../release-dist
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spellkard-laya-${{ github.ref_name }}
+          path: release-dist/*
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Tags like v0.1.0-rc1 are prereleases, not full releases.
+          case "${GITHUB_REF_NAME}" in
+            *-rc*|*-beta*|*-alpha*)
+              gh release create "${GITHUB_REF_NAME}" ../release-dist/* \
+                --repo "${GITHUB_REPOSITORY}" \
+                --title "${GITHUB_REF_NAME}" \
+                --prerelease \
+                --generate-notes ;;
+            *)
+              gh release create "${GITHUB_REF_NAME}" ../release-dist/* \
+                --repo "${GITHUB_REPOSITORY}" \
+                --title "${GITHUB_REF_NAME}" \
+                --generate-notes ;;
+          esac
