@@ -9,7 +9,7 @@ import {
   type SessionState,
 } from '../src/core/net/lobby_client';
 import { LobbyFlow, LobbyScreen } from '../src/core/game/lobby_flow';
-import { expectEqual, suite, test } from './harness';
+import { expect, expectEqual, suite, test } from './harness';
 
 class MemorySessionStore implements LobbySessionStore {
   value: SessionState | null;
@@ -70,9 +70,18 @@ test('restores through bootstrap with Bearer auth and never reuses a persisted r
   expectEqual(await flow.signIn(), true);
   expectEqual(flow.currentScreen, LobbyScreen.Lobby);
   expectEqual(seen.length, 1);
-  expectEqual(seen[0]?.path, '/v2/rpc/bootstrap?unwrap=true');
+  expectEqual(seen[0]?.path, '/v2/rpc/bootstrap');
   expectEqual(seen[0]?.authorization, 'Bearer saved-session');
-  expectEqual(seen[0]?.body, '{"known_ruleset_version":"ruleset-local-s0"}');
+  // Every authenticated operation carries the business envelope, so the
+  // operation body is nested under `body`. The Nakama RPC endpoint takes the
+  // payload as a JSON **string**, so the transport hands the adapter an
+  // already-serialized string.
+  const sent = JSON.parse(String(seen[0]?.body)) as {
+    business_envelope?: Record<string, unknown>;
+    body?: Record<string, unknown>;
+  };
+  expect(sent.business_envelope !== undefined, 'the bootstrap request must carry a business envelope');
+  expectEqual(JSON.stringify(sent.body), '{"known_ruleset_version":"ruleset-local-s0"}');
   expectEqual(store.saveCount, 1);
 });
 
@@ -81,14 +90,8 @@ test('login persists the server-issued session and clearSession removes it and r
   const http: HttpClient = {
     async request(_method, path, _body, headers): Promise<HttpResponseLike> {
       authHeaders.push(headers?.Authorization ?? '');
-      return path.includes('auth.anonymous')
-        ? response({
-            session_token: 'new-session',
-            user_id: 'u-2',
-            player_id: 'p-2',
-            display_name: 'New Player',
-            ruleset_version: 'ruleset-local-s0',
-          })
+      return path.startsWith('/v2/account/authenticate')
+        ? response({ created: true, token: 'new-session', refresh_token: 'refresh-1' })
         : response({
             profile: { user_id: 'u-2', player_id: 'p-2', display_name: 'New Player' },
             ruleset_version: 'ruleset-local-s0',

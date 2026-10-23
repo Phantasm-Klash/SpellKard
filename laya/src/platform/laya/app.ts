@@ -63,6 +63,11 @@ export interface ClientConfig {
   lobbyNakamaHttpBase?: string;
   /** Nakama runtime HTTP key used for anonymous RPC bootstrap. */
   nakamaHttpKey?: string;
+  /**
+   * Nakama server key (`socket.server_key`). Required by
+   * `/v2/account/authenticate/*`; falls back to `nakamaHttpKey` when empty.
+   */
+  nakamaServerKey?: string;
   /** Host-owned secure session storage; omitted sessions remain in memory only. */
   sessionStore?: LobbySessionStore;
   /** Selects the business transport when no lobby WS URL is configured. */
@@ -185,8 +190,15 @@ export class SpellKardApp {
     const httpTransport = new HttpLobbyTransport(new LayaHttpClient(config.lobbyHttpBase));
     const nakamaTransport = new NakamaLobbyTransport(
       new LayaHttpClient(config.lobbyNakamaHttpBase ?? config.lobbyHttpBase),
-      { httpKey: config.nakamaHttpKey },
+      { httpKey: config.nakamaHttpKey, serverKey: config.nakamaServerKey ?? config.nakamaHttpKey },
     );
+    // WS seam: `WsLobbyTransport` speaks Gensoulkyo's own lobby WS protocol
+    // (`/v1/lobby/ws`, `runtime/lobbyws`), which Nakama does not serve. The
+    // Nakama socket replacement belongs here — a `LobbyTransport` built on
+    // Nakama's realtime socket plus `onEvent(...)` for the pushed
+    // `room_state` / `match_start` / `match_result` frames, so the wiring
+    // below (`lobbyTransport.onEvent(...)`) stays unchanged. Until that
+    // transport exists, `nakama_rpc` is the only working path.
     const lobbyTransport =
       config.lobbyWsUrl !== ''
         ? new WsLobbyTransport(config.socketFactory.connect(config.lobbyWsUrl), {

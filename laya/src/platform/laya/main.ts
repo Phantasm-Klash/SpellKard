@@ -29,6 +29,8 @@ export interface BrowserRuntimeConfig {
   lobbyHttpBase: string;
   /** Nakama RPC base. Empty = reuse `lobbyHttpBase` when `nakama_rpc` is selected. */
   lobbyNakamaHttpBase: string;
+  /** Nakama server key for `/v2/account/authenticate/*`. */
+  nakamaServerKey: string;
   /** Selects legacy REST or Nakama RPC when no lobby WebSocket is configured. */
   lobbyTransport: 'legacy_http' | 'nakama_rpc';
   /** Nakama HTTP key. Set via runtime config, never a URL query parameter. */
@@ -70,8 +72,14 @@ const DEFAULT_CONFIG: BrowserRuntimeConfig = {
   stageHeight: 1200,
   lobbyHttpBase: '',
   lobbyNakamaHttpBase: '',
-  lobbyTransport: 'legacy_http',
+  // The lobby is Nakama now: the legacy Go REST surface (`/v1/*`) is gone,
+  // so business calls go through `/v2/rpc/<op>`. Pass
+  // `lobbyTransport=legacy_http` to talk to an old lobby.
+  lobbyTransport: 'nakama_rpc',
   nakamaHttpKey: '',
+  // Nakama's shipped default. Rotate it (and `nakamaHttpKey`) before the
+  // gateway is exposed; see the key-rotation item in the migration report.
+  nakamaServerKey: 'defaultkey',
   lobbyWsUrl: '',
   relayUrl: '',
   battleTransport: 'auto',
@@ -121,6 +129,7 @@ export function resolveRuntimeConfig(search = window.location.search): BrowserRu
       fromWindow.lobbyTransport ?? DEFAULT_CONFIG.lobbyTransport,
     ),
     nakamaHttpKey: fromWindow.nakamaHttpKey ?? DEFAULT_CONFIG.nakamaHttpKey,
+    nakamaServerKey: fromWindow.nakamaServerKey ?? DEFAULT_CONFIG.nakamaServerKey,
     sessionStore: fromWindow.sessionStore,
     lobbyWsUrl: pickString(params.get('lobbyWsUrl'), fromWindow.lobbyWsUrl ?? DEFAULT_CONFIG.lobbyWsUrl),
     relayUrl: pickString(params.get('relayUrl'), fromWindow.relayUrl ?? DEFAULT_CONFIG.relayUrl),
@@ -128,8 +137,8 @@ export function resolveRuntimeConfig(search = window.location.search): BrowserRu
       params.get('battleTransport'),
       fromWindow.battleTransport ?? DEFAULT_CONFIG.battleTransport,
     ),
-    
-    language: pickString(params.get('lang'), fromWindow.language ?? DEFAULT_CONFIG.language),backgroundColor: pickString(params.get('backgroundColor'), fromWindow.backgroundColor ?? DEFAULT_CONFIG.backgroundColor),
+    backgroundColor: pickString(params.get('backgroundColor'), fromWindow.backgroundColor ?? DEFAULT_CONFIG.backgroundColor),
+    language: pickString(params.get('lang'), fromWindow.language ?? DEFAULT_CONFIG.language),
   };
 }
 
@@ -244,6 +253,7 @@ export function startClient(config: BrowserRuntimeConfig): SpellKardApp {
     lobbyNakamaHttpBase: config.lobbyNakamaHttpBase,
     lobbyTransport: config.lobbyTransport,
     nakamaHttpKey: config.nakamaHttpKey,
+    nakamaServerKey: config.nakamaServerKey,
     sessionStore: config.sessionStore,
     lobbyWsUrl: config.lobbyWsUrl,
     relayUrl: config.relayUrl,

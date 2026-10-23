@@ -28,6 +28,7 @@ import {
   type VersionStamp,
 } from './lobby_protocol';
 import { matchEventViewFromPayload, type MatchEventView } from '../game/battle_events';
+import { sha256Bytes } from '../math/lobby_rng';
 
 /**
  * Server error code for "the same account signed in on another device".
@@ -775,6 +776,11 @@ export class LobbyClient {
   private readonly sessionStore?: LobbySessionStore;
   private readonly listeners: LobbyEventListener[] = [];
   private sequence = 0;
+  /** The Nakama account session behind `session`, when Nakama auth is in use. */
+  private nakamaAccount: NakamaAccountSession | null = null;
+  /** The credential of the current Nakama session, kept so it can be replayed. */
+  private nakamaCredential: NakamaAuthRequest | null = null;
+  private generatedDeviceId = '';
 
   session: SessionState | null = null;
   room: RoomView | null = null;
@@ -883,6 +889,7 @@ export class LobbyClient {
   private async callOn(
     transport: LobbyTransport,
     request: LobbyRpcRequest,
+    allowNakamaRetry = true,
   ): Promise<LobbyRpcResponse> {
     const id = request.id;
     // Whether this request goes out authenticated. A `401` only means "session
@@ -890,7 +897,18 @@ export class LobbyClient {
     // password with the same status, and that must stay a plain failure.
     const hadSession = this.session !== null;
     try {
-      const response = await transport.call(request);
+      let response = await transport.call(request);
+      // Nakama: an expired JWT, or an envelope `seq` the lobby guard no
+      // longer shares, is recoverable by re-authenticating the same
+      // identity — the fresh session id is a fresh `seq` bucket server-side.
+      if (allowNakamaRetry && !response.ok && nakamaRecoverable(response)) {
+        if (await this.recoverNakamaSession()) {
+          response = await this.callOn(transport, { ...request, cid: this.nextCid() }, false);
+          this.lastResponse = response;
+          this.lastError = response.ok ? '' : (response.error_code ?? `lobby_call_failed:${id}`);
+          return response;
+        }
+      }
       this.lastResponse = response;
       if (!response.ok) {
         this.lastError = response.error_code ?? `lobby_call_failed:${id}`;
@@ -949,10 +967,117 @@ export class LobbyClient {
     return this.session;
   }
 
-  /** `auth.anonymous` / `POST /v1/auth/anonymous`. */
+  /**
+   * Nakama-native sign-in.
+   *
+   * The lobby's Nakama plugin derives the business identity from the Nakama
+   * session in the request context (`LoginExternal`), so there is no
+   * `auth.*` round-trip here: authenticating against Nakama's own account
+   * API both opens the account and yields the only credential the RPC
+   * gateway accepts. `bootstrap` (which `LobbyFlow` runs next) fills in the
+   * profile fields the account API does not carry.
+   */
+  private nakamaTransport(): NakamaAccountTransport | null {
+    return isNakamaAccountTransport(this.transport) ? this.transport : null;
+  }
+
+  /** The Nakama account session behind the current lobby session, if any. */
+  nakamaSession(): NakamaAccountSession | null {
+    return this.nakamaAccount;
+  }
+
+  private async authenticateNakama(
+    request: NakamaAuthRequest,
+  ): Promise<NakamaAccountSession | null> {
+    const transport = this.nakamaTransport();
+    if (transport === null) {
+      return null;
+    }
+    let account: NakamaAccountSession | null;
+    try {
+      account = await transport.authenticateAccount(request);
+    } catch (error) {
+      this.lastError = 'nakama_authenticate_failed';
+      this.logger.error(`nakama ${request.kind} authenticate threw: ${String(error)}`);
+      return null;
+    }
+    if (account === null) {
+      return null;
+    }
+    this.nakamaAccount = account;
+    this.nakamaCredential = request;
+    return account;
+  }
+
+  private sessionFromNakamaAccount(
+    account: NakamaAccountSession,
+    fallbackDisplayName: string,
+  ): SessionState {
+    this.session = {
+      sessionToken: account.token,
+      userId: account.userId,
+      playerId: '',
+      displayName: account.username !== '' ? account.username : fallbackDisplayName,
+      characterId: '',
+      rulesetVersion: '',
+      unlockedCharacterIds: [],
+    };
+    this.setTransportSessionToken(account.token);
+    this.persistSession();
+    return this.session;
+  }
+
+  /** Re-authenticates the stored Nakama identity, refreshing `sessionToken`. */
+  private async recoverNakamaSession(): Promise<boolean> {
+    const credential = this.nakamaCredential;
+    if (credential === null || this.nakamaTransport() === null) {
+      return false;
+    }
+    const account = await this.authenticateNakama(credential);
+    if (account === null) {
+      return false;
+    }
+    if (this.session !== null) {
+      const next = cloneSession(this.session);
+      next.sessionToken = account.token;
+      next.userId = account.userId;
+      this.session = next;
+      this.setTransportSessionToken(account.token);
+      this.persistSession();
+    }
+    return true;
+  }
+
+  /** Sign-in identity for device authentication, generated when the host omits one. */
+  private resolvedDeviceId(): string {
+    if (this.deviceId !== '') {
+      return this.deviceId;
+    }
+    if (this.generatedDeviceId === '') {
+      this.generatedDeviceId = `dev-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
+    }
+    return this.generatedDeviceId;
+  }
+
+  /**
+   * `auth.anonymous` / `POST /v1/auth/anonymous` on the legacy transports,
+   * Nakama `/v2/account/authenticate/device` on the Nakama transport.
+   */
   async loginAnonymous(displayName = 'Player'): Promise<SessionState | null> {
     // Explicit re-authentication must not reuse a stale restored identity.
     this.clearSession();
+    if (this.nakamaTransport() !== null) {
+      const account = await this.authenticateNakama({
+        kind: 'device',
+        id: this.resolvedDeviceId(),
+        username: displayName,
+      });
+      if (account === null) {
+        this.lastError = 'nakama_authenticate_failed';
+        return null;
+      }
+      return this.sessionFromNakamaAccount(account, displayName);
+    }
     const response = await this.call('auth.anonymous', {
       device_id: this.deviceId,
       display_name: displayName,
@@ -1001,6 +1126,22 @@ export class LobbyClient {
       this.lastError = 'verification_code_required';
       return null;
     }
+    if (this.nakamaTransport() !== null) {
+      // Nakama's native e-mail authentication has no mailed verification
+      // step, so `code` cannot be honoured on this path.
+      const account = await this.authenticateNakama({
+        kind: 'email',
+        email: address,
+        password,
+        username: user,
+        create: true,
+      });
+      if (account === null) {
+        this.lastError = 'nakama_authenticate_failed';
+        return null;
+      }
+      return this.sessionFromNakamaAccount(account, displayName || user);
+    }
     const response = await this.call('auth.register', {
       username: user,
       email: address,
@@ -1027,6 +1168,12 @@ export class LobbyClient {
     const address = email.trim();
     if (address === '') {
       this.lastError = 'account_email_required';
+      return null;
+    }
+    if (this.nakamaTransport() !== null) {
+      // Nakama's native e-mail authentication mails nothing: the address is
+      // verified outside the lobby. Reported instead of faking a receipt.
+      this.lastError = 'nakama_email_code_unsupported';
       return null;
     }
     const response = await this.call('auth.emailCode', { email: address });
@@ -1057,6 +1204,19 @@ export class LobbyClient {
       this.lastError = 'account_password_required';
       return null;
     }
+    if (this.nakamaTransport() !== null) {
+      const account = await this.authenticateNakama({
+        kind: 'email',
+        email: address,
+        password,
+        create: false,
+      });
+      if (account === null) {
+        this.lastError = 'nakama_authenticate_failed';
+        return null;
+      }
+      return this.sessionFromNakamaAccount(account, address);
+    }
     const response = await this.call('auth.login', {
       email: address,
       password,
@@ -1076,6 +1236,8 @@ export class LobbyClient {
    */
   logout(): void {
     this.session = null;
+    this.nakamaAccount = null;
+    this.nakamaCredential = null;
     this.room = null;
     this.allocation = null;
     this.ticket = null;
@@ -1113,9 +1275,20 @@ export class LobbyClient {
     };
     this.session = {
       sessionToken: base.sessionToken,
-      userId: stringField(profile, 'user_id', 'userId') || base.userId,
-      playerId: stringField(profile, 'player_id', 'playerId') || base.playerId,
-      displayName: stringField(profile, 'display_name', 'displayName') || base.displayName,
+      // The Nakama bootstrap carries the identity at the top level instead
+      // of under `profile`, so both shapes are read.
+      userId:
+        stringField(profile, 'user_id', 'userId') ||
+        stringField(payload, 'user_id', 'userId') ||
+        base.userId,
+      playerId:
+        stringField(profile, 'player_id', 'playerId') ||
+        stringField(payload, 'player_id', 'playerId') ||
+        base.playerId,
+      displayName:
+        stringField(profile, 'display_name', 'displayName') ||
+        stringField(payload, 'display_name', 'displayName') ||
+        base.displayName,
       characterId: stringField(profile, 'character_id', 'characterId') || base.characterId,
       rulesetVersion: stringField(payload, 'ruleset_version', 'rulesetVersion') || base.rulesetVersion,
       unlockedCharacterIds:
@@ -2052,25 +2225,180 @@ export class HttpLobbyTransport implements LobbyTransport {
 /**
  * Nakama HTTP RPC transport.
  *
- * Nakama's `/v2/rpc/<id>?unwrap=true` endpoint accepts a JSON string as its
- * RPC payload. `HttpClient` implementations serialize their request body, so
- * this transport deliberately passes `JSON.stringify(payload)` as the body;
- * the platform adapter then performs the outer JSON serialization required on
- * the wire. Auth uses the HTTP key until `auth.anonymous` returns a session
- * token, after which the token is sent as a Bearer credential.
+ * Nakama's `/v2/rpc/<id>` endpoint expects the RPC payload as a **JSON
+ * string** on the wire, not as a bare object. `HttpClient` implementations
+ * serialize the request body themselves (`LayaHttpClient` calls
+ * `JSON.stringify(body)`), so this transport hands the adapter an
+ * already-serialized string; a bare object is rejected by Nakama with
+ * `400 json: cannot unmarshal object into Go value of type string`. Auth uses
+ * the HTTP key until an account session exists, after which the Nakama token
+ * is sent as a Bearer credential.
  *
  * This class does not create or alter the business envelope. Authenticated
  * callers must provide the envelope fields in the request payload so the
  * server-side replay and authority guard remains the single source of truth.
  */
-export class NakamaLobbyTransport implements LobbyTransport {
+/**
+ * Business-envelope version the lobby accepts today.
+ *
+ * `runtime/security` pins `business-v0-scaffold`; a mismatch is answered
+ * `business_envelope_invalid` before the operation is dispatched.
+ */
+export const NAKAMA_BUSINESS_ENVELOPE_VERSION = 'business-v0-scaffold';
+
+/**
+ * Operations the lobby dispatches **before** an account session exists.
+ *
+ * `runtime/nakamaapi.rpcSkipsEnvelope` names exactly these four. They must be
+ * sent without a `business_envelope`, otherwise the envelope guard rejects them
+ * for want of a session id.
+ */
+const NAKAMA_UNAUTHENTICATED_OPS = new Set([
+  'auth.anonymous',
+  'auth.emailcode',
+  'auth.register',
+  'auth.login',
+]);
+
+/**
+ * A Nakama account session.
+ *
+ * Nakama only accepts credentials it minted itself: the Gensoulkyo session
+ * token that `auth.anonymous` returns answers `401 Auth token invalid` on
+ * `/v2/rpc/*`, so it cannot be reused as the RPC bearer. The client therefore
+ * authenticates against Nakama's own account API first and carries the JWT.
+ */
+export interface NakamaAccountSession {
+  /** Nakama session token (JWT) — the bearer credential for `/v2/rpc/*`. */
+  token: string;
+  refreshToken: string;
+  /** Nakama user id (a UUID), *not* the Gensoulkyo `user_*` id. */
+  userId: string;
+  username: string;
+  /** JWT `exp` in milliseconds; `0` when the token could not be decoded. */
+  expiresAtMs: number;
+  /** Nakama session id; the lobby's replay guard buckets `seq` by it. */
+  sessionId: string;
+}
+
+/** Nakama-native authentication request. */
+export type NakamaAuthRequest =
+  | { kind: 'device'; id: string; username?: string }
+  | { kind: 'email'; email: string; password: string; username?: string; create?: boolean }
+  | { kind: 'custom'; id: string; username?: string };
+
+/**
+ * Transport capability for Nakama-native authentication. `LobbyClient` uses it
+ * when present and keeps the legacy `auth.*` operation flow otherwise, so REST
+ * and lobby-WS deployments are unaffected by the Nakama switch.
+ */
+export interface NakamaAccountTransport extends LobbyTransport {
+  authenticateAccount(request: NakamaAuthRequest): Promise<NakamaAccountSession | null>;
+}
+
+/**
+ * Nakama HTTP RPC transport.
+ *
+ * Two Nakama surfaces are involved and they take **different** keys:
+ *
+ * - `/v2/account/authenticate/*` is authenticated with the Nakama *server* key
+ *   (`socket.server_key`). It answers the session token (JWT) that is the only
+ *   credential the RPC gateway accepts.
+ * - `/v2/rpc/<op>` takes that JWT as `Bearer`. Until an account session exists
+ *   the runtime HTTP key is used instead, which is only enough to reach the
+ *   pre-authentication operations.
+ *
+ * Nakama's RPC endpoint takes the RPC payload as a **JSON string** and answers
+ * `{"payload": "<envelope JSON string>"}`. Nakama unmarshals the HTTP body
+ * into a Go `string` before it hands it to the RPC handler, so a bare JSON
+ * object is rejected with `400 json: cannot unmarshal object into Go value of
+ * type string`. `HttpClient` implementations serialize the request body
+ * themselves (`LayaHttpClient` and `FetchHttpClient` both call
+ * `JSON.stringify(body)`), so this transport passes the payload as an
+ * **already serialized string** and lets the adapter add the single JSON
+ * layer. Responses are therefore unwrapped twice: once by the HTTP layer and
+ * once here.
+ *
+ * HTTP status is not the verdict: a dispatched operation always answers `200`
+ * and the business verdict lives in the envelope inside `payload`.
+ */
+export class NakamaLobbyTransport implements NakamaAccountTransport {
   private sessionToken: string;
+  private account: NakamaAccountSession | null = null;
+  /**
+   * Envelope `seq`: strictly increasing, and never reset.
+   *
+   * The lobby's replay guard buckets `seq` by the **business** session id,
+   * which the server derives from the Nakama user id
+   * (`nakama-http-session:<uid>`). That bucket therefore survives both a
+   * re-authentication and a client restart for the same device, so a counter
+   * that restarts at `1` would be answered `business_envelope_replay` for
+   * every later call. See {@link nextEnvelopeSeq}.
+   */
+  private envelopeSeq = 0;
+  /** Bumped on every (re)authentication so nonces stay unique across sessions. */
+  private envelopeEpoch = 0;
+  private readonly nonceSeed: string;
 
   constructor(
     private readonly http: HttpClient,
     private readonly options: NakamaLobbyTransportOptions = {},
   ) {
     this.sessionToken = options.sessionToken ?? '';
+    this.nonceSeed = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  /**
+   * Mints (or resumes) a Nakama account session and installs its token as the
+   * bearer for every later call.
+   *
+   * The envelope `seq` is deliberately **not** reset here: the lobby's replay
+   * guard buckets `seq` by the business session id, which is derived from the
+   * Nakama user id and therefore identical before and after a
+   * re-authentication. Restarting the counter would make every later call be
+   * answered `business_envelope_replay`.
+   */
+  async authenticateAccount(request: NakamaAuthRequest): Promise<NakamaAccountSession | null> {
+    const path =
+      request.kind === 'device'
+        ? '/v2/account/authenticate/device'
+        : request.kind === 'email'
+          ? '/v2/account/authenticate/email'
+          : '/v2/account/authenticate/custom';
+    const body: Record<string, unknown> =
+      request.kind === 'email'
+        ? { email: request.email, password: request.password }
+        : { id: request.id };
+    const create = request.kind === 'email' ? request.create !== false : true;
+    const wanted = nakamaUsername(request.username);
+    const attempt = async (username: string | undefined): Promise<NakamaAccountSession | null> => {
+      const params = [`create=${create ? 'true' : 'false'}`];
+      if (username !== undefined && username !== '') {
+        params.push(`username=${encodeURIComponent(username)}`);
+      }
+      const response = await this.http.request('POST', `${path}?${params.join('&')}`, body, this.serverHeaders());
+      return nakamaAccountFromResponse(response);
+    };
+    let account = await attempt(wanted);
+    if (account === null && wanted !== undefined) {
+      // A taken or rejected username must not block sign-in: Nakama answers the
+      // whole request with an error, so retry without it and keep the generated
+      // name. Only the *first* authentication of a device can set a username
+      // anyway, so this branch is cheap.
+      account = await attempt(undefined);
+    }
+    if (account === null) {
+      return null;
+    }
+    this.account = account;
+    this.sessionToken = account.token;
+    this.envelopeEpoch += 1;
+    return account;
+  }
+
+  /** The account session established by {@link authenticateAccount}. */
+  currentAccount(): NakamaAccountSession | null {
+    return this.account;
   }
 
   async call(request: LobbyRpcRequest): Promise<LobbyRpcResponse> {
@@ -2088,28 +2416,19 @@ export class NakamaLobbyTransport implements LobbyTransport {
       headers.Authorization = `Basic ${encodeBasicAuth(`${this.options.httpKey ?? ''}:`)}`;
     }
     const body = request.payload ?? {};
-    const envelope = this.options.businessEnvelope?.(request, body) ?? null;
-    const wirePayload =
-      envelope === null
-        ? body
-        : {
-            business_envelope: envelope,
-            body,
-          };
+    const envelope = this.businessEnvelopeFor(request, body);
+    const wirePayload = envelope === null ? body : { business_envelope: envelope, body };
+    // Nakama unmarshals the HTTP body into a Go `string` before the RPC
+    // handler sees it, so the payload has to travel as a JSON string. The
+    // `HttpClient` adapters serialize the body once (`JSON.stringify(body)`),
+    // which turns the string below into the quoted JSON string Nakama wants.
     const response = await this.http.request(
       'POST',
-      `/v2/rpc/${encodeURIComponent(rpcId)}?unwrap=true`,
+      `/v2/rpc/${encodeURIComponent(rpcId)}`,
       JSON.stringify(wirePayload),
       headers,
     );
-    const result = nakamaResponse(response);
-    if (result.ok && rpcId === 'auth.anonymous' && isRecord(result.payload)) {
-      const token = stringField(result.payload, 'session_token', 'sessionToken');
-      if (token !== '') {
-        this.sessionToken = token;
-      }
-    }
-    return result;
+    return nakamaResponse(response);
   }
 
   close(): void {
@@ -2119,18 +2438,99 @@ export class NakamaLobbyTransport implements LobbyTransport {
   setSessionToken(token: string): void {
     this.sessionToken = token;
   }
+
+  private serverHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    };
+    const serverKey = this.options.serverKey ?? this.options.httpKey ?? '';
+    if (serverKey !== '') {
+      headers.Authorization = `Basic ${encodeBasicAuth(`${serverKey}:`)}`;
+    }
+    return headers;
+  }
+
+  private businessEnvelopeFor(
+    request: LobbyRpcRequest,
+    body: Record<string, unknown>,
+  ): Record<string, unknown> | null {
+    if (NAKAMA_UNAUTHENTICATED_OPS.has(request.id.trim().toLowerCase())) {
+      return null;
+    }
+    const supplied = this.options.businessEnvelope?.(request, body);
+    if (supplied !== undefined) {
+      return supplied;
+    }
+    return this.scaffoldEnvelope(request, body);
+  }
+
+  /**
+   * The built-in `business-v0-scaffold` envelope.
+   *
+   * The lobby guard is the authority and it does check the fields this fills:
+   * a missing envelope is `business_envelope_required`, a `seq` that does not
+   * strictly advance within one session (or a repeated `nonce`) is
+   * `business_envelope_replay`, and the tag must be 64 hex characters. It does
+   * **not** verify `auth_tag` cryptographically — at this protocol version the
+   * envelope is a scaffold, not a signature. The tag is therefore a
+   * deterministic digest of the request: stable and auditable, without
+   * pretending to be a client-side HMAC the server could trust.
+   */
+  private scaffoldEnvelope(
+    request: LobbyRpcRequest,
+    body: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const op = request.id.trim();
+    const seq = this.nextEnvelopeSeq();
+    const bodyHash = sha256Hex(JSON.stringify(body));
+    const nonce = sha256Hex(`${this.nonceSeed}:${this.envelopeEpoch}:${op}:${seq}`).slice(0, 32);
+    return {
+      version: NAKAMA_BUSINESS_ENVELOPE_VERSION,
+      seq,
+      timestamp_ms: Date.now(),
+      nonce,
+      op_code: op,
+      key_id: 'client-nakama-rpc',
+      auth_tag: sha256Hex(`${this.envelopeEpoch}:${seq}:${nonce}:${op}:${bodyHash}`),
+      ciphertext_mode: 'plain-scaffold',
+      body_hash: bodyHash,
+    };
+  }
+
+  /**
+   * The next envelope `seq`.
+   *
+   * The guard only compares `seq` against the highest value it has seen for
+   * the business session id, and that id is derived from the Nakama user id —
+   * so the bucket outlives both a re-authentication and a client restart of
+   * the same device. A `1, 2, 3…` counter therefore breaks the second time
+   * the player opens the game. Seeding the counter with the wall clock makes
+   * every restart start above whatever the server still remembers, while
+   * `last + 1` keeps the sequence strictly increasing inside one process.
+   */
+  private nextEnvelopeSeq(): number {
+    const next = Math.max(this.envelopeSeq + 1, Date.now());
+    this.envelopeSeq = next;
+    return next;
+  }
 }
 
 export interface NakamaLobbyTransportOptions {
   /** Nakama runtime HTTP key used before an authenticated session exists. */
   httpKey?: string;
+  /**
+   * Nakama server key (`socket.server_key`), required by
+   * `/v2/account/authenticate/*`. Falls back to `httpKey` so a single-key
+   * deployment keeps working.
+   */
+  serverKey?: string;
   /** Optional existing Nakama session token, useful after a cold restart. */
   sessionToken?: string;
   /**
-   * Optional business-envelope producer. The producer owns versioning, nonce,
-   * body hashing and authentication-tag policy; returning null leaves the
-   * payload unwrapped. This is intentionally an injection point rather than a
-   * client-side fake signer.
+   * Optional business-envelope producer. Returning `null` leaves the payload
+   * unwrapped; omitting it falls back to the transport's built-in scaffold,
+   * which the lobby requires for every authenticated operation.
    */
   businessEnvelope?: NakamaBusinessEnvelopeFactory;
 }
@@ -2140,35 +2540,176 @@ export type NakamaBusinessEnvelopeFactory = (
   body: Record<string, unknown>,
 ) => Record<string, unknown> | null;
 
+/**
+ * Maps a Nakama RPC response onto the Gensoulkyo envelope.
+ *
+ * Every dispatched operation answers HTTP `200`, so `ok` comes from the
+ * envelope Nakama carries in `payload` **as a JSON string**. Failures Nakama
+ * itself raises (expired token, unknown RPC id) have no `payload` and report
+ * through `error` instead.
+ */
 function nakamaResponse(response: HttpResponseLike): LobbyRpcResponse {
-  const body = response.body;
   const statusOk = response.status >= 200 && response.status < 300;
-  if (!isRecord(body)) {
+  if (!isRecord(response.body)) {
     return {
       ok: statusOk,
       status: response.status,
       error_code: statusOk ? undefined : `nakama_http_${response.status}`,
-      payload: statusOk ? body : undefined,
+      payload: undefined,
     };
   }
-  if (body.ok === false || !statusOk) {
+  const body = response.body;
+  const envelope = nakamaEnvelope(body);
+  if (envelope === null) {
     return {
       ok: false,
       status: response.status,
-      error_code: stringField(body, 'error_code', 'errorCode', 'code') || `nakama_http_${response.status}`,
+      error_code:
+        stringField(body, 'error_code', 'errorCode', 'error', 'code') || `nakama_http_${response.status}`,
       message: stringField(body, 'message'),
-      payload: body.payload,
     };
   }
   return {
-    ok: statusOk,
-    status: response.status,
-    error_code: stringField(body, 'error_code', 'errorCode') || undefined,
-    message: stringField(body, 'message') || undefined,
-    // `unwrap=true` returns the operation payload directly. The fallback also
-    // accepts a wrapped response so local proxies remain compatible.
-    payload: body.payload ?? body,
+    ok: envelope.ok !== false && statusOk,
+    status: typeof envelope.status === 'number' ? envelope.status : response.status,
+    error_code: stringField(envelope, 'error_code', 'errorCode') || undefined,
+    message: stringField(envelope, 'message') || undefined,
+    payload: envelope.payload ?? envelope,
   };
+}
+
+/** Unwraps the second response layer: `{"payload": "<envelope JSON string>"}`. */
+function nakamaEnvelope(body: Record<string, unknown>): Record<string, unknown> | null {
+  const raw = body.payload;
+  if (typeof raw === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return isRecord(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  if (isRecord(raw)) {
+    return raw;
+  }
+  // Nakama's own failures (`{"error": …, "code": …}`) carry no `payload` and
+  // must not be mistaken for a business envelope — otherwise a `2xx` direct
+  // error would be read as a success.
+  if (isNakamaDirectError(body)) {
+    return null;
+  }
+  return body;
+}
+
+/**
+ * Whether a body is one of Nakama's own failure answers.
+ *
+ * Nakama reports its own errors as `{"error": "<reason>", "message": "…",
+ * "code": <grpc code>}` — a shape the business envelope never uses (it speaks
+ * `error_code` / `message` and carries the verdict in `ok`).
+ */
+function isNakamaDirectError(body: Record<string, unknown>): boolean {
+  if (stringField(body, 'error', 'error_code', 'errorCode') !== '') {
+    return true;
+  }
+  return numberField(body, 'code') !== 0;
+}
+
+function nakamaAccountFromResponse(response: HttpResponseLike): NakamaAccountSession | null {
+  const body = response.body;
+  if (response.status < 200 || response.status >= 300 || !isRecord(body)) {
+    return null;
+  }
+  const token = stringField(body, 'token');
+  if (token === '') {
+    return null;
+  }
+  const claims = jwtClaims(token) ?? {};
+  return {
+    token,
+    refreshToken: stringField(body, 'refresh_token', 'refreshToken'),
+    userId: stringField(body, 'user_id', 'userId') || stringField(claims, 'uid'),
+    username: stringField(claims, 'usn'),
+    expiresAtMs: numberField(claims, 'exp') * 1000,
+    sessionId: stringField(claims, 'tid'),
+  };
+}
+
+const NAKAMA_USERNAME_PATTERN = /^[A-Za-z0-9._-]{3,20}$/;
+
+/**
+ * Nakama usernames are a separate namespace with their own charset and
+ * uniqueness rule, so a display name is only forwarded when it fits; anything
+ * else falls back to the name Nakama generates.
+ */
+function nakamaUsername(displayName: string | undefined): string | undefined {
+  const trimmed = (displayName ?? '').trim();
+  return NAKAMA_USERNAME_PATTERN.test(trimmed) ? trimmed : undefined;
+}
+
+/** Decodes the middle segment of a JWT. Not a verifier — the server does that. */
+function jwtClaims(token: string): Record<string, unknown> | null {
+  const parts = token.split('.');
+  if (parts.length < 2) {
+    return null;
+  }
+  const bytes = decodeBase64Url(parts[1]);
+  if (bytes.length === 0) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(decodeUtf8Loose(bytes));
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function decodeBase64Url(value: string): Uint8Array {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const out: number[] = [];
+  let buffer = 0;
+  let bits = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (char === '=') {
+      continue;
+    }
+    const six = char === '-' ? 62 : char === '_' ? 63 : alphabet.indexOf(char);
+    if (six < 0) {
+      return new Uint8Array(0);
+    }
+    buffer = (buffer << 6) | six;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out.push((buffer >> bits) & 0xff);
+    }
+  }
+  return new Uint8Array(out);
+}
+
+function sha256Hex(value: string): string {
+  return bytesToHex(new Uint8Array(sha256Bytes(value)));
+}
+
+/**
+ * Whether a failed call can be rescued by re-authenticating the same identity.
+ *
+ * A Nakama session id is the key the lobby's replay guard buckets `seq` by, so
+ * minting a fresh session is also the only client-side way to recover a
+ * sequence that drifted ahead of the server (for example a lobby restart that
+ * cleared the guard while the client kept counting).
+ */
+function nakamaRecoverable(response: LobbyRpcResponse): boolean {
+  if (response.status === 401) {
+    return true;
+  }
+  return response.error_code === 'business_envelope_replay' || response.error_code === 'business_envelope_invalid';
+}
+
+function isNakamaAccountTransport(value: LobbyTransport): value is NakamaAccountTransport {
+  return typeof (value as { authenticateAccount?: unknown }).authenticateAccount === 'function';
 }
 
 function encodeBasicAuth(value: string): string {
