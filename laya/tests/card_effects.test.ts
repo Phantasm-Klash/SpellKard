@@ -159,7 +159,8 @@ test('rarity and effect descriptions are player-facing strings', () => {
   expectEqual(rarityLabel('epic'), 'Epic');
   expectEqual(rarityLabel('uncommon'), 'Uncommon');
   expectEqual(describeCardEffect('purge_bell'), 'Clears 24 bullets within 120px');
-  expectEqual(describeCardEffect('aegis_ward'), 'Immune to damage for 3.0s');
+  // 180 tick at 64 tick/s = 2.8s（§2.1：tick 率 64，周期常量不缩放）。
+  expectEqual(describeCardEffect('aegis_ward'), 'Immune to damage for 2.8s');
   expectEqual(describeCardEffect('unknown'), '');
   expect(purgeRadiusMilli(120) === 120000, 'purge radius converts px → milli');
 });
@@ -257,7 +258,8 @@ test('the 16 -> 20 expansion cards match the lobby catalog exactly', () => {
   expectDeepEqual(purgeSpecFor('frost_arc'), { radius: 100, count: 12 });
   expectEqual(describeCardEffect('frost_arc'), 'Clears 12 bullets within 100px');
   expectEqual(describeCardEffect('ember_lance'), 'Fires an aimed curtain at the opponent (dmg 20)');
-  expectEqual(describeCardEffect('iron_veil'), 'Immune to damage for 2.0s');
+  // 120 tick at 64 tick/s = 1.9s（toFixed(1) 舍入）。
+  expectEqual(describeCardEffect('iron_veil'), 'Immune to damage for 1.9s');
   expectEqual(describeCardEffect('thunder_fall'), 'Clears the field and deals 30 damage');
 });
 

@@ -16,6 +16,7 @@
 import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow';
 import { t } from '../../../core/game/i18n';
 import type { MatchHistoryEntryView } from '../../../core/net/lobby_client';
+import { BOSS_RACE_TICK_RATE_HZ } from '../../../core/sim/boss_race';
 import * as theme from '../view/theme';
 import { createArtButton, createButtonEx, createCaption, createDivider, createPanel, createTitlePlaque, type ButtonHandle } from './ui_kit';
 import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
@@ -342,7 +343,7 @@ export function formatRecentEntry(entry: MatchHistoryEntryView): string {
   const parts = [
     entry.matchId || '-',
     entry.modeId || '-',
-    t('records.unit.seconds', { seconds: Math.round(entry.durationTicks / 60) }),
+    t('records.unit.seconds', { seconds: Math.round(entry.durationTicks / BOSS_RACE_TICK_RATE_HZ) }),
     t('records.unit.points', { points: entry.score }),
   ];
   if (entry.rankDelta !== 0) {

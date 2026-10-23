@@ -30,6 +30,13 @@ import {
   normalizeFrac,
 } from '../src/core/game/interpolation';
 import { buildBossRaceFrame } from '../src/core/game/boss_race_view_model';
+import {
+  buildHandBar,
+  CardActionController,
+  HAND_DECK_UNKNOWN,
+  snapshotHandBar,
+} from '../src/core/game/card_hand_view';
+import { MAX_CARD_SLOTS } from '../src/core/game/input';
 import { ByteWriter, decodeBattleInput, decodeBossRaceSnapshot, encodeBattleInput, encodeUtf8 } from '../src/core/net/battle_codec';
 import { BattlePayloadType, emptyVersionStamp, type BattleInput } from '../src/core/protocol/types';
 import { expectClose, expectDeepEqual, expectEqual, expect, suite, test } from './harness';
@@ -430,4 +437,110 @@ test('boss effects are mapped to playfield pixels', () => {
   expectClose(fist.to!.x, 260, 1e-9);
   expectClose(fist.to!.y, fist.from!.y, 1e-9, 'a +x fist line stays horizontal');
   expectClose(frame.bossEffects[1].edgeY!, 180, 1e-9, 'edge_y_milli 0 maps to the arena centre row');
+});
+
+suite('danmaku engine: in-match card actions (§2.3/§2.8)');
+
+test('the snapshot hand drives slots, deck and cooldown', () => {
+  const bar = snapshotHandBar(
+    [
+      { cardId: 'purge_bell', slot: 0, selected: false },
+      { cardId: 'mirror_lance', slot: 1, selected: true },
+    ],
+    12,
+    0,
+    3,
+  );
+  expectEqual(bar.visible, true);
+  expectEqual(bar.slots.length, 2);
+  expectEqual(bar.slots[0].index, 0);
+  expectEqual(bar.slots[1].index, 1);
+  expectEqual(bar.slots[1].selected, true, 'selection comes from the server hand');
+  expectEqual(bar.selectedSlot, 1);
+  expectEqual(bar.deckRemaining, 12);
+  expectEqual(bar.canDraw, true, 'deck left + no cooldown');
+  expectEqual(bar.canUse, true, 'something is selected');
+  expectEqual(bar.showActions, true, 'snapshot hands expose the draw/use buttons');
+});
+
+test('the draw button is gated by the cooldown and by an empty deck', () => {
+  const cooling = snapshotHandBar([{ cardId: 'a', slot: 0, selected: false }], 5, 32, 0);
+  expectEqual(cooling.canDraw, false, 'a live cooldown greys the button');
+  expectEqual(cooling.drawCooldownTicks, 32);
+
+  const empty = snapshotHandBar([{ cardId: 'a', slot: 0, selected: false }], 0, 0, 0);
+  expectEqual(empty.canDraw, false, 'an empty deck greys the button');
+
+  const unknown = snapshotHandBar([{ cardId: 'a', slot: 0, selected: false }], undefined, undefined, 0);
+  expectEqual(unknown.deckRemaining, HAND_DECK_UNKNOWN, 'absent deck_remaining stays unknown');
+  expectEqual(unknown.canDraw, true, 'unknown deck is not treated as empty');
+  expectEqual(unknown.showActions, true);
+});
+
+test('an empty snapshot hand hides the bar but keeps the deck readout', () => {
+  const bar = snapshotHandBar([], 9, 0, 0);
+  expectEqual(bar.visible, false);
+  expectEqual(bar.canUse, false, 'nothing to use');
+  expectEqual(bar.deckRemaining, 9);
+});
+
+test('the ticket path never shows the draw/use buttons', () => {
+  const bar = buildHandBar(['mirror_lance'], 2);
+  expectEqual(bar.showActions, false, 'legacy hands keep the old strip');
+  expectEqual(bar.canDraw, false);
+  expectEqual(bar.selectedSlot, -1);
+});
+
+test('draw and use are one-shot pulses; selection persists', () => {
+  const actions = new CardActionController();
+  expectEqual(actions.select(1), true, 'selecting slot 1');
+  expectEqual(actions.selectedSlot, 1);
+
+  actions.requestDraw();
+  const first = actions.take();
+  expectDeepEqual(first, { cardDraw: true, cardSelect: 1, cardUse: false }, 'draw pulses once');
+  const second = actions.take();
+  expectDeepEqual(second, { cardDraw: false, cardSelect: 1, cardUse: false }, 'the pulse clears');
+
+  expectEqual(actions.requestUse(), true, 'use needs a selection');
+  const third = actions.take();
+  expectDeepEqual(third, { cardDraw: false, cardSelect: 1, cardUse: true });
+  expectDeepEqual(actions.take(), { cardDraw: false, cardSelect: 1, cardUse: false }, 'use clears too');
+});
+
+test('use without a selection never pulses', () => {
+  const actions = new CardActionController();
+  expectEqual(actions.requestUse(), false, 'nothing selected');
+  expectDeepEqual(actions.take(), { cardDraw: false, cardSelect: -1, cardUse: false });
+});
+
+test('clicking the selected slot again deselects it', () => {
+  const actions = new CardActionController();
+  expectEqual(actions.select(0), true);
+  expectEqual(actions.select(0), false, 'second click toggles off');
+  expectEqual(actions.selectedSlot, -1);
+  expectEqual(actions.select(-1), false, 'the sentinel is not a selection');
+  expectEqual(actions.select(MAX_CARD_SLOTS), false, 'past the hand limit');
+});
+
+test('a stale snapshot echo cannot override a local selection', () => {
+  const actions = new CardActionController();
+  actions.syncFromSnapshot(0);
+  expectEqual(actions.selectedSlot, 0, 'the first echo is adopted');
+  actions.select(2);
+  actions.syncFromSnapshot(0);
+  expectEqual(actions.selectedSlot, 2, 'the player wins until the card is used');
+  // 用卡之后交还给服务端回显。
+  expectEqual(actions.requestUse(), true);
+  actions.syncFromSnapshot(-1);
+  expectEqual(actions.selectedSlot, -1, 'after use the server echo takes over');
+});
+
+test('reset clears selection and pending pulses', () => {
+  const actions = new CardActionController();
+  actions.select(1);
+  actions.requestDraw();
+  actions.reset();
+  expectEqual(actions.selectedSlot, -1);
+  expectDeepEqual(actions.take(), { cardDraw: false, cardSelect: -1, cardUse: false });
 });

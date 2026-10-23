@@ -18,6 +18,8 @@
  *    `Gensoulkyo/runtime/core/service.go` 的 `forbiddenClientFields`。
  */
 
+import { BOSS_RACE_TICK_RATE_HZ } from '../sim/boss_race';
+
 /** 当前真正能打完一局的模式（与服务端 `PlayableModeIDs()` 一致）。 */
 export const PLAYABLE_MODE_IDS: readonly string[] = ['mvp_boss_race', 'coop_boss'];
 
@@ -208,8 +210,8 @@ export function roomSetupSummary(state: RoomSetupState): string {
     parts.push(`${state.coopPlayers}人`);
   }
   if (state.maxTicks > 0) {
-    // 60Hz：tick 数除以 60 就是秒。
-    parts.push(`${Math.round(state.maxTicks / 60)}秒`);
+    // tick 数除以 tick 率就是秒（64 tick/s，见 BOSS_RACE_TICK_RATE_HZ）。
+    parts.push(`${Math.round(state.maxTicks / BOSS_RACE_TICK_RATE_HZ)}秒`);
   }
   if (state.bossHealth > 0) {
     parts.push(`HP ${state.bossHealth}`);
@@ -265,7 +267,7 @@ export function setupRows(state: RoomSetupState, ctx: SetupRowsContext): SetupRo
   if (state.modeId === 'coop_boss') {
     push('coop_players', '人数', `${state.coopPlayers}人`, true, editable, '');
   }
-  push('max_ticks', '时长', state.maxTicks > 0 ? `${Math.round(state.maxTicks / 60)}秒` : '默认', true, editable, '');
+  push('max_ticks', '时长', state.maxTicks > 0 ? `${Math.round(state.maxTicks / BOSS_RACE_TICK_RATE_HZ)}秒` : '默认', true, editable, '');
   push('boss_health', 'Boss 血量', state.bossHealth > 0 ? String(state.bossHealth) : '默认', true, editable, '');
 
   const allowed = ROOM_SETUP_OPTIONS.filter(

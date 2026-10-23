@@ -13,7 +13,7 @@
 import { parseDemDocument, DemError, type DemDocument } from '../../../core/dem/parse';
 import { DemReplayer, DEM_DEFAULT_KEYFRAME_INTERVAL_TICKS } from '../../../core/dem/replayer';
 import type { BossRaceSnapshot } from '../../../core/sim/boss_race';
-import { ARENA_HALF_WIDTH_MILLI, ARENA_HALF_HEIGHT_MILLI } from '../../../core/sim/boss_race';
+import { ARENA_HALF_WIDTH_MILLI, ARENA_HALF_HEIGHT_MILLI, BOSS_RACE_TICK_RATE_HZ } from '../../../core/sim/boss_race';
 import * as theme from '../view/theme';
 import { createButtonEx, createCaption, createDivider, createLabel, createPanel, type ButtonHandle } from './ui_kit';
 import type { ClientScene } from './scene';
@@ -202,7 +202,8 @@ export class DemPlayerScene implements ClientScene {
     if (replayer === null) {
       return;
     }
-    const tickRate = replayer.header.tick_rate_hz > 0 ? replayer.header.tick_rate_hz : 60;
+    // 老 .dem 头里可能没有 tick_rate_hz（0），回落到当前模拟的 64 tick。
+    const tickRate = replayer.header.tick_rate_hz > 0 ? replayer.header.tick_rate_hz : BOSS_RACE_TICK_RATE_HZ;
     const perTickMs = Math.max(4, Math.round(1000 / tickRate / this.speed));
     Laya.timer.loop(perTickMs, this, this.onFrame);
   }

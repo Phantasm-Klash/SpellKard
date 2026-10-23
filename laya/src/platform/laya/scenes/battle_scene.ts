@@ -17,12 +17,12 @@ import { BattleConnectionState } from '../../../core/net/battle_client';
 import { pageNumberParam } from '../page_params';
 import type { TimerLike } from '../../../core/net/transport';
 import { battleLayout, type BattleLayout } from '../../../core/game/battle_layout';
-import { buildBossRaceFrame, type BossRaceFrame, type PlayerRenderItem, type RenderPoint, PlayfieldTransform, bossOriginPixels } from '../../../core/game/boss_race_view_model';
+import { buildBossRaceFrame, type BossEffectRenderItem, type BossRaceFrame, type PlayerRenderItem, type RenderPoint, PlayfieldTransform, bossOriginPixels } from '../../../core/game/boss_race_view_model';
 import { buildCoopFrame, coopArenaDirectionBits, coopLocalSeat, type CoopFrame } from '../../../core/game/coop_view_model';
 import { coopBattleLayout } from '../../../core/game/coop_layout';
 import { COOP_MODE_ID, type CoopBossSnapshot } from '../../../core/sim/coop_boss';
 import { describeDirectionBits, encodeInput } from '../../../core/game/input';
-import { HandBarController } from '../../../core/game/card_hand_view';
+import { HandBarController, CardActionController, snapshotHandBar } from '../../../core/game/card_hand_view';
 import { DraftPanelController, localGrantCardId } from '../../../core/game/draft_panel_view';
 import {
   draftPickFromEvent,
@@ -33,7 +33,7 @@ import {
 } from '../../../core/game/battle_events';
 import type { BattleOpeningState } from '../../../core/net/lobby_client';
 import { defaultCutsceneSteps } from '../../../core/game/stage_visual';
-import type { BossRaceSnapshot } from '../../../core/sim/boss_race';
+import type { BossRaceEventView, BossRaceHandCard, BossRaceSnapshot } from '../../../core/sim/boss_race';
 import {
   BOSS_ORIGIN_X_MILLI,
   BOSS_ORIGIN_Y_MILLI,
@@ -273,11 +273,26 @@ export class BattleScene implements ClientScene {
   /** Hand-bar state: the dealt hand and the one-shot cast intent. */
   private readonly handController = new HandBarController();
   /**
+   * §2.3 抽卡/选卡/用卡状态机：抽卡与用卡是**一次性脉冲**，选卡是持续状态，
+   * 每帧随输入上行（见 `core/game/card_hand_view.CardActionController`）。
+   */
+  private readonly cardActions = new CardActionController();
+  /**
    * Signature of the hand currently mirrored into the bar. The provider is
    * polled every tick, so the bar is only rebuilt when the hand actually
    * changes (including a change from "no ticket yet" to the dealt hand).
    */
   private lastHandKey = '\u0001';
+  /** 快照手牌（§2.8 hand/deck/cooldown）的签名，避免每 tick 重绘。 */
+  private lastSnapshotHandKey = '\u0001';
+  /**
+   * 最近一条符卡相关快照事件（`events[]` 里 `type` 以 `card` 开头的行）。
+   *
+   * P1 阶段服务端还只下发占位事件，所以这里**只解析不表现**：等 P3 定下
+   * `card_drawn` / `card_cast` / `card_refused` 的字段与文案后，再由这里驱动
+   * 手牌栏的 toast。暴露给测试与调试面板读取。
+   */
+  private lastCardEvent: BossRaceEventView | null = null;
   /**
    * Draft panel: the three candidates of an open mixed-pool round. Centred
    * over the playfield, above the hand bar and below the pause banner.
@@ -398,7 +413,14 @@ export class BattleScene implements ClientScene {
     // and the pause banner (so a pause always wins visually). Its click is a
     // one-shot cast intent consumed by the next input packet in `step`.
     this.handBar = new HandBar();
-    this.handBar.onSlotClick = (index) => this.handController.click(index);
+    this.handBar.onSlotClick = (index) => {
+      // 选中（§2.3 card_select，持续状态）与既有的「点一下就用」一次性意图
+      // 并行：服务端目前只认 `card_slot`，P3 接上 `card_use` 后再二选一。
+      this.handController.click(index);
+      this.cardActions.select(index);
+    };
+    this.handBar.onDraw = () => this.cardActions.requestDraw();
+    this.handBar.onUse = () => this.cardActions.requestUse();
     this.root.addChild(this.handBar.root);
 
     // The draft panel sits above the hand bar; a candidate click becomes one
@@ -681,6 +703,53 @@ export class BattleScene implements ClientScene {
   }
 
   /**
+   * §2.8/§2.3 快照手牌 → 手牌栏（权威路径）。
+   *
+   * 只有服务端真的下发了 `hand` 才接管；老服务端没有这个键时继续用 ticket
+   * 的开局手牌，行为不变。选中的回显也来自这里（`hand[].selected`），所以
+   * 服务端拒绝/清空选择后 UI 会跟着回去。
+   */
+  private syncSnapshotHand(
+    hand: readonly BossRaceHandCard[] | undefined,
+    deckRemaining: number | undefined,
+    drawCooldownTicks: number | undefined,
+  ): void {
+    if (hand === undefined) {
+      return;
+    }
+    const serverSelected = hand.find((entry) => entry.selected === true)?.slot ?? -1;
+    this.cardActions.syncFromSnapshot(serverSelected);
+    const key = `${hand
+      .map((entry) => `${entry.slot}:${entry.cardId}:${entry.selected ? 1 : 0}`)
+      .join(',')}|${deckRemaining ?? 'x'}|${drawCooldownTicks ?? 'x'}|${this.cardActions.selectedSlot}`;
+    if (key === this.lastSnapshotHandKey) {
+      return;
+    }
+    this.lastSnapshotHandKey = key;
+    this.handBar.setView(
+      snapshotHandBar(hand, deckRemaining, drawCooldownTicks, this.handController.energy),
+    );
+  }
+
+  /**
+   * §2.8 `events[]` 的符卡回显：只记录，不表现（P3 定文案后再接 toast）。
+   *
+   * 认 `type` 以 `card` 开头的行（`card_draw` / `card_drawn` / `card_use` /
+   * `card_cast` / `card_refused` …），字段全在 `data` 里原样保留。
+   */
+  private noteCardEvents(snapshot: BossRaceSnapshot): void {
+    const events = snapshot.events;
+    if (events === undefined || events.length === 0) {
+      return;
+    }
+    for (const event of events) {
+      if (event.type.startsWith('card')) {
+        this.lastCardEvent = event;
+      }
+    }
+  }
+
+  /**
    * Re-tiles the whole scene for a new stage size. Called once at construction
    * and again on every `Laya.Event.RESIZE`, so the playfield, status panel and
    * bullet art scale track the window instead of freezing at boot.
@@ -792,6 +861,16 @@ export class BattleScene implements ClientScene {
   /** Debug-only: card effects currently being animated. */
   get __debugCardEffects(): readonly ActiveCardEffect[] {
     return this.activeEffects;
+  }
+
+  /** Debug-only: 当前选中的手牌槽位（-1 = 未选）。 */
+  get __debugSelectedCardSlot(): number {
+    return this.cardActions.selectedSlot;
+  }
+
+  /** Debug-only: 最近一条符卡快照事件（P1 只记录不表现）。 */
+  get __debugLastCardEvent(): BossRaceEventView | null {
+    return this.lastCardEvent;
   }
 
   /**
@@ -982,6 +1061,8 @@ export class BattleScene implements ClientScene {
       ? this.coopAuthoritative.tick
       : (battle.simulationRef?.getCurrentTick() ?? 0);
     const tick = anchor + 1 + this.inputLeadTicks();
+    // §2.3：抽卡/用卡脉冲只在真的能发帧时消费，避免断线期间点一下就被丢掉。
+    const cardIntent = this.cardActions.take();
     // A clicked slot wins over the keyboard's slot for exactly this one packet.
     const cardSlot = clickedSlot >= 0 ? clickedSlot : encoded.cardSlot;
     // 合作模式：视图方向（本地恒朝上）→ 战场方向（服务端协议零改动）。
@@ -999,6 +1080,10 @@ export class BattleScene implements ClientScene {
       encoded.shoot,
       encoded.bomb,
       cardSlot,
+      '',
+      cardIntent.cardDraw,
+      cardIntent.cardSelect,
+      cardIntent.cardUse,
     );
     this.options.input.consumeTransient();
     battle.tick();
@@ -1082,6 +1167,8 @@ export class BattleScene implements ClientScene {
         view.render(null);
         return;
       }
+      // §2.8：合作快照也带 hand/deck/cooldown（老服务端没有 → 不接管）。
+      this.syncSnapshotHand(coop.hand, coop.deckRemaining, coop.drawCooldownTicks);
       const coopFrame = buildCoopFrame(coop, {
         layout: this.geometry.playfield,
         localPlayerId: this.options.localPlayerId(),
@@ -1098,6 +1185,9 @@ export class BattleScene implements ClientScene {
     if (source === null) {
       return;
     }
+    // §2.8：权威快照的手牌/牌库/抽卡冷却驱动手牌栏（预测帧没有这些字段）。
+    this.syncSnapshotHand(source.hand, source.deckRemaining, source.drawCooldownTicks);
+    this.noteCardEvents(source);
     // 非合作对局：MVP 视图是唯一渲染者（合作视图若曾创建则收起）。
     this.view.root.visible = true;
     this.coopView?.setVisible(false);
@@ -1148,31 +1238,85 @@ export class BattleScene implements ClientScene {
   }
 
   /**
-   * 特殊机制（铁拳 / 黑色帷幕）的玩法指示层。
+   * 特殊机制（铁拳 / 黑色帷幕）的玩法指示层 —— 按**阶段**区分表现。
    *
    * 数据全部来自快照 `boss.effects[]`（服务端权威），这里只画几何骨架：
-   * 铁拳 windup 的 telegraph 线段、帷幕 sweep 的扫屏边缘线。按 `ART_POLICY`
-   * 「只允许玩法指示自绘」，不引入第二套美术风格。画在礼图层之后，因为两者
-   * 共用 `effectLayer` 而礼图层每帧 `clear()`。
+   *  - 铁拳 `windup`：闪烁细线 + 端点准星（「即将落下」的预告）；
+   *    `strike`：粗实线 + 亮芯（判定正在推进）；其余（`recover`）淡出细线。
+   *  - 黑色帷幕 `hold`：playfield 压暗遮罩（只罩战场，不碰右侧 HUD，也不碰
+   *    底部手牌栏——它们在本层之上）；`fall`/`sweep`：边缘线，`sweep` 更亮更粗。
+   *
+   * 按 `ART_POLICY`「只允许玩法指示自绘」，不引入第二套美术风格。画在礼图层
+   * 之后，因为两者共用 `effectLayer` 而礼图层每帧 `clear()`。
    */
   private drawBossEffects(frame: BossRaceFrame): void {
     if (frame.bossEffects.length === 0) {
       return;
     }
     const g = this.effectLayer.graphics;
+    const width = this.geometry.playfield.width;
+    const height = this.geometry.playfield.height;
     for (const effect of frame.bossEffects) {
-      if (effect.type === 'iron_fist' && effect.from !== null && effect.to !== null) {
-        const charging = effect.state === 'windup';
-        const color = charging ? theme.COLOR_WARNING : theme.COLOR_DANGER;
-        g.drawLine(effect.from.x, effect.from.y, effect.to.x, effect.to.y, color, charging ? 2 : 4);
-        g.drawCircle(effect.to.x, effect.to.y, 4, color);
+      if (effect.type === 'iron_fist') {
+        this.drawIronFist(g, frame.tick, effect);
         continue;
       }
-      if (effect.type === 'black_curtain' && effect.edgeY !== null) {
-        const width = this.geometry.playfield.width;
-        g.drawLine(0, effect.edgeY, width, effect.edgeY, theme.COLOR_DANGER, 3);
+      if (effect.type === 'black_curtain') {
+        this.drawBlackCurtain(g, width, height, effect);
       }
     }
+  }
+
+  /** 铁拳三阶段：windup 闪烁预告 / strike 实线判定 / recover 淡出。 */
+  private drawIronFist(g: Laya.Graphics, tick: number, effect: BossEffectRenderItem): void {
+    if (effect.from === null || effect.to === null) {
+      return;
+    }
+    const { from, to } = effect;
+    if (effect.state === 'windup') {
+      // 4 tick 亮 / 4 tick 暗：既醒目又不至于闪到看不清弹幕。
+      const on = tick % 8 < 4;
+      const color = on ? theme.COLOR_WARNING : fade(theme.COLOR_WARNING, 0.55);
+      g.drawLine(from.x, from.y, to.x, to.y, color, 2);
+      g.drawCircle(to.x, to.y, on ? 7 : 5, null, color, 2);
+      g.drawCircle(from.x, from.y, 3, color);
+      return;
+    }
+    if (effect.state === 'strike') {
+      // 判定正在推进：粗线 + 一条更亮的芯，读起来是「已经落下」。
+      g.drawLine(from.x, from.y, to.x, to.y, theme.COLOR_DANGER, 6);
+      g.drawLine(from.x, from.y, to.x, to.y, theme.COLOR_TEXT, 2);
+      return;
+    }
+    // recover / 未知阶段：淡出，不抢戏。
+    g.drawLine(from.x, from.y, to.x, to.y, fade(theme.COLOR_DANGER, 0.35), 1);
+  }
+
+  /** 黑色帷幕：hold 压暗战场，fall/sweep 画边缘线（sweep 最亮）。 */
+  private drawBlackCurtain(
+    g: Laya.Graphics,
+    width: number,
+    height: number,
+    effect: BossEffectRenderItem,
+  ): void {
+    if (effect.state === 'hold') {
+      // 只罩战场矩形：HUD 在右侧状态条、手牌栏在本层之上，都不受影响。
+      g.drawRect(0, 0, width, height, 'rgba(7,5,14,0.55)');
+      if (effect.edgeY !== null) {
+        g.drawLine(0, effect.edgeY, width, effect.edgeY, fade(theme.COLOR_BOSS, 0.5), 2);
+      }
+      return;
+    }
+    if (effect.edgeY === null) {
+      return;
+    }
+    if (effect.state === 'sweep') {
+      g.drawLine(0, effect.edgeY, width, effect.edgeY, theme.COLOR_BOSS, 5);
+      g.drawLine(0, effect.edgeY, width, effect.edgeY, theme.COLOR_TEXT, 1);
+      return;
+    }
+    // fall（或未知）：细一号的预告线。
+    g.drawLine(0, effect.edgeY, width, effect.edgeY, fade(theme.COLOR_BOSS, 0.6), 2);
   }
 
   /**

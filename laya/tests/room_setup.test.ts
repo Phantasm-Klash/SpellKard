@@ -138,7 +138,8 @@ test('the summary reads as one line of rules', () => {
     maxTicks: 1800,
     bossHealth: 12000,
   });
-  expectEqual(custom, 'hui · 4人 · 30秒 · HP 12000', 'custom rules');
+  // 1800 tick at 64 tick/s = 28.125s → 28秒（§2.1：tick 率 64）。
+  expectEqual(custom, 'hui · 4人 · 28秒 · HP 12000', 'custom rules');
 });
 
 test('the server list wins over the local one', () => {

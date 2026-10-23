@@ -18,6 +18,7 @@
 
 import { lobbyDeterministicUnit } from '../math/lobby_rng';
 import { MILLI_PER_PIXEL } from '../math/float_lib';
+import { BOSS_RACE_TICK_RATE_HZ } from './boss_race';
 
 /**
  * Every `EffectKind` the lobby knows.
@@ -425,7 +426,7 @@ export function describeCardEffect(cardId: string): string {
     case 'bullet_purge':
       return `Clears ${definition.purgeCount ?? 0} bullets within ${definition.purgeRadius ?? 0}px`;
     case 'invulnerable':
-      return `Immune to damage for ${(definition.durationTicks / 60).toFixed(1)}s`;
+      return `Immune to damage for ${(definition.durationTicks / BOSS_RACE_TICK_RATE_HZ).toFixed(1)}s`;
     case 'finisher':
       return `Clears the field and deals ${definition.damage} damage`;
     default:
