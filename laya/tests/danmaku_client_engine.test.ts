@@ -397,7 +397,7 @@ test('frac extrapolates bullets with their snapshot velocity', () => {
   expectClose(frame.bullets[0].position.x, 244, 1e-9, 'half a tick of extrapolation');
 });
 
-test('frac interpolates players between the previous and current snapshot', () => {
+test('frac extrapolates players forward from the authoritative tick', () => {
   const previous = snapshotWith([]);
   const current = snapshotWith([]);
   current.players[0] = { ...current.players[0], xMilli: 1000 };
@@ -408,8 +408,17 @@ test('frac interpolates players between the previous and current snapshot', () =
     previous,
     frac: 0.5,
   });
-  // 0 → 1000 milli at frac 0.5 = 500 milli → 241 px
-  expectClose(frame.players[0].position.x, 241, 1e-9, 'differential interpolation');
+  // 基准是当前 tick（1000），外推「上一 tick 位移」(+1000) 的一半 → 1500 milli → 243 px
+  expectClose(frame.players[0].position.x, 243, 1e-9, 'forward extrapolation from the current tick');
+  const atZero = buildBossRaceFrame(current, {
+    layout: LAYOUT,
+    localPlayerId: 'p1',
+    bossMaxHp: 6000,
+    previous,
+    frac: 0,
+  });
+  // §4.1：frac = 0 必须逐像素等于权威 tick。
+  expectClose(atZero.players[0].position.x, 242, 1e-9, 'frac 0 equals the authoritative position');
 });
 
 test('boss effects are mapped to playfield pixels', () => {

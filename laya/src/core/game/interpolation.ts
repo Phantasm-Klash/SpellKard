@@ -52,6 +52,22 @@ export function interpolateBetween(previous: InterpPoint, next: InterpPoint, fra
   };
 }
 
+/**
+ * 无速度实体但已知「上一 tick 位移」时：`p_n + (p_n - p_{n-1}) * frac`。
+ *
+ * 这是 §2.9 差分插值在 `p_{n+1}` 还没到达时的唯一可行写法：渲染基准必须是
+ * **当前权威 tick**（`frac = 0` 必须逐像素等于快照位置，见 §4.1 的 tick 边界
+ * 断言），所以不能用「上一份快照 → 本份快照」的滞后插值，只能拿最近一次位移
+ * 前向外推。下一份快照到达后位置会被校正，误差上限 = 一 tick 的加速度位移。
+ */
+export function extrapolatePos(position: InterpPoint, previous: InterpPoint, frac: number): InterpPoint {
+  const t = Number.isFinite(frac) ? frac : 0;
+  return {
+    x: position.x + (position.x - previous.x) * t,
+    y: position.y + (position.y - previous.y) * t,
+  };
+}
+
 /** 角度归一到 `[0, 360)`；非有限值按 0 处理。 */
 export function normalizeAngleDeg(angleDeg: number): number {
   if (!Number.isFinite(angleDeg)) {

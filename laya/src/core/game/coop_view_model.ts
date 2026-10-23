@@ -20,7 +20,7 @@ import {
   type CoopBossPlayerSnapshot,
   type CoopBossSnapshot,
 } from '../sim/coop_boss';
-import { interpolateBetween, interpolatePos, normalizeFrac } from './interpolation';
+import { extrapolatePos, interpolatePos, normalizeFrac } from './interpolation';
 
 export const COOP_ALLY_ALPHA = 0.45;
 export const COOP_ALLY_BULLET_ALPHA = 0.4;
@@ -180,13 +180,14 @@ export function buildCoopFrame(snapshot: CoopBossSnapshot, options: CoopFrameOpt
 
   const players: CoopPlayerItem[] = snapshot.players.map((player) => {
     const before = previous?.players.find((entry) => entry.playerId === player.playerId) ?? null;
-    const milli = before === null
-      ? { x: player.xMilli, y: player.yMilli }
-      : interpolateBetween(
-          { x: before.xMilli, y: before.yMilli },
-          { x: player.xMilli, y: player.yMilli },
-          frac,
-        );
+    const current = { x: player.xMilli, y: player.yMilli };
+    // §2.9：`frac = 0` 必须等于权威位置，所以是前向外推（速度优先，缺速度用上一
+    // tick 位移），不是「上一份 → 本份」的滞后插值。
+    const milli = player.vxMilli !== undefined && player.vyMilli !== undefined
+      ? interpolatePos(current, { x: player.vxMilli, y: player.vyMilli }, frac)
+      : before === null
+        ? current
+        : extrapolatePos(current, { x: before.xMilli, y: before.yMilli }, frac);
     const point = toScreen(milli.x, milli.y);
     const isLocal = player.playerId === options.localPlayerId;
     return {

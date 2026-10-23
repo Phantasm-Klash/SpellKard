@@ -17,6 +17,7 @@
     "assemble:windows": "node tools/assemble_windows_client.mjs",
     "gen:protocol": "node tools/gen_protocol.mjs",
     "ide:check": "node layaide/tools/check_project.mjs",
+    "parity:client": "tsc -p tsconfig.test.json && node dev/stage_parity.mjs",
     "check": "npm run typecheck && npm run test && npm run ide:check"
   },
   "devDependencies": {

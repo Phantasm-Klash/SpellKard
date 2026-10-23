@@ -113,9 +113,15 @@ export function isTnaRuleset(rulesetVersion: string): boolean {
 }
 
 /**
- * Default tick cap, matching the battle server's `--max-ticks 7200` (two
- * minutes at 64Hz). The client uses this only to render a countdown; the server
- * still decides when a match is timed out.
+ * Client-side tick cap used when the ticket/room does not carry one.
+ *
+ * The battle server has **no** default cap: `MatchLifecycleConfig::max_ticks`
+ * defaults to `0` = unlimited and `main.cpp` only applies `--max-ticks` when it
+ * is non-zero, so the real limit always arrives from the lobby. This constant
+ * is therefore only a *display/safety* fallback (the countdown row needs a
+ * number), kept at the historical 7200 ticks — 112.5 s at 64 Hz — so the tick
+ * semantics stay continuous with the 60 Hz era. The server still decides when a
+ * match times out.
  */
 export const BOSS_RACE_DEFAULT_MAX_TICKS = 7200;
 

@@ -21,7 +21,7 @@ import {
 } from '../sim/boss_race';
 import { bulletMotionFamily, type BulletMotionFamily } from '../sim/danmaku/bullet_motion';
 import { clamp01, lerpF64, RAD_TO_DEG } from '../math/float_lib';
-import { interpolateBetween, interpolatePos, normalizeFrac } from './interpolation';
+import { extrapolatePos, interpolatePos, normalizeFrac } from './interpolation';
 
 export interface PlayfieldLayout {
   /** Playfield width in pixels. */
@@ -116,8 +116,11 @@ export interface BossRaceFrameOptions {
   /** Radius multiplier for the "focus"/slow mode hitbox highlight. */
   bulletRadiusScale?: number;
   /**
-   * §2.9 插值：**上一份**权威快照。无速度实体（玩家 / Boss）按
-   * `p_n + (p_{n+1} - p_n) * frac` 差分插值，`previous` 即 `p_n`。
+   * §2.9 插值：**上一份**权威快照，只用来取「最近一 tick 的位移」。
+   *
+   * 渲染基准永远是当前快照（`frac = 0` 必须逐像素等于权威 tick，§4.1），所以
+   * 无速度实体是 `p_n + (p_n - p_{n-1}) * frac` 前向外推，而不是「上一份 → 本份」
+   * 的滞后插值。
    */
   previous?: BossRaceSnapshot | null;
   /**
@@ -179,25 +182,28 @@ export function buildBossRaceFrame(
 
   // §2.8：`boss` 是本地玩家视角的 Boss 状态。老服务端不下发时退回固定原点。
   const bossWire = snapshot.boss ?? null;
+  const previousBoss = previous?.boss ?? null;
   const bossMilli = bossWire === null
     ? { x: BOSS_ORIGIN_X_MILLI, y: BOSS_ORIGIN_Y_MILLI }
-    : interpolateBetween(
-        { x: (previous?.boss ?? bossWire).xMilli, y: (previous?.boss ?? bossWire).yMilli },
+    : extrapolatePos(
         { x: bossWire.xMilli, y: bossWire.yMilli },
+        previousBoss === null
+          ? { x: bossWire.xMilli, y: bossWire.yMilli }
+          : { x: previousBoss.xMilli, y: previousBoss.yMilli },
         frac,
       );
 
   for (const player of snapshot.players) {
     const isLocal = player.playerId === options.localPlayerId;
-    // §2.9 无速度实体差分插值（`p_n` = 上一份快照，`p_{n+1}` = 本份）。
+    // §2.9 无速度实体的前向外推：优先用快照速度（§2.8 `vx_milli/vy_milli`），
+    // 没有速度就退回「上一 tick 位移」，两者都保证 `frac = 0` 等于权威位置。
     const before = prevPlayer(player.playerId);
-    const position = before === null
-      ? { x: player.xMilli, y: player.yMilli }
-      : interpolateBetween(
-          { x: before.xMilli, y: before.yMilli },
-          { x: player.xMilli, y: player.yMilli },
-          frac,
-        );
+    const current = { x: player.xMilli, y: player.yMilli };
+    const position = player.vxMilli !== undefined && player.vyMilli !== undefined
+      ? interpolatePos(current, { x: player.vxMilli, y: player.vyMilli }, frac)
+      : before === null
+        ? current
+        : extrapolatePos(current, { x: before.xMilli, y: before.yMilli }, frac);
     players.push({
       playerId: player.playerId,
       position: transform.toPixels(position.x, position.y),
@@ -265,9 +271,14 @@ export function buildBossRaceFrame(
 /**
  * 把快照 `boss.effects[]` 的 milli 几何换成 playfield 像素。
  *
- * 铁拳：`(x0,y0)` 起点 + `(dx,dy)` 方向（任意尺度，按 `length` 归一化长度）。
+ * 铁拳：`(x0,y0)` 起点 + `(dx,dy)` **单位方向 ×1000**（服务端约定，如
+ * `(1000,0)` = 向右），长度取 `length_milli`。这里按 `length / |(dx,dy)|`
+ * 归一化，所以无论是「单位方向×1000」还是「整段位移」都能画对。
  * 黑色帷幕：`edge_y` 一条水平扫屏线。未知 `type` 原样透传但不给几何，渲染层
  * 自己决定忽略（向前兼容新机制）。
+ *
+ * 服务端只在 `ruleset_version == "tna-1.40-danmaku"` 时下发 effects；其余
+ * 规则集 `effects` 为空数组，这里自然什么都不画。
  */
 export function buildBossEffects(
   effects: readonly BossRaceEffect[],
