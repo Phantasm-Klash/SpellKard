@@ -25,15 +25,34 @@ declare global {
   }
 }
 
-/** Default deployment. Keep this in sync with the server deployment. */
+/**
+ * Default deployment. Keep this in sync with the server deployment.
+ *
+ * The lobby is Nakama: the business calls go through `/v2/rpc/<op>` and the
+ * native battle channel is `spk_udp` (UDP/KCP straight to the battle server).
+ * Nakama does not serve Gensoulkyo's own lobby WebSocket (`/v1/lobby/ws`), so
+ * no lobby socket is configured — leaving `lobbyWsUrl` set would make the
+ * client pick the (dead) WebSocket transport over the Nakama RPC one.
+ */
 const DEFAULT_CONFIG: BrowserRuntimeConfig = {
   stageWidth: 960,
   stageHeight: 720,
+  // `lobbyHttpBase` serves the `/v1` REST surface the lobby still bridges
+  // (`match.events` / `match.snapshot` are refused on the RPC path).
   lobbyHttpBase: 'http://121.225.78.211:7350',
-  lobbyWsUrl: 'ws://121.225.78.211:7350/v1/lobby/ws',
-  relayUrl: 'ws://121.225.78.211:7350/v1/battle/relay',
+  lobbyNakamaHttpBase: 'http://121.225.78.211:7350',
+  lobbyTransport: 'nakama_rpc',
+  // Nakama's `runtime.http_key` (Basic auth for `/v2/rpc/*` before an account
+  // session exists) and `socket.server_key` (Basic auth for
+  // `/v2/account/authenticate/*`). Both are the deployment defaults — rotate
+  // them before the gateway is exposed.
+  nakamaHttpKey: 'defaulthttpkey',
+  nakamaServerKey: 'defaultkey',
+  lobbyWsUrl: '',
+  relayUrl: '',
   battleTransport: 'auto',
   backgroundColor: '#0b0716',
+  language: '',
 };
 
 @regClass()

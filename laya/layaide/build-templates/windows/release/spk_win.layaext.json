@@ -1,0 +1,12 @@
+{
+  "extension": {
+    "name": "spk_win",
+    "version": "1.0.0",
+    "api_version": 1,
+    "description": "SpellKard Win32 window extension (borderless windowed fullscreen; never changes the display mode)"
+  },
+  "libraries": {
+    "windows.x86_64": "spk_win.dll"
+  },
+  "dependencies": []
+}
