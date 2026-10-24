@@ -49,6 +49,7 @@ import { SETTINGS_BUTTON_SIZE, createSettingsButton, type SettingsButtonHandle }
 import type { SettingsStore } from '../../../core/settings';
 import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
 import { resizeTextureSprite } from '../view/texture_sprite';
+import { attachCaretPlacement } from '../text_input';
 import { TnaUiImage } from '../view/tna_ui';
 import type { ClientScene } from './scene';
 
@@ -98,6 +99,10 @@ export class LobbyScene implements ClientScene {
   private readonly profileText: Laya.Text;
   private readonly statusText: Laya.Text;
   private readonly roomCodeText: Laya.Text;
+  /** Free-form field holding the code the player wants to join. */
+  private readonly roomCodeInput: Laya.Input;
+  /** Detaches the caret-placement listeners; called when the scene goes away. */
+  private detachRoomCodeCaret: () => void = () => undefined;
   private readonly queueText: Laya.Text;
   private readonly signInButton: ButtonHandle;
   private readonly playButton: ButtonHandle;
@@ -237,7 +242,14 @@ export class LobbyScene implements ClientScene {
     this.addToPage(this.menuSprites, this.recordsButton.sprite);
 
     // --- play page: room-code card, then the room + queue actions ---
-    const codeCardHeight = 96;
+    //
+    // The card shows two different codes, and conflating them was a real bug:
+    //   - the **server's** code for the room the player is in (the lobby
+    //     generates its own; whatever the client sent is ignored), and
+    //   - the code the player wants to **join**.
+    // The server code is what the player has to share, so it is the one shown
+    // in the highlighted frame; the join code is typed into the field below.
+    const codeCardHeight = 148;
     this.addToPage(this.playSprites, createPanel(margin, contentY, contentWidth, codeCardHeight));
     const codeCaption = this.makeText(t('ui.roomCode'), theme.FONT_SIZE_CAPTION, theme.COLOR_TEXT_MUTED, false, margin + theme.SPACE_MD);
     codeCaption.y = contentY + theme.SPACE_SM;
@@ -250,6 +262,31 @@ export class LobbyScene implements ClientScene {
     this.roomCodeText = this.makeText('', theme.FONT_SIZE_HEADING, theme.COLOR_ACCENT, true, margin + theme.SPACE_MD + theme.SPACE_SM);
     this.roomCodeText.y = contentY + 40;
     this.addToPage(this.playSprites, this.roomCodeText);
+
+    // Join field: the server mints its own room code, so the preset list can
+    // never match a real room. A free-form field is the only way to join one.
+    const joinCaption = this.makeText(t('lobby.joinRoomCode'), theme.FONT_SIZE_CAPTION, theme.COLOR_TEXT_MUTED, false, margin + theme.SPACE_MD);
+    joinCaption.y = contentY + 84;
+    this.addToPage(this.playSprites, joinCaption);
+
+    this.roomCodeInput = new Laya.Input();
+    this.roomCodeInput.editable = true;
+    this.roomCodeInput.type = 'text';
+    this.roomCodeInput.prompt = t('lobby.roomCodeHint');
+    this.roomCodeInput.promptColor = theme.COLOR_TEXT_DISABLED;
+    this.roomCodeInput.maxChars = 24;
+    this.roomCodeInput.color = theme.COLOR_TEXT;
+    this.roomCodeInput.fontSize = theme.FONT_SIZE_LABEL;
+    this.roomCodeInput.valign = 'middle';
+    this.roomCodeInput.align = 'left';
+    this.roomCodeInput.mouseEnabled = true;
+    this.roomCodeInput.x = margin + theme.SPACE_MD;
+    this.roomCodeInput.y = contentY + 102;
+    this.roomCodeInput.size(200, 34);
+    this.addToPage(this.playSprites, this.roomCodeInput);
+    // A click inside the field must land the caret where the pointer is, not at
+    // the end of the text — the same fix the login screen applies.
+    this.detachRoomCodeCaret = attachCaretPlacement(this.roomCodeInput);
 
     const actionsY = contentY + codeCardHeight + sectionGap;
     let py = actionsY;
@@ -340,6 +377,7 @@ export class LobbyScene implements ClientScene {
 
   destroy(): void {
     Laya.stage.off(Laya.Event.RESIZE, this, this.onStageResize);
+    this.detachRoomCodeCaret();
     this.root.destroy(true);
   }
 
@@ -627,8 +665,28 @@ export class LobbyScene implements ClientScene {
     return texture;
   }
 
-  get roomCode(): string {
-    return PRESET_ROOM_CODES[this.roomCodeIndex];
+  /**
+   * The code of the room the player is currently in, as the server named it.
+   *
+   * The lobby **generates its own** room code and ignores whatever the client
+   * sent (verified against the running server: `rooms.create` always answers
+   * with a fresh `room_code`). This is the code other players have to type in,
+   * so it is the one shown in the highlighted frame.
+   */
+  get currentRoomCode(): string {
+    return this.options.flow.snapshot().room?.roomCode ?? '';
+  }
+
+  /**
+   * The code to join: whatever the player typed, falling back to the preset
+   * list when the field is empty.
+   *
+   * The presets are a convenience for the "join a known room" case; they are
+   * not the room's real code, because the server never uses them.
+   */
+  get joinCode(): string {
+    const typed = this.roomCodeInput?.text?.trim() ?? '';
+    return typed !== '' ? typed : PRESET_ROOM_CODES[this.roomCodeIndex];
   }
 
   applySnapshot(snapshot: LobbyFlowSnapshot): void {
@@ -676,7 +734,7 @@ export class LobbyScene implements ClientScene {
   }
 
   private refresh(snapshot: LobbyFlowSnapshot = this.options.flow.snapshot()): void {
-    this.roomCodeText.text = this.roomCode;
+    this.roomCodeText.text = this.currentRoomCode !== '' ? this.currentRoomCode : this.joinCode;
     const signedIn = snapshot.session !== null;
     const queued = snapshot.matchmaking !== null;
     // Enablement is recomputed for every button on both pages, not just the
@@ -689,7 +747,11 @@ export class LobbyScene implements ClientScene {
     this.signInButton.setText(signedIn ? t('lobby.signOut') : t('ui.signIn'));
     this.signInButton.setEnabled(!this.busy);
     this.cycleButton.setEnabled(!this.busy);
-    this.joinQueueButton.setEnabled(signedIn && !queued && !this.busy);
+    // Queuing while already in a room is refused by the server (`internal`,
+    // verified live), so the queue actions are disabled until the player
+    // leaves. Without this the only feedback is an opaque error string.
+    const inRoom = snapshot.room !== null;
+    this.joinQueueButton.setEnabled(signedIn && !queued && !inRoom && !this.busy);
     this.refreshQueueButton.setEnabled(queued && !this.busy);
     this.cancelQueueButton.setEnabled(queued && !this.busy);
     this.checkinButton.setEnabled(signedIn && !this.busy);
@@ -717,11 +779,13 @@ export class LobbyScene implements ClientScene {
   }
 
   private async createRoom(): Promise<void> {
-    await this.run(() => this.options.flow.createRoom(this.roomCode));
+    // The code sent here is a *request*; the server mints its own and answers
+    // with it, which is what `currentRoomCode` then shows.
+    await this.run(() => this.options.flow.createRoom(this.joinCode));
   }
 
   private async joinRoom(): Promise<void> {
-    await this.run(() => this.options.flow.joinRoom(this.roomCode));
+    await this.run(() => this.options.flow.joinRoom(this.joinCode));
   }
 
   private async joinQueue(): Promise<void> {

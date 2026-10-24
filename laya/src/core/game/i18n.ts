@@ -395,6 +395,54 @@ export interface Messages {
   'flow.signUpFailed': string;
   'flow.signedOut': string;
   'flow.creatingRoom': string;
+  'flow.room.left': string;
+  'flow.room.noRoom': string;
+  'flow.room.bossLocked': string;
+  'flow.room.reconfiguring': string;
+  'flow.room.reconfigureFailed': string;
+  'flow.room.ready': string;
+  'flow.queue.joining': string;
+  'flow.queue.joinFailed': string;
+  'flow.queue.queued': string;
+  'flow.queue.notQueued': string;
+  'flow.queue.pollFailed': string;
+  'flow.queue.status': string;
+  'flow.queue.cancelFailed': string;
+  'flow.queue.left': string;
+  'flow.match.readyWaitingMatch': string;
+  'flow.match.readyWaitingPlayers': string;
+  'flow.match.readyFailed': string;
+  'flow.match.backInLobby': string;
+  'flow.match.noMatchToAbandon': string;
+  'flow.match.leaving': string;
+  'flow.match.abandonFailed': string;
+  'flow.match.abandoned': string;
+  'flow.match.info': string;
+  'flow.match.winner': string;
+  'flow.checkin.loading': string;
+  'flow.checkin.loadFailed': string;
+  'flow.checkin.streak': string;
+  'flow.checkin.claimFailed': string;
+  'flow.checkin.claimed': string;
+  'flow.shop.loading': string;
+  'flow.shop.loadFailed': string;
+  'flow.shop.summary': string;
+  'flow.shop.purchaseFailed': string;
+  'flow.shop.bought': string;
+  'flow.gacha.loading': string;
+  'flow.gacha.loadFailed': string;
+  'flow.gacha.rosterFailed': string;
+  'flow.gacha.pullFailed': string;
+  'flow.gacha.pulledOne': string;
+  'flow.gacha.pulledMany': string;
+  'flow.gacha.exchangeFailed': string;
+  'flow.gacha.unlocked': string;
+  'flow.inventory.loading': string;
+  'flow.inventory.loadFailed': string;
+  'flow.inventory.summary': string;
+  'flow.records.loading': string;
+  'flow.records.loadFailed': string;
+  'flow.records.summary': string;
   'flow.createRoomFailed': string;
   'flow.joiningRoom': string;
   'flow.joinRoomFailed': string;
@@ -868,6 +916,54 @@ const ZH_HANS: Messages = {
   'flow.transportClosed': '大厅连接已关闭：{reason}',
   'flow.queueIdle': '匹配队列：空闲',
   'flow.queueStatus': '匹配队列：{status}',
+  'flow.room.left': '已离开房间',
+  'flow.room.noRoom': '没有可重新配置的房间',
+  'flow.room.bossLocked': '只有独自在房间时才能更换 Boss / 配装',
+  'flow.room.reconfiguring': '正在重新配置房间…',
+  'flow.room.reconfigureFailed': '重新配置房间失败：{error}',
+  'flow.room.ready': '房间 {code} 已就绪',
+  'flow.queue.joining': '正在加入匹配队列…',
+  'flow.queue.joinFailed': '加入匹配队列失败：{error}',
+  'flow.queue.queued': '排队中 {id}（{status}）',
+  'flow.queue.notQueued': '当前不在匹配队列中',
+  'flow.queue.pollFailed': '刷新队列状态失败：{error}',
+  'flow.queue.status': '队列 {id}：{status}{suffix}',
+  'flow.queue.cancelFailed': '取消匹配队列失败：{error}',
+  'flow.queue.left': '已离开匹配队列',
+  'flow.match.readyWaitingMatch': '已准备 — 等待匹配…',
+  'flow.match.readyWaitingPlayers': '已准备 — 等待玩家…',
+  'flow.match.readyFailed': '准备失败：{error}',
+  'flow.match.backInLobby': '已返回大厅',
+  'flow.match.noMatchToAbandon': '没有可放弃的对局',
+  'flow.match.leaving': '正在离开对局…',
+  'flow.match.abandonFailed': '放弃对局失败：{error}',
+  'flow.match.abandoned': '已放弃对局 {id}',
+  'flow.match.info': '对局 {id}',
+  'flow.match.winner': '胜者：{id}',
+  'flow.checkin.loading': '正在加载签到…',
+  'flow.checkin.loadFailed': '加载签到失败：{error}',
+  'flow.checkin.streak': '签到：连续 {streak} 天',
+  'flow.checkin.claimFailed': '领取签到奖励失败：{error}',
+  'flow.checkin.claimed': '已领取第 {day} 天 · 连续 {streak} 天',
+  'flow.shop.loading': '正在加载商店…',
+  'flow.shop.loadFailed': '加载商店失败：{error}',
+  'flow.shop.summary': '商店：{count} 件商品',
+  'flow.shop.purchaseFailed': '购买失败：{error}',
+  'flow.shop.bought': '已购买 {count}× {item}',
+  'flow.gacha.loading': '正在加载抽卡…',
+  'flow.gacha.loadFailed': '加载抽卡池失败：{error}',
+  'flow.gacha.rosterFailed': '加载角色列表失败：{error}',
+  'flow.gacha.pullFailed': '抽卡失败：{error}',
+  'flow.gacha.pulledOne': '抽到 1× {pool}',
+  'flow.gacha.pulledMany': '抽到 {count}× {pool}',
+  'flow.gacha.exchangeFailed': '兑换失败：{error}',
+  'flow.gacha.unlocked': '已用 {faith} 信仰解锁 {item}',
+  'flow.inventory.loading': '正在加载背包…',
+  'flow.inventory.loadFailed': '加载背包失败：{error}',
+  'flow.inventory.summary': '背包：{count} 组物品',
+  'flow.records.loading': '正在加载记录…',
+  'flow.records.loadFailed': '加载记录失败：{error}',
+  'flow.records.summary': '记录：{wins} 胜 {losses} 负 {draws} 平',
 
   // --- auth error codes ------------------------------------------------------
   'auth.unauthorized': '邮箱或密码错误',
@@ -1307,6 +1403,54 @@ const ZH_HANT: Messages = {
   'flow.transportClosed': '大廳連線已關閉：{reason}',
   'flow.queueIdle': '配對佇列：空閒',
   'flow.queueStatus': '配對佇列：{status}',
+  'flow.room.left': '已離開房間',
+  'flow.room.noRoom': '沒有可重新設定的房間',
+  'flow.room.bossLocked': '只有獨自在房間時才能更換 Boss / 配裝',
+  'flow.room.reconfiguring': '正在重新設定房間…',
+  'flow.room.reconfigureFailed': '重新設定房間失敗：{error}',
+  'flow.room.ready': '房間 {code} 已就緒',
+  'flow.queue.joining': '正在加入匹配隊列…',
+  'flow.queue.joinFailed': '加入匹配隊列失敗：{error}',
+  'flow.queue.queued': '排隊中 {id}（{status}）',
+  'flow.queue.notQueued': '目前不在匹配隊列中',
+  'flow.queue.pollFailed': '刷新隊列狀態失敗：{error}',
+  'flow.queue.status': '隊列 {id}：{status}{suffix}',
+  'flow.queue.cancelFailed': '取消匹配隊列失敗：{error}',
+  'flow.queue.left': '已離開匹配隊列',
+  'flow.match.readyWaitingMatch': '已準備 — 等待匹配…',
+  'flow.match.readyWaitingPlayers': '已準備 — 等待玩家…',
+  'flow.match.readyFailed': '準備失敗：{error}',
+  'flow.match.backInLobby': '已返回大廳',
+  'flow.match.noMatchToAbandon': '沒有可放棄的對局',
+  'flow.match.leaving': '正在離開對局…',
+  'flow.match.abandonFailed': '放棄對局失敗：{error}',
+  'flow.match.abandoned': '已放棄對局 {id}',
+  'flow.match.info': '對局 {id}',
+  'flow.match.winner': '勝者：{id}',
+  'flow.checkin.loading': '正在載入簽到…',
+  'flow.checkin.loadFailed': '載入簽到失敗：{error}',
+  'flow.checkin.streak': '簽到：連續 {streak} 天',
+  'flow.checkin.claimFailed': '領取簽到獎勵失敗：{error}',
+  'flow.checkin.claimed': '已領取第 {day} 天 · 連續 {streak} 天',
+  'flow.shop.loading': '正在載入商店…',
+  'flow.shop.loadFailed': '載入商店失敗：{error}',
+  'flow.shop.summary': '商店：{count} 件商品',
+  'flow.shop.purchaseFailed': '購買失敗：{error}',
+  'flow.shop.bought': '已購買 {count}× {item}',
+  'flow.gacha.loading': '正在載入抽卡…',
+  'flow.gacha.loadFailed': '載入抽卡池失敗：{error}',
+  'flow.gacha.rosterFailed': '載入角色列表失敗：{error}',
+  'flow.gacha.pullFailed': '抽卡失敗：{error}',
+  'flow.gacha.pulledOne': '抽到 1× {pool}',
+  'flow.gacha.pulledMany': '抽到 {count}× {pool}',
+  'flow.gacha.exchangeFailed': '兌換失敗：{error}',
+  'flow.gacha.unlocked': '已用 {faith} 信仰解鎖 {item}',
+  'flow.inventory.loading': '正在載入背包…',
+  'flow.inventory.loadFailed': '載入背包失敗：{error}',
+  'flow.inventory.summary': '背包：{count} 組物品',
+  'flow.records.loading': '正在載入記錄…',
+  'flow.records.loadFailed': '載入記錄失敗：{error}',
+  'flow.records.summary': '記錄：{wins} 勝 {losses} 負 {draws} 平',
 
   // --- auth error codes ------------------------------------------------------
   'auth.unauthorized': '電子郵件或密碼錯誤',
@@ -1735,6 +1879,54 @@ const JA: Messages = {
   'flow.transportClosed': 'ロビー接続が切断されました：{reason}',
   'flow.queueIdle': 'マッチングキュー：待機中',
   'flow.queueStatus': 'マッチングキュー：{status}',
+  'flow.room.left': 'ルームを退出しました',
+  'flow.room.noRoom': '再設定できるルームがありません',
+  'flow.room.bossLocked': '単独時のみボス・編成を変更できます',
+  'flow.room.reconfiguring': 'ルームを再設定中…',
+  'flow.room.reconfigureFailed': 'ルーム再設定に失敗しました：{error}',
+  'flow.room.ready': 'ルーム {code} の準備ができました',
+  'flow.queue.joining': 'マッチングキューに参加中…',
+  'flow.queue.joinFailed': 'キュー参加に失敗しました：{error}',
+  'flow.queue.queued': 'キュー参加中 {id}（{status}）',
+  'flow.queue.notQueued': 'マッチングキューには未参加です',
+  'flow.queue.pollFailed': 'キュー状態の取得に失敗しました：{error}',
+  'flow.queue.status': 'キュー {id}：{status}{suffix}',
+  'flow.queue.cancelFailed': 'キュー取り消しに失敗しました：{error}',
+  'flow.queue.left': 'キューから退出しました',
+  'flow.match.readyWaitingMatch': '準備完了 — マッチング待ち…',
+  'flow.match.readyWaitingPlayers': '準備完了 — 参加者待ち…',
+  'flow.match.readyFailed': '準備に失敗しました：{error}',
+  'flow.match.backInLobby': 'ロビーに戻りました',
+  'flow.match.noMatchToAbandon': '放弃できる対戦がありません',
+  'flow.match.leaving': '対戦から退出中…',
+  'flow.match.abandonFailed': '対戦の放弃に失敗しました：{error}',
+  'flow.match.abandoned': '対戦 {id} を放弃しました',
+  'flow.match.info': '対戦 {id}',
+  'flow.match.winner': '勝者：{id}',
+  'flow.checkin.loading': 'デイリーログインを読み込み中…',
+  'flow.checkin.loadFailed': 'デイリーログインの読み込みに失敗しました：{error}',
+  'flow.checkin.streak': 'デイリーログイン：{streak} 日連続',
+  'flow.checkin.claimFailed': 'デイリー報酬の受け取りに失敗しました：{error}',
+  'flow.checkin.claimed': '{day} 日目の報酬を受け取りました · {streak} 日連続',
+  'flow.shop.loading': 'ショップを読み込み中…',
+  'flow.shop.loadFailed': 'ショップの読み込みに失敗しました：{error}',
+  'flow.shop.summary': 'ショップ：{count} 件',
+  'flow.shop.purchaseFailed': '購入に失敗しました：{error}',
+  'flow.shop.bought': '{count}× {item} を購入しました',
+  'flow.gacha.loading': 'ガチャを読み込み中…',
+  'flow.gacha.loadFailed': 'ガチャプールの読み込みに失敗しました：{error}',
+  'flow.gacha.rosterFailed': 'キャラクター一覧の読み込みに失敗しました：{error}',
+  'flow.gacha.pullFailed': 'ガチャに失敗しました：{error}',
+  'flow.gacha.pulledOne': '1× {pool} を引きました',
+  'flow.gacha.pulledMany': '{count}× {pool} を引きました',
+  'flow.gacha.exchangeFailed': '交換に失敗しました：{error}',
+  'flow.gacha.unlocked': '{faith} の信仰で {item} を解放しました',
+  'flow.inventory.loading': 'インベントリを読み込み中…',
+  'flow.inventory.loadFailed': 'インベントリの読み込みに失敗しました：{error}',
+  'flow.inventory.summary': 'インベントリ：{count} スタック',
+  'flow.records.loading': '戦績を読み込み中…',
+  'flow.records.loadFailed': '戦績の読み込みに失敗しました：{error}',
+  'flow.records.summary': '戦績：{wins}勝 {losses}敗 {draws}分',
 
   // --- auth error codes ------------------------------------------------------
   'auth.unauthorized': 'メールアドレスまたはパスワードが違います',
@@ -2176,6 +2368,54 @@ const EN: Messages = {
   'flow.transportClosed': 'Lobby transport closed: {reason}',
   'flow.queueIdle': 'Matchmaking queue: idle',
   'flow.queueStatus': 'Matchmaking queue: {status}',
+  'flow.room.left': 'Left room',
+  'flow.room.noRoom': 'No room to reconfigure',
+  'flow.room.bossLocked': 'Boss/loadout can only change while you are alone in the room',
+  'flow.room.reconfiguring': 'Reconfiguring room…',
+  'flow.room.reconfigureFailed': 'Reconfigure failed: {error}',
+  'flow.room.ready': 'Room {code} ready',
+  'flow.queue.joining': 'Joining matchmaking queue…',
+  'flow.queue.joinFailed': 'Matchmaking join failed: {error}',
+  'flow.queue.queued': 'In queue {id} ({status})',
+  'flow.queue.notQueued': 'Not in a matchmaking queue',
+  'flow.queue.pollFailed': 'Queue poll failed: {error}',
+  'flow.queue.status': 'Queue {id}: {status}{suffix}',
+  'flow.queue.cancelFailed': 'Queue cancel failed: {error}',
+  'flow.queue.left': 'Left matchmaking queue',
+  'flow.match.readyWaitingMatch': 'Ready — waiting for match…',
+  'flow.match.readyWaitingPlayers': 'Ready — waiting for players…',
+  'flow.match.readyFailed': 'Ready failed: {error}',
+  'flow.match.backInLobby': 'Back in lobby',
+  'flow.match.noMatchToAbandon': 'No match to abandon',
+  'flow.match.leaving': 'Leaving the match…',
+  'flow.match.abandonFailed': 'Abandon failed: {error}',
+  'flow.match.abandoned': 'Match {id} abandoned',
+  'flow.match.info': 'Match {id}',
+  'flow.match.winner': 'Winner: {id}',
+  'flow.checkin.loading': 'Loading check-in…',
+  'flow.checkin.loadFailed': 'Check-in load failed: {error}',
+  'flow.checkin.streak': 'Check-in: {streak}-day streak',
+  'flow.checkin.claimFailed': 'Check-in claim failed: {error}',
+  'flow.checkin.claimed': 'Claimed day {day} · streak {streak}',
+  'flow.shop.loading': 'Loading shop…',
+  'flow.shop.loadFailed': 'Shop load failed: {error}',
+  'flow.shop.summary': 'Shop: {count} item(s)',
+  'flow.shop.purchaseFailed': 'Purchase failed: {error}',
+  'flow.shop.bought': 'Bought {count}× {item}',
+  'flow.gacha.loading': 'Loading totems…',
+  'flow.gacha.loadFailed': 'Gacha load failed: {error}',
+  'flow.gacha.rosterFailed': 'Roster load failed: {error}',
+  'flow.gacha.pullFailed': 'Pull failed: {error}',
+  'flow.gacha.pulledOne': 'Pulled 1× {pool}',
+  'flow.gacha.pulledMany': 'Pulled {count}× {pool}',
+  'flow.gacha.exchangeFailed': 'Exchange failed: {error}',
+  'flow.gacha.unlocked': 'Unlocked {item} for {faith} faith',
+  'flow.inventory.loading': 'Loading inventory…',
+  'flow.inventory.loadFailed': 'Inventory load failed: {error}',
+  'flow.inventory.summary': 'Inventory: {count} stack(s)',
+  'flow.records.loading': 'Loading records…',
+  'flow.records.loadFailed': 'Records load failed: {error}',
+  'flow.records.summary': 'Records: {wins}W-{losses}L-{draws}D',
 
   // --- auth error codes ------------------------------------------------------
   'auth.unauthorized': 'Wrong e-mail or password',

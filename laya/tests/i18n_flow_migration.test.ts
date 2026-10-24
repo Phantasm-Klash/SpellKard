@@ -99,16 +99,21 @@ test('flow status lines resolve in every language, never echoing a key', () => {
 });
 
 test('flow placeholders substitute in every language', () => {
-  const params: Record<string, string> = {
-    status: 'queued',
-    code: 'R000000',
-    count: '2',
-    id: 'match_1',
-    winner: 'p-1',
-    reason: 'closed',
-    name: 'Reimu',
-    email: 'reimu@example.com',
-  };
+  // The parameter set is derived from the tables rather than written out by
+  // hand: a hand-written set silently goes stale the moment a key introduces a
+  // new placeholder, and the test then fails on the *new* key for a reason that
+  // has nothing to do with the substitution.
+  const placeholderNames = new Set<string>();
+  for (const key of i18nKeys()) {
+    const value = stringTable('zh-Hans')[key] ?? '';
+    for (const match of value.matchAll(/\{(\w+)\}/g)) {
+      placeholderNames.add(match[1]);
+    }
+  }
+  const params: Record<string, string> = {};
+  for (const name of placeholderNames) {
+    params[name] = `<${name}>`;
+  }
   const keys = i18nKeys().filter((key) => key.startsWith('flow.'));
   for (const info of LANGUAGES) {
     setLanguage(info.code);
@@ -117,6 +122,32 @@ test('flow placeholders substitute in every language', () => {
       // A dropped placeholder renders as a literal `{name}`, which is what the
       // player would see — so none may survive substitution.
       expect(!/\{\w+\}/.test(value), `${info.code} substitutes ${key}: ${value}`);
+    }
+  }
+});
+
+test('every language uses the same placeholders for the same key', () => {
+  // A translation that renames a placeholder (`{error}` → `{reason}`) would
+  // substitute to the literal `{reason}` in that language only, and the
+  // substitution test above would catch it — but only if it happens to run
+  // with that language selected. Comparing the sets directly names the key
+  // and the two languages involved.
+  const names = (code: string, key: string): string[] => {
+    const value = stringTable(code as never)[key] ?? '';
+    return [...value.matchAll(/\{(\w+)\}/g)].map((match) => match[1]).sort();
+  };
+  const reference = 'zh-Hans';
+  for (const key of i18nKeys()) {
+    const expected = names(reference, key);
+    for (const info of LANGUAGES) {
+      if (info.code === reference) {
+        continue;
+      }
+      const actual = names(info.code, key);
+      expect(
+        actual.join(',') === expected.join(','),
+        `${info.code}.${key} placeholders [${actual.join(',')}] differ from ${reference} [${expected.join(',')}]`,
+      );
     }
   }
 });

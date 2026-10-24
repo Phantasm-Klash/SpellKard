@@ -515,9 +515,15 @@ export class LobbyFlow {
     this.notify();
     const room = await this.client.createRoom(roomCode, modeId, options);
     if (room === null) {
-      this.fail(`Create room failed: ${this.client.lastError}`);
+      this.fail(t('flow.createRoomFailed', { error: this.client.lastError }));
       return false;
     }
+    // `rooms.create` answers with a *queue* response: it carries the room code
+    // the server minted, but no player list or host id. Fetching the room
+    // state right away means the UI shows the real roster (and the server's
+    // code) instead of an empty list, and it is also the only way the player
+    // learns the code they have to share.
+    await this.client.refreshRoom();
     this.setScreen(LobbyScreen.Room);
     return true;
   }
@@ -527,16 +533,19 @@ export class LobbyFlow {
     this.notify();
     const room = await this.client.joinRoom(roomCode, options);
     if (room === null) {
-      this.fail(`Join room failed: ${this.client.lastError}`);
+      this.fail(t('flow.joinRoomFailed', { error: this.client.lastError }));
       return false;
     }
+    // Same as `createRoom`: the join answer is a queue response, so the roster
+    // only shows up after a `rooms.get`.
+    await this.client.refreshRoom();
     this.setScreen(LobbyScreen.Room);
     return true;
   }
 
   async leaveRoom(): Promise<void> {
     await this.client.leaveRoom();
-    this.statusText = 'Left room';
+    this.statusText = t('flow.room.left');
     this.setScreen(LobbyScreen.Lobby);
   }
 
@@ -550,24 +559,24 @@ export class LobbyFlow {
   async reconfigureRoom(options: RoomCreateOptions): Promise<boolean> {
     const room = this.client.room;
     if (room === null) {
-      this.fail('No room to reconfigure');
+      this.fail(t('flow.room.noRoom'));
       return false;
     }
     if (room.players.length > 1) {
-      this.fail('Boss/loadout can only change while you are alone in the room');
+      this.fail(t('flow.room.bossLocked'));
       return false;
     }
     const code = room.roomCode;
     const modeId = room.modeId || DEFAULT_MODE_ID;
-    this.statusText = 'Reconfiguring room…';
+    this.statusText = t('flow.room.reconfiguring');
     this.notify();
     await this.client.leaveRoom('reconfigure');
     const recreated = await this.client.createRoom(code, modeId, options);
     if (recreated === null) {
-      this.fail(`Reconfigure failed: ${this.client.lastError}`);
+      this.fail(t('flow.room.reconfigureFailed', { error: this.client.lastError }));
       return false;
     }
-    this.statusText = `Room ${recreated.roomCode} ready`;
+    this.statusText = t('flow.room.ready', { code: recreated.roomCode });
     this.setScreen(LobbyScreen.Room);
     return true;
   }
@@ -578,14 +587,14 @@ export class LobbyFlow {
    * status text shows the ticket until a `match_start` event arrives.
    */
   async joinMatchmaking(modeId = DEFAULT_MODE_ID): Promise<boolean> {
-    this.statusText = 'Joining matchmaking queue…';
+    this.statusText = t('flow.queue.joining');
     this.notify();
     const ticket = await this.client.joinMatchmaking(modeId);
     if (ticket === null) {
-      this.fail(`Matchmaking join failed: ${this.client.lastError}`);
+      this.fail(t('flow.queue.joinFailed', { error: this.client.lastError }));
       return false;
     }
-    this.statusText = `In queue ${ticket.ticketId} (${ticket.queueStatus})`;
+    this.statusText = t('flow.queue.queued', { id: ticket.ticketId, status: ticket.queueStatus });
     this.notify();
     return true;
   }
@@ -593,16 +602,16 @@ export class LobbyFlow {
   /** Re-poll the active queue ticket for a found match. */
   async refreshMatchmakingTicket(): Promise<boolean> {
     if (this.client.matchmakingTicket === null) {
-      this.fail('Not in a matchmaking queue');
+      this.fail(t('flow.queue.notQueued'));
       return false;
     }
     const updated = await this.client.fetchMatchmakingTicket();
     if (updated === null) {
-      this.fail(`Queue poll failed: ${this.client.lastError}`);
+      this.fail(t('flow.queue.pollFailed', { error: this.client.lastError }));
       return false;
     }
     const suffix = updated.matchId === '' ? '' : ` → match ${updated.matchId}`;
-    this.statusText = `Queue ${updated.ticketId}: ${updated.queueStatus}${suffix}`;
+    this.statusText = t('flow.queue.status', { id: updated.ticketId, status: updated.queueStatus, suffix });
     this.notify();
     return true;
   }
@@ -610,36 +619,36 @@ export class LobbyFlow {
   /** Leave the matchmaking queue (`matchmaking.cancel`). */
   async cancelMatchmaking(): Promise<boolean> {
     if (this.client.matchmakingTicket === null) {
-      this.statusText = 'Not in a matchmaking queue';
+      this.statusText = t('flow.queue.notQueued');
       this.notify();
       return false;
     }
     const ok = await this.client.cancelMatchmaking();
     if (!ok) {
-      this.fail(`Queue cancel failed: ${this.client.lastError}`);
+      this.fail(t('flow.queue.cancelFailed', { error: this.client.lastError }));
       return false;
     }
-    this.statusText = 'Left matchmaking queue';
+    this.statusText = t('flow.queue.left');
     this.notify();
     return true;
   }
 
   /** Ready up and start polling for the allocation + signed battle ticket. */
   async ready(): Promise<boolean> {
-    this.statusText = 'Ready — waiting for match…';
+    this.statusText = t('flow.match.readyWaitingMatch');
     this.setScreen(LobbyScreen.Matching);
     const matchId = this.match?.matchId ?? '';
     if (matchId === '') {
       // No match exists yet: the lobby creates it (and pushes `match_start`)
       // once the room fills, so there is nothing to acknowledge here. Ready is
       // purely a local "I'm set" signal at this point.
-      this.statusText = 'Ready — waiting for players…';
+      this.statusText = t('flow.match.readyWaitingPlayers');
       this.notify();
       return true;
     }
     const ok = await this.client.readyMatch(matchId);
     if (!ok) {
-      this.fail(`Ready failed: ${this.client.lastError}`);
+      this.fail(t('flow.match.readyFailed', { error: this.client.lastError }));
       return false;
     }
     // Best effort: `match_start` already carries the endpoint and roster id, so
@@ -654,7 +663,7 @@ export class LobbyFlow {
   backToLobby(): void {
     this.match = null;
     this.result = null;
-    this.statusText = 'Back in lobby';
+    this.statusText = t('flow.match.backInLobby');
     this.setScreen(LobbyScreen.Lobby);
   }
 
@@ -670,17 +679,17 @@ export class LobbyFlow {
   async abandonMatch(): Promise<boolean> {
     const matchId = this.match?.matchId ?? '';
     if (matchId === '') {
-      this.fail('No match to abandon');
+      this.fail(t('flow.match.noMatchToAbandon'));
       return false;
     }
-    this.statusText = 'Leaving the match…';
+    this.statusText = t('flow.match.leaving');
     this.notify();
     const view = await this.client.disconnectMatch(matchId, 'abandon');
     if (view === null) {
-      this.fail(`Abandon failed: ${this.client.lastError}`);
+      this.fail(t('flow.match.abandonFailed', { error: this.client.lastError }));
       return false;
     }
-    this.statusText = `Match ${matchId} abandoned`;
+    this.statusText = t('flow.match.abandoned', { id: matchId });
     this.backToLobby();
     return true;
   }
@@ -715,14 +724,14 @@ export class LobbyFlow {
   /** Convenience for demos/tests: drive the flow straight to the battle screen. */
   enterBattle(info: MatchStartInfo): void {
     this.match = info;
-    this.statusText = `Match ${info.matchId}`;
+    this.statusText = t('flow.match.info', { id: info.matchId });
     this.setScreen(LobbyScreen.Battle);
   }
 
   /** Apply a result received outside `LobbyClient` (e.g. from the battle server). */
   applyResult(info: MatchResultInfo): void {
     this.result = info;
-    this.statusText = `Winner: ${info.winnerPlayerId}`;
+    this.statusText = t('flow.match.winner', { id: info.winnerPlayerId });
     this.setScreen(LobbyScreen.Result);
   }
 
@@ -730,16 +739,16 @@ export class LobbyFlow {
 
   /** Opens the check-in screen and loads the 7-day cycle. */
   async openCheckin(): Promise<boolean> {
-    this.statusText = 'Loading check-in…';
+    this.statusText = t('flow.checkin.loading');
     this.setScreen(LobbyScreen.Checkin);
     const view = await this.client.fetchCheckin();
     if (view === null) {
-      this.fail(`Check-in load failed: ${this.client.lastError}`);
+      this.fail(t('flow.checkin.loadFailed', { error: this.client.lastError }));
       return false;
     }
     this.checkin = view;
     this.lastError = '';
-    this.statusText = `Check-in: ${view.streak}-day streak`;
+    this.statusText = t('flow.checkin.streak', { streak: view.streak });
     this.notify();
     return true;
   }
@@ -748,11 +757,11 @@ export class LobbyFlow {
   async claimCheckin(): Promise<boolean> {
     const claim = await this.client.claimCheckin();
     if (claim === null) {
-      this.fail(`Check-in claim failed: ${this.client.lastError}`);
+      this.fail(t('flow.checkin.claimFailed', { error: this.client.lastError }));
       return false;
     }
     this.lastError = '';
-    this.statusText = `Claimed day ${claim.day} · streak ${claim.streak}`;
+    this.statusText = t('flow.checkin.claimed', { day: claim.day, streak: claim.streak });
     this.notify();
     // Re-read the cycle so the claimed day flips to `claimed` and the next day
     // becomes `claimable` — the claim response does not carry the day list.
@@ -762,16 +771,16 @@ export class LobbyFlow {
 
   /** Opens the shop and loads the listings plus the wallet. */
   async openShop(): Promise<boolean> {
-    this.statusText = 'Loading shop…';
+    this.statusText = t('flow.shop.loading');
     this.setScreen(LobbyScreen.Shop);
     const view = await this.client.fetchShop();
     if (view === null) {
-      this.fail(`Shop load failed: ${this.client.lastError}`);
+      this.fail(t('flow.shop.loadFailed', { error: this.client.lastError }));
       return false;
     }
     this.shop = view;
     this.lastError = '';
-    this.statusText = `Shop: ${view.items.length} item(s)`;
+    this.statusText = t('flow.shop.summary', { count: view.items.length });
     this.notify();
     return true;
   }
@@ -780,11 +789,11 @@ export class LobbyFlow {
   async purchaseItem(itemId: string, count = 1): Promise<boolean> {
     const purchase = await this.client.purchaseShopItem(itemId, count);
     if (purchase === null) {
-      this.fail(`Purchase failed: ${this.client.lastError}`);
+      this.fail(t('flow.shop.purchaseFailed', { error: this.client.lastError }));
       return false;
     }
     this.lastError = '';
-    this.statusText = `Bought ${purchase.count}× ${purchase.itemId}`;
+    this.statusText = t('flow.shop.bought', { count: purchase.count, item: purchase.itemId });
     this.notify();
     await this.openShop();
     return true;
@@ -795,16 +804,16 @@ export class LobbyFlow {
    * and the character roster.
    */
   async openGacha(): Promise<boolean> {
-    this.statusText = 'Loading totems…';
+    this.statusText = t('flow.gacha.loading');
     this.setScreen(LobbyScreen.Gacha);
     const pools = await this.client.fetchGachaPools();
     if (pools === null) {
-      this.fail(`Gacha load failed: ${this.client.lastError}`);
+      this.fail(t('flow.gacha.loadFailed', { error: this.client.lastError }));
       return false;
     }
     const roster = await this.client.fetchGachaRoster();
     if (roster === null) {
-      this.fail(`Roster load failed: ${this.client.lastError}`);
+      this.fail(t('flow.gacha.rosterFailed', { error: this.client.lastError }));
       return false;
     }
     this.gacha = pools;
@@ -822,7 +831,7 @@ export class LobbyFlow {
   async pullGacha(poolId: string, count: number): Promise<boolean> {
     const pull = await this.client.pullGacha(poolId, count);
     if (pull === null) {
-      this.fail(`Pull failed: ${this.client.lastError}`);
+      this.fail(t('flow.gacha.pullFailed', { error: this.client.lastError }));
       return false;
     }
     this.gachaLastPull = pull;
@@ -833,8 +842,8 @@ export class LobbyFlow {
     this.lastError = '';
     this.statusText =
       count === 1
-        ? `Pulled 1× ${pull.poolId}`
-        : `Pulled ${pull.count}× ${pull.poolId}`;
+        ? t('flow.gacha.pulledOne', { pool: pull.poolId })
+        : t('flow.gacha.pulledMany', { count: pull.count, pool: pull.poolId });
     this.notify();
     return true;
   }
@@ -843,7 +852,7 @@ export class LobbyFlow {
   async exchangeGachaFaith(itemId: string): Promise<boolean> {
     const exchange = await this.client.exchangeGachaFaith(itemId);
     if (exchange === null) {
-      this.fail(`Exchange failed: ${this.client.lastError}`);
+      this.fail(t('flow.gacha.exchangeFailed', { error: this.client.lastError }));
       return false;
     }
     this.gachaRoster = exchange.characters;
@@ -852,39 +861,39 @@ export class LobbyFlow {
       this.gacha = { ...this.gacha, wallet: exchange.wallet, faith: exchange.faith };
     }
     this.lastError = '';
-    this.statusText = `Unlocked ${exchange.itemId} for ${exchange.faithSpent} faith`;
+    this.statusText = t('flow.gacha.unlocked', { item: exchange.itemId, faith: exchange.faithSpent });
     this.notify();
     return true;
   }
 
   /** Opens the inventory screen and loads the owned card stacks. */
   async openInventory(): Promise<boolean> {
-    this.statusText = 'Loading inventory…';
+    this.statusText = t('flow.inventory.loading');
     this.setScreen(LobbyScreen.Inventory);
     const view = await this.client.fetchInventory();
     if (view === null) {
-      this.fail(`Inventory load failed: ${this.client.lastError}`);
+      this.fail(t('flow.inventory.loadFailed', { error: this.client.lastError }));
       return false;
     }
     this.inventory = view;
     this.lastError = '';
-    this.statusText = `Inventory: ${view.items.length} stack(s)`;
+    this.statusText = t('flow.inventory.summary', { count: view.items.length });
     this.notify();
     return true;
   }
 
   /** Opens the records screen and loads the personal record dashboard. */
   async openRecords(): Promise<boolean> {
-    this.statusText = 'Loading records…';
+    this.statusText = t('flow.records.loading');
     this.setScreen(LobbyScreen.Records);
     const view = await this.client.fetchRecords();
     if (view === null) {
-      this.fail(`Records load failed: ${this.client.lastError}`);
+      this.fail(t('flow.records.loadFailed', { error: this.client.lastError }));
       return false;
     }
     this.records = view;
     this.lastError = '';
-    this.statusText = `Records: ${view.wins}W-${view.losses}L-${view.draws}D`;
+    this.statusText = t('flow.records.summary', { wins: view.wins, losses: view.losses, draws: view.draws });
     this.notify();
     return true;
   }
