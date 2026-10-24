@@ -2,8 +2,16 @@
  * Web Crypto implementations of the battle-channel AEAD and key agreement.
  *
  * Uses `crypto.subtle`, available in browsers and Node 18+ (X25519 requires
- * Node 20+ / recent Chrome; `WebCryptoKeyAgreement.isSupported()` reports
- * availability so the app can fall back to the dev scaffold).
+ * Node 20+ / recent Chrome).
+ *
+ * ## Do not use this on the native client
+ *
+ * LayaNative's `scripts/apploader.js` installs a `SubtleCrypto` **shim** whose
+ * every method throws `"not implemented"`, so `crypto.subtle` *exists* there
+ * and a type check happily reports support. The native build therefore uses
+ * `platform/native/native_battle_crypto.ts` instead (a plain-TypeScript
+ * X25519 / HKDF / ChaCha20-Poly1305), and `isSupported()` is only a cheap
+ * pre-filter — {@link WebCryptoKeyAgreement.canUse} is the honest probe.
  *
  * Suite selection matches the server's negotiated values
  * (`PhK-BattleServer/src/server.cpp` accepts `CHACHA20_POLY1305` and
@@ -90,11 +98,47 @@ export class WebCryptoKeyAgreement implements KeyAgreement {
 
   private keyPair: CryptoKeyPair | null = null;
 
+  /**
+   * Whether this runtime really has Web Crypto, not merely an object that
+   * looks like it.
+   *
+   * A type check is not enough: LayaNative's `scripts/apploader.js` installs a
+   * `SubtleCrypto` **shim** whose methods all throw `"not implemented"`, so
+   * `typeof crypto.subtle.deriveBits === 'function'` is true on the native
+   * client while every call fails. The only honest test is to make the call.
+   *
+   * The probe is a real X25519 key generation followed by an export, which is
+   * exactly what {@link generateClientKeyPair} needs; a runtime that cannot
+   * do that cannot do the handshake either.
+   */
+  static async canUse(): Promise<boolean> {
+    if (
+      typeof crypto === 'undefined' ||
+      typeof crypto.subtle === 'undefined' ||
+      typeof (crypto.subtle as { deriveBits?: unknown }).deriveBits !== 'function' ||
+      typeof (crypto.subtle as { generateKey?: unknown }).generateKey !== 'function'
+    ) {
+      return false;
+    }
+    try {
+      const keyPair = (await crypto.subtle.generateKey({ name: 'X25519' } as unknown as AlgorithmIdentifier, true, [
+        'deriveBits',
+      ])) as unknown as CryptoKeyPair;
+      await crypto.subtle.exportKey('raw', keyPair.publicKey);
+      return true;
+    } catch {
+      // The native shim throws here, and a runtime without X25519 throws too.
+      return false;
+    }
+  }
+
   static isSupported(): boolean {
     return (
       typeof crypto !== 'undefined' &&
       typeof crypto.subtle !== 'undefined' &&
-      typeof (crypto.subtle as { deriveBits?: unknown }).deriveBits === 'function'
+      typeof (crypto.subtle as { deriveBits?: unknown }).deriveBits === 'function' &&
+      typeof (crypto.subtle as { generateKey?: unknown }).generateKey === 'function' &&
+      typeof (crypto.subtle as { exportKey?: unknown }).exportKey === 'function'
     );
   }
 
