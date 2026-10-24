@@ -71,6 +71,25 @@ import {
   type BossCatalogEntry,
 } from './danmaku/boss_catalog';
 import { playerBombDamage, playerShotDamage } from './danmaku/player_loadout_damage';
+import {
+  accrueCardEnergy,
+  applyCast,
+  buildCardActivation,
+  createHandState,
+  trimCardId,
+  type CardDefinition,
+  type HandState,
+} from './card_hand';
+import {
+  applyBulletPurge,
+  applyFinisher,
+  applyInvulnerable,
+  applyOpponentPattern,
+  type CardBulletDelta,
+  type CardBulletSnapshot,
+  type CardEffectResult,
+  type CardPlayerSnapshot,
+} from './card_effects';
 
 export const MVP_BOSS_RACE_MODE_ID = 'mvp_boss_race';
 /**
@@ -89,6 +108,68 @@ export const BOSS_RACE_MAX_BULLETS_PER_PLAYER = 384;
 export const BOSS_RACE_MAX_PLAYERS = 2;
 export const BOSS_RACE_MIN_PLAYERS = 2;
 export const BOSS_RACE_PATTERN_COUNT = 10;
+
+/**
+ * The boss-race per-tick damage rule — the pure function behind C++
+ * `BossRaceSimulation::ApplyPlayerTick` (`boss_race.cpp:395-414`).
+ *
+ * The rule, verbatim from the server:
+ *
+ *  - shooting adds {@link BOSS_RACE_DAMAGE_PER_SHOT_TICK} (10) per tick, and a
+ *    configured self loadout **replaces** that number with the loadout table's
+ *    main-shot damage (`tick_damage = spec->damage` — a replace, not an add);
+ *  - a bomb **adds** the loadout table's bomb damage on top;
+ *  - without a loadout the bomb contributes nothing at all (the server's
+ *    `PlayerBombSpecFor` returns `nullptr`).
+ *
+ * @param shotDamage the loadout's main-shot damage, or `undefined` without a loadout
+ * @param bombDamage the loadout's bomb damage, or `undefined` without a loadout
+ */
+export function bossRaceTickDamage(
+  shoot: boolean,
+  bomb: boolean,
+  shotDamage: number | undefined,
+  bombDamage: number | undefined,
+): number {
+  let damage = 0;
+  if (shoot) {
+    damage += BOSS_RACE_DAMAGE_PER_SHOT_TICK;
+    if (shotDamage !== undefined && shotDamage >= 0) {
+      damage = shotDamage;
+    }
+  }
+  if (bomb) {
+    if (bombDamage !== undefined && bombDamage >= 0) {
+      damage += bombDamage;
+    }
+  }
+  return damage;
+}
+
+/**
+ * The focus ("集中") movement speed — C++ `BattleSimulation::ApplyInput`
+ * (`simulation.cpp:2181`): `const std::int32_t speed = input.slow ? 2500 : 5000;`.
+ *
+ * ★ The **boss-race** mode does not model focus: the C++ race simulation moves
+ * the ship by a flat 3000 milli/tick whatever `slow` says
+ * (`boss_race.cpp:356-369`), and this client mirrors that server byte for
+ * byte — applying the half-speed rule here would make the local prediction
+ * lag the authoritative one and hard-snap every frame. The rule is ported so
+ * the shared-boss mode can use it unchanged, and so the server-side gap is
+ * visible in one place.
+ */
+export const FOCUS_MOVE_SPEED_MILLI = 2500;
+export const NORMAL_MOVE_SPEED_MILLI = 5000;
+
+/**
+ * The movement speed while the focus key is held: half the normal speed.
+ *
+ * Mirrors `simulation.cpp:2181` (5000 → 2500). Pass the mode's own normal
+ * speed so the ratio stays the server's.
+ */
+export function focusMoveSpeed(normalSpeedMilli: number, slow: boolean): number {
+  return slow ? Math.trunc(normalSpeedMilli / 2) : normalSpeedMilli;
+}
 
 /**
  * 真实弹幕（千夜追忆移植）模式库 —— 服务端 `BossRacePatternLibrary()` 的镜像。
@@ -371,14 +452,32 @@ export interface BossRaceConfig {
   /** 每玩家自机 loadout（空/缺省 = 默认自机行为）。 */
   loadouts?: readonly BossRaceLoadout[];
   /**
-   * Whether the real-danmaku timeline in this build is the reverse-engineered
-   * production one. Defaults to {@link TNA_TIMELINE_IS_PRODUCTION} — now `true`,
+   * Whether the simulation runs the real-danmaku timeline in this build is the
+   * reverse-engineered production one. Defaults to {@link TNA_TIMELINE_IS_PRODUCTION} — now `true`,
    * because the library here **is** the server's. Only tests that want to
    * exercise the "provisional timeline" branch override it.
    *
    * See {@link BossRaceSimulation.hashComparable}.
    */
   realDanmakuIsProduction?: boolean;
+  /**
+   * Whether the simulation runs the **card pipeline** for the `card_slot`
+   * input (validate → charge → effect), mirroring the battle server's
+   * `card_hand.hpp` rules.
+   *
+   * ★ Default `false`, and that default is a **server-parity** decision, not an
+   * omission: the C++ boss-race simulation never looks at `card_slot`
+   * (`boss_race.cpp:339-423` handles movement / shoot / bomb only — there is no
+   * `card_slot` read anywhere in that file), so a client that casts cards
+   * locally would predict a boss HP and a bullet set the server never
+   * produced. Turn this on **together with** the server-side implementation
+   * (the same five rules live in `BattleSimulation::ExecuteCastCard`,
+   * `simulation.cpp:2395-2447`).
+   *
+   * The rules themselves are implemented and unit-tested either way — see
+   * `core/sim/card_hand.ts` and `core/sim/card_effects.ts`.
+   */
+  cardMechanics?: boolean;
 }
 
 export interface BossRaceInput {
@@ -461,6 +560,10 @@ interface PlayerState {
   damageDealt: number;
   connected: boolean;
   lastInput: BossRaceInput;
+  /** The in-match hand — C++ `PlayerState::hand` (`card_hand.hpp:74-80`). */
+  hand: HandState;
+  /** The tick the player is immune until (`invulnerable` cards). */
+  invulnerableUntilTick: number;
 }
 
 /**
@@ -506,6 +609,19 @@ function clampMilli(value: number, lo: number, hi: number): number {
     return hi;
   }
   return truncated;
+}
+
+/**
+ * `ParseDecimalInt64Text` — the shape the signed ticket's `server_seed` must
+ * have (C++ `ticket.hpp:82-84`: Go's `strconv.FormatInt` output — an optional
+ * `-` followed by digits, no padding, no whitespace).
+ *
+ * The C++ side parses the text into an `int64` and rejects anything that does
+ * not fit; the client only needs the shape, because it keeps the text as-is
+ * for the deterministic stream.
+ */
+function isDecimalInt64Text(text: string): boolean {
+  return /^-?\d+$/.test(text);
 }
 
 /** 屏幕系发射点 —— 服务端 `ctx.emitter_x/y = kScreenCenter + ToPixels(origin)`。 */
@@ -571,9 +687,23 @@ export class BossRaceSimulation {
    * insertion order is tick order and the first key is always the oldest.
    */
   private readonly hashHistory = new Map<number, string>();
+  /** Whether the card pipeline runs — see {@link BossRaceConfig.cardMechanics}. */
+  private readonly cardMechanics: boolean;
+  /**
+   * The lobby seed the `bullet_purge` selection is scored with — the signed
+   * ticket's `server_seed` as decimal text (C++ `card_purge_seed_`,
+   * `simulation.cpp:2494-2495`: the **ticket** seed, never the derived match
+   * seed).
+   */
+  private cardPurgeSeedDecimal = '';
+  /** Whether the ticket seed was already set (C++ `card_purge_seed_set_`). */
+  private cardPurgeSeedSet = false;
+  /** The events produced by the current tick (§2.8 `events[]`). */
+  private tickEvents: BossRaceEventView[] = [];
 
   constructor(config: BossRaceConfig) {
     this.bossEntry = findBossCatalogEntry(config.bossId ?? '');
+    this.cardMechanics = config.cardMechanics ?? false;
     const catalogHp = this.bossEntry === null ? null : this.bossEntry.bossMaxHp;
     this.config = {
       ...config,
@@ -722,6 +852,8 @@ export class BossRaceSimulation {
       damageDealt: 0,
       connected: true,
       lastInput: emptyInput(playerId),
+      hand: createHandState(),
+      invulnerableUntilTick: 0,
     });
     return true;
   }
@@ -733,6 +865,76 @@ export class BossRaceSimulation {
     }
     player.connected = connected;
     return true;
+  }
+
+  /**
+   * `SeedPlayerHand` — mirrors C++ `BattleSimulation::SeedPlayerHand`
+   * (`simulation.cpp:2245-2280`).
+   *
+   * The signed ticket carries the opening hand and the deck; the hand is the
+   * deck's prefix, so the draw cursor continues at `handCardIds.length` and the
+   * opening costs exactly that many cards.
+   *
+   * The lobby seed is the **ticket's** `server_seed` (signed decimal text) —
+   * the same number the server scores `bullet_purge` with
+   * (`simulation.cpp:2494-2495`). A second ticket with a *different* seed is a
+   * lobby invariant violation and is refused, exactly like the C++ side
+   * (`simulation.cpp:2263-2266`).
+   *
+   * @returns whether the hand was seeded
+   */
+  seedPlayerHand(
+    playerId: string,
+    handCardIds: readonly string[],
+    initialEnergy: number,
+    serverSeedDecimal: string,
+    deckCardIds: readonly string[] = [],
+  ): boolean {
+    const player = this.players.get(playerId);
+    if (player === undefined) {
+      return false;
+    }
+    const seed = serverSeedDecimal.trim();
+    if (seed !== '') {
+      if (!isDecimalInt64Text(seed)) {
+        return false;
+      }
+      if (this.cardPurgeSeedSet && seed !== this.cardPurgeSeedDecimal) {
+        return false;
+      }
+      this.cardPurgeSeedDecimal = seed;
+      this.cardPurgeSeedSet = true;
+    }
+    player.hand.cardIds = handCardIds.slice();
+    player.hand.energy = initialEnergy;
+    player.hand.cooldowns.clear();
+    player.hand.deck = deckCardIds.slice();
+    player.hand.drawCursor = player.hand.deck.length === 0 ? 0 : handCardIds.length;
+    player.invulnerableUntilTick = 0;
+    return true;
+  }
+
+  /**
+   * The player's current hand — the slots the client can cast from.
+   *
+   * Mirrors the snapshot's `hand` wire field (§2.8): one entry per slot, in
+   * slot order.
+   */
+  handCardsFor(playerId: string): BossRaceHandCard[] {
+    const player = this.players.get(playerId);
+    if (player === undefined) {
+      return [];
+    }
+    return player.hand.cardIds.map((cardId, slot) => ({
+      cardId: trimCardId(cardId),
+      slot,
+      selected: false,
+    }));
+  }
+
+  /** The player's card energy (the hand bar's readout). */
+  playerEnergy(playerId: string): number {
+    return this.players.get(playerId)?.hand.energy ?? 0;
   }
 
   /**
@@ -830,9 +1032,18 @@ export class BossRaceSimulation {
       }
       let input = player.lastInput;
       const pending = bucket?.get(player.playerId);
+      // "Real input" = this tick's own packet. The C++ shared simulation only
+      // replays a cast for real inputs, never for the held fallback
+      // (`simulation.cpp:1171-1177`), so a stale slot is never re-cast.
+      const realInput = pending !== undefined;
       if (pending !== undefined) {
         input = pending;
         player.lastInput = input;
+      }
+      // 手牌能量逐 tick 回复（C++ `simulation.cpp:1162-1169`）：回复先于本 tick
+      // 的出牌扣费（与大厅 applyInputLocked 的 accrue → 处理输入顺序一致）。
+      if (this.cardMechanics) {
+        accrueCardEnergy(player.hand);
       }
       if ((input.directionBits & DIR_UP) !== 0) {
         player.yMilli -= MOVE_MILLI_PER_TICK;
@@ -853,29 +1064,211 @@ export class BossRaceSimulation {
       // 配置自机 loadout 后改为真实自机表（shot 主弹伤害 / bomb 主弹伤害），
       // 与服务端 `ApplyPlayerTick` 逐位一致。
       if (player.bossCurrentHp > 0) {
-        let tickDamage = 0;
-        if (input.shoot) {
-          tickDamage += BOSS_RACE_DAMAGE_PER_SHOT_TICK;
-          const shotDamage = this.shotDamageByPlayer.get(player.playerId);
-          if (shotDamage !== undefined && shotDamage >= 0) {
-            tickDamage = shotDamage;
-          }
-        }
-        if (input.bomb) {
-          const bombDamage = this.bombDamageByPlayer.get(player.playerId);
-          if (bombDamage !== undefined && bombDamage >= 0) {
-            tickDamage += bombDamage;
-          }
-        }
+        const tickDamage = bossRaceTickDamage(
+          input.shoot,
+          input.bomb,
+          this.shotDamageByPlayer.get(player.playerId),
+          this.bombDamageByPlayer.get(player.playerId),
+        );
         if (tickDamage > 0) {
           const damage = Math.min(tickDamage, player.bossCurrentHp);
           player.bossCurrentHp -= damage;
           player.damageDealt += damage;
         }
       }
+
+      // 出牌（C++ `simulation.cpp:1171-1177`）：只消费**真实**客户端输入——
+      // held fallback 不重放 card_slot；-1 哨兵直接跳过（无事件、无状态变更）。
+      if (this.cardMechanics && realInput && input.cardSlot >= 0) {
+        this.executeCastCard(player, input.cardSlot, tick);
+      }
     }
     if (bucket !== undefined) {
       this.pendingInputsByTick.delete(tick);
+    }
+  }
+
+  /**
+   * `ExecuteCastCard` — mirrors C++ `BattleSimulation::ExecuteCastCard`
+   * (`simulation.cpp:2395-2447`).
+   *
+   * The order is the server's:
+   *
+   *  1. `ApplyCast` validates **and** books the ledger (pay the energy, write
+   *     the cooldown, drop the slot, draw a replacement);
+   *  2. the `-1` sentinel returns immediately — no card, no event, no state
+   *     change;
+   *  3. a rejection produces a `card_rejected` row and nothing else;
+   *  4. an accepted cast damages the boss by the card's `damage` (the generic
+   *     activation path — C++ `simulation.cpp:2421-2435`; in the race every
+   *     player owns a copy of the boss, so the card hits the caster's own copy)
+   *     and emits a `card_accepted` row;
+   *  5. the effect layer runs (`RunCardEffect`, C++ `simulation.cpp:2467-2534`).
+   */
+  private executeCastCard(player: PlayerState, slot: number, tick: number): void {
+    const cast = applyCast(player.hand, slot, tick);
+    if (cast.playsNoCard) {
+      return;
+    }
+    if (!cast.accepted || cast.definition === null) {
+      this.tickEvents.push({
+        tick,
+        type: 'card_rejected',
+        playerId: player.playerId,
+        data: { slot, reason: cast.reason },
+      });
+      return;
+    }
+    const definition = cast.definition;
+    if (definition.damage > 0 && player.bossCurrentHp > 0) {
+      const damage = Math.min(definition.damage, player.bossCurrentHp);
+      player.bossCurrentHp -= damage;
+      player.damageDealt += damage;
+    }
+    this.tickEvents.push({
+      tick,
+      type: 'card_accepted',
+      playerId: player.playerId,
+      data: { card_id: definition.cardId, slot, value: definition.damage },
+    });
+    this.runCardEffect(player, definition, tick);
+  }
+
+  /**
+   * `RunCardEffect` — mirrors C++ `BattleSimulation::RunCardEffect`
+   * (`simulation.cpp:2467-2534`).
+   *
+   * Only the four bullet-level kinds produce an effect; `self` / `pattern` /
+   * `economy` change the ledger and stop there (C++ `simulation.cpp:2511-2516`
+   * returns before the event row, so those cards emit no
+   * `card_effect_applied`).
+   */
+  private runCardEffect(player: PlayerState, definition: CardDefinition, tick: number): void {
+    const activation = buildCardActivation(definition, tick);
+    let effect: CardEffectResult;
+    switch (activation.effectKind) {
+      case 'opponent_pattern': {
+        const players: CardPlayerSnapshot[] = [];
+        for (const playerId of this.sortedPlayerIds()) {
+          const other = this.players.get(playerId);
+          if (other === undefined) {
+            continue;
+          }
+          players.push({ playerId: other.playerId, xMilli: other.xMilli, yMilli: other.yMilli });
+        }
+        effect = applyOpponentPattern(
+          players,
+          player.playerId,
+          activation,
+          tick,
+          this.config.matchId,
+          this.nextBulletId,
+          this.liveBullets.length,
+          BOSS_ORIGIN_X_MILLI,
+          BOSS_ORIGIN_Y_MILLI,
+        );
+        break;
+      }
+      case 'bullet_purge': {
+        const caster: CardPlayerSnapshot = {
+          playerId: player.playerId,
+          xMilli: player.xMilli,
+          yMilli: player.yMilli,
+        };
+        effect = applyBulletPurge(
+          this.cardBulletSnapshots(),
+          caster,
+          activation,
+          this.cardPurgeSeedDecimal,
+          tick,
+        );
+        break;
+      }
+      case 'invulnerable': {
+        effect = applyInvulnerable(activation);
+        player.invulnerableUntilTick = effect.invulnerableUntil;
+        break;
+      }
+      case 'finisher': {
+        effect = applyFinisher(this.cardBulletSnapshots(), tick);
+        break;
+      }
+      default:
+        return;
+    }
+    this.applyCardBulletDeltas(effect.bulletDeltas, player.playerId);
+    this.tickEvents.push({
+      tick,
+      type: 'card_effect_applied',
+      playerId: player.playerId,
+      data: {
+        card_id: activation.cardId,
+        value: effect.eventValue,
+        target_user_id: effect.targetUserId,
+      },
+    });
+  }
+
+  /** The live bullets as effect-layer snapshots (C++ `BuildBulletSnapshots`). */
+  private cardBulletSnapshots(): CardBulletSnapshot[] {
+    return this.liveBullets.map((live) => {
+      const m = live.motion;
+      return {
+        bulletId: live.bulletId,
+        patternId: live.patternId,
+        kind: 'nway',
+        spawnTick: 0,
+        xMilli: toMilli(m.x - SCREEN_CENTER_X_PX),
+        yMilli: toMilli(m.y - SCREEN_CENTER_Y_PX),
+        vxMilli: toMilli(m.vx),
+        vyMilli: toMilli(m.vy),
+        radiusMilli: llround(m.hit_dis * MILLI_PER_PIXEL),
+        damage: 0,
+        color: '',
+      };
+    });
+  }
+
+  /**
+   * `ApplyBulletDeltas` — mirrors C++ `BattleSimulation::ApplyBulletDeltas`
+   * (`simulation.cpp:2536-2564`): spawns and despawns bullets in the field.
+   *
+   * The C++ side re-mints the spawn ids with the simulation's own `b<N>`
+   * scheme and discards the effect layer's Go-style ids; this client does the
+   * same, so the ids stay in one sequence with the pattern bullets.
+   */
+  private applyCardBulletDeltas(deltas: readonly CardBulletDelta[], ownerPlayerId: string): void {
+    for (const delta of deltas) {
+      if (delta.op === 'spawn') {
+        if (this.emittedBulletsFor(ownerPlayerId) >= BOSS_RACE_MAX_BULLETS_PER_PLAYER) {
+          continue;
+        }
+        const motion = createBulletMotion();
+        motion.x = SCREEN_CENTER_X_PX + toPixels(delta.xMilli);
+        motion.y = SCREEN_CENTER_Y_PX + toPixels(delta.yMilli);
+        motion.angle = Math.atan2(delta.vyMilli, delta.vxMilli) * (180 / Math.PI);
+        motion.angle_init = -1;
+        motion.speed = Math.hypot(delta.vxMilli, delta.vyMilli) / MILLI_PER_PIXEL;
+        motion.spd_init2 = motion.speed;
+        motion.bullet_func_no = 0;
+        motion.hit_dis = delta.radiusMilli / MILLI_PER_PIXEL;
+        integrateVelocity(motion);
+        this.liveBullets.push({
+          bulletId: `b${this.nextBulletId}`,
+          ownerPlayerId,
+          patternId: delta.patternId,
+          patternIndex: 0,
+          spawnIndex: this.nextBulletId,
+          generation: 0,
+          motion,
+        });
+        this.nextBulletId += 1;
+      } else if (delta.op === 'despawn') {
+        const index = this.liveBullets.findIndex((live) => live.bulletId === delta.bulletId);
+        if (index >= 0) {
+          this.liveBullets.splice(index, 1);
+        }
+      }
     }
   }
 
@@ -1231,6 +1624,8 @@ export class BossRaceSimulation {
     }
     const tickToApply = this.currentTick + 1;
     this.startIfReady();
+    // §2.8：`events[]` 是**本 tick 增量**（非累积），每 tick 清空重来。
+    this.tickEvents = [];
     if (this.state === BossRaceState.Running) {
       this.applyPlayerTick(tickToApply);
       this.spawnBulletsForTick(tickToApply);
@@ -1278,6 +1673,9 @@ export class BossRaceSimulation {
         bossCurrentHp: player.bossCurrentHp,
         damageDealt: player.damageDealt,
         connected: player.connected,
+        ...(this.cardMechanics
+          ? { invulnerableUntilTick: player.invulnerableUntilTick }
+          : {}),
       });
     }
     const real = this.usesRealDanmaku();
@@ -1308,6 +1706,9 @@ export class BossRaceSimulation {
       players,
       bullets,
       stateHash: this.canonicalStateHash(),
+      // §2.8：事件是**本 tick 增量**。没有事件时字段保持缺省（老服务端同样
+      // 不下发），这样既有快照的形状不变。
+      ...(this.tickEvents.length > 0 ? { events: this.tickEvents } : {}),
     };
   }
 

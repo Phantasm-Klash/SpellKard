@@ -1,13 +1,14 @@
 /**
  * Card-effect mirror of the lobby's authoritative card catalogue.
  *
- * The Go lobby (`Gensoulkyo/runtime/core`) is the single source of truth for the
- * card set and its effects; the C++ battle server does not implement card
- * effects at all (it only forwards `deck_card_ids`). This module is the client
- * side of that contract: the effect-kind vocabulary plus the static definition
- * of **all 20 catalog cards** (base 12 + contract 4 + expansion 4), so the
- * battle view and the inventory screen can talk about a card without guessing
- * at server-only constants.
+ * The Go lobby (`Gensoulkyo/runtime/core`) is the original source of truth for
+ * the card set and its effects; the C++ battle server ports the same rules
+ * (`phk/battle/card_hand.hpp` + `phk/battle/card_effects.hpp`) and drives them
+ * from `BattleSimulation::ExecuteCastCard`. This module is the client side of
+ * that contract: the effect-kind vocabulary, the static definition of **all 20
+ * catalog cards** (base 12 + contract 4 + expansion 4) and the effect
+ * execution layer, so the battle view and the inventory screen can talk about a
+ * card without guessing at server-only constants.
  *
  * ★ 字段名 / 取值必须与 `card_records_spec.md` §1.1–§1.3 一致：服务端在并行
  * 实现同一份契约，改这里的 `cardId` / `effectKind` / 数值就等于改 wire 契约。
@@ -67,6 +68,26 @@ export interface CardEffectDefinition {
   purgeRadius?: number;
   /** How many bullets are removed (`bullet_purge` only). */
   purgeCount?: number;
+  /**
+   * The opponent-pattern curtain's pattern id (`pattern_id` in the server's
+   * catalog). Empty = fall back to the card's own id, exactly like the C++
+   * `CardActivation::pattern_id` default (`card_hand.cpp:145`).
+   *
+   * ★ The catalog does not set it: every `opponent_pattern` card in the server's
+   * 20-card table names **itself** as its pattern (`mirror_lance` →
+   * `mirror_lance`, `ember_lance` → `ember_lance`, `card_hand.cpp:35`/`:40`), so
+   * `core/sim/card_hand.ts` derives it from the card id instead of repeating it
+   * here — the resulting value is identical.
+   */
+  patternId?: string;
+  /**
+   * `energy_gain` — the lobby grants this much extra energy when the card is
+   * played (`draw_sigil`: 0.75, `card_hand.cpp:30`). The battle server's
+   * ledger ignores it; the field is carried so the client can describe it.
+   */
+  energyGain?: number;
+  /** `draw_cards` — extra cards drawn (`draw_sigil`: 1, `card_hand.cpp:30`). */
+  drawCards?: number;
 }
 
 /**
@@ -159,6 +180,8 @@ export const BASE_CARD_EFFECTS: Readonly<Record<string, CardEffectDefinition>> =
     damage: 0,
     scoreBonus: 12,
     rarity: 'common',
+    energyGain: 0.75,
+    drawCards: 1,
   },
   aim_baffle: {
     cardId: 'aim_baffle',
@@ -550,4 +573,375 @@ export function opponentPatternWarning(
  */
 export function invulnerableRemainingTicks(invulnerableUntilTick: number, nowTick: number): number {
   return Math.max(0, Math.trunc(invulnerableUntilTick) - Math.trunc(nowTick));
+}
+
+// ---------------------------------------------------------------------------
+// Effect execution layer — the TypeScript port of the battle server's
+// `phk/battle/card_effects.hpp` / `card_effects.cpp`.
+//
+// The catalogue above answers "what does this card do"; this section answers
+// "what does the field look like after the card fired". Every rule below is
+// transcribed from the C++ server, which is the port of the lobby's
+// `Gensoulkyo/runtime/core/card_effects.go`:
+//
+// | rule | C++ |
+// | --- | --- |
+// | opponent-pattern fan geometry | `card_effects.cpp:94-102` |
+// | opponent-pattern spawn | `card_effects.cpp:104-181` |
+// | bullet purge | `card_effects.cpp:183-260` |
+// | invulnerable window | `card_effects.cpp:262-268` |
+// | finisher (clear the field) | `card_effects.cpp:270-301` |
+// | opponent pick (lowest id) | `card_effects.cpp:74-87` |
+// | bullet id order | `card_effects.cpp:64-72` |
+//
+// ★ Unit note: the C++ deltas are **pixels** with Go-style rounding (x/y/radius
+// 3 decimals, vx/vy 4 — `card_effects.cpp:45-50`) because the shared
+// simulation stores integer-milli bullets and re-multiplies by 1000 in
+// `ApplyBulletDeltas` (`simulation.cpp:2546-2551`). This port keeps **milli**
+// end to end — the client simulation's native unit — so the values agree with
+// the server to the milli and no second rounding step is needed.
+// ---------------------------------------------------------------------------
+
+/** `kCardOpponentPatternCount` — `card_effects.hpp:28`. */
+export const CARD_OPPONENT_PATTERN_COUNT = 7;
+/** `kCardOpponentPatternSpread` — `card_effects.hpp:29` (π/3). */
+export const CARD_OPPONENT_PATTERN_SPREAD = Math.PI / 3;
+/** `kCardOpponentPatternSpeed` — `card_effects.hpp:30` (px/tick). */
+export const CARD_OPPONENT_PATTERN_SPEED = 5.0;
+/** `kCardOpponentPatternRadius` — `card_effects.hpp:31` (px). */
+export const CARD_OPPONENT_PATTERN_RADIUS = 4.5;
+/** `kCardOpponentPatternColor` — `card_effects.hpp:32`. */
+export const CARD_OPPONENT_PATTERN_COLOR = 'violet';
+/** `kMaxBullets` — `card_effects.hpp:50` (the field cap `addBulletLocked` enforces). */
+export const CARD_MAX_BULLETS = 384;
+
+/**
+ * The boss origin the opponent-pattern curtain is fired from.
+ *
+ * C++ `kBossOriginX` / `kBossOriginY` (`card_effects.hpp:46-47`) are `(0, 0)`
+ * in **arena** coordinates — the shared boss sits at the arena centre. A mode
+ * whose boss sits elsewhere (the boss race puts it at `(0, -60000)` milli)
+ * passes its own origin; the geometry itself is unchanged.
+ */
+export const CARD_BOSS_ORIGIN_X_MILLI = 0;
+export const CARD_BOSS_ORIGIN_Y_MILLI = 0;
+
+/** The fan geometry of an opponent-pattern card — C++ `CardPatternGeometry`. */
+export interface CardPatternGeometry {
+  count: number;
+  spread: number;
+  speed: number;
+  radius: number;
+  color: string;
+}
+
+/**
+ * `CardPatternGeometryFor` — C++ `card_effects.cpp:94-102`.
+ *
+ * `ember_lance` brings its own fan (5 shots / speed 6.5 / radius 4.0 /
+ * amber); every other id — including `mirror_lance` and anything unregistered
+ * — falls back to the original constants, so the behaviour is bit-for-bit
+ * unchanged for the cards that existed first.
+ */
+export function cardPatternGeometryFor(patternId: string): CardPatternGeometry {
+  if (patternId === 'ember_lance') {
+    return {
+      count: 5,
+      spread: CARD_OPPONENT_PATTERN_SPREAD,
+      speed: 6.5,
+      radius: 4.0,
+      color: 'amber',
+    };
+  }
+  return {
+    count: CARD_OPPONENT_PATTERN_COUNT,
+    spread: CARD_OPPONENT_PATTERN_SPREAD,
+    speed: CARD_OPPONENT_PATTERN_SPEED,
+    radius: CARD_OPPONENT_PATTERN_RADIUS,
+    color: CARD_OPPONENT_PATTERN_COLOR,
+  };
+}
+
+/** The activation parameters — C++ `CardActivation` (`card_effects.hpp:95-102`). */
+export interface CardActivation {
+  cardId: string;
+  /** `opponent_pattern` | `bullet_purge` | `invulnerable` | `finisher` | … */
+  effectKind: string;
+  /** Only used by `opponent_pattern`; empty falls back to the card's own id. */
+  patternId: string;
+  /** `tick + duration_ticks`. */
+  expiresTick: number;
+  /** Only used by `bullet_purge` (playfield pixels). */
+  purgeRadius: number;
+  /** Only used by `bullet_purge`. */
+  purgeCount: number;
+}
+
+/** A read-only bullet snapshot — C++ `CardBulletSnapshot` (`card_effects.hpp:73-85`). */
+export interface CardBulletSnapshot {
+  bulletId: string;
+  patternId: string;
+  kind: string;
+  spawnTick: number;
+  xMilli: number;
+  yMilli: number;
+  vxMilli: number;
+  vyMilli: number;
+  radiusMilli: number;
+  damage: number;
+  color: string;
+}
+
+/** A read-only player snapshot — C++ `CardPlayerSnapshot` (`card_effects.hpp:88-92`). */
+export interface CardPlayerSnapshot {
+  playerId: string;
+  xMilli: number;
+  yMilli: number;
+}
+
+/** A bullet delta — C++ `CardBulletDelta` (`card_effects.hpp:108-121`). */
+export interface CardBulletDelta {
+  op: 'spawn' | 'despawn';
+  bulletId: string;
+  patternId: string;
+  kind: string;
+  tick: number;
+  xMilli: number;
+  yMilli: number;
+  vxMilli: number;
+  vyMilli: number;
+  radiusMilli: number;
+  damage: number;
+  color: string;
+}
+
+/** The result of one effect — C++ `CardEffectResult` (`card_effects.hpp:123-132`). */
+export interface CardEffectResult {
+  bulletDeltas: CardBulletDelta[];
+  /** The opponent the curtain was aimed at (the lowest other player id). */
+  targetUserId: string;
+  hasTarget: boolean;
+  /** The new invulnerability deadline (`invulnerable` only). */
+  invulnerableUntil: number;
+  /** The event's value: how many bullets were spawned / removed / cleared. */
+  eventValue: number;
+}
+
+function emptyCardEffectResult(): CardEffectResult {
+  return {
+    bulletDeltas: [],
+    targetUserId: '',
+    hasTarget: false,
+    invulnerableUntil: 0,
+    eventValue: 0,
+  };
+}
+
+/**
+ * `OpponentTargetId` — C++ `card_effects.cpp:74-87`.
+ *
+ * The opponent is the **lowest** player id other than the caster; no opponent
+ * means an empty string (and the effect produces nothing).
+ */
+export function opponentTargetId(playerIds: readonly string[], selfId: string): string {
+  const candidates = playerIds.filter((id) => id !== selfId).sort();
+  return candidates.length === 0 ? '' : candidates[0];
+}
+
+/**
+ * `RoundTo` — C++ `card_effects.cpp:89-92` (Go's `round(value, precision)`).
+ *
+ * Half **away from zero**, which `Math.round` is not (it rounds -0.5 up to -0).
+ */
+export function roundTo(value: number, precision: number): number {
+  const scale = Math.pow(10, precision);
+  const rounded = Math.round(Math.abs(value) * scale) / scale;
+  return value < 0 ? -rounded : rounded;
+}
+
+/**
+ * `ApplyOpponentPattern` — C++ `card_effects.cpp:104-181`.
+ *
+ * Fires a fan of `count` bullets from the boss origin towards the opponent's
+ * current position: the fan is centred on `atan2(target - origin)` and spans
+ * `±spread/2` (evenly divided into `count` slots). The field cap
+ * ({@link CARD_MAX_BULLETS}) stops the spawn, exactly like `addBulletLocked`.
+ *
+ * @param players the players' arena positions (milli)
+ * @param originXMilli the boss origin in arena milli (defaults to the C++ constant)
+ * @param originYMilli the boss origin in arena milli (defaults to the C++ constant)
+ */
+export function applyOpponentPattern(
+  players: readonly CardPlayerSnapshot[],
+  casterId: string,
+  activation: CardActivation,
+  tick: number,
+  matchId: string,
+  nextBulletSeq: number,
+  existingBulletCount: number,
+  originXMilli: number = CARD_BOSS_ORIGIN_X_MILLI,
+  originYMilli: number = CARD_BOSS_ORIGIN_Y_MILLI,
+): CardEffectResult {
+  const result = emptyCardEffectResult();
+  const targetId = opponentTargetId(
+    players.map((player) => player.playerId),
+    casterId,
+  );
+  if (targetId === '') {
+    // No opponent: only a zero-valued event, no bullets, no target.
+    return result;
+  }
+  const target = players.find((player) => player.playerId === targetId);
+  if (target === undefined) {
+    return result;
+  }
+  const patternId = activation.patternId === '' ? activation.cardId : activation.patternId;
+  const geometry = cardPatternGeometryFor(patternId);
+  const base = Math.atan2(target.yMilli - originYMilli, target.xMilli - originXMilli);
+  const start = base - geometry.spread * 0.5;
+  const step = geometry.count > 1 ? geometry.spread / (geometry.count - 1) : 0;
+
+  let seq = nextBulletSeq;
+  let fieldCount = existingBulletCount;
+  for (let i = 0; i < geometry.count; i += 1) {
+    if (fieldCount >= CARD_MAX_BULLETS) {
+      break;
+    }
+    const angle = start + step * i;
+    result.bulletDeltas.push({
+      op: 'spawn',
+      bulletId: `${matchId}_b${String(seq).padStart(6, '0')}`,
+      patternId,
+      kind: 'nway',
+      tick,
+      xMilli: originXMilli,
+      yMilli: originYMilli,
+      vxMilli: Math.round(Math.cos(angle) * geometry.speed * MILLI_PER_PIXEL),
+      vyMilli: Math.round(Math.sin(angle) * geometry.speed * MILLI_PER_PIXEL),
+      radiusMilli: Math.round(geometry.radius * MILLI_PER_PIXEL),
+      damage: 1,
+      color: geometry.color,
+    });
+    seq += 1;
+    fieldCount += 1;
+  }
+  result.targetUserId = targetId;
+  result.hasTarget = true;
+  result.eventValue = result.bulletDeltas.length;
+  return result;
+}
+
+/**
+ * `ApplyBulletPurge` — C++ `card_effects.cpp:183-260`.
+ *
+ * Removes up to `purgeCount` bullets within `purgeRadius` of the caster. The
+ * selection is the canonical one (see {@link selectPurgeTargets}): the index is
+ * taken over the **whole** field ordered by bullet id, the in-radius bullets
+ * are scored with the lobby's deterministic unit, and the smallest scores win.
+ *
+ * @param seedDecimal the lobby's server seed as decimal text — the **ticket's**
+ *   `server_seed`, never the derived match seed (C++ `simulation.cpp:2494-2495`)
+ */
+export function applyBulletPurge(
+  bullets: readonly CardBulletSnapshot[],
+  caster: CardPlayerSnapshot,
+  activation: CardActivation,
+  seedDecimal: string,
+  tick: number,
+): CardEffectResult {
+  const result = emptyCardEffectResult();
+  const radius = activation.purgeRadius;
+  const count = activation.purgeCount;
+  if (radius > 0 && count > 0) {
+    const candidates: PurgeCandidate[] = bullets.map((bullet) => ({
+      bulletId: bullet.bulletId,
+      xMilli: bullet.xMilli,
+      yMilli: bullet.yMilli,
+    }));
+    const picked = selectPurgeTargets(
+      candidates,
+      caster.xMilli,
+      caster.yMilli,
+      purgeRadiusMilli(radius),
+      count,
+      seedDecimal,
+      tick,
+      activation.cardId,
+    );
+    for (const bulletId of picked) {
+      const bullet = bullets.find((entry) => entry.bulletId === bulletId);
+      if (bullet === undefined) {
+        continue;
+      }
+      result.bulletDeltas.push({
+        op: 'despawn',
+        bulletId: bullet.bulletId,
+        patternId: bullet.patternId,
+        kind: bullet.kind,
+        tick,
+        xMilli: bullet.xMilli,
+        yMilli: bullet.yMilli,
+        vxMilli: bullet.vxMilli,
+        vyMilli: bullet.vyMilli,
+        radiusMilli: bullet.radiusMilli,
+        damage: bullet.damage,
+        color: bullet.color,
+      });
+    }
+  }
+  result.eventValue = result.bulletDeltas.length;
+  return result;
+}
+
+/**
+ * `ApplyInvulnerable` — C++ `card_effects.cpp:262-268`.
+ *
+ * The window is `tick + duration_ticks`, already computed by the caller; the
+ * guard covers `[tick, expires_tick]` and lapses one tick later.
+ */
+export function applyInvulnerable(activation: CardActivation): CardEffectResult {
+  const result = emptyCardEffectResult();
+  result.invulnerableUntil = activation.expiresTick;
+  result.eventValue = 0;
+  return result;
+}
+
+/**
+ * `ApplyFinisher` — C++ `card_effects.cpp:270-301`.
+ *
+ * Clears the whole field, one despawn per bullet in bullet-id order.
+ */
+export function applyFinisher(bullets: readonly CardBulletSnapshot[], tick: number): CardEffectResult {
+  const result = emptyCardEffectResult();
+  for (const bulletId of sortedBulletIds(bullets)) {
+    const bullet = bullets.find((entry) => entry.bulletId === bulletId);
+    if (bullet === undefined) {
+      continue;
+    }
+    result.bulletDeltas.push({
+      op: 'despawn',
+      bulletId: bullet.bulletId,
+      patternId: bullet.patternId,
+      kind: bullet.kind,
+      tick,
+      xMilli: bullet.xMilli,
+      yMilli: bullet.yMilli,
+      vxMilli: bullet.vxMilli,
+      vyMilli: bullet.vyMilli,
+      radiusMilli: bullet.radiusMilli,
+      damage: bullet.damage,
+      color: bullet.color,
+    });
+  }
+  result.eventValue = result.bulletDeltas.length;
+  return result;
+}
+
+/**
+ * `SortedBulletIds` — C++ `card_effects.cpp:64-72`: every bullet id in
+ * byte-wise (UTF-8) order, which is the canonical order the purge selection
+ * indexes into.
+ */
+export function sortedBulletIds(bullets: readonly CardBulletSnapshot[]): string[] {
+  return bullets.map((bullet) => bullet.bulletId).sort(compareIds);
 }

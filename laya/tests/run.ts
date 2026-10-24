@@ -37,6 +37,7 @@ import './lobby_business_surface.test';
 import './nakama_lobby_transport.test';
 import './checkin_shop.test';
 import './card_effects.test';
+import './card_hand.test';
 import './lobby_rng.test';
 import './records_view.test';
 import './gacha_model.test';
