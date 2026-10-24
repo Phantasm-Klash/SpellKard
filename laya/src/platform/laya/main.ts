@@ -19,6 +19,7 @@ import { NativeUdpDatagramFactory, resolveNativeUdpModule } from '../native/nati
 import { RelayDatagramFactory } from '../web/ws_relay_datagram';
 import { SpellKardApp } from './app';
 import { preloadOfficialWidgets } from './ui/official_widgets';
+import { ensurePlayerConfigUi } from './engine_config';
 import { LayaSocketFactory } from './laya_socket';
 import { LayaTimer } from './laya_timer';
 import type { LobbySessionStore } from '../../core/net/lobby_client';
@@ -244,12 +245,21 @@ export function startClient(config: BrowserRuntimeConfig): SpellKardApp {
 
   const sockets = new LayaSocketFactory();
   const timer = new LayaTimer();
-  // Fire-and-forget: the official widget prefabs (`internal/UI/*.lh`) load
-  // asynchronously, but the settings panel is only reachable after the player
-  // signs in, so the cache is warm long before a widget is built. A miss is
-  // not fatal — `scenes/settings/widgets.ts` keeps a hand-painted fallback per
-  // control, so a failed load degrades to today's look instead of a blank row.
-  void preloadOfficialWidgets();
+  // The official widget prefabs (`internal/UI/*.lh`) load asynchronously, and
+  // they are **not** needed to start the client: every control falls back to
+  // its hand-painted form when they are absent. So the load is deferred by one
+  // frame and wrapped — a failed or slow prefab load must never be able to
+  // keep the first scene from appearing.
+  //
+  // The settings panel is only reachable after the player signs in, so the
+  // cache is warm long before a widget is built.
+  try {
+    Laya.timer.once(1, 0, () => {
+      void preloadOfficialWidgets().catch(() => undefined);
+    });
+  } catch {
+    // No timer (or no engine) — the widgets simply stay on their fallback.
+  }
   // One store for the whole session: the settings modal writes it, the app
   // applies it, and it survives a reload through `localStorage`.
   const settings = new SettingsStore({ persistence: createStoragePersistence(resolveStorage()) });
@@ -282,6 +292,11 @@ export function startClient(config: BrowserRuntimeConfig): SpellKardApp {
  * `<script>` tags have run.
  */
 export async function bootstrap(config: BrowserRuntimeConfig = resolveRuntimeConfig()): Promise<SpellKardApp> {
+  // Must happen before `Laya.init`: the FairGUI module's after-init callback
+  // reads `Laya.PlayerConfig.UI`, which only the IDE-generated `index.js`
+  // normally provides. Without it the callback throws and the page stays
+  // black. See `platform/laya/engine_config.ts`.
+  ensurePlayerConfigUi();
   await Laya.init({
     designWidth: config.stageWidth,
     designHeight: config.stageHeight,

@@ -113,7 +113,9 @@ export function preloadOfficialWidgets(): Promise<void> {
       }
     }
   })();
-  return inflight;
+  // Belt and braces: a rejected `inflight` must never surface as an unhandled
+  // rejection, which some runtimes report as a fatal error.
+  return inflight.catch(() => undefined);
 }
 
 /** True once {@link preloadOfficialWidgets} has resolved (or permanently failed). */

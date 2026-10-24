@@ -18,12 +18,21 @@
 const { regClass } = Laya;
 
 import { startClient, type BrowserRuntimeConfig } from '../../src/platform/laya/main';
+import { ensurePlayerConfigUi } from '../../src/platform/laya/engine_config';
 
 declare global {
   interface Window {
     PHANTASM_KLASH_CONFIG?: Partial<BrowserRuntimeConfig>;
   }
 }
+
+// The engine's FairGUI module reads `Laya.PlayerConfig.UI` in an
+// after-init callback, and only the IDE-generated `index.js` normally fills
+// that object in — the IDE preview does not, so the callback throws and the
+// preview stays black. The bundle is loaded before the engine is initialised,
+// so this module-level call is early enough to fix it.
+// See `src/platform/laya/engine_config.ts` for the full explanation.
+ensurePlayerConfigUi();
 
 /**
  * Default deployment. Keep this in sync with the server deployment.
