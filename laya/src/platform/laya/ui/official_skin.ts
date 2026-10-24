@@ -119,14 +119,17 @@ function plate(
  * the two aligned without a third part.
  */
 export function skinCheckBox(widget: Laya.Sprite): void {
-  const radius = Math.min(Number(widget.width) || 0, Number(widget.height) || 0) / 2;
+  // Derived from each part's own box rather than the widget's, because the row
+  // sizes the widget before skinning and the parts are what actually get
+  // painted. Reading the widget here would use a stale box.
+  const radiusFor = (w: number, h: number): number => Math.min(w, h) / 2;
   paintPart(widget, 'normal', (_p, graphics, w, h) => {
-    plate(graphics, w, h, radius, theme.COLOR_PANEL_DEEP, theme.COLOR_PANEL_BORDER);
+    plate(graphics, w, h, radiusFor(w, h), theme.COLOR_PANEL_DEEP, theme.COLOR_PANEL_BORDER);
     const knobR = Math.max(2, h / 2 - 3);
     graphics.drawCircle(knobR + 3, h / 2, knobR, theme.COLOR_TEXT_DISABLED);
   });
   paintPart(widget, 'selected', (_p, graphics, w, h) => {
-    plate(graphics, w, h, radius, theme.COLOR_SUCCESS, theme.COLOR_SUCCESS);
+    plate(graphics, w, h, radiusFor(w, h), theme.COLOR_SUCCESS, theme.COLOR_SUCCESS);
     const knobR = Math.max(2, h / 2 - 3);
     graphics.drawCircle(w - knobR - 3, h / 2, knobR, theme.COLOR_TEXT);
   });
@@ -172,14 +175,50 @@ export function skinScrollBarV(widget: Laya.Sprite): void {
  * `format` is overridden.
  */
 export function skinSliderH(widget: Laya.Sprite): void {
+  // The prefab's parts carry their own boxes (200x32) and **do not** follow the
+  // parent's `size()`, so a row that shrinks the control would leave the track
+  // painted at the prefab's height — sticking out of the container — and the
+  // knob at its natural size. Paint from the *widget's* box instead, and scale
+  // the knob to match.
+  const trackW = Number(widget.width) || 0;
+  const trackH = Number(widget.height) || 0;
+  const barH = trackH > 0 ? Math.max(3, Math.min(8, Math.round(trackH * 0.25))) : 4;
+  const knobSize = trackH > 0 ? Math.max(8, Math.min(16, Math.round(trackH * 0.6))) : 12;
+
+  // Resize the repainted parts to the widget's box as well, so their own
+  // geometry matches what is drawn. `paintPart` clears and redraws them, so
+  // this is safe — and it keeps a later reader (or a debug probe) from seeing
+  // the prefab's original 200x32 frame.
+  for (const name of ['bg', 'bar']) {
+    const part = partAt(widget, name);
+    if (part !== null && trackW > 0 && trackH > 0) {
+      part.size(trackW, trackH);
+    }
+  }
+
+  // The knob is a child sprite, not a repainted part: scale it to the track.
+  const grip = partAt(widget, 'grip');
+  if (grip !== null) {
+    const natural = Number(grip.height) || Number(grip.width) || 0;
+    if (natural > 0 && knobSize > 0) {
+      const scale = knobSize / natural;
+      // No `Sprite.scale` in this project's typings — set the axes directly.
+      grip.scaleX = scale;
+      grip.scaleY = scale;
+      grip.size(knobSize, knobSize);
+    }
+  }
+
   paintPart(widget, 'bg', (_p, graphics, w, h) => {
-    // The track is a thin bar centred in the taller hit box.
-    const barH = Math.max(4, Math.min(10, h));
+    // Paint across the widget's box, ignoring the part's own (stale) one: the
+    // part is a 200x32 frame whose art is being replaced anyway.
+    void w;
+    void h;
     VectorPainter.roundedPanel(
       graphics as never,
       0,
-      (h - barH) / 2,
-      w,
+      (trackH - barH) / 2,
+      trackW,
       barH,
       barH / 2,
       theme.COLOR_PANEL_DEEP,
@@ -188,21 +227,19 @@ export function skinSliderH(widget: Laya.Sprite): void {
     );
   });
   paintPart(widget, 'bar', (_p, graphics, w, h) => {
-    const barH = Math.max(4, Math.min(10, h));
+    void w;
+    void h;
     VectorPainter.roundedPanel(
       graphics as never,
       0,
-      (h - barH) / 2,
-      w,
+      (trackH - barH) / 2,
+      trackW,
       barH,
       barH / 2,
       theme.COLOR_ACCENT,
       undefined,
       0,
     );
-  });
-  paintPart(widget, 'grip', (_p, graphics, w, h) => {
-    graphics.drawCircle(w / 2, h / 2, Math.max(3, Math.min(w, h) / 2), theme.COLOR_TEXT);
   });
   hidePart(widget, 'title');
 }

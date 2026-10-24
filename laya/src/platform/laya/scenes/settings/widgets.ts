@@ -77,12 +77,12 @@ const DESC_LINE_H = theme.FONT_SIZE_CAPTION + 3;
 const TOGGLE_W = 46;
 const TOGGLE_H = 24;
 /** Width of the slider control (its hit box; the bar drawn inside is thinner). */
-const SLIDER_W = 150;
-const SLIDER_HIT_H = 34;
-const SLIDER_BAR_H = 6;
-const SLIDER_KNOB_R = 8;
+const SLIDER_W = 108;
+const SLIDER_HIT_H = 26;
+const SLIDER_BAR_H = 4;
+const SLIDER_KNOB_R = 6;
 /** Width of the value readout next to a slider. */
-const SLIDER_VALUE_W = 46;
+const SLIDER_VALUE_W = 40;
 /** Horizontal padding inside one segmented option button. */
 const OPTION_PAD = 8;
 const OPTION_H = 26;
@@ -571,13 +571,15 @@ export function createToggleRow(options: ToggleRowOptions): ToggleRowHandle {
   // official widget here.
   const official = createOfficialWidget('checkbox');
   const track = official ?? new Laya.Sprite();
+  track.size(TOGGLE_W, TOGGLE_H);
   if (official !== null) {
     stripOfficialLabel(official);
     // The prefab's skin comes from `comp.atlas` (the engine's light default
     // art); repaint it in the TNA palette so it matches the rest of the panel.
+    // Skinned after `size` because the paint derives its corner radius and
+    // knob geometry from the widget's own box.
     skinCheckBox(official);
   }
-  track.size(TOGGLE_W, TOGGLE_H);
   track.x = row.controlRight - TOGGLE_W;
   track.y = Math.round((row.height - TOGGLE_H) / 2);
   track.mouseEnabled = true;
@@ -783,10 +785,12 @@ export function createSliderRow(options: SliderRowOptions): SliderRowHandle {
   // the control's body and hit box, not a second source of truth.
   const officialSlider = createOfficialWidget('sliderH');
   const track = officialSlider ?? new Laya.Sprite();
+  track.size(SLIDER_W, SLIDER_HIT_H);
+  // Skin *after* the size is set: `skinSliderH` scales the knob from the track
+  // height, so it has to see the final box rather than the prefab's own 32.
   if (officialSlider !== null) {
     skinSliderH(officialSlider);
   }
-  track.size(SLIDER_W, SLIDER_HIT_H);
   track.x = row.controlRight - controlWidth;
   track.y = Math.round((row.height - SLIDER_HIT_H) / 2);
   track.mouseEnabled = true;
@@ -823,7 +827,11 @@ export function createSliderRow(options: SliderRowOptions): SliderRowHandle {
     g.clear();
     const barY = (SLIDER_HIT_H - SLIDER_BAR_H) / 2;
     const filled = Math.round(SLIDER_W * value);
-    const knobX = Math.min(SLIDER_W - SLIDER_KNOB_R, Math.max(SLIDER_KNOB_R, filled));
+    // The knob's centre travels within `[KNOB_R, W - KNOB_R]` so it stays inside
+    // the track at both ends, while the fill still spans the full width —
+    // clamping to `W - KNOB_R` would leave the last `KNOB_R` pixels unfilled.
+    const travel = SLIDER_W - SLIDER_KNOB_R * 2;
+    const knobX = SLIDER_KNOB_R + Math.round(travel * value);
 
     // Official prefab: drive its `bar` (fill) and `grip` (thumb) from the value.
     // The parts are scaled/positioned rather than repainted each frame — their
@@ -831,7 +839,9 @@ export function createSliderRow(options: SliderRowOptions): SliderRowHandle {
     if (officialSlider !== null) {
       const bar = childByName(officialSlider, 'bar');
       if (bar !== null) {
-        bar.scaleX = Math.max(0.001, value);
+        // The part's own box is the prefab's 200-wide frame, so scale from the
+        // track the row actually sized — otherwise the fill overruns it.
+        bar.width = Math.max(0.001, SLIDER_W * value);
         bar.visible = value > 0;
       }
       const grip = childByName(officialSlider, 'grip');
@@ -869,7 +879,9 @@ export function createSliderRow(options: SliderRowOptions): SliderRowHandle {
 
   /** Maps a local x inside the track onto a quantised 0..1 value. */
   const applyFromLocalX = (localX: number): void => {
-    const raw = Math.min(1, Math.max(0, localX / SLIDER_W));
+    // Same travel the knob uses, so a click lands on the value it appears to.
+    const travel = SLIDER_W - SLIDER_KNOB_R * 2;
+    const raw = Math.min(1, Math.max(0, (localX - SLIDER_KNOB_R) / travel));
     const quantised = clamp01(Math.round(raw / step) * step);
     if (quantised === value) {
       return;
