@@ -132,10 +132,25 @@ int onEvent(LayaExtEventType event, const LayaExtensionInterface* iface, void* u
 }  // namespace
 
 /**
- * The single entry point the engine looks for. Mirrors `spk_udp`'s `onEvent`
- * wiring so both extensions load the same way.
+ * Fills in the extension descriptor.
+ *
+ * The engine loads a DLL by looking for the exported `laya_extension_init`
+ * symbol, which the `LAYA_EXTENSION_ENTRY` macro provides; this function is
+ * what it calls. Getting this wrong is silent — the DLL loads, nothing is
+ * registered, and `window.spk_crypto` is simply undefined.
  */
-extern "C" int LayaExtensionMain(LayaExtEventType event, const LayaExtensionInterface* iface,
-                                 void* userData) {
-  return onEvent(event, iface, userData);
+int extInit(const LayaExtensionInterface* engine, LayaExtensionInitInfo* info) {
+  (void)engine;
+  info->api_version = LAYA_EXTENSION_API_VERSION;
+  info->name = "spk_crypto";
+  info->version = "1.0.0";
+  info->on_event = onEvent;
+  info->user_data = nullptr;
+  return 0;
 }
+
+
+// The engine looks for exactly this symbol (see LayaExtension.h).
+LAYA_EXTENSION_ENTRY(extInit)
+// iOS static linking uses a per-extension symbol instead.
+LAYA_EXTENSION_ENTRY_NAMED(spk_crypto, extInit)
