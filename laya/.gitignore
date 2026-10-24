@@ -16,6 +16,10 @@ native/windows/sdk/
 
 # MSVC intermediate/output directories for the spk_udp extension.
 native/udp_ext/windows/build/
+native/crypto_ext/windows/build/
+native/crypto_ext/windows/*.obj
+native/crypto_ext/windows/*.ilk
+native/crypto_ext/windows/spk_crypto_selftest.exe
 *.vcxproj.user
 
 # Compiled spk_udp extension staged for publish_windows.mjs (config.ini and
