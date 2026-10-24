@@ -358,6 +358,19 @@ adapter (`native_udp_datagram.test.ts`).
   (`MatchServer::HandleSessionPayload`), so the handshake is not yet enforced
   end-to-end. XChaCha20 is not available in Web Crypto, so only
   ChaCha20-Poly1305 is advertised.
+
+  **Both sides are still scaffolding.** The client now has a real
+  implementation for native builds (`src/platform/native/native_battle_crypto.ts`
+  — plain TypeScript, because LayaNative's `crypto.subtle` is a shim whose
+  methods all throw), and `spk_crypto` supplies the OS CSPRNG for the handshake.
+  The server does not yet: `handshake.cpp`'s `Accept()` sets
+  `server_x25519_pub = FillDevBytes(match_id + ":server-pub")`, and
+  `FillDevBytes` is deterministic FNV-1a-64 + xorshift filler rather than an
+  X25519 operation. Switching the client to the real key agreement **before**
+  the server catches up would leave the two sides deriving different session
+  keys, so the handshake is deliberately left on the dev path.
+  `docs/battle-aead-server-spec.md` records the alignment (12-byte nonce,
+  16-byte tag, the AAD convention) and the order both sides should switch on.
 * **Battle transport.** Native builds open a raw UDP socket through the
   `spk_udp` LayaNative extension (`src/platform/native/native_udp_datagram.ts`).
   The browser cannot open UDP, so it tunnels KCP datagrams through
@@ -369,7 +382,18 @@ adapter (`native_udp_datagram.test.ts`).
   / `cancelMatchmaking` wrap the `matchmaking.join` / `.ticket` / `.cancel` RPCs,
   and `LobbyScene` exposes join / refresh / cancel buttons plus a live queue
   status line. There is no automatic poll loop yet: the player refreshes the
-  ticket manually, and a `match_start` push clears the ticket.
+  ticket manually, and a `match_start` push clears the ticket. Queuing while
+  already in a room is refused by the server with `internal`, so the queue
+  buttons are disabled until the player leaves.
 * **Card / bomb / focus mechanics.** `card_slot`, `bomb` and `slow` are encoded
   and transmitted, and `slow` is captured by `LayaInput`; the boss-race
-  simulation currently only consumes movement + shoot.
+  simulation now consumes them too — `src/core/sim/card_hand.ts` mirrors the
+  server's `include/phk/battle/card_hand.hpp` (hand limit 4, deck limit 20,
+  the energy curve, and the `slot == -1` "no card this tick" sentinel), and
+  `boss_race.ts` runs the cast pipeline. It is **off by default**
+  (`BossRaceConfig.cardMechanics`), because the server has two simulations with
+  different rules: the shared-boss mode implements the cards, while the
+  boss-race mode discards `card_slot` on the wire. Predicting locally would
+  forecast boss health the server never applies, and the snapshot only
+  reconciles the player's own state — so the two would diverge with no way back.
+  Turn it on per mode once that mode implements the cards server-side.
