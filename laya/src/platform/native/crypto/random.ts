@@ -9,23 +9,25 @@
  *   - `crypto.subtle.*` otherwise → throws `'not implemented'`
  *
  * So the native runtime exposes **no** OS CSPRNG to JavaScript. This module
- * therefore has two tiers:
+ * therefore has three tiers, best first:
  *
- *  1. `crypto.getRandomValues` when the runtime provides a working one (the
- *     browser build, and any future LayaNative that implements it). This is
- *     the OS-backed source and is preferred whenever it works.
- *  2. Otherwise a ChaCha20-based DRBG seeded from the best entropy the
- *     runtime does expose.
+ *  1. `crypto.getRandomValues` — the engine's own, used whenever it works (the
+ *     browser build, and any future LayaNative that implements it). Nothing to
+ *     install.
+ *  2. `spk_crypto.randomBytes()` — the bundled native extension, which calls
+ *     the **operating system's** generator directly: Windows CNG
+ *     `BCryptGenRandom`, and `getrandom(2)` on Linux / Android / OHOS. This is
+ *     the official platform API, and it is what the native build actually uses.
+ *  3. A ChaCha20-based DRBG seeded from the best entropy the runtime does
+ *     expose — the last resort when neither of the above is available.
  *
- * ## Honest limitation of tier 2
+ * ## Honest limitation of tier 3
  *
- * The native tier-2 seed is gathered from `Math.random()`, `performance.now()`
- * and `Date.now()`. V8 seeds its internal PRNG from the OS CSPRNG at isolate
+ * The tier-3 seed is gathered from `Math.random()`, `performance.now()` and
+ * `Date.now()`. V8 seeds its internal PRNG from the OS CSPRNG at isolate
  * creation, but `Math.random()`'s xorshift128+ state is recoverable from a
- * handful of outputs, so tier-2 keys are **weaker** than browser keys. The
- * right production fix is a native extension over Windows `BCryptGenRandom`
- * (CNG) — see the report's "Open issues" section. `randomSource()` reports
- * which tier is in use so the app can surface it.
+ * handful of outputs, so tier-3 keys are **weaker** than tier-1/tier-2 keys.
+ * `randomSource()` reports which tier is in use so the app can surface it.
  *
  * NOTE: `platform/native/` only.
  */
@@ -34,11 +36,17 @@ import { chacha20 } from './chacha20_poly1305';
 import { sha256 } from './sha256';
 
 /** Which randomness tier is actually in use. */
-export type RandomSourceKind = 'webcrypto' | 'native-drbg';
+export type RandomSourceKind = 'webcrypto' | 'native-extension' | 'native-drbg';
 
 /** The minimal shape of the global `crypto` this module probes. */
 interface CryptoLike {
   getRandomValues?<T extends ArrayBufferView>(array: T): T;
+}
+
+/** The minimal shape of the `spk_crypto` LayaNative extension. */
+interface NativeCryptoLike {
+  randomBytes?(length: number): Uint8Array | null;
+  source?(): string;
 }
 
 function probeCrypto(): CryptoLike | null {
@@ -48,6 +56,15 @@ function probeCrypto(): CryptoLike | null {
     return null;
   }
   return typeof candidate.getRandomValues === 'function' ? candidate : null;
+}
+
+function probeExtension(): NativeCryptoLike | null {
+  const scope = globalThis as unknown as { spk_crypto?: NativeCryptoLike };
+  const candidate = scope.spk_crypto;
+  if (candidate === undefined || candidate === null) {
+    return null;
+  }
+  return typeof candidate.randomBytes === 'function' ? candidate : null;
 }
 
 /** True when `crypto.getRandomValues` exists *and* actually works. */
@@ -61,6 +78,20 @@ export function hasWorkingWebCryptoRandom(): boolean {
     return true;
   } catch {
     // The LayaNative shim throws the string 'not implemented'.
+    return false;
+  }
+}
+
+/** True when the `spk_crypto` extension is loaded and returns usable bytes. */
+export function hasWorkingNativeCryptoExtension(): boolean {
+  const candidate = probeExtension();
+  if (candidate === null) {
+    return false;
+  }
+  try {
+    const bytes = candidate.randomBytes!(16);
+    return bytes instanceof Uint8Array && bytes.length === 16;
+  } catch {
     return false;
   }
 }
@@ -173,23 +204,74 @@ export function nativeRandomBytes(length: number): Uint8Array {
   if (length === 0) {
     return out;
   }
+
+  // Tier 1: the engine's own generator, when it works.
   const candidate = probeCrypto();
   if (candidate !== null) {
     try {
       candidate.getRandomValues!(out);
       return out;
     } catch {
+      // Fall through — the LayaNative shim throws here.
+    }
+  }
+
+  // Tier 2: the bundled extension, which calls the OS generator directly.
+  const extension = probeExtension();
+  if (extension !== null) {
+    try {
+      const bytes = extension.randomBytes!(length);
+      // The extension returns `null` when its platform call failed, so a
+      // short or missing result must not be mistaken for randomness.
+      if (bytes instanceof Uint8Array && bytes.length === length) {
+        out.set(bytes, 0);
+        return out;
+      }
+    } catch {
       // Fall through to the DRBG.
     }
   }
+
+  // Tier 3: last resort.
   fillFromDrbg(out);
   return out;
 }
 
 /**
- * Which randomness tier is in use: `'webcrypto'` when the runtime's
- * `crypto.getRandomValues` works, `'native-drbg'` otherwise.
+ * Which randomness tier is in use, best first:
+ *
+ *  - `'webcrypto'`        — the runtime's `crypto.getRandomValues` works
+ *  - `'native-extension'` — the `spk_crypto` extension is calling the OS
+ *                           generator (Windows CNG / `getrandom`)
+ *  - `'native-drbg'`      — the in-process ChaCha20 DRBG, i.e. neither of the
+ *                           above is available
  */
 export function randomSource(): RandomSourceKind {
-  return hasWorkingWebCryptoRandom() ? 'webcrypto' : 'native-drbg';
+  if (hasWorkingWebCryptoRandom()) {
+    return 'webcrypto';
+  }
+  if (hasWorkingNativeCryptoExtension()) {
+    return 'native-extension';
+  }
+  return 'native-drbg';
+}
+
+/**
+ * Which platform API the extension is calling, for diagnostics.
+ *
+ * Returns `null` when the extension is not loaded, and the extension's own
+ * string (e.g. `windows-cng-bcryptgenrandom`) when it is — so a support report
+ * can say exactly what the client was using.
+ */
+export function nativeCryptoSourceLabel(): string | null {
+  const extension = probeExtension();
+  if (extension === null || typeof extension.source !== 'function') {
+    return null;
+  }
+  try {
+    const label = extension.source();
+    return typeof label === 'string' ? label : null;
+  } catch {
+    return null;
+  }
 }

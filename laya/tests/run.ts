@@ -75,7 +75,7 @@ import './coop_codec.test';
 import './coop_art.test';
 import './room_setup.test';
 import './danmaku_client_engine.test';
-import './stage_parity.test';
+import './stage_parity.test';import './native_random_tiers.test';
 
 import { runAll } from './harness';
 

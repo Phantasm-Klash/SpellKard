@@ -55,7 +55,7 @@ const SAMPLE_FILES = ['my_extension.dll', 'my_extension.layaext.json'];
  * descriptor from `build-templates/windows/release/` into the output on its own
  * (see the `build-templates` payload), so only the compiled DLLs need staging.
  */
-const EXTENSION_DLLS = ['spk_udp.dll', 'spk_win.dll'];
+const EXTENSION_DLLS = ['spk_udp.dll', 'spk_win.dll', 'spk_crypto.dll'];
 
 /** Root of the launcher the user actually double-clicks. */
 const DEFAULT_LAUNCHER = 'D:/gotouhou/win/build/windows';

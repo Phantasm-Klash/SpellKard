@@ -1,0 +1,15 @@
+{
+  "extension": {
+    "name": "spk_crypto",
+    "version": "1.0.0",
+    "api_version": 1,
+    "description": "SpellKard OS-CSPRNG extension (Windows CNG BCryptGenRandom / Linux+Android getrandom) for the battle handshake"
+  },
+  "libraries": {
+    "windows.x86_64": "spk_crypto.dll",
+    "linux.x86_64": "libspk_crypto.so",
+    "android.arm64-v8a": "libspk_crypto.so",
+    "ohos.arm64-v8a": "libspk_crypto.so"
+  },
+  "dependencies": []
+}
