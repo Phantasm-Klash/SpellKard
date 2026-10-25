@@ -14,9 +14,9 @@
  */
 
 import {
-  buildJudgmentHud,
   invulnerableBlinkOn,
   type BossRaceFrame,
+  type JudgmentHudState,
   type PlayfieldLayout,
   type RenderPoint,
 } from '../../../core/game/boss_race_view_model';
@@ -26,7 +26,7 @@ import { drawPlayfield } from './arena';
 import { sharedTnaFrameSource } from './bullet_atlas';
 import { vectorBulletRenderer } from './bullets';
 import { drawHudBar, type HudState } from './hud';
-import { fade, type BulletRenderer } from './sprites';
+import { VectorPainter, fade, type BulletRenderer } from './sprites';
 import * as theme from './theme';
 
 const COLOR_BACKGROUND = theme.COLOR_BACKGROUND;
@@ -45,7 +45,6 @@ const PLAYER_RADIUS = 4;
  * {@link PlayfieldTransform} 缩放的像素值），本层只画不判定。文案铁律：
  * 只用纯图标与数字，不硬编码任何中英文。
  */
-const INDICATOR_MARGIN = 10;
 const LIFE_ICON_RADIUS = 3;
 const LIFE_ICON_PITCH = 10;
 const BOMB_ICON_SIZE = 6;
@@ -221,11 +220,12 @@ export class BossRaceView {
     this.indicatorLayer.pos(this.playfieldX, this.playfieldY);
     this.root.addChild(this.indicatorLayer);
 
+    // 判定卡片里的擦弹数字用 `Text` 画（Graphics 没有文本能力）。它挂在 HUD 层
+    // 而不是战场层：读数属于侧栏，`hudLayer` 的可见性/重排会带着它一起走。
     this.grazeText = new Laya.Text();
     this.grazeText.fontSize = GRAZE_TEXT_SIZE;
     this.grazeText.color = theme.COLOR_TEXT_MUTED;
     this.grazeText.visible = false;
-    this.indicatorLayer.addChild(this.grazeText);
 
     // Watermark portraits sit above the actors but below the HUD strip.
     if (this.watermark !== null) {
@@ -243,6 +243,8 @@ export class BossRaceView {
     this.hudLayer = new Laya.Sprite();
     this.hudLayer.pos(this.hudX, this.hudY);
     this.root.addChild(this.hudLayer);
+    // 擦弹数字挂在侧栏层（坐标是卡片内的局部坐标，见 `drawJudgmentBadge`）。
+    this.hudLayer.addChild(this.grazeText);
 
     this.hud = new Laya.Text();
     this.hud.pos(this.hudX + 8, this.hudY + 8);
@@ -379,8 +381,17 @@ export class BossRaceView {
    * @param hudLines  plain-text HUD lines, rendered verbatim (legacy contract)
    * @param hudState  when given, the HUD strip is drawn as vector bars instead
    *                  of text; `hudLines` is then ignored
+   * @param judgment  判定卡片（残机/炸弹/擦弹/无敌）；缺省 = 不画，且侧栏恢复
+   *                  占满整条（老调用方零变化）。传入时侧栏让出顶部
+   *                  {@link JUDGMENT_BADGE_HEIGHT} 像素给卡片，`hud.ts` 不需要
+   *                  知道这张卡存在。
    */
-  render(frame: BossRaceFrame, hudLines: string[] = [], hudState?: HudState): void {
+  render(
+    frame: BossRaceFrame,
+    hudLines: string[] = [],
+    hudState?: HudState,
+    judgment?: JudgmentHudState,
+  ): void {
     this.drawBullets(frame);
     this.drawActors(frame);
     this.drawJudgment(frame);
@@ -388,8 +399,14 @@ export class BossRaceView {
       this.hud.text = '';
       this.hud.visible = false;
       this.hudLayer.visible = true;
-      this.hudLayer.graphics.clear();
-      drawHudBar(this.hudLayer.graphics, 0, 0, this.hudWidth, this.hudHeight, hudState);    } else {
+      const g = this.hudLayer.graphics;
+      g.clear();
+      const badgeH = judgment === undefined ? 0 : Math.min(JUDGMENT_BADGE_HEIGHT, this.hudHeight / 3);
+      if (judgment !== undefined) {
+        this.drawJudgmentBadge(g, 0, 0, this.hudWidth, badgeH, judgment);
+      }
+      drawHudBar(g, 0, badgeH, this.hudWidth, this.hudHeight - badgeH, hudState);
+    } else {
       this.hudLayer.visible = false;
       this.hud.text = hudLines.join('\n');
       this.hud.visible = true;
@@ -467,24 +484,21 @@ export class BossRaceView {
   }
 
   /**
-   * 判定玩法指示（§2.4 客户端镜像表现）：判定点、擦弹圈、残机/炸弹/擦弹读数、
-   * 无敌指示环。
+   * 判定玩法指示（§2.4 客户端镜像表现）：**场上**的判定点、擦弹圈、无敌环。
    *
    * 全部数据来自 `PlayerRenderItem`（服务端常量经 PlayfieldTransform 的像素值），
    * 本方法不做任何判定：
    *  - 判定点：每颗自机一颗实心点（`r_hit` = 3000 milli ≈ 3px）；
    *  - 擦弹圈：仅当快照下发判定字段（`tna-1.40-danmaku`）时画（`r_graze` =
    *    20000 milli ≈ 20px），其余 ruleset 不画；
-   *  - 残机/炸弹：左上角纯图标（圆点/方块，一格一条命/一颗弹）；
-   *  - 擦弹：纯数字读数；
-   *  - 无敌：判定点外一圈脉冲环（与自机闪烁同相，`buildJudgmentHud` 的
-   *    `blinkOn`），残机耗尽时用危险色空心标记。
-   * 文案铁律：图标 + 数字，无硬编码文字。
+   *  - 无敌：判定点外一圈脉冲环，相位与自机闪烁同相（`blinkOn`）。
+   *
+   * 残机/炸弹/擦弹的**读数**不在这里，而在侧栏顶部的判定卡片
+   * （{@link drawJudgmentBadge}）——读数属于 HUD，场上只留位置性指示。
    */
   private drawJudgment(frame: BossRaceFrame): void {
     const g = this.indicatorLayer.graphics;
     g.clear();
-    const hud = buildJudgmentHud(frame);
     this.grazeText.visible = false;
 
     for (const player of frame.players) {
@@ -520,51 +534,93 @@ export class BossRaceView {
         );
       }
     }
+  }
 
-    // 残机/炸弹/擦弹读数：仅本地玩家、且服务端确实下发了判定字段时显示。
-    if (hud === null) {
+  /**
+   * 判定卡片：HUD 侧栏**顶部**一条（残机圆点 / 炸弹方块 / 擦弹数字 / 无敌指示）。
+   *
+   * 几何：卡片占 `(x, y, width, height)`，内容单行居中；无敌期在卡片外框画一圈
+   * 脉冲环，**相位与场上自机相同**（4 亮 4 灭），所以玩家看到的是「人闪、环也闪」。
+   *
+   * `height` 由调用方按侧栏高度夹过（见 `render`），这里不再自适应——判定卡片是
+   * 固定单行，拉伸它只会让图标悬空。
+   */
+  private drawJudgmentBadge(
+    g: Laya.Graphics,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    judgment: JudgmentHudState,
+  ): void {
+    if (width <= 0 || height <= 0) {
       return;
     }
-    const top = INDICATOR_MARGIN;
-    const livesY = top + LIFE_ICON_RADIUS;
-    if (hud.exhausted) {
-      // 残机耗尽：画一个危险色空心圈占位，读数不消失（否则 HUD 会「跳位」）。
-      g.drawCircle(
-        INDICATOR_MARGIN + LIFE_ICON_RADIUS,
-        livesY,
-        LIFE_ICON_RADIUS,
-        null,
-        theme.COLOR_DANGER,
-        1,
+    // 卡片底：与侧栏其它卡片同一套面板色，避免出现「第二套美术」。
+    VectorPainter.roundedPanel(
+      g,
+      x,
+      y,
+      width,
+      height,
+      theme.RADIUS_SM,
+      theme.COLOR_PANEL,
+      theme.COLOR_PANEL_BORDER,
+      1,
+    );
+    // 无敌：外框脉冲环（亮相位才画），与场上自机/判定点同相。
+    if (judgment.invulnerable && judgment.blinkOn) {
+      VectorPainter.roundedOutline(
+        g,
+        x + 1,
+        y + 1,
+        width - 2,
+        height - 2,
+        theme.RADIUS_SM,
+        fade(theme.COLOR_SUCCESS, 0.9),
+        2,
       );
+    }
+
+    const dim = judgment.invulnerable && !judgment.blinkOn;
+    const midY = y + height / 2;
+    const pad = theme.SPACE_SM;
+    let cursor = x + pad + LIFE_ICON_RADIUS;
+
+    // 残机：实心圆点，一条命一颗；耗尽时画一个危险色空心圈占位（读数不消失）。
+    if (judgment.exhausted) {
+      g.drawCircle(cursor, midY, LIFE_ICON_RADIUS, null, theme.COLOR_DANGER, 1);
+      cursor += LIFE_ICON_PITCH;
     } else {
-      for (let i = 0; i < hud.lives; i += 1) {
+      for (let i = 0; i < judgment.lives; i += 1) {
         g.drawCircle(
-          INDICATOR_MARGIN + LIFE_ICON_RADIUS + i * LIFE_ICON_PITCH,
-          livesY,
+          cursor,
+          midY,
           LIFE_ICON_RADIUS,
-          // 无敌期跟随闪烁相位变亮/变暗，与场上自机同步。
-          hud.invulnerable && !hud.blinkOn
-            ? fade(theme.COLOR_LOCAL_PLAYER, 0.35)
-            : theme.COLOR_LOCAL_PLAYER,
+          dim ? fade(theme.COLOR_LOCAL_PLAYER, 0.35) : theme.COLOR_LOCAL_PLAYER,
         );
+        cursor += LIFE_ICON_PITCH;
       }
     }
-    const bombY = top + LIFE_ICON_RADIUS * 2 + BOMB_ICON_PITCH;
-    for (let i = 0; i < hud.bombs; i += 1) {
+
+    // 炸弹：方块，一颗炸弹一块；无敌期跟随闪烁变暗。
+    cursor += theme.SPACE_XS;
+    for (let i = 0; i < judgment.bombs; i += 1) {
       g.drawRect(
-        INDICATOR_MARGIN + i * BOMB_ICON_PITCH,
-        bombY,
+        cursor - BOMB_ICON_SIZE / 2,
+        midY - BOMB_ICON_SIZE / 2,
         BOMB_ICON_SIZE,
         BOMB_ICON_SIZE,
-        fade(theme.COLOR_INFO, hud.invulnerable && !hud.blinkOn ? 0.45 : 0.9),
+        fade(theme.COLOR_INFO, dim ? 0.45 : 0.9),
       );
+      cursor += BOMB_ICON_PITCH;
     }
-    // 擦弹：小环图标 + 纯数字。
-    const grazeX = INDICATOR_MARGIN + hud.bombs * BOMB_ICON_PITCH + 6;
-    g.drawCircle(grazeX + 4, bombY + BOMB_ICON_SIZE / 2, 4, null, fade(theme.COLOR_TEXT_MUTED, 0.8), 1);
-    this.grazeText.pos(grazeX + 11, bombY - 2);
-    this.grazeText.text = String(hud.graze);
+
+    // 擦弹：小环图标 + 纯数字（数字用 Text 画，Graphics 没有文本能力）。
+    cursor += theme.SPACE_XS + 4;
+    g.drawCircle(cursor, midY, 4, null, fade(theme.COLOR_TEXT_MUTED, 0.8), 1);
+    this.grazeText.pos(cursor + 7, midY - GRAZE_TEXT_SIZE / 2);
+    this.grazeText.text = String(judgment.graze);
     this.grazeText.visible = true;
   }
 

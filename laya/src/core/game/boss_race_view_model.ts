@@ -427,6 +427,8 @@ export interface JudgmentHudState {
   graze: number;
   /** 当前是否在无敌帧内。 */
   invulnerable: boolean;
+  /** 无敌结束 tick（服务端 tick 轴）；`0` = 无判定数据或已结束。 */
+  invulnerableUntilTick: number;
   /** 无敌剩余 tick；不在无敌期为 0。 */
   invulnerableTicksRemaining: number;
   /** 本 tick 的闪烁相位（与场上自机同相）。 */
@@ -453,6 +455,7 @@ export function buildJudgmentHud(frame: BossRaceFrame): JudgmentHudState | null 
     bombs: Math.max(0, local.bombs),
     graze: Math.max(0, local.graze),
     invulnerable: local.invulnerable,
+    invulnerableUntilTick: local.invulnerableUntilTick,
     invulnerableTicksRemaining: remaining,
     blinkOn: invulnerableBlinkOn(frame.tick, local.invulnerable),
     exhausted: local.lives <= 0,

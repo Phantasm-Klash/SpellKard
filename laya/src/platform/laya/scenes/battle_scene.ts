@@ -53,7 +53,7 @@ import {
 } from '../../../core/sim/card_effects';
 import type { LayaInput } from '../laya_input';
 import { BattleAudioManager } from '../audio_manager';
-import { BossRaceView } from '../view/boss_race_view';
+import { BossRaceView, type JudgmentHudState } from '../view/boss_race_view';
 import { CoopView } from '../view/coop_view';
 import { AtlasBulletRenderer } from '../view/bullets';
 import { sharedTnaFrameSource } from '../view/bullet_atlas';
@@ -342,8 +342,12 @@ export class BattleScene implements ClientScene {
     this.root.size(width, height);
     this.root.visible = false;
 
-    // Real 千夜追忆 art is authored for a 640-wide playfield; scale it to ours.
-    const artScale = this.geometry.playfield.width / 640;
+    // Real 千夜追忆 art is authored for a 640-wide playfield, i.e. 1 art pixel =
+    // 1 screen pixel = 1000 milli. Derive the scale from the render transform
+    // instead of re-deriving width/640: on a 2:3 playfield they are identical,
+    // but if the playfield ever leaves 2:3 the two would drift apart and bullet
+    // art would stop matching the positions next to it.
+    const artScale = new PlayfieldTransform(this.geometry.playfield).radiusToPixels(1000);
     this.bulletRenderer = new AtlasBulletRenderer(this.bulletAtlas, artScale);
     void this.bulletAtlas.load();
     // Best-effort: the gift bar draws its vector glyphs until (and unless) the
@@ -1213,7 +1217,7 @@ export class BattleScene implements ClientScene {
       frame = { ...frame, bullets: frame.bullets.filter((bullet) => !hidden.has(bullet.bulletId)) };
     }
     this.frame = frame;
-    this.view.render(frame, this.hudLines(source, frame), this.hudState(source));
+    this.view.render(frame, this.hudLines(source, frame), this.hudState(source), this.judgmentState(frame));
     this.drawCardEffects(frame, source);
     this.drawGiftLayer(frame);
     this.drawBossEffects(frame);
@@ -1564,6 +1568,21 @@ export class BattleScene implements ClientScene {
       tickLimit: this.options.matchTickLimit,
       tickRateHz: this.options.tickRateHz,
     };
+  }
+
+  /**
+   * 判定卡片状态（侧栏顶部的残机/炸弹/擦弹/无敌条）。
+   *
+   * 从**已经建好的渲染帧**的 `PlayerRenderItem` 取值——单一来源是
+   * `core/game/boss_race_view_model.buildJudgmentHud`，所以卡片、战场指示与
+   * 文本 HUD 的 `JUDGE` 行永远同值。ruleset 不下发判定字段
+   * （`judgmentActive === false`）时返回 `undefined`，视图整条不画。
+   *
+   * 合作视图（`CoopView`）不消费这个状态：合作模式的判定字段在快照里但该视图
+   * 还没有判定渲染，传 `undefined` 即「不画」。
+   */
+  private judgmentState(frame: BossRaceFrame): JudgmentHudState | undefined {
+    return buildJudgmentHud(frame) ?? undefined;
   }
 
   /**
