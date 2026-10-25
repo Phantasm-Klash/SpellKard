@@ -709,6 +709,10 @@ export class LobbyScene implements ClientScene {
     this.roomCodeInput.prompt = t('lobby.roomCodeHint');
     // Snapshot-driven text (page label, account button, profile, status, queue)
     // re-resolves through these two; the title logo is art, so it reloads.
+    // The status line is a *finished string* composed when its event happened,
+    // so the flow has to re-derive it in the new language first — replaying the
+    // snapshot alone would show the old text.
+    this.options.flow.refreshStatusLineLanguage();
     this.applyPageVisibility();
     this.applySnapshot(this.options.flow.snapshot());
     void this.loadTitleLogo();

@@ -314,6 +314,31 @@ export class LobbyFlow {
     return true;
   }
 
+  /**
+   * Re-composes the status line in the language that is active *now*.
+   *
+   * `statusText` is a finished string, composed when the event that produced it
+   * happened — so a language switch leaves every line the player can see
+   * stuck in the previous language, because replaying the snapshot only
+   * re-reads the old text. The lobby calls this from its own language repaint,
+   * before it re-reads the snapshot.
+   *
+   * Only the sign-in line is re-derived: it is the one whose text is stored
+   * rather than re-derived on every read. Anything else (queue status, room
+   * status, match results) is produced by an event the player triggers again,
+   * and re-deriving those here would overwrite a fresher message.
+   */
+  refreshStatusLineLanguage(): void {
+    if (this.client.session === null || this.screen !== LobbyScreen.Lobby) {
+      return;
+    }
+    // Both sign-in paths compose this same key, so re-composing it is safe in
+    // either case. Guarded by the screen so a status line set on the login
+    // screen ("signing in…", a failure) is never overwritten.
+    this.statusText = t('flow.signedInAs', { name: this.client.session.displayName });
+    this.notify();
+  }
+
   /** Flips the login screen between sign-in and sign-up. */
   setAuthMode(mode: AuthMode): void {
     this.authMode = mode;

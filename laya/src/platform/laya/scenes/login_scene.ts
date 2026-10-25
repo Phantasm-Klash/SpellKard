@@ -27,7 +27,7 @@
  */
 
 import type { AuthMode, LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow';
-import { t } from '../../../core/game/i18n';
+import { language, t, isLanguageCode, DEFAULT_LANGUAGE, type LanguageCode } from '../../../core/game/i18n';
 import { gameTitle } from '../../../core/game/game_identity';
 import { isNativeAssetRuntime } from '../../../core/game/tna_assets';
 import {
@@ -125,6 +125,19 @@ export interface LoginDebugState {
 }
 
 export class LoginScene implements ClientScene {
+
+  /**
+   * Language this screen's own labels were painted in.
+   *
+   * The settings modal is where the language moves, and it writes the shared
+   * store — not this screen. The login form is painted once at construction,
+   * so without this a language switch leaves the title, the field prompts and
+   * the buttons in the previous language until the screen is rebuilt. See
+   * {@link applyLanguage}.
+   */
+  private paintedLanguage: LanguageCode = DEFAULT_LANGUAGE;
+  /** Unsubscribes the language listener; set by the constructor. */
+  private detachSettingsListener: (() => void) | null = null;
   readonly root: Laya.Sprite;
   /**
    * Public because `ClientScene` exposes it: `app.ts` services the global
@@ -280,6 +293,28 @@ export class LoginScene implements ClientScene {
 
     this.relayout();
     void this.loadArt();
+    // Language the labels above were painted in, so a switch can be told apart
+    // from any other settings change.
+    const storedLanguage = options.settings.get().language;
+    this.paintedLanguage = isLanguageCode(storedLanguage) ? storedLanguage : DEFAULT_LANGUAGE;
+    this.detachSettingsListener = options.settings.subscribe(() => this.applyLanguage());
+    this.refresh();
+  }
+
+  /**
+   * Repaints the login form when — and only when — the language moved.
+   *
+   * Every other settings change is a no-op here, which matters because the
+   * store notifies on any write.
+   */
+  private applyLanguage(): void {
+    const current = language();
+    if (current === this.paintedLanguage) {
+      return;
+    }
+    this.paintedLanguage = current;
+    this.applyFieldPrompts();
+    this.applyModeLabels();
     this.refresh();
   }
 
@@ -304,6 +339,10 @@ export class LoginScene implements ClientScene {
   }
 
   destroy(): void {
+    if (this.detachSettingsListener !== null) {
+      this.detachSettingsListener();
+      this.detachSettingsListener = null;
+    }
     Laya.stage.off(Laya.Event.RESIZE, this, this.onStageResize);
     this.stopCodeCountdown();
     this.blurFields();
