@@ -40,7 +40,15 @@ import {
   peekPayloadType,
   type BattleResultPayload,
 } from './battle_codec';
-import { resolveCipher, selectBattleCipher, type AeadSelection, type BattleCryptoProvider } from './battle_aead';
+import {
+  resolveCipher,
+  sealsClientToServer,
+  sealsServerToClient,
+  selectBattleCipher,
+  selectBattleCipherWithSessionKey,
+  type AeadSelection,
+  type BattleCryptoProvider,
+} from './battle_aead';
 import {
   BATTLE_AEAD_CHACHA20_POLY1305,
   BATTLE_AEAD_XCHACHA20_POLY1305,
@@ -109,6 +117,21 @@ export interface BattleSessionInfo {
    * client follows the server rather than deciding for itself.
    */
   selectedAead?: string;
+  /**
+   * The battle session key, delivered **out of band** by the lobby alongside the
+   * ticket.
+   *
+   * This is the path `docs/battle-wire-scheme.md` §P2 recommends and it takes
+   * precedence over {@link selectedAead}: the key already exists, so there is
+   * nothing to negotiate and no round trip to spend before the match starts.
+   */
+  sessionKey?: Uint8Array;
+  /**
+   * Which key {@link sessionKey} is — the lobby stamps it so the battle server
+   * can tell a rotated key from a stale one. Carried in `header.key_id`, which
+   * the server checks before anything else.
+   */
+  battleKeyId?: string;
 }
 
 export interface BattleClientConfig {
@@ -293,13 +316,22 @@ export class BattleClient {
     this.state = BattleConnectionState.Connecting;
     this.lastError = '';
 
-    // Decide the cipher once, from what the server negotiated. A session with no
-    // `selectedAead` is the dev plaintext path, which is what the deployed server
-    // answers; a real one selects ChaCha20-Poly1305 and the cipher appears once
-    // the key agreement has derived the session key.
-    this.aead = selectBattleCipher(info.selectedAead ?? 'PLAINTEXT_DEV', this.config.crypto);
+    // Decide the cipher once, so the send and receive paths cannot disagree.
+    //
+    // A session key from the lobby wins over anything the server might have
+    // negotiated: the key already exists, so the cipher does too, and the first
+    // input frame of the match goes out sealed with no handshake in between.
+    // Without one, fall back to what the server negotiated — which for the
+    // deployed battle server is the dev plaintext path.
+    this.aead =
+      info.sessionKey !== undefined && info.sessionKey.length > 0
+        ? selectBattleCipherWithSessionKey(info.sessionKey, this.config.crypto)
+        : selectBattleCipher(info.selectedAead ?? 'PLAINTEXT_DEV', this.config.crypto);
+    this.cipher = this.aead.cipher;
+    this.keyId = info.battleKeyId ?? null;
     this.logger.info(
-      `battle aead: selected=${this.aead.selected} encrypted=${this.aead.encrypted} (${this.aead.reason})`,
+      `battle aead: selected=${this.aead.selected} encrypted=${this.aead.encrypted} ` +
+        `direction=${this.aead.direction} (${this.aead.reason})`,
     );
 
     // Pick the bullet model the *ticket's* ruleset selects, not a hard-coded
@@ -458,7 +490,7 @@ export class BattleClient {
     if (this.handshakeWaiter !== null) {
       return;
     }
-    if (this.isSealing()) {
+    if (this.sealsOutgoing()) {
       void this.flushSealedQueue();
       return;
     }
@@ -539,7 +571,7 @@ export class BattleClient {
       void this.completeHandshake(payload);
       return;
     }
-    if (this.isSealing()) {
+    if (this.opensIncoming()) {
       void this.receiveSealed(payload);
       return;
     }
@@ -736,14 +768,22 @@ export class BattleClient {
   }
 
   /**
-   * Whether this session seals its packets.
+   * Whether this session seals the frames it sends.
    *
-   * Decided once in {@link connect}, so the send and receive paths cannot
-   * disagree — if one sealed while the other read plaintext, every packet would
-   * fail.
+   * Deliberately separate from {@link opensIncoming}. A session seals only the
+   * direction it needs to — the input direction, which is the cheat-sensitive
+   * half and the tiny half — while the snapshot broadcast comes back in the
+   * clear because it is the same bytes for every player. A single shared flag
+   * would make the receive path try to open that broadcast and drop every
+   * frame. See `docs/battle-wire-scheme.md` §P2.
    */
-  private isSealing(): boolean {
-    return this.aead !== null && this.aead.encrypted && this.cipher !== null;
+  private sealsOutgoing(): boolean {
+    return sealsClientToServer(this.aead);
+  }
+
+  /** Whether the frames this session receives are sealed. */
+  private opensIncoming(): boolean {
+    return sealsServerToClient(this.aead);
   }
 
   /**
@@ -770,7 +810,7 @@ export class BattleClient {
     if (crypto.keyAgreement instanceof UnsupportedKeyAgreement) {
       return false;
     }
-    if (this.isSealing()) {
+    if (this.sealsOutgoing() || this.opensIncoming()) {
       return true;
     }
     let pair: { publicKey: Uint8Array; random: Uint8Array };
@@ -872,7 +912,19 @@ export class BattleClient {
    */
   private async sealForWire(body: Uint8Array, input: BattleInput, payloadType: number): Promise<Uint8Array> {
     const cipher = this.cipher;
-    if (!this.isSealing() || cipher === null || this.keyId === null) {
+    if (!this.sealsOutgoing()) {
+      return body;
+    }
+    if (cipher === null || this.keyId === null) {
+      // The lobby issued a session key but no key id. The server rejects a
+      // packet with an empty `key_id` outright, so sealing would only turn a
+      // misconfiguration into a match that cannot be played at all.
+      //
+      // This is *not* a downgrade an attacker can trigger: it depends on what
+      // the lobby handed the client, and there is nothing on the wire to
+      // tamper with to get here. It is a loud, loggable configuration error.
+      this.lastError = 'battle_key_id_missing';
+      this.logger.error(`${this.lastError}: the session key has no key id, sending in the clear`);
       return body;
     }
     const nonceInput = {
@@ -911,11 +963,11 @@ export class BattleClient {
    *   (the plaintext path) or the auth tag failed.
    *
    * `null` therefore means two different things, which is why the caller checks
-   * {@link isSealing} before treating it as a failure.
+   * {@link opensIncoming} before treating it as a failure.
    */
   private async openFromWire(payload: Uint8Array): Promise<Uint8Array | null> {
     const cipher = this.cipher;
-    if (!this.isSealing() || cipher === null) {
+    if (!this.opensIncoming() || cipher === null) {
       return null;
     }
     const packet = decodeEncryptedPacket(payload);

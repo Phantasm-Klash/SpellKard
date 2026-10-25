@@ -186,13 +186,24 @@ ChaCha20-Poly1305（已有实现，`core/net/battle_crypto.ts` + 原生 `spk_cry
 
 ## 4. 与现有代码的映射
 
-| 方案项 | 客户端落点 | 服务端落点（需配合） |
-| --- | --- | --- |
-| 密钥带外下发 | `BattleSessionInfo` 增 `sessionKey`；`BattleClient` 直接用它建 cipher | Nakama 插件在 `battle.ticket` 里带 `session_key`；对战端从回调取 |
-| 只封输入面 | `sealForWire` 现状已只在输入路径；`openFromWire` 可删或保留为可选 | 对战端解析信封并校验 seq |
-| 快照去 bullets | `decodeBossRaceSnapshot` 兼容无 bullets 字段；`BossRaceSimulation` 已能自算 | `EncodeBossRaceSnapshotPayload` 去掉 bullets；落后时补发全量 |
-| JSON→二进制 | 新增 `decodeBossRaceSnapshotBinary` | 新增 `EncodeBossRaceSnapshotBinary`（字段表需与 `battle-aead-server-spec.md` 同规格锁定） |
-| 输入冗余窗口 | `flushInputQueue` 每包附最近 N 帧 | 服务端按 tick 去重后 `SubmitInput`（它本就拒绝 `tick <= current`） |
+| 方案项 | 客户端落点 | 状态 | 服务端落点（需配合） |
+| --- | --- | --- | --- |
+| 密钥带外下发 | `BattleSessionInfo.sessionKey` + `battleKeyId`；`selectBattleCipherWithSessionKey()` | **已落地** | Nakama 插件在 `battle.ticket` 里带 `session_key` / `key_id`；对战端从回调取 |
+| 只封输入面 | `AeadDirection`；`sealsOutgoing()` / `opensIncoming()` 分离 | **已落地** | 对战端解析信封并校验 seq |
+| 快照去 bullets | `decodeBossRaceSnapshot` 兼容无 bullets 字段；`BossRaceSimulation` 已能自算 | 待服务端 | `EncodeBossRaceSnapshotPayload` 去掉 bullets；落后时补发全量 |
+| JSON→二进制 | 新增 `decodeBossRaceSnapshotBinary` | 待服务端 | 新增 `EncodeBossRaceSnapshotBinary`（字段表需与 `battle-aead-server-spec.md` 同规格锁定） |
+| 输入冗余窗口 | `flushInputQueue` 每包附最近 N 帧 | 未做 | 服务端按 tick 去重后 `SubmitInput`（它本就拒绝 `tick <= current`） |
+
+**客户端侧 P2 已完成的判据**（`tests/battle_handshake.test.ts`，16 例全绿）：
+
+- 带外密钥会话的**第一个输入帧就是密文**，握手零往返；
+- 只封 C→S 时，**明文快照广播不受影响**（这条是专门为"单标志管双向"那个坑写的回归）；
+- `direction: 'both'` 时 S→C 也能正常解封；
+- 有密钥无 `key_id` → 明文 + `battle_key_id_missing` 告警，**对局不被卡死**。
+
+> 一个实现上的坑，值得记一笔：`isSealing()` 原来是一个标志同时管收发。新方案只封
+> 输入面后，接收端会拿着明文快照去解封、逐帧判伪造。收发必须分成
+> `sealsOutgoing()` / `opensIncoming()` 两个判断。
 
 ---
 

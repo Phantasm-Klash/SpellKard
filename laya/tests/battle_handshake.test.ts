@@ -232,7 +232,7 @@ function serverAccept(): BattleHandshakeAccept {
   };
 }
 
-function sessionInfo(): BattleSessionInfo {
+function sessionInfo(extra: Partial<BattleSessionInfo> = {}): BattleSessionInfo {
   return {
     matchId: 'match-1',
     playerId: 'p-1',
@@ -241,7 +241,22 @@ function sessionInfo(): BattleSessionInfo {
     rulesetVersion: 'mvp-boss-race-s0',
     endpoint: 'udp://battle:9000',
     serverSeed: bossRaceSeedFromU32(12345),
+    ...extra,
   };
+}
+
+/**
+ * A snapshot the way the battle server broadcasts it: a payload-type byte and
+ * then raw JSON, unencrypted.
+ */
+function snapshotFrame(tick: number): Uint8Array {
+  const body = new TextEncoder().encode(
+    JSON.stringify({ tick, state: 'running', state_hash: '0', players: [], bullets: [] }),
+  );
+  const out = new Uint8Array(body.length + 1);
+  out[0] = BattlePayloadType.SNAPSHOT;
+  out.set(body, 1);
+  return out;
 }
 
 /** Enough microtask turns for the async send/receive paths to settle. */
@@ -266,7 +281,10 @@ interface Harness {
   received: Uint8Array[];
 }
 
-function harness(crypto?: ReturnType<typeof fakeCrypto>): Harness {
+function harness(
+  crypto?: ReturnType<typeof fakeCrypto>,
+  session: Partial<BattleSessionInfo> = {},
+): Harness {
   const timer = new FakeTimer();
   const inboxA: Uint8Array[] = [];
   const inboxB: Uint8Array[] = [];
@@ -280,7 +298,7 @@ function harness(crypto?: ReturnType<typeof fakeCrypto>): Harness {
     convOverride: conv,
     ...(crypto === undefined ? {} : { crypto }),
   });
-  client.connect(sessionInfo());
+  client.connect(sessionInfo(session));
 
   const received: Uint8Array[] = [];
   const peer = new KcpSession(datagramB, timer, { conv, intervalMs: 10 });
@@ -297,6 +315,37 @@ function harness(crypto?: ReturnType<typeof fakeCrypto>): Harness {
         datagramA.pump();
         datagramB.pump();
       }),
+  };
+}
+
+/**
+ * Seals a server -> client frame the way the server would: the nonce and AAD
+ * are both derived from the header, so the AAD has to be the real one here —
+ * passing an empty AAD would make the tag verify against the wrong material and
+ * silently turn a forgery test into an AAD test.
+ */
+async function sealSnapshotFrame(body: Uint8Array): Promise<{
+  nonce: Uint8Array;
+  aad: Uint8Array;
+  sealed: SealedPayload;
+  keyId: string;
+}> {
+  const nonceInput = {
+    keyId: SERVER_KEY_ID,
+    matchId: 'match-1',
+    playerId: 'p-1',
+    payloadType: BattlePayloadType.SNAPSHOT,
+    tick: 1,
+    seq: 1,
+    ack: 0,
+  };
+  const nonce = aeadHexToBytes(devBattleNonceHex(nonceInput, 'server_to_client'));
+  const aad = devBattleAadBytes(nonceInput, 'server_to_client');
+  return {
+    nonce,
+    aad,
+    sealed: await new FakeCipher(sessionKey()).seal(body, aad, nonce),
+    keyId: SERVER_KEY_ID,
   };
 }
 
@@ -406,23 +455,9 @@ test('a sealed frame whose tag does not verify is dropped, not downgraded', asyn
   const h = harness(fakeCrypto());
   expectEqual(await handshake(h), true, 'the handshake completes');
 
-  // A snapshot the attacker altered: right shape, wrong tag.
-  const nonce = aeadHexToBytes(
-    devBattleNonceHex(
-      {
-        keyId: SERVER_KEY_ID,
-        matchId: 'match-1',
-        playerId: 'p-1',
-        payloadType: BattlePayloadType.SNAPSHOT,
-        tick: 1,
-        seq: 1,
-        ack: 0,
-      },
-      'server_to_client',
-    ),
-  );
-  const body = new TextEncoder().encode('{"tick":1}');
-  const sealed = await new FakeCipher(sessionKey()).seal(body, new Uint8Array(0), nonce);
+  // A snapshot the attacker altered: sealed with the right nonce and AAD, so
+  // the only thing that can reject it is the tag itself.
+  const { nonce, sealed } = await sealSnapshotFrame(snapshotFrame(1));
   sealed.authTag[0] ^= 0xff;
   h.peer.send(
     codec.battleEncryptedPacket.encode({
@@ -447,4 +482,93 @@ test('a sealed frame whose tag does not verify is dropped, not downgraded', asyn
 
   expectEqual(h.client.lastError, 'battle_auth_tag_invalid', 'the failure is recorded');
   expectEqual(h.client.metrics.snapshotsReceived, 0, 'and the snapshot was not applied');
+});
+
+// ---------------------------------------------------------------------------
+// P2: the session key arrives with the ticket, so there is no handshake.
+// ---------------------------------------------------------------------------
+
+const SESSION_KEY = sessionKey();
+
+/** A session keyed out of band, i.e. what the lobby hands the client. */
+function keyedHarness(session: Partial<BattleSessionInfo> = {}): Harness {
+  return harness(fakeCrypto(), { sessionKey: SESSION_KEY, battleKeyId: CLIENT_KEY_ID, ...session });
+}
+
+suite('battle AEAD: out-of-band session key');
+
+test('the very first input frame is already sealed — no handshake, no RTT', async () => {
+  const h = keyedHarness();
+  // The point of the whole exercise: an in-band exchange would have spent a
+  // round trip here, before the match could start.
+  expectEqual(h.received.length, 0, 'connecting sends no handshake');
+
+  h.client.sendInput(1, 0x2, false, true, false);
+  await drain();
+  h.step();
+
+  expect(h.received.length === 1, `the server received a frame (got ${h.received.length})`);
+  expect(
+    peekPayloadType(h.received[0]) !== BattlePayloadType.INPUT,
+    'it is not a plaintext input frame',
+  );
+  const packet = decodeEncryptedPacket(h.received[0]);
+  expect(packet !== null, 'it is a sealed envelope');
+  expectEqual(packet?.header?.keyId, CLIENT_KEY_ID, 'carrying the key id the lobby issued');
+});
+
+test('only the input direction is sealed, so the plaintext snapshot still arrives', async () => {
+  // The regression this suite exists for: a single "encrypted" flag on both
+  // paths made the receive path try to open the snapshot broadcast — which the
+  // server sends in the clear — and drop every frame of the match.
+  const h = keyedHarness();
+  h.peer.send(snapshotFrame(1));
+  h.step();
+  h.step();
+  await drain();
+
+  expectEqual(h.client.metrics.snapshotsReceived, 1, 'the cleartext snapshot was applied');
+  expect(h.client.lastError !== 'battle_auth_tag_invalid', 'and it was not treated as a forgery');
+});
+
+test('a session that seals both directions still opens the sealed snapshot', async () => {
+  const h = harness(fakeCrypto());
+  expectEqual(await handshake(h), true, 'the handshake completes');
+
+  const { nonce, sealed } = await sealSnapshotFrame(snapshotFrame(1));
+  h.peer.send(
+    codec.battleEncryptedPacket.encode({
+      header: {
+        version: { ...emptyVersionStamp(), protocolVersion: 1 },
+        matchId: 'match-1',
+        playerId: 'p-1',
+        tick: 1,
+        seq: 1,
+        ack: 0,
+        payloadType: BattlePayloadType.SNAPSHOT,
+        keyId: SERVER_KEY_ID,
+        nonce,
+      },
+      ciphertext: sealed.ciphertext,
+      authTag: sealed.authTag,
+    }),
+  );
+  h.step();
+  h.step();
+  await drain();
+
+  expectEqual(h.client.metrics.snapshotsReceived, 1, 'the sealed snapshot was opened and applied');
+});
+
+
+test('a session key with no key id is a loud configuration error, not a silent downgrade', async () => {
+  // The server rejects a packet with an empty `key_id` outright, so sealing
+  // would turn a lobby misconfiguration into a match that cannot be played.
+  const h = harness(fakeCrypto(), { sessionKey: SESSION_KEY });
+  h.client.sendInput(1, 0x2, false, true, false);
+  await drain();
+  h.step();
+
+  expectEqual(h.client.lastError, 'battle_key_id_missing', 'the misconfiguration is recorded');
+  expectEqual(peekPayloadType(h.received[0]), BattlePayloadType.INPUT, 'and the match still plays');
 });

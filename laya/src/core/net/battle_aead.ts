@@ -61,14 +61,38 @@ export interface BattleCryptoProvider {
 /** What the server reported in `BattleHandshakeAccept.selected_aead`. */
 export type SelectedAead = 'PLAINTEXT_DEV' | 'CHACHA20_POLY1305' | string;
 
+/**
+ * Which direction of the channel is sealed.
+ *
+ * The two directions are deliberately separable. Server → client carries the
+ * snapshot broadcast: it is the same bytes for every player in the match, so
+ * sealing it buys no secrecy, and it is by far the larger half of the traffic
+ * (measured at 377 KB/s against 2.5 KB/s for the input direction). Client →
+ * server is the cheat-sensitive half — it is where forged inputs, replays and
+ * tick/seq tampering all live — and it is tiny, so it is the half worth
+ * sealing. `docs/battle-wire-scheme.md` §P2.
+ *
+ * `both` remains available for a deployment that wants the snapshot encrypted
+ * as well.
+ */
+export type AeadDirection = 'none' | 'client-to-server' | 'both';
+
 /** Which cipher the client ended up using, and why. */
 export interface AeadSelection {
-  /** True when packets are actually sealed — `false` means plaintext. */
+  /** True when *some* direction is sealed — `false` means all-plaintext. */
   encrypted: boolean;
   /** The suite the server selected, as reported. */
   selected: SelectedAead;
   /** Why this cipher was chosen, for the log line. */
   reason: string;
+  /**
+   * Which half of the channel is sealed.
+   *
+   * The send and receive paths read this separately, so a session that seals
+   * only its outgoing half still reads the snapshot broadcast as plaintext
+   * instead of trying to open it and failing on every frame.
+   */
+  direction: AeadDirection;
   /**
    * The cipher to seal and open with.
    *
@@ -86,12 +110,17 @@ export interface AeadSelection {
  * @param crypto what this platform can offer. Omit to get the plaintext cipher
  *   regardless of what the server asked for.
  */
-export function selectBattleCipher(selected: SelectedAead, crypto?: BattleCryptoProvider): AeadSelection {
+export function selectBattleCipher(
+  selected: SelectedAead,
+  crypto?: BattleCryptoProvider,
+  direction: AeadDirection = 'both',
+): AeadSelection {
   if (selected !== BATTLE_AEAD_CHACHA20_POLY1305) {
     return {
       cipher: new PlaintextCipher(),
       encrypted: false,
       selected,
+      direction: 'none',
       reason: 'server selected the dev plaintext path',
     };
   }
@@ -100,6 +129,7 @@ export function selectBattleCipher(selected: SelectedAead, crypto?: BattleCrypto
       cipher: new PlaintextCipher(),
       encrypted: false,
       selected,
+      direction: 'none',
       reason: 'server asked for AEAD but this platform has no X25519 implementation',
     };
   }
@@ -111,7 +141,59 @@ export function selectBattleCipher(selected: SelectedAead, crypto?: BattleCrypto
     cipher: null,
     encrypted: true,
     selected,
+    direction,
     reason: 'server selected ChaCha20-Poly1305 and a key agreement is available',
+  };
+}
+
+/**
+ * Picks the cipher for a session whose key arrived **out of band** — handed to
+ * the client by the lobby alongside the battle ticket, and to the battle server
+ * over its own channel.
+ *
+ * This is the path `docs/battle-wire-scheme.md` §P2 recommends, and it is the
+ * one CS:GO's third-party net-channel keys and WoW's realmd → worldd session
+ * key both use. Two things fall out of it:
+ *
+ *  - **No handshake, so no extra RTT.** The first input frame of the match is
+ *    already sealed, where an in-band ECDHE exchange would have spent a round
+ *    trip before the match could start.
+ *  - **No key agreement needed at all.** The platform only has to be able to
+ *    build a cipher from a key it was handed, which every platform can.
+ *
+ * @param sessionKey the 32-byte battle session key from the lobby
+ * @param direction  defaults to `client-to-server`: the snapshot broadcast is
+ *   public state, so there is nothing to be gained by sealing it
+ */
+export function selectBattleCipherWithSessionKey(
+  sessionKey: Uint8Array,
+  crypto?: BattleCryptoProvider,
+  direction: AeadDirection = 'client-to-server',
+): AeadSelection {
+  if (crypto === undefined) {
+    return {
+      cipher: new PlaintextCipher(),
+      encrypted: false,
+      selected: BATTLE_AEAD_CHACHA20_POLY1305,
+      direction: 'none',
+      reason: 'the lobby sent a session key but this platform has no cipher',
+    };
+  }
+  if (sessionKey.length === 0) {
+    return {
+      cipher: new PlaintextCipher(),
+      encrypted: false,
+      selected: BATTLE_AEAD_CHACHA20_POLY1305,
+      direction: 'none',
+      reason: 'the lobby sent an empty session key',
+    };
+  }
+  return {
+    cipher: crypto.cipherFor(sessionKey),
+    encrypted: true,
+    selected: BATTLE_AEAD_CHACHA20_POLY1305,
+    direction,
+    reason: `session key delivered by the lobby, sealing ${direction}`,
   };
 }
 
@@ -124,6 +206,28 @@ export function selectBattleCipher(selected: SelectedAead, crypto?: BattleCrypto
  */
 export function isEncryptedSelection(selected: SelectedAead): boolean {
   return selected === BATTLE_AEAD_CHACHA20_POLY1305;
+}
+
+/**
+ * Whether outgoing (client → server) frames are sealed.
+ *
+ * Separate from {@link sealsServerToClient} because a session may seal only one
+ * half: checking a single "encrypted" flag on both paths would make the receive
+ * path try to open the plaintext snapshot broadcast and drop every frame.
+ */
+export function sealsClientToServer(selection: AeadSelection | null): boolean {
+  if (selection === null || !selection.encrypted || selection.cipher === null) {
+    return false;
+  }
+  return selection.direction === 'client-to-server' || selection.direction === 'both';
+}
+
+/** Whether incoming (server → client) frames are sealed. */
+export function sealsServerToClient(selection: AeadSelection | null): boolean {
+  if (selection === null || !selection.encrypted || selection.cipher === null) {
+    return false;
+  }
+  return selection.direction === 'both';
 }
 
 /**
