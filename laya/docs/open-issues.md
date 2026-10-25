@@ -53,6 +53,15 @@
   ① 收 `HANDSHAKE_HELLO` 并回 `HANDSHAKE_ACCEPT`；② 解析
   `BattleEncryptedPacket`；③ 真 X25519 + HKDF（替换 `FillDevBytes`）。
   客户端侧只需在开战处加一次 `await client.performHandshake()`。
+- **★ 2026-10-25 修订**：用户要求重新评估「对战端是否值得上这层复杂加密」。
+  调研（CS:GO / WoW / PUBG / Overwatch / DOOM3）+ 实测后的结论是
+  **路线要换**：带内 ECDHE 握手**取消**，改为**大厅带外下发会话密钥**
+  （省 1 RTT，与 CS:GO 第三方通道密钥、WoW realmd→worldd 同源）；
+  加密范围**只封 C→S 输入面**（43 B/帧），S→C 快照不加密。
+  且**真正的大头是编码不是加密**：快照实测均值 6,434 B / 峰值 16,178 B
+  （60 Hz = 377 KB/s ~ 948 KB/s），其中 95% 是可由客户端确定性重现的 bullets，
+  去掉即降到 332 B。详见 **`docs/battle-wire-scheme.md`**（P1 编码 / P2 加密 / P3 增量）。
+  → 本条（A1/A1-bis）的"解锁条件"以该文档的 P2 为准，不再要求带内握手。
 
 ### A2. 竞速模式服务端丢弃 `card_slot`
 
