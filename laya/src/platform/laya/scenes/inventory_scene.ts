@@ -14,6 +14,7 @@
  */
 
 import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow';
+import { t } from '../../../core/game/i18n';
 import type { ChestPoolView, InventoryEntryView } from '../../../core/net/lobby_client';
 import { cardEffectDefinition, describeCardEffect, rarityLabel } from '../../../core/sim/card_effects';
 import * as theme from '../view/theme';
@@ -62,7 +63,7 @@ export class InventoryScene implements ClientScene {
     const contentWidth = width - margin * 2;
 
     // --- title band ---
-    const title = this.makeText('Inventory', theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
+    const title = this.makeText(t('inventory.title'), theme.FONT_SIZE_TITLE, theme.COLOR_TITLE, true, margin);
     title.y = margin;
     this.root.addChild(title);
     // 背包没有对应的 TNA 标题牌（APK 只烘焙了角色选择/关卡选择等），所以这里
@@ -71,7 +72,7 @@ export class InventoryScene implements ClientScene {
 
     // --- card stacks ---
     const itemsCaptionY = title.y + theme.FONT_SIZE_TITLE + theme.SPACE_MD;
-    const itemsCaption = createCaption('Cards', contentWidth, itemsCaptionY);
+    const itemsCaption = createCaption(t('inventory.cards'), contentWidth, itemsCaptionY);
     itemsCaption.x = margin;
     this.root.addChild(itemsCaption);
 
@@ -84,7 +85,7 @@ export class InventoryScene implements ClientScene {
     // The card list is capped at MAX_ROWS; pin the chest band just below it so
     // a long inventory cannot push the chest buttons off-screen.
     const chestCaptionY = itemsY + MAX_ROWS * (ITEM_ROW_HEIGHT + theme.SPACE_XS) + theme.SPACE_MD;
-    this.chestsCaption = createCaption('Chests', contentWidth, chestCaptionY);
+    this.chestsCaption = createCaption(t('inventory.chests'), contentWidth, chestCaptionY);
     this.chestsCaption.x = margin;
     this.root.addChild(this.chestsCaption);
 
@@ -103,7 +104,7 @@ export class InventoryScene implements ClientScene {
     this.root.addChild(this.statusText);
 
     this.backButton = createButtonEx(
-      'Back to lobby',
+      t('lobby.backToLobby'),
       margin,
       actionsY,
       contentWidth,
@@ -229,7 +230,7 @@ export class InventoryScene implements ClientScene {
       row.addChild(meta);
 
       const open = createButtonEx(
-        'Open',
+        t('inventory.open'),
         contentWidth - OPEN_BUTTON_WIDTH - theme.SPACE_MD,
         (CHEST_ROW_HEIGHT - theme.BUTTON_HEIGHT) / 2,
         OPEN_BUTTON_WIDTH,

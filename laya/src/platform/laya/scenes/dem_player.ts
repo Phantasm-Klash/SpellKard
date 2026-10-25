@@ -14,6 +14,7 @@ import { parseDemDocument, DemError, type DemDocument } from '../../../core/dem/
 import { DemReplayer, DEM_DEFAULT_KEYFRAME_INTERVAL_TICKS } from '../../../core/dem/replayer';
 import type { BossRaceSnapshot } from '../../../core/sim/boss_race';
 import { ARENA_HALF_WIDTH_MILLI, ARENA_HALF_HEIGHT_MILLI, BOSS_RACE_TICK_RATE_HZ } from '../../../core/sim/boss_race';
+import { t } from '../../../core/game/i18n';
 import * as theme from '../view/theme';
 import { createButtonEx, createCaption, createDivider, createLabel, createPanel, type ButtonHandle } from './ui_kit';
 import type { ClientScene } from './scene';
@@ -63,7 +64,7 @@ export class DemPlayerScene implements ClientScene {
     this.root.addChild(createDivider(margin, title.y + theme.FONT_SIZE_TITLE + theme.SPACE_SM, contentWidth));
 
     const infoY = title.y + theme.FONT_SIZE_TITLE + theme.SPACE_MD;
-    const infoCaption = createCaption('Session', contentWidth, infoY);
+    const infoCaption = createCaption(t('replay.session'), contentWidth, infoY);
     infoCaption.x = margin;
     this.root.addChild(infoCaption);
     this.infoText = createLabel('', contentWidth, infoY + theme.FONT_SIZE_CAPTION + theme.SPACE_XS, theme.FONT_SIZE_LABEL, {
@@ -98,9 +99,9 @@ export class DemPlayerScene implements ClientScene {
     // --- controls ---
     const controlY = timelineY + 56;
     const controlWidth = 92;
-    this.playButton = createButtonEx('Play', margin, controlY, controlWidth, () => this.togglePlay());
+    this.playButton = createButtonEx(t('replay.play'), margin, controlY, controlWidth, () => this.togglePlay());
     this.root.addChild(this.playButton.sprite);
-    this.restartButton = createButtonEx('Restart', margin + controlWidth + theme.SPACE_SM, controlY, controlWidth, () => {
+    this.restartButton = createButtonEx(t('replay.restart'), margin + controlWidth + theme.SPACE_SM, controlY, controlWidth, () => {
       this.seekTo(0);
     });
     this.root.addChild(this.restartButton.sprite);
@@ -112,7 +113,7 @@ export class DemPlayerScene implements ClientScene {
       this.speedLabels.push({ button, speed });
       speedX += 64 + theme.SPACE_SM;
     }
-    this.closeButton = createButtonEx('Close', width - margin - controlWidth, controlY, controlWidth, () => this.close(), 'ghost');
+    this.closeButton = createButtonEx(t('replay.close'), width - margin - controlWidth, controlY, controlWidth, () => this.close(), 'ghost');
     this.root.addChild(this.closeButton.sprite);
 
     this.statusText = createLabel('', contentWidth, controlY + theme.BUTTON_HEIGHT + theme.SPACE_SM, theme.FONT_SIZE_CAPTION, {
@@ -175,13 +176,13 @@ export class DemPlayerScene implements ClientScene {
     if (this.playing) {
       this.stopLoop();
       this.playing = false;
-      this.playButton.setText('Play');
+      this.playButton.setText(t('replay.play'));
     } else {
       if (this.replayer.currentTick >= this.replayer.finalTick) {
         this.seekTo(0);
       }
       this.playing = true;
-      this.playButton.setText('Pause');
+      this.playButton.setText(t('replay.pause'));
       this.startLoop();
     }
   }
@@ -220,7 +221,7 @@ export class DemPlayerScene implements ClientScene {
     if (replayer.currentTick >= replayer.finalTick) {
       this.stopLoop();
       this.playing = false;
-      this.playButton.setText('Play');
+      this.playButton.setText(t('replay.play'));
       this.render(replayer.simulationRef.snapshot());
       this.finishReport(replayer);
       return;

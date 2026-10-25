@@ -116,7 +116,7 @@ export class ShopScene implements ClientScene {
     this.root.addChild(this.statusText);
 
     this.backButton = createButtonEx(
-      'Back to lobby',
+      t('lobby.backToLobby'),
       margin + (contentWidth + theme.SPACE_SM) / 2,
       actionsY,
       (contentWidth - theme.SPACE_SM) / 2,

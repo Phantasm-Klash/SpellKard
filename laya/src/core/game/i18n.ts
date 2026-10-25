@@ -62,6 +62,17 @@ export interface Messages {
   'lobby.page.play': string;
   'lobby.changeRoomCode': string;
   'lobby.createRoom': string;
+  'lobby.backToLobby': string;
+  'inventory.title': string;
+  'inventory.cards': string;
+  'inventory.chests': string;
+  'inventory.open': string;
+  'inventory.empty': string;
+  'replay.session': string;
+  'replay.play': string;
+  'replay.pause': string;
+  'replay.restart': string;
+  'replay.close': string;
   'lobby.joinRoom': string;
   'lobby.joinQueue': string;
   'lobby.refreshQueue': string;
@@ -597,6 +608,17 @@ const ZH_HANS: Messages = {
   'lobby.page.play': '开始游戏',
   'lobby.changeRoomCode': '更换房间码',
   'lobby.createRoom': '创建房间',
+  'lobby.backToLobby': '返回大厅',
+  'inventory.title': '背包',
+  'inventory.cards': '卡牌',
+  'inventory.chests': '卡包',
+  'inventory.open': '开启',
+  'inventory.empty': '背包是空的',
+  'replay.session': '对战信息',
+  'replay.play': '播放',
+  'replay.pause': '暂停',
+  'replay.restart': '重播',
+  'replay.close': '关闭',
   'lobby.joinRoom': '加入房间',
   'lobby.joinQueue': '加入匹配队列',
   'lobby.refreshQueue': '刷新队列状态',
@@ -1073,6 +1095,17 @@ const ZH_HANT: Messages = {
   'lobby.page.play': '開始遊戲',
   'lobby.changeRoomCode': '更換房間碼',
   'lobby.createRoom': '建立房間',
+  'lobby.backToLobby': '返回大廳',
+  'inventory.title': '背包',
+  'inventory.cards': '卡牌',
+  'inventory.chests': '卡包',
+  'inventory.open': '開啟',
+  'inventory.empty': '背包是空的',
+  'replay.session': '對戰資訊',
+  'replay.play': '播放',
+  'replay.pause': '暫停',
+  'replay.restart': '重播',
+  'replay.close': '關閉',
   'lobby.joinRoom': '加入房間',
   'lobby.joinQueue': '加入配對佇列',
   'lobby.refreshQueue': '重新整理佇列狀態',
@@ -1549,6 +1582,17 @@ const JA: Messages = {
   'lobby.page.play': 'プレイ',
   'lobby.changeRoomCode': 'ルームコードを変更',
   'lobby.createRoom': 'ルームを作成',
+  'lobby.backToLobby': 'ロビーに戻る',
+  'inventory.title': '持ち物',
+  'inventory.cards': 'カード',
+  'inventory.chests': 'パック',
+  'inventory.open': '開ける',
+  'inventory.empty': '持ち物は空です',
+  'replay.session': '対戦情報',
+  'replay.play': '再生',
+  'replay.pause': '一時停止',
+  'replay.restart': '最初から',
+  'replay.close': '閉じる',
   'lobby.joinRoom': 'ルームに参加',
   'lobby.joinQueue': 'マッチメイキング列に参加',
   'lobby.refreshQueue': '順番待ちの状態を更新',
@@ -2027,6 +2071,17 @@ const EN: Messages = {
   'lobby.page.play': 'Play',
   'lobby.changeRoomCode': 'Change room code',
   'lobby.createRoom': 'Create room',
+  'lobby.backToLobby': 'Back to lobby',
+  'inventory.title': 'Inventory',
+  'inventory.cards': 'Cards',
+  'inventory.chests': 'Chests',
+  'inventory.open': 'Open',
+  'inventory.empty': 'Your inventory is empty',
+  'replay.session': 'Session',
+  'replay.play': 'Play',
+  'replay.pause': 'Pause',
+  'replay.restart': 'Restart',
+  'replay.close': 'Close',
   'lobby.joinRoom': 'Join room',
   'lobby.joinQueue': 'Join matchmaking queue',
   'lobby.refreshQueue': 'Refresh queue status',
