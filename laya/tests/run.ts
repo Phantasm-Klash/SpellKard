@@ -20,6 +20,7 @@ import './card_hand_view.test';
 import './draft_panel.test';
 import './battle_client_input.test';
 import './battle_e2e.test';
+import './battle_input_sim_parity.test';
 import './boss_race_sim.test';
 import './boss_race_tna.test';
 import './bullet_visual.test';
