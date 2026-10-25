@@ -200,6 +200,14 @@ export interface RoomView {
   stageId: string;
   /** 合作人数（coop_boss 房主选项：2/4；其他模式 undefined）。 */
   coopPlayers?: number;
+  /**
+   * 对局 id：房间满员后服务端在房间快照里带上（`RoomSnapshot.match_id`）。
+   *
+   * Nakama RPC 部署没有 WS 推送，`match_start` 事件永远不会到达，因此这是
+   * 客户端知道「已经开打」并 ready / 拉 allocation 的唯一来源。空 = 房间
+   * 还在等人。
+   */
+  matchId: string;
 }
 
 /** `rooms.create` 的可选房间配置（boss + 自机 loadout）。 */
@@ -622,9 +630,13 @@ export interface ActiveCardSnapshot {
  * `GET /v1/matches/{id}/events` — one page of the match-event stream.
  *
  * ★ Fetch this through a REST transport ({@link LobbyClientConfig.restTransport}
- * → {@link LobbyClient.fetchMatchEvents}): `match.events` is a forbidden op on
- * the Nakama RPC path (`403 client_operation_disallowed` for client sessions),
- * so a `nakama_rpc` deployment would silently starve every event consumer.
+ * → {@link LobbyClient.fetchMatchEvents}): `match.events` is not registered as
+ * a client RPC on the Nakama path (404 "RPC function not found"; it sits on
+ * the forbidden-op list, so a future registration would answer `403
+ * client_operation_disallowed`), and the deployed transport may be
+ * `nakama_rpc`. The `/v1` REST bridge does serve it, so without
+ * `restTransport` a Nakama deployment would silently starve every event
+ * consumer.
  */
 export interface MatchEventsView {
   events: MatchEventView[];
@@ -1369,12 +1381,14 @@ export class LobbyClient {
     if (!response.ok || !isRecord(response.payload)) {
       return null;
     }
+    // `rooms.join` answers a `QueueResponse`: the server's room code, the
+    // queue status and — once the room filled — the `match_id`. There is no
+    // roster on it, so `roomFromPayload` reads what the queue response does
+    // carry (room code / mode / boss / match id) and the roster stays empty
+    // until the caller runs `refreshRoom()`.
     const payload = response.payload;
     const room = isRecord(payload.room) ? payload.room : payload;
     this.room = this.roomFromPayload(room, roomCode, stringField(payload, 'mode_id', 'modeId'));
-    if (Array.isArray(payload.players)) {
-      this.room.players = payload.players.filter(isRecord).map((player) => this.playerFromPayload(player));
-    }
     this.emit({ kind: 'room_state', room: this.room });
     return this.room;
   }
@@ -1479,13 +1493,17 @@ export class LobbyClient {
    * `match.events` / `GET /v1/matches/{id}/events?after&limit` — one page of
    * the match-event stream, projected through {@link matchEventViewFromPayload}.
    *
-   * ★★ MUST run on the REST transport. `match.events` is a FORBIDDEN op on the
-   * Nakama RPC path: a client session asking for it gets `403
-   * client_operation_disallowed` (server `runtime/nakamaapi`, same forbidden
-   * list as `match.input` / `battle.*`), and the deployed transport may be
-   * `nakama_rpc`. Without `LobbyClientConfig.restTransport` the symptom is a
-   * battle performance layer that never syncs — not an obvious error — so the
-   * REST transport is the default-on-REST deployments and mandatory on Nakama.
+   * ★★ MUST run on the REST transport. `match.events` is not a client RPC on
+   * the Nakama path: it is absent from the runtime's RPC registry
+   * (`contractClientOperations`), so `/v2/rpc/match.events` answers **404
+   * "RPC function not found"** — and if it ever were registered it would be
+   * refused `403 client_operation_disallowed` (the forbidden-op list names
+   * `match.events` / `match.snapshot` / `match.input`). Either way a
+   * `nakama_rpc` deployment starves every event consumer unless
+   * {@link LobbyClientConfig.restTransport} points at the `/v1` REST bridge,
+   * which does serve `GET /v1/matches/{id}/events`. The symptom is silent —
+   * a battle performance layer that never syncs — so the REST transport is
+   * the default-on-REST deployments and mandatory on Nakama.
    */
   // T10: the player's own choice to leave (`abandon`) ends the match at once
   // with no score; anything else is a passive drop that stays reconnectable.
@@ -1737,33 +1755,86 @@ export class LobbyClient {
       return null;
     }
     const payload = response.payload;
+    // The server answers `ShopCatalogResponse` (`runtime/core/shop.go`): the
+    // listings live under `products[]` with `product_id` / `cost_kind` /
+    // `cost_amount`, NOT under `items[]` with `item_id` / `price`. Reading
+    // `items` silently yielded an empty shop. `items` is still accepted as a
+    // fallback so an older lobby that speaks the documented
+    // `checkin_shop_contract.md` shape keeps working.
+    const products = Array.isArray(payload.products)
+      ? payload.products
+      : Array.isArray(payload.items)
+        ? payload.items
+        : [];
     return {
       currency: stringField(payload, 'currency') || 'gold',
       wallet: numberRecordField(payload, 'wallet'),
-      items: Array.isArray(payload.items) ? payload.items.filter(isRecord).map((item) => shopItemFromPayload(item)) : [],
-      serverTimeMs: numberField(payload, 'server_time_ms', 'serverTimeMs'),
+      items: products.filter(isRecord).map((item) => shopItemFromPayload(item)),
+      serverTimeMs: timeFieldMs(payload, 'server_time', 'serverTime', 'server_time_ms', 'serverTimeMs'),
     };
   }
 
-  /** `POST /v1/shop/purchase` — buy `count` of an item. */
+  /**
+   * `POST /v1/shop/purchase` — buy `count` of an item.
+   *
+   * The wire contract is the server's `ShopPurchaseRequest`
+   * (`runtime/core/shop.go`): `product_id` + `quantity` + a client-minted
+   * `nonce`. The nonce is the idempotency key (server-side it is
+   * `user_id + nonce`), so every purchase mints a fresh one — replaying the
+   * same nonce with the same request is answered with the stored receipt,
+   * while reusing it for a *different* purchase is `idempotency_conflict`.
+   */
   async purchaseShopItem(itemId: string, count = 1): Promise<ShopPurchaseView | null> {
     if (itemId === '') {
       this.lastError = 'shop_purchase_missing_item';
       return null;
     }
-    const response = await this.call('shop.purchase', { item_id: itemId, count });
+    const quantity = Number.isFinite(count) && count > 0 ? Math.floor(count) : 1;
+    const response = await this.call('shop.purchase', {
+      product_id: itemId,
+      quantity,
+      nonce: this.nextPurchaseNonce(),
+    });
     if (!response.ok || !isRecord(response.payload)) {
       return null;
     }
     const payload = response.payload;
+    // `ShopPurchaseResponse`: the verdict lives in `receipt`
+    // (`ShopReceipt`: product_id / quantity / cost_kind / cost_amount), the
+    // wallet is a flat currency bag and `inventory` is an `InventorySnapshot`
+    // (card stacks), not a `cardId → count` record.
+    const receipt = isRecord(payload.receipt) ? payload.receipt : payload;
+    const costKind = stringField(receipt, 'cost_kind', 'costKind');
+    const costAmount = numberField(receipt, 'cost_amount', 'costAmount');
+    const spent = isRecord(payload.spent)
+      ? numberRecordField(payload, 'spent')
+      : costKind !== ''
+        ? { [costKind]: costAmount }
+        : {};
     return {
-      itemId: stringField(payload, 'item_id', 'itemId') || itemId,
-      count: numberField(payload, 'count') || count,
-      spent: numberRecordField(payload, 'spent'),
+      itemId:
+        stringField(receipt, 'product_id', 'productId') ||
+        stringField(payload, 'product_id', 'productId') ||
+        itemId,
+      count: numberField(receipt, 'quantity') || numberField(payload, 'quantity') || quantity,
+      spent,
       wallet: numberRecordField(payload, 'wallet'),
-      inventory: numberRecordField(payload, 'inventory'),
-      serverTimeMs: numberField(payload, 'server_time_ms', 'serverTimeMs'),
+      inventory: inventoryCountsFromPayload(payload.inventory),
+      serverTimeMs: timeFieldMs(payload, 'server_time', 'serverTime', 'server_time_ms', 'serverTimeMs'),
     };
+  }
+
+  /** Monotonic per-process counter behind {@link nextPurchaseNonce}. */
+  private purchaseNonceSeq = 0;
+
+  /**
+   * A fresh purchase nonce. Unique per call and per process: the server keeps
+   * one idempotency record per `user + nonce`, so a restart (or a second
+   * purchase in the same session) must never reuse one.
+   */
+  private nextPurchaseNonce(): string {
+    this.purchaseNonceSeq += 1;
+    return `shop-${Date.now().toString(36)}-${this.purchaseNonceSeq}-${Math.random().toString(36).slice(2, 10)}`;
   }
 
   /** `GET /v1/inventory` — owned card stacks (`core.InventorySnapshot`). */
@@ -1985,16 +2056,24 @@ export class LobbyClient {
   /**
    * `POST /v1/activity/claim` — claim an activity-centre reward.
    *
-   * The server answers `{ ok: false, error_code: 'already_claimed' }` for a
-   * duplicate, so a claimed reward and a rejection are distinguishable through
-   * `lastError`.
+   * `claimKind` must be one the server validates (`runtime/core`
+   * `isValidClaimKind`): `task`, `event` or `leaderboard`. It defaults to
+   * `task` because the activity centre's claimable rows are the task list
+   * (`daily_complete_match`, `daily_graze`, `weekly_replay_review`, …); the
+   * old hardcoded `activity` was rejected with `invalid_request` on every
+   * call. The server answers `{ ok: false, error_code: 'already_claimed' }`
+   * for a duplicate, so a claimed reward and a rejection are distinguishable
+   * through `lastError`.
    */
-  async claimActivity(activityId: string): Promise<ActivityClaimView | null> {
+  async claimActivity(activityId: string, claimKind = 'task'): Promise<ActivityClaimView | null> {
     if (activityId === '') {
       this.lastError = 'activity_claim_missing_id';
       return null;
     }
-    const response = await this.call('activity.claim', { claim_kind: 'activity', claim_id: activityId });
+    const response = await this.call('activity.claim', {
+      claim_kind: claimKind,
+      claim_id: activityId,
+    });
     if (!response.ok || !isRecord(response.payload)) {
       return null;
     }
@@ -2107,31 +2186,47 @@ export class LobbyClient {
   }
 
   private roomFromPayload(payload: Record<string, unknown>, roomCode: string, modeId: string): RoomView {
+    // The server's `RoomSnapshot` spells the roster `participants`
+    // (`RoomParticipantSnapshot`); `players` is accepted as a fallback for a
+    // lobby that speaks the older shape. Reading only `players` left every
+    // room view with an empty roster.
+    const roster = Array.isArray(payload.participants)
+      ? payload.participants
+      : Array.isArray(payload.players)
+        ? payload.players
+        : [];
+    const hostUserId = stringField(payload, 'host_user_id', 'hostUserId');
     return {
       roomCode: stringField(payload, 'room_code', 'roomCode') || roomCode,
-      hostUserId: stringField(payload, 'host_user_id', 'hostUserId'),
+      hostUserId,
       modeId: stringField(payload, 'mode_id', 'modeId') || modeId,
       allReady: booleanField(payload, 'all_ready', 'allReady'),
-      rulesetVersion: stringField(payload, 'ruleset_version', 'rulesetVersion'),
+      rulesetVersion:
+        stringField(payload, 'ruleset_version', 'rulesetVersion') ||
+        stringField(payload, 'mode_ruleset_version', 'modeRulesetVersion'),
       bossId: stringField(payload, 'boss_id', 'bossId'),
       stageId: stringField(payload, 'stage_id', 'stageId'),
       coopPlayers: coopPlayersFromRoomPayload(payload),
-      players: Array.isArray(payload.players)
-        ? payload.players.filter(isRecord).map((player) => this.playerFromPayload(player))
-        : [],
+      matchId: stringField(payload, 'match_id', 'matchId'),
+      players: roster.filter(isRecord).map((player) => this.playerFromPayload(player, hostUserId)),
     };
   }
 
-  private playerFromPayload(payload: Record<string, unknown>): RoomPlayerView {
+  private playerFromPayload(payload: Record<string, unknown>, hostUserId = ''): RoomPlayerView {
     // 服务端可能把自机字段放在嵌套 `loadout` 里（core.PlayerLoadout），也可能平铺。
     const loadout = isRecord(payload.loadout) ? payload.loadout : payload;
+    const userId = stringField(payload, 'user_id', 'userId');
     return {
-      userId: stringField(payload, 'user_id', 'userId'),
+      userId,
       playerId: stringField(payload, 'player_id', 'playerId'),
       displayName: stringField(payload, 'display_name', 'displayName'),
       ready: booleanField(payload, 'ready'),
-      host: booleanField(payload, 'host'),
-      connected: booleanField(payload, 'connected'),
+      // `RoomParticipantSnapshot` carries neither `host` nor `connected`: the
+      // host is the participant whose user id matches `host_user_id`, and a
+      // participant listed in the room snapshot is by definition present. A
+      // payload that *does* carry either field verbatim still wins.
+      host: typeof payload.host === 'boolean' ? payload.host : hostUserId !== '' && userId === hostUserId,
+      connected: typeof payload.connected === 'boolean' ? payload.connected : true,
       characterId: stringField(loadout, 'character_id', 'characterId'),
       shotType: stringField(loadout, 'shot_type', 'shotType'),
       bombType: stringField(loadout, 'bomb_type', 'bombType'),
@@ -2794,6 +2889,13 @@ const REST_ROUTES: Record<string, RestRoute> = {
     method: 'POST',
     path: (r) => `/v1/rooms/${pathSegment(payloadString(r, 'room_code', 'roomCode'))}/join`,
   },
+  // 房主改房间选项（boss/coop 等）。Nakama RPC 路径下 op id 直通
+  // `/v2/rpc/rooms.update`；这条 REST 路由对齐 rest_bridge.go 的
+  // `POST /v1/rooms/{roomCode}/options`，供 legacy REST 部署使用。
+  'rooms.update': {
+    method: 'POST',
+    path: (r) => `/v1/rooms/${pathSegment(payloadString(r, 'room_code', 'roomCode'))}/options`,
+  },
   'rooms.leave': {
     method: 'POST',
     path: (r) => `/v1/rooms/${pathSegment(payloadString(r, 'room_code', 'roomCode'))}/leave`,
@@ -3440,18 +3542,67 @@ function characterRosterFromPayload(payload: Record<string, unknown>): Character
   };
 }
 
-/** One shop listing. */
+/**
+ * One shop listing.
+ *
+ * The server's catalog entry (`ServerShopProduct`) prices in
+ * `cost_kind`/`cost_amount` and grants `payload` × `quantity`; the legacy
+ * documented shape (`item_id`/`price`/`grants`/`stock`) is still read when
+ * present, so both spellings project onto the same view.
+ */
 function shopItemFromPayload(payload: Record<string, unknown>): ShopItemView {
+  const costKind = stringField(payload, 'cost_kind', 'costKind');
+  const costAmount = numberField(payload, 'cost_amount', 'costAmount');
+  const price = isRecord(payload.price)
+    ? numberRecordField(payload, 'price')
+    : costKind !== ''
+      ? { [costKind]: costAmount }
+      : {};
+  const grants = isRecord(payload.grants)
+    ? payload.grants
+    : {
+        item: stringField(payload, 'payload'),
+        count: numberField(payload, 'quantity') || 1,
+      };
+  // `daily_limit` is the only stock notion the catalog carries; 0 means the
+  // server does not limit it, which the view spells `-1` (unlimited).
+  const dailyLimit = numberField(payload, 'daily_limit', 'dailyLimit');
   return {
-    itemId: stringField(payload, 'item_id', 'itemId'),
+    itemId:
+      stringField(payload, 'product_id', 'productId') || stringField(payload, 'item_id', 'itemId'),
     name: stringField(payload, 'name'),
     description: stringField(payload, 'description'),
-    price: numberRecordField(payload, 'price'),
-    grants: isRecord(payload.grants) ? payload.grants : {},
-    stock: numberField(payload, 'stock'),
+    price,
+    grants,
+    stock: dailyLimit > 0 ? dailyLimit : -1,
     purchased: numberField(payload, 'purchased'),
     purchasable: booleanField(payload, 'purchasable'),
   };
+}
+
+/**
+ * `InventorySnapshot.items[]` (`card_id`/`copies`) → a `cardId → copies`
+ * record. A payload that is already a flat number record (an older lobby) is
+ * passed through, so both spellings project onto `ShopPurchaseView.inventory`.
+ */
+function inventoryCountsFromPayload(value: unknown): Record<string, number> {
+  if (!isRecord(value)) {
+    return {};
+  }
+  if (Array.isArray(value.items)) {
+    const out: Record<string, number> = {};
+    for (const raw of value.items) {
+      if (!isRecord(raw)) {
+        continue;
+      }
+      const cardId = stringField(raw, 'card_id', 'cardId');
+      if (cardId !== '') {
+        out[cardId] = numberField(raw, 'copies');
+      }
+    }
+    return out;
+  }
+  return numberRecordField(value);
 }
 
 /** One finished match, newest-first in `RecordsView.recent`. */
@@ -3540,30 +3691,39 @@ function timeFieldMs(source: Record<string, unknown>, ...keys: string[]): number
 /** `RoomStateMessage` payload → the client-facing room view. */
 export function roomViewFromState(payload: unknown): RoomView {
   const source = isRecord(payload) ? payload : {};
+  const roster = Array.isArray(source.participants)
+    ? source.participants
+    : Array.isArray(source.players)
+      ? source.players
+      : [];
+  const hostUserId = stringField(source, 'host_user_id', 'hostUserId');
   return {
     roomCode: stringField(source, 'room_code', 'roomCode'),
-    hostUserId: stringField(source, 'host_user_id', 'hostUserId'),
+    hostUserId,
     modeId: stringField(source, 'mode_id', 'modeId'),
     allReady: booleanField(source, 'all_ready', 'allReady'),
-    rulesetVersion: stringField(source, 'ruleset_version', 'rulesetVersion'),
+    rulesetVersion:
+      stringField(source, 'ruleset_version', 'rulesetVersion') ||
+      stringField(source, 'mode_ruleset_version', 'modeRulesetVersion'),
     bossId: stringField(source, 'boss_id', 'bossId'),
     stageId: stringField(source, 'stage_id', 'stageId'),
-    players: Array.isArray(source.players)
-      ? source.players.filter(isRecord).map((player) => {
-          const loadout = isRecord(player.loadout) ? player.loadout : player;
-          return {
-            userId: stringField(player, 'user_id', 'userId'),
-            playerId: stringField(player, 'player_id', 'playerId'),
-            displayName: stringField(player, 'display_name', 'displayName'),
-            ready: booleanField(player, 'ready'),
-            host: booleanField(player, 'host'),
-            connected: booleanField(player, 'connected'),
-            characterId: stringField(loadout, 'character_id', 'characterId'),
-            shotType: stringField(loadout, 'shot_type', 'shotType'),
-            bombType: stringField(loadout, 'bomb_type', 'bombType'),
-          };
-        })
-      : [],
+    coopPlayers: coopPlayersFromRoomPayload(source),
+    matchId: stringField(source, 'match_id', 'matchId'),
+    players: roster.filter(isRecord).map((player) => {
+      const loadout = isRecord(player.loadout) ? player.loadout : player;
+      const userId = stringField(player, 'user_id', 'userId');
+      return {
+        userId,
+        playerId: stringField(player, 'player_id', 'playerId'),
+        displayName: stringField(player, 'display_name', 'displayName'),
+        ready: booleanField(player, 'ready'),
+        host: typeof player.host === 'boolean' ? player.host : hostUserId !== '' && userId === hostUserId,
+        connected: typeof player.connected === 'boolean' ? player.connected : true,
+        characterId: stringField(loadout, 'character_id', 'characterId'),
+        shotType: stringField(loadout, 'shot_type', 'shotType'),
+        bombType: stringField(loadout, 'bomb_type', 'bombType'),
+      };
+    }),
   };
 }
 

@@ -4,8 +4,12 @@
  * `LobbyFlow` business screens, and the inventory/chests/decks/activity reads
  * against the server's existing Gensoulkyo shapes.
  *
- * The field names asserted here mirror `docs/checkin_shop_contract.md` and
- * `runtime/httpapi/handler.go`; if either drifts, these tests break first.
+ * The field names asserted here mirror the server's live contracts
+ * (`runtime/core/shop.go`'s `ShopCatalogResponse` / `ShopPurchaseRequest`,
+ * `runtime/core/service.go`'s check-in and activity handlers) as verified by
+ * the lobby E2E against the real Nakama; the legacy
+ * `docs/checkin_shop_contract.md` shape is still accepted where noted. If
+ * either drifts, these tests break first.
  */
 
 import {
@@ -56,8 +60,48 @@ const CHECKIN_BODY = {
   server_time_ms: 1700000000000,
 };
 
-/** The contract's `GET /v1/shop` body. */
+/**
+ * The server's real `GET /v1/shop` body (`ShopCatalogResponse`,
+ * `runtime/core/shop.go`): listings under `products[]` priced in
+ * `cost_kind`/`cost_amount` and granting `payload` × `quantity`. The legacy
+ * `docs/checkin_shop_contract.md` shape (`items[]`/`item_id`/`price`) is kept
+ * as a second fixture because the client still accepts it.
+ */
 const SHOP_BODY = {
+  ok: true,
+  wallet: { gold: 2000, gems: 300, card_dust: 0, chest_keys: 1, faith: 0, points: 0 },
+  products: [
+    {
+      product_id: 'card.focus_lens.single',
+      kind: 'card',
+      cost_kind: 'gold',
+      cost_amount: 200,
+      payload: 'focus_lens',
+      quantity: 1,
+      rarity: 'common',
+      season: 's1',
+      daily_limit: 0,
+      purchasable: true,
+    },
+    {
+      product_id: 'chest.standard.pull',
+      kind: 'chest',
+      cost_kind: 'gold',
+      cost_amount: 800,
+      payload: 'local_basic',
+      quantity: 1,
+      rarity: 'common',
+      season: 's1',
+      daily_limit: 2,
+      purchasable: true,
+    },
+  ],
+  season: 's1',
+  server_time: '2026-10-24T00:00:00Z',
+};
+
+/** The legacy documented `GET /v1/shop` body, still accepted as a fallback. */
+const SHOP_BODY_LEGACY = {
   ok: true,
   currency: 'gold',
   wallet: { gold: 700, ticket: 1 },
@@ -135,12 +179,35 @@ test('claimCheckin surfaces already_claimed from the server', async () => {
 
 suite('shop client');
 
-test('fetchShop maps the listings, wallet and purchasable flag', async () => {
+test('fetchShop maps the server products[] catalog (product_id / cost_kind / cost_amount)', async () => {
   const transport = new ScriptedTransport(() => ok(SHOP_BODY));
   const client = new LobbyClient({ transport });
   const view = await client.fetchShop();
+
+  expect(view !== null, 'fetchShop should return a view');
   expectEqual(view?.currency, 'gold');
-  expectDeepEqual(view?.wallet, { gold: 700, ticket: 1 });
+  expectDeepEqual(view?.wallet, { gold: 2000, gems: 300, card_dust: 0, chest_keys: 1, faith: 0, points: 0 });
+  expectEqual(view?.items.length, 2);
+  const first = view?.items[0];
+  expectEqual(first?.itemId, 'card.focus_lens.single');
+  expectDeepEqual(first?.price, { gold: 200 });
+  expectDeepEqual(first?.grants, { item: 'focus_lens', count: 1 });
+  // `daily_limit: 0` means unlimited, spelled `-1` in the view.
+  expectEqual(first?.stock, -1);
+  expectEqual(first?.purchasable, true);
+  const limited = view?.items[1];
+  expectEqual(limited?.itemId, 'chest.standard.pull');
+  expectEqual(limited?.stock, 2);
+  expectEqual(view?.serverTimeMs, Date.parse('2026-10-24T00:00:00Z'));
+  expectEqual(transport.calls[0]?.id, 'shop.get');
+});
+
+test('fetchShop still accepts the legacy items[] shape', async () => {
+  const transport = new ScriptedTransport(() => ok(SHOP_BODY_LEGACY));
+  const client = new LobbyClient({ transport });
+  const view = await client.fetchShop();
+
+  expect(view !== null, 'fetchShop should return a view');
   expectEqual(view?.items.length, 1);
   const item = view?.items[0];
   expectEqual(item?.itemId, 'stamina_potion');
@@ -149,37 +216,81 @@ test('fetchShop maps the listings, wallet and purchasable flag', async () => {
   expectEqual(item?.stock, -1);
   expectEqual(item?.purchasable, true);
   expectDeepEqual(item?.grants, { item: 'stamina_potion', count: 1 });
-  expectEqual(transport.calls[0]?.id, 'shop.get');
 });
 
-test('purchaseShopItem sends item_id + count and maps spent/wallet/inventory', async () => {
+test('purchaseShopItem sends product_id + quantity + nonce and maps the receipt', async () => {
   const transport = new ScriptedTransport(() =>
     ok({
       ok: true,
-      item_id: 'stamina_potion',
-      count: 2,
-      spent: { gold: 600 },
-      wallet: { gold: 100 },
-      inventory: { stamina_potion: 2 },
-      server_time_ms: 1700000000002,
+      wallet: { gold: 1800 },
+      inventory: {
+        items: [
+          { card_id: 'focus_lens', copies: 4, level: 1 },
+          { card_id: 'wide_arc', copies: 1, level: 1 },
+        ],
+      },
+      granted: [{ type: 'card', item_id: 'focus_lens', amount: 1 }],
+      receipt: {
+        receipt_id: 'rcpt-1',
+        product_id: 'card.focus_lens.single',
+        quantity: 2,
+        cost_kind: 'gold',
+        cost_amount: 400,
+      },
+      server_authoritative: true,
+      server_time: '2026-10-24T00:00:02Z',
     }),
   );
   const client = new LobbyClient({ transport });
-  const purchase = await client.purchaseShopItem('stamina_potion', 2);
-  expectEqual(purchase?.itemId, 'stamina_potion');
+  const purchase = await client.purchaseShopItem('card.focus_lens.single', 2);
+
+  expectEqual(purchase?.itemId, 'card.focus_lens.single');
   expectEqual(purchase?.count, 2);
-  expectDeepEqual(purchase?.spent, { gold: 600 });
-  expectDeepEqual(purchase?.wallet, { gold: 100 });
-  expectDeepEqual(purchase?.inventory, { stamina_potion: 2 });
+  // `spent` comes from the receipt, not from a client-supplied price.
+  expectDeepEqual(purchase?.spent, { gold: 400 });
+  expectDeepEqual(purchase?.wallet, { gold: 1800 });
+  expectDeepEqual(purchase?.inventory, { focus_lens: 4, wide_arc: 1 });
+  expectEqual(purchase?.serverTimeMs, Date.parse('2026-10-24T00:00:02Z'));
   expectEqual(transport.calls[0]?.id, 'shop.purchase');
-  expectDeepEqual(transport.calls[0]?.payload, { item_id: 'stamina_potion', count: 2 });
+  const payload = transport.calls[0]?.payload ?? {};
+  expectEqual(payload.product_id, 'card.focus_lens.single');
+  expectEqual(payload.quantity, 2);
+  // The nonce is the server's idempotency key: required, and never reused.
+  expect(typeof payload.nonce === 'string' && payload.nonce !== '', 'purchase must carry a nonce');
+});
+
+test('purchaseShopItem mints a fresh nonce per call', async () => {
+  const transport = new ScriptedTransport(() =>
+    ok({
+      ok: true,
+      wallet: { gold: 100 },
+      receipt: { product_id: 'x', quantity: 1, cost_kind: 'gold', cost_amount: 10 },
+      server_time: '2026-10-24T00:00:03Z',
+    }),
+  );
+  const client = new LobbyClient({ transport });
+  await client.purchaseShopItem('x');
+  await client.purchaseShopItem('x');
+  const first = transport.calls[0]?.payload ?? {};
+  const second = transport.calls[1]?.payload ?? {};
+  expect(first.nonce !== second.nonce, 'each purchase must use a distinct nonce');
 });
 
 test('purchaseShopItem defaults count to 1 and refuses an empty item id', async () => {
-  const transport = new ScriptedTransport(() => ok({ ok: true, item_id: 'x', count: 1 }));
+  const transport = new ScriptedTransport(() =>
+    ok({
+      ok: true,
+      wallet: { gold: 100 },
+      receipt: { product_id: 'x', quantity: 1, cost_kind: 'gold', cost_amount: 10 },
+      server_time: '2026-10-24T00:00:04Z',
+    }),
+  );
   const client = new LobbyClient({ transport });
   await client.purchaseShopItem('x');
-  expectDeepEqual(transport.calls[0]?.payload, { item_id: 'x', count: 1 });
+  const payload = transport.calls[0]?.payload ?? {};
+  expectEqual(payload.product_id, 'x');
+  expectEqual(payload.quantity, 1);
+  expect(typeof payload.nonce === 'string' && payload.nonce !== '', 'purchase must carry a nonce');
 
   expectEqual(await client.purchaseShopItem(''), null);
   expectEqual(client.lastError, 'shop_purchase_missing_item');
@@ -302,7 +413,7 @@ test('claimActivity maps the claim result and refuses an empty id', async () => 
     ok({
       ok: true,
       duplicate: false,
-      claim_kind: 'activity',
+      claim_kind: 'task',
       claim_id: 'daily-win',
       user_id: 'u-1',
       claimed: true,
@@ -315,7 +426,13 @@ test('claimActivity maps the claim result and refuses an empty id', async () => 
   expectEqual(claim?.claimed, true);
   expectEqual(claim?.claimId, 'daily-win');
   expectEqual(claim?.rewardStatus, 'credited');
-  expectDeepEqual(transport.calls[0]?.payload, { claim_kind: 'activity', claim_id: 'daily-win' });
+  // The server only validates `task` / `event` / `leaderboard`
+  // (`isValidClaimKind`); `task` is the default for the activity centre.
+  expectDeepEqual(transport.calls[0]?.payload, { claim_kind: 'task', claim_id: 'daily-win' });
+
+  const eventClaim = await client.claimActivity('season-1', 'event');
+  expectEqual(eventClaim !== null, true);
+  expectDeepEqual(transport.calls[1]?.payload, { claim_kind: 'event', claim_id: 'season-1' });
 
   expectEqual(await client.claimActivity(''), null);
   expectEqual(client.lastError, 'activity_claim_missing_id');
@@ -391,16 +508,24 @@ test('claimCheckin reports a failure without switching screens', async () => {
 test('openShop + purchaseItem switch screens and refresh the wallet', async () => {
   const transport = new ScriptedTransport((request) =>
     request.id === 'shop.purchase'
-      ? ok({ ok: true, item_id: 'stamina_potion', count: 1, spent: { gold: 300 }, wallet: { gold: 400 } })
+      ? ok({
+          ok: true,
+          wallet: { gold: 400 },
+          receipt: { product_id: 'card.focus_lens.single', quantity: 1, cost_kind: 'gold', cost_amount: 200 },
+          server_time: '2026-10-24T00:00:05Z',
+        })
       : ok(SHOP_BODY),
   );
   const flow = new LobbyFlow(new LobbyClient({ transport }));
   expectEqual(await flow.openShop(), true);
   expectEqual(flow.currentScreen, LobbyScreen.Shop);
-  expectEqual(flow.snapshot().shop?.items.length, 1);
+  expectEqual(flow.snapshot().shop?.items.length, 2);
 
-  expectEqual(await flow.purchaseItem('stamina_potion', 1), true);
-  expectDeepEqual(transport.calls.map((call) => call.id), ['shop.get', 'shop.purchase', 'shop.get']);
+  expectEqual(await flow.purchaseItem('card.focus_lens.single', 1), true);
+  expectDeepEqual(
+    transport.calls.map((call) => call.id),
+    ['shop.get', 'shop.purchase', 'shop.get'],
+  );
   expectEqual(flow.snapshot().lastError, '');
 });
 
@@ -409,7 +534,7 @@ test('purchaseItem reports insufficient_funds on the shop screen', async () => {
     request.id === 'shop.purchase' ? { ok: false, status: 409, error_code: 'insufficient_funds' } : ok(SHOP_BODY),
   );
   const flow = new LobbyFlow(new LobbyClient({ transport }));
-  expectEqual(await flow.purchaseItem('stamina_potion'), false);
+  expectEqual(await flow.purchaseItem('card.focus_lens.single'), false);
   expectEqual(flow.snapshot().lastError, 'Purchase failed: insufficient_funds');
 });
 

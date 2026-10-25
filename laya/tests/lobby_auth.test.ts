@@ -206,6 +206,7 @@ test('logout clears the session and every per-session field', () => {
     players: [],
     bossId: '',
     stageId: '',
+    matchId: '',
   };
   client.allocation = {
     matchId: 'M1',

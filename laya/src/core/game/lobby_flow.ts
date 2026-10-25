@@ -637,7 +637,11 @@ export class LobbyFlow {
   async ready(): Promise<boolean> {
     this.statusText = t('flow.match.readyWaitingMatch');
     this.setScreen(LobbyScreen.Matching);
-    const matchId = this.match?.matchId ?? '';
+    // A `match_start` push carries the match id on WS deployments; on Nakama
+    // RPC there is no push, so the room snapshot's `match_id` (surfaced by
+    // `refreshRoom` once the room filled) is the only source. Both are tried
+    // before declaring "still waiting for players".
+    const matchId = this.match?.matchId ?? this.client.room?.matchId ?? '';
     if (matchId === '') {
       // No match exists yet: the lobby creates it (and pushes `match_start`)
       // once the room fills, so there is nothing to acknowledge here. Ready is
