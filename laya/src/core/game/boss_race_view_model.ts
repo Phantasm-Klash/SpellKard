@@ -83,12 +83,21 @@ export interface PlayerRenderItem {
   grazeRadiusPx: number;
   /** 无敌帧中（`tick <= invulnerableUntilTick`）→ 渲染层闪烁。 */
   invulnerable: boolean;
+  /** 无敌结束 tick（服务端 tick 轴）；`0` = 无判定数据或已结束。 */
+  invulnerableUntilTick: number;
   /** 残机数（服务端未下发时取 wire 占位 {@link SNAPSHOT_DEFAULT_LIVES}）。 */
   lives: number;
   /** 炸弹数（服务端未下发时取 wire 占位 {@link SNAPSHOT_DEFAULT_BOMBS}）。 */
   bombs: number;
   /** 擦弹计数（服务端未下发时占位 0）。 */
   graze: number;
+  /**
+   * 服务端是否下发了判定字段（`tna-1.40-danmaku`）。
+   *
+   * `false` 表示该 ruleset 没有 lives/bombs/graze/无敌帧——渲染层据此隐藏
+   * 判定 HUD（而不是把 wire 占位值当成真实残机画出来）。
+   */
+  judgmentActive: boolean;
 }
 
 export interface BossRenderItem {
@@ -263,9 +272,11 @@ export function buildBossRaceFrame(
       invulnerable:
         player.invulnerableUntilTick !== undefined &&
         snapshot.tick <= player.invulnerableUntilTick,
+      invulnerableUntilTick: player.invulnerableUntilTick ?? 0,
       lives: player.lives ?? SNAPSHOT_DEFAULT_LIVES,
       bombs: player.bombs ?? SNAPSHOT_DEFAULT_BOMBS,
       graze: player.graze ?? 0,
+      judgmentActive,
     });
     const bossItem: BossRenderItem = {
       playerId: player.playerId,
@@ -379,6 +390,73 @@ export function buildBossEffects(
       edgeY: null,
     };
   });
+}
+
+/**
+ * 无敌帧闪烁周期（tick）。4 亮 4 灭 ≈ 8Hz @60Hz，与 `boss_race_view` 里场上
+ * 自机的闪烁**同源**：两边都走 {@link invulnerableBlinkOn}，否则 HUD 与场上
+ * 会各闪各的（用户反馈过的「闪烁不同步」类问题）。
+ */
+export const INVULNERABLE_BLINK_TICKS = 8;
+
+/**
+ * 无敌期闪烁相位：`true` = 这一 tick 应该画出来。
+ *
+ * 纯函数（只依赖 tick），所以自机、判定点、HUD 图标可以在同一帧里用同一
+ * 个布尔值决定亮/灭，永远同相。
+ */
+export function invulnerableBlinkOn(tick: number, invulnerable: boolean): boolean {
+  if (!invulnerable) {
+    return true;
+  }
+  return Math.floor(tick / (INVULNERABLE_BLINK_TICKS / 2)) % 2 === 0;
+}
+
+/**
+ * 判定 HUD（残机 / 炸弹 / 擦弹 / 无敌）的显示状态，已归一化成可画的形式。
+ *
+ * 由 {@link buildJudgmentHud} 从 {@link BossRaceFrame} 提取，渲染层只负责画
+ * 图标与数字——文案铁律：不含任何自然语言。
+ */
+export interface JudgmentHudState {
+  /** 残机数（≥0）。 */
+  lives: number;
+  /** 炸弹数（≥0）。 */
+  bombs: number;
+  /** 擦弹计数（≥0）。 */
+  graze: number;
+  /** 当前是否在无敌帧内。 */
+  invulnerable: boolean;
+  /** 无敌剩余 tick；不在无敌期为 0。 */
+  invulnerableTicksRemaining: number;
+  /** 本 tick 的闪烁相位（与场上自机同相）。 */
+  blinkOn: boolean;
+  /** 残机耗尽（`lives <= 0`）——HUD 用危险色提示。 */
+  exhausted: boolean;
+}
+
+/**
+ * 取本地玩家的判定 HUD 状态；没有本地玩家、或该 ruleset 不下发判定字段
+ * （{@link PlayerRenderItem.judgmentActive} 为 `false`）时返回 `null`，
+ * 渲染层据此**整块不画**，而不是画一排占位图标。
+ */
+export function buildJudgmentHud(frame: BossRaceFrame): JudgmentHudState | null {
+  const local = frame.players.find((player) => player.isLocal);
+  if (local === undefined || !local.judgmentActive) {
+    return null;
+  }
+  const remaining = local.invulnerable
+    ? Math.max(0, local.invulnerableUntilTick - frame.tick)
+    : 0;
+  return {
+    lives: Math.max(0, local.lives),
+    bombs: Math.max(0, local.bombs),
+    graze: Math.max(0, local.graze),
+    invulnerable: local.invulnerable,
+    invulnerableTicksRemaining: remaining,
+    blinkOn: invulnerableBlinkOn(frame.tick, local.invulnerable),
+    exhausted: local.lives <= 0,
+  };
 }
 
 /**

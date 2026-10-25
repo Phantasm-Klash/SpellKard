@@ -265,8 +265,17 @@ export const vectorBulletRenderer = new VectorBulletRenderer();
 /**
  * Real-art renderer: blits the atlas frame for a bullet's `kEnemyBullet` value.
  *
- * Falls back to the vector renderer when the kind is unknown or the frame has
- * not loaded, so a missing atlas degrades to the old look instead of a blank.
+ * Falls back to the vector renderer in exactly two cases, both explainable:
+ *
+ *  1. `bulletKind <= 0` — legacy synthetic patterns (`mvp-boss-race-s0`) carry no
+ *     `kEnemyBullet` value at all, so there is no art to look up;
+ *  2. the frame source has not loaded yet (headless / offline / first frames).
+ *
+ * **Every** kind 9..224 maps to a frame that exists in the imported atlases
+ * (216/216, verified by `tests/bullet_kind_atlas_map.test.ts` against both
+ * `index.json` and the reverse-engineered dispatch table), so a missing frame is
+ * a real regression rather than a "the art does not exist" case — do not paper
+ * over it with a per-kind vector substitute.
  */
 export class AtlasBulletRenderer implements BulletRenderer {
   private readonly fallback: BulletRenderer;

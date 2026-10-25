@@ -17,7 +17,7 @@ import { BattleConnectionState } from '../../../core/net/battle_client';
 import { pageNumberParam } from '../page_params';
 import type { TimerLike } from '../../../core/net/transport';
 import { battleLayout, type BattleLayout } from '../../../core/game/battle_layout';
-import { buildBossRaceFrame, type BossEffectRenderItem, type BossRaceFrame, type PlayerRenderItem, type RenderPoint, PlayfieldTransform, bossOriginPixels } from '../../../core/game/boss_race_view_model';
+import { buildBossRaceFrame, buildJudgmentHud, type BossEffectRenderItem, type BossRaceFrame, type PlayerRenderItem, type RenderPoint, PlayfieldTransform, bossOriginPixels } from '../../../core/game/boss_race_view_model';
 import { buildCoopFrame, coopArenaDirectionBits, coopLocalSeat, type CoopFrame } from '../../../core/game/coop_view_model';
 import { coopBattleLayout } from '../../../core/game/coop_layout';
 import { COOP_MODE_ID, type CoopBossSnapshot } from '../../../core/sim/coop_boss';
@@ -1213,7 +1213,7 @@ export class BattleScene implements ClientScene {
       frame = { ...frame, bullets: frame.bullets.filter((bullet) => !hidden.has(bullet.bulletId)) };
     }
     this.frame = frame;
-    this.view.render(frame, this.hudLines(source), this.hudState(source));
+    this.view.render(frame, this.hudLines(source, frame), this.hudState(source));
     this.drawCardEffects(frame, source);
     this.drawGiftLayer(frame);
     this.drawBossEffects(frame);
@@ -1591,9 +1591,10 @@ export class BattleScene implements ClientScene {
    *   1. Boss HP / damage / rival HP  — the race outcome, kept first and loudest
    *   2. connection + tick + state + pattern
    *   3. input + bullet count
-   *   4. reconciliation metrics (network health)
+   *   4. 判定（残机 / 炸弹 / 擦弹 / 无敌）—— 仅 `tna-1.40-danmaku` 下发时出现
+   *   5. reconciliation metrics (network health)
    */
-  private hudLines(snapshot: BossRaceSnapshot): string[] {
+  private hudLines(snapshot: BossRaceSnapshot, frame: BossRaceFrame): string[] {
     const battle = this.options.battle;
     const raw = this.options.input.snapshot();
     const metrics = battle.metrics;
@@ -1604,12 +1605,26 @@ export class BattleScene implements ClientScene {
     const inputs = [describeDirectionBits(rawToBits(raw)), raw.shoot ? 'shoot' : '', raw.slow ? 'focus' : '']
       .filter((value) => value !== '')
       .join(' ');
-    return [
+    const rows = [
       row('BOSS', `HP ${local?.bossCurrentHp ?? '-'}/${this.options.bossMaxHp}`, `dmg ${local?.damageDealt ?? 0}`, `rival ${opponent?.bossCurrentHp ?? '-'}`),
       row('NET', source, `tick ${snapshot.tick}`, stateName, `pattern ${patternFor(snapshot.tick)}`),
       row('FP', `bullets ${snapshot.bullets.length}`, inputs),
-      row('SYNC', `snaps ${metrics.snapshotsReceived}`, `err ${metrics.averagePositionErrorMilli.toFixed(0)}`, hashCell(metrics), `snap ${metrics.hardSnaps}`),
     ];
+    // 判定行：与战场左上角的图标读数同源（`buildJudgmentHud`），ruleset 不下发
+    // 判定字段时整行不出现——不打印 wire 占位值冒充真实残机。
+    const judgment = buildJudgmentHud(frame);
+    if (judgment !== null) {
+      const rate = this.options.tickRateHz ?? BOSS_RACE_TICK_RATE_HZ;
+      const cells = [`lives ${judgment.lives}`, `bombs ${judgment.bombs}`, `graze ${judgment.graze}`];
+      if (judgment.invulnerable) {
+        cells.push(`inv ${(judgment.invulnerableTicksRemaining / rate).toFixed(1)}s`);
+      }
+      rows.push(row('JUDGE', ...cells));
+    }
+    rows.push(
+      row('SYNC', `snaps ${metrics.snapshotsReceived}`, `err ${metrics.averagePositionErrorMilli.toFixed(0)}`, hashCell(metrics), `snap ${metrics.hardSnaps}`),
+    );
+    return rows;
   }
 }
 

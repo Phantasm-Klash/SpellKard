@@ -13,7 +13,13 @@
  * layer-ordering skeleton with object pools.
  */
 
-import type { BossRaceFrame, PlayfieldLayout, RenderPoint } from '../../../core/game/boss_race_view_model';
+import {
+  buildJudgmentHud,
+  invulnerableBlinkOn,
+  type BossRaceFrame,
+  type PlayfieldLayout,
+  type RenderPoint,
+} from '../../../core/game/boss_race_view_model';
 import { TNA_BACKGROUND_IMAGE } from '../../../core/game/tna_actor_frames';
 import { AtlasActorRenderer, type ActorSpriteRenderer } from './actors';
 import { drawPlayfield } from './arena';
@@ -45,8 +51,31 @@ const LIFE_ICON_PITCH = 10;
 const BOMB_ICON_SIZE = 6;
 const BOMB_ICON_PITCH = 10;
 const GRAZE_TEXT_SIZE = 12;
-/** 无敌帧闪烁周期（tick）：4 亮 4 灭 ≈ 8Hz。 */
-const INVULNERABLE_BLINK_TICKS = 8;
+/** 无敌指示环相对判定点的额外半径（像素）。 */
+const INVULNERABLE_RING_GAP = 6;
+
+/**
+ * 判定卡片（HUD 侧栏**顶部**那条）的高度（像素）。
+ *
+ * 侧栏由 `drawHudBar` 自绘并会把它拿到的矩形铺满，所以这里不给它「留位置」的
+ * 参数，而是**让出顶部一条**：`drawHudBar(g, 0, badgeH, w, h - badgeH, state)`。
+ * 好处是 `hud.ts` 一行不用改，也不会出现卡片互相压字。
+ */
+const JUDGMENT_BADGE_HEIGHT = 30;
+
+/**
+ * 判定 HUD 的渲染状态 —— **本视图对外契约**，由 `battle_scene.ts` 的
+ * `judgmentState()` 从 `PlayerRenderItem` 构造（单一来源：
+ * `core/game/boss_race_view_model.buildJudgmentHud`）。缺省不传
+ * `render(..., judgment)` 时整条卡片不画——老调用零变化。
+ *
+ * 形状定义在 `core/game/boss_race_view_model`（core 不能反向依赖 platform，
+ * 而派生逻辑必须可无引擎单测），这里只把它挂到视图的公开 API 上，**不再抄一份
+ * 结构**——两份同形接口迟早会漂移。
+ *
+ * 文案铁律：卡片里只有图标与数字，没有任何自然语言。
+ */
+export type { JudgmentHudState } from '../../../core/game/boss_race_view_model';
 
 export interface BossRaceViewOptions {
   /** Playfield size in pixels (the 2:3 portrait battle area). */
@@ -409,11 +438,9 @@ export class BossRaceView {
     }
     for (const player of frame.players) {
       const sprite = this.actorSprite(this.activeActors);
-      // 无敌帧闪烁（4 亮 4 灭）：受击/炸弹后的 120 tick 无敌期内玩家闪殉提示。
-      const blinkOn =
-        !player.invulnerable ||
-        Math.floor(frame.tick / (INVULNERABLE_BLINK_TICKS / 2)) % 2 === 0;
-      sprite.visible = blinkOn;
+      // 无敌帧闪烁（4 亮 4 灭）：受击/炸弹后的无敌期内自机闪烁提示。相位由
+      // core 的 `invulnerableBlinkOn` 决定，判定点/无敌环/HUD 图标共用它。
+      sprite.visible = invulnerableBlinkOn(frame.tick, player.invulnerable);
       sprite.pos(player.position.x, player.position.y);
       // `PlayerRenderItem` carries no facing yet, so ships default to +x.
       this.actorRenderer.drawPlayer(sprite, PLAYER_RADIUS, player.isLocal, false, 0);
@@ -440,7 +467,8 @@ export class BossRaceView {
   }
 
   /**
-   * 判定玩法指示（§2.4 客户端镜像表现）：判定点、擦弹圈、残机/炸弹/擦弹读数。
+   * 判定玩法指示（§2.4 客户端镜像表现）：判定点、擦弹圈、残机/炸弹/擦弹读数、
+   * 无敌指示环。
    *
    * 全部数据来自 `PlayerRenderItem`（服务端常量经 PlayfieldTransform 的像素值），
    * 本方法不做任何判定：
@@ -448,13 +476,15 @@ export class BossRaceView {
    *  - 擦弹圈：仅当快照下发判定字段（`tna-1.40-danmaku`）时画（`r_graze` =
    *    20000 milli ≈ 20px），其余 ruleset 不画；
    *  - 残机/炸弹：左上角纯图标（圆点/方块，一格一条命/一颗弹）；
-   *  - 擦弹：纯数字读数。
+   *  - 擦弹：纯数字读数；
+   *  - 无敌：判定点外一圈脉冲环（与自机闪烁同相，`buildJudgmentHud` 的
+   *    `blinkOn`），残机耗尽时用危险色空心标记。
    * 文案铁律：图标 + 数字，无硬编码文字。
    */
   private drawJudgment(frame: BossRaceFrame): void {
     const g = this.indicatorLayer.graphics;
     g.clear();
-    const local = frame.players.find((player) => player.isLocal) ?? null;
+    const hud = buildJudgmentHud(frame);
     this.grazeText.visible = false;
 
     for (const player of frame.players) {
@@ -476,36 +506,65 @@ export class BossRaceView {
           1,
         );
       }
+      // 无敌指示环：与自机闪烁同相（亮的那一半 tick 才画），让玩家一眼看出
+      // 「现在打不到我」。对手也画，但压暗——它是可读的玩法状态。
+      if (player.invulnerable && invulnerableBlinkOn(frame.tick, true)) {
+        const ringRadius = Math.max(2, player.hitboxRadiusPx) + INVULNERABLE_RING_GAP;
+        g.drawCircle(
+          player.position.x,
+          player.position.y,
+          ringRadius,
+          null,
+          fade(theme.COLOR_SUCCESS, player.isLocal ? 0.85 : 0.4),
+          1,
+        );
+      }
     }
 
-    // 残机/炸弹读数：仅本地玩家、且服务端确实下发了判定字段时显示。
-    if (local === null || local.grazeRadiusPx <= 0) {
+    // 残机/炸弹/擦弹读数：仅本地玩家、且服务端确实下发了判定字段时显示。
+    if (hud === null) {
       return;
     }
     const top = INDICATOR_MARGIN;
-    for (let i = 0; i < local.lives; i += 1) {
+    const livesY = top + LIFE_ICON_RADIUS;
+    if (hud.exhausted) {
+      // 残机耗尽：画一个危险色空心圈占位，读数不消失（否则 HUD 会「跳位」）。
       g.drawCircle(
-        INDICATOR_MARGIN + LIFE_ICON_RADIUS + i * LIFE_ICON_PITCH,
-        top + LIFE_ICON_RADIUS,
+        INDICATOR_MARGIN + LIFE_ICON_RADIUS,
+        livesY,
         LIFE_ICON_RADIUS,
-        theme.COLOR_LOCAL_PLAYER,
+        null,
+        theme.COLOR_DANGER,
+        1,
       );
+    } else {
+      for (let i = 0; i < hud.lives; i += 1) {
+        g.drawCircle(
+          INDICATOR_MARGIN + LIFE_ICON_RADIUS + i * LIFE_ICON_PITCH,
+          livesY,
+          LIFE_ICON_RADIUS,
+          // 无敌期跟随闪烁相位变亮/变暗，与场上自机同步。
+          hud.invulnerable && !hud.blinkOn
+            ? fade(theme.COLOR_LOCAL_PLAYER, 0.35)
+            : theme.COLOR_LOCAL_PLAYER,
+        );
+      }
     }
     const bombY = top + LIFE_ICON_RADIUS * 2 + BOMB_ICON_PITCH;
-    for (let i = 0; i < local.bombs; i += 1) {
+    for (let i = 0; i < hud.bombs; i += 1) {
       g.drawRect(
         INDICATOR_MARGIN + i * BOMB_ICON_PITCH,
         bombY,
         BOMB_ICON_SIZE,
         BOMB_ICON_SIZE,
-        fade(theme.COLOR_INFO, 0.9),
+        fade(theme.COLOR_INFO, hud.invulnerable && !hud.blinkOn ? 0.45 : 0.9),
       );
     }
     // 擦弹：小环图标 + 纯数字。
-    const grazeX = INDICATOR_MARGIN + local.bombs * BOMB_ICON_PITCH + 6;
+    const grazeX = INDICATOR_MARGIN + hud.bombs * BOMB_ICON_PITCH + 6;
     g.drawCircle(grazeX + 4, bombY + BOMB_ICON_SIZE / 2, 4, null, fade(theme.COLOR_TEXT_MUTED, 0.8), 1);
     this.grazeText.pos(grazeX + 11, bombY - 2);
-    this.grazeText.text = String(local.graze);
+    this.grazeText.text = String(hud.graze);
     this.grazeText.visible = true;
   }
 
