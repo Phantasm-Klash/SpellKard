@@ -385,6 +385,21 @@ export interface BossRacePlayerSnapshot {
   /** 服务端 tick 计时；`> tick` 表示无敌帧中。 */
   invulnerableUntilTick?: number;
   graze?: number;
+  /**
+   * P7 计分读数 —— **纯展示透传**，客户端不重算。
+   *
+   * `score` 总分（TNA 口径：擦弹分 × 自机乘区 + 符卡获取 + 击破 + 结算奖励）、
+   * `hitCount` 受击数、`spellGet`/`spellTotal` 符卡获取数与总数。四个字段的
+   * 权威都在服务端：本地预测恒保留上一次采纳的服务端值（初始 0），
+   * {@link BossRaceSimulation.adoptAuthoritativeSnapshot} 才覆盖。
+   *
+   * 老服务端一个都不发 → 解码结果为 0（见 `decodeBossRaceSnapshot`），与
+   * 「本局确实 0 分」不可区分，但两者在 HUD 上显示同一个 `0`，没有歧义风险。
+   */
+  score?: number;
+  hitCount?: number;
+  spellGet?: number;
+  spellTotal?: number;
 }
 
 /** §2.8 Boss 移动状态机（`static|move_to|move_by|sine|angle_speed`）。 */
@@ -630,6 +645,21 @@ interface PlayerState {
   lives: number;
   bombs: number;
   graze: number;
+  /**
+   * P7 计分读数（**服务端权威，本地不重算**）。
+   *
+   * 客户端没有任何加分逻辑：这些值只在
+   * {@link BossRaceSimulation.adoptAuthoritativeSnapshot} 里被服务端快照覆盖，
+   * 本地 `tick()` 一个字节都不写。理由与 `vx/vy` 同源——本地算出来的分与
+   * 服务端一旦不一致，玩家看到的就是一个会回跳的数字；而计分表（自机乘区、
+   * 符卡获取条件）本来就只有服务端有。
+   *
+   * `score` 及其派生**不进** {@link BossRaceSimulation.canonicalStateHash}。
+   */
+  score: number;
+  hitCount: number;
+  spellGet: number;
+  spellTotal: number;
   /** `false` = lives 归零（停射/停判）；默认 ruleset 恒 `true`。 */
   alive: boolean;
 }
@@ -949,6 +979,11 @@ export class BossRaceSimulation {
       lives: DANMAKU_DEFAULT_LIVES,
       bombs: DANMAKU_DEFAULT_BOMBS,
       graze: 0,
+      // P7：计分权威在服务端，本地预测从 0 起步、只在采纳快照时被覆盖。
+      score: 0,
+      hitCount: 0,
+      spellGet: 0,
+      spellTotal: 0,
       alive: true,
     });
     return true;
@@ -1093,6 +1128,19 @@ export class BossRaceSimulation {
       }
       if (serverPlayer.invulnerableUntilTick !== undefined) {
         player.invulnerableUntilTick = serverPlayer.invulnerableUntilTick;
+      }
+      // P7 计分：**只在这里**被服务端值覆盖，本地 tick 不写（客户端不重算分）。
+      if (serverPlayer.score !== undefined) {
+        player.score = serverPlayer.score;
+      }
+      if (serverPlayer.hitCount !== undefined) {
+        player.hitCount = serverPlayer.hitCount;
+      }
+      if (serverPlayer.spellGet !== undefined) {
+        player.spellGet = serverPlayer.spellGet;
+      }
+      if (serverPlayer.spellTotal !== undefined) {
+        player.spellTotal = serverPlayer.spellTotal;
       }
       player.bossCurrentHp = serverPlayer.bossCurrentHp;
       player.damageDealt = serverPlayer.damageDealt;
@@ -1909,6 +1957,12 @@ export class BossRaceSimulation {
         ...(this.danmakuMechanics
           ? { lives: player.lives, bombs: player.bombs, graze: player.graze }
           : {}),
+        // P7 计分：恒下发（默认 ruleset 也有击破/结算分）。值是上一次采纳的
+        // 服务端读数，本地 tick 不改——客户端只展示，计分权威在服务端。
+        score: player.score,
+        hitCount: player.hitCount,
+        spellGet: player.spellGet,
+        spellTotal: player.spellTotal,
       });
     }
     const real = this.usesRealDanmaku();
@@ -1962,6 +2016,10 @@ export class BossRaceSimulation {
    *    them made the material shorter than the server's for any bullet at all;
    *  - the per-bullet position is `ToMilli(x - kScreenCenterX)`, i.e. folded from
    *    the **pixel** motion once, not accumulated in milli.
+   *
+   * ★ P7：`score` / `hit_count` / `spell_get` / `spell_total` **不参与**这个
+   * 哈希（与 `vx/vy` 同理）。计分是服务端的派生读数，把它喂进哈希只会让一次
+   * 计分表调整触发全量预测分叉。
    */
   canonicalStateHash(): string {
     let material =

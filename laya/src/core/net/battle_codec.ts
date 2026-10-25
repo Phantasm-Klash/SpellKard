@@ -508,6 +508,12 @@ export function decodeBossRaceSnapshot(payload: Uint8Array): BossRaceSnapshot | 
       bombs: optionalNumberAt(player, 'bombs'),
       invulnerableUntilTick: optionalNumberAt(player, 'invulnerable_until_tick'),
       graze: optionalNumberAt(player, 'graze'),
+      // P7 计分（服务端权威）。`score_gain` 只解释「为什么涨」，数值一律以
+      // 这里的 `score` 为准——客户端不累加、不预测。
+      score: optionalUint64At(player, 'score') ?? 0,
+      hitCount: optionalUint64At(player, 'hit_count') ?? 0,
+      spellGet: optionalUint64At(player, 'spell_get') ?? 0,
+      spellTotal: optionalUint64At(player, 'spell_total') ?? 0,
     })),
     bullets: bullets.filter(isRecord).map(
       (bullet): BossRaceBullet => ({
@@ -966,6 +972,32 @@ export function optionalWireStringAt(
     return String(Math.trunc(value));
   }
   return undefined;
+}
+
+/**
+ * uint64 计数字段（P7：`score` / `hit_count` / `spell_get` / `spell_total`）。
+ *
+ * 退化策略**与 `damage_dealt` 同法**：服务端把 uint64 直接写成裸 JSON 数字
+ * （`match_lifecycle.cpp:713` `std::to_string(player.damage_dealt)`），所以
+ * `JSON.parse` 在超过 `2^53` 时只能给出最接近的双精度值，精度在解码前就已经
+ * 丢了——这里不做十进制字符串保真，只保证「有限、非负、整数」，让 HUD 拿到
+ * 一个能画的数而不是 `NaN`。
+ *
+ * 计分权威在服务端：客户端只展示，绝不据此重算或回写。
+ */
+export function optionalUint64At(
+  source: Record<string, unknown>,
+  key: string,
+): number | undefined {
+  const value = optionalNumberAt(source, key);
+  if (value === undefined) {
+    return undefined;
+  }
+  // uint64 不可能为负；出现即畸形帧，按 0 处理而不是把负数画到 HUD 上。
+  if (!Number.isFinite(value) || value < 0) {
+    return 0;
+  }
+  return Math.floor(value);
 }
 
 /** Like {@link optionalNumberAt} for booleans: absent stays `undefined`. */

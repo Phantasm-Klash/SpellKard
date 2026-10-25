@@ -50,6 +50,23 @@ const LIFE_ICON_PITCH = 10;
 const BOMB_ICON_SIZE = 6;
 const BOMB_ICON_PITCH = 10;
 const GRAZE_TEXT_SIZE = 12;
+/** 擦弹数字的固定占位宽度（像素）：读数位数变化时后面的图标不跟着跳。 */
+const GRAZE_TEXT_SLOT = 34;
+/** 受击数（`hit_count`）读数：三角形图标 + 数字。 */
+const HIT_ICON_RADIUS = 4;
+const HIT_TEXT_SIZE = 12;
+/** 符卡获取数（`spell_get/spell_total`）读数：星形图标 + `get/total`。 */
+const SPELL_ICON_OUTER = 5;
+const SPELL_TEXT_SIZE = 12;
+/** SCORE 读数（千分位文本，右对齐）。 */
+const SCORE_TEXT_SIZE = 16;
+/**
+ * `score` 变化后高亮多少 tick（≈ 0.1s @60Hz）。
+ *
+ * 不用 `score_gain` 事件做判定源：事件只是「为什么涨」，而读数一律以快照
+ * `score` 为准（重连补快照也会跳一次，那时给个高亮同样是对的）。
+ */
+const SCORE_PULSE_TICKS = 6;
 /** 无敌指示环相对判定点的额外半径（像素）。 */
 const INVULNERABLE_RING_GAP = 6;
 
@@ -59,8 +76,11 @@ const INVULNERABLE_RING_GAP = 6;
  * 侧栏由 `drawHudBar` 自绘并会把它拿到的矩形铺满，所以这里不给它「留位置」的
  * 参数，而是**让出顶部一条**：`drawHudBar(g, 0, badgeH, w, h - badgeH, state)`。
  * 好处是 `hud.ts` 一行不用改，也不会出现卡片互相压字。
+ *
+ * P7 起卡片是**两行**（上：判定读数；下：符卡 + SCORE），所以高度从 30 提到 44。
+ * 行位置按高度**比例**取，`render` 里的 `min(height/3)` 夹小之后两行仍不会压字。
  */
-const JUDGMENT_BADGE_HEIGHT = 30;
+const JUDGMENT_BADGE_HEIGHT = 44;
 
 /**
  * 判定 HUD 的渲染状态 —— **本视图对外契约**，由 `battle_scene.ts` 的
@@ -148,6 +168,16 @@ export class BossRaceView {
   private readonly indicatorLayer: Laya.Sprite;
   /** 擦弹计数（纯数字；无判定的 ruleset 下隐藏）。 */
   private readonly grazeText: Laya.Text;
+  /** 受击数（纯数字，同上）。 */
+  private readonly hitText: Laya.Text;
+  /** 符卡获取数 `get/total`（纯数字，同上）。 */
+  private readonly spellText: Laya.Text;
+  /** SCORE 读数（千分位纯数字，右对齐）。 */
+  private readonly scoreText: Laya.Text;
+  /** 上一帧画出的分数；`null` = 还没画过（首帧不触发高亮）。 */
+  private lastScore: number | null = null;
+  /** 分数高亮持续到哪个 tick（`score` 变化时刷新）。 */
+  private scorePulseUntilTick = 0;
   private readonly watermark: Laya.Sprite | null;
   private readonly hudLayer: Laya.Sprite;
   private readonly hud: Laya.Text;
@@ -227,6 +257,23 @@ export class BossRaceView {
     this.grazeText.color = theme.COLOR_TEXT_MUTED;
     this.grazeText.visible = false;
 
+    // 受击数 / 符卡获取数 / SCORE：同一条卡片上的另三个读数，同样挂 HUD 层。
+    this.hitText = new Laya.Text();
+    this.hitText.fontSize = HIT_TEXT_SIZE;
+    this.hitText.color = theme.COLOR_TEXT_MUTED;
+    this.hitText.visible = false;
+
+    this.spellText = new Laya.Text();
+    this.spellText.fontSize = SPELL_TEXT_SIZE;
+    this.spellText.color = theme.COLOR_TEXT_MUTED;
+    this.spellText.visible = false;
+
+    this.scoreText = new Laya.Text();
+    this.scoreText.fontSize = SCORE_TEXT_SIZE;
+    this.scoreText.color = theme.COLOR_TEXT;
+    this.scoreText.align = 'right';
+    this.scoreText.visible = false;
+
     // Watermark portraits sit above the actors but below the HUD strip.
     if (this.watermark !== null) {
       this.root.addChild(this.watermark);
@@ -245,6 +292,9 @@ export class BossRaceView {
     this.root.addChild(this.hudLayer);
     // 擦弹数字挂在侧栏层（坐标是卡片内的局部坐标，见 `drawJudgmentBadge`）。
     this.hudLayer.addChild(this.grazeText);
+    this.hudLayer.addChild(this.hitText);
+    this.hudLayer.addChild(this.spellText);
+    this.hudLayer.addChild(this.scoreText);
 
     this.hud = new Laya.Text();
     this.hud.pos(this.hudX + 8, this.hudY + 8);
@@ -381,8 +431,8 @@ export class BossRaceView {
    * @param hudLines  plain-text HUD lines, rendered verbatim (legacy contract)
    * @param hudState  when given, the HUD strip is drawn as vector bars instead
    *                  of text; `hudLines` is then ignored
-   * @param judgment  判定卡片（残机/炸弹/擦弹/无敌）；缺省 = 不画，且侧栏恢复
-   *                  占满整条（老调用方零变化）。传入时侧栏让出顶部
+   * @param judgment  判定卡片（残机/炸弹/擦弹/受击 + 符卡/SCORE）；缺省 = 不画，
+   *                  且侧栏恢复占满整条（老调用方零变化）。传入时侧栏让出顶部
    *                  {@link JUDGMENT_BADGE_HEIGHT} 像素给卡片，`hud.ts` 不需要
    *                  知道这张卡存在。
    */
@@ -403,7 +453,7 @@ export class BossRaceView {
       g.clear();
       const badgeH = judgment === undefined ? 0 : Math.min(JUDGMENT_BADGE_HEIGHT, this.hudHeight / 3);
       if (judgment !== undefined) {
-        this.drawJudgmentBadge(g, 0, 0, this.hudWidth, badgeH, judgment);
+        this.drawJudgmentBadge(g, 0, 0, this.hudWidth, badgeH, judgment, frame.tick);
       }
       drawHudBar(g, 0, badgeH, this.hudWidth, this.hudHeight - badgeH, hudState);
     } else {
@@ -499,7 +549,11 @@ export class BossRaceView {
   private drawJudgment(frame: BossRaceFrame): void {
     const g = this.indicatorLayer.graphics;
     g.clear();
+    // 卡片读数默认隐藏：没有判定数据（或走纯文本 HUD）时它们不该留在屏上。
     this.grazeText.visible = false;
+    this.hitText.visible = false;
+    this.spellText.visible = false;
+    this.scoreText.visible = false;
 
     for (const player of frame.players) {
       // 判定点（本地高亮、对手压暗）。
@@ -537,13 +591,17 @@ export class BossRaceView {
   }
 
   /**
-   * 判定卡片：HUD 侧栏**顶部**一条（残机圆点 / 炸弹方块 / 擦弹数字 / 无敌指示）。
+   * 判定卡片：HUD 侧栏**顶部**一条，P7 起分两行。
    *
-   * 几何：卡片占 `(x, y, width, height)`，内容单行居中；无敌期在卡片外框画一圈
-   * 脉冲环，**相位与场上自机相同**（4 亮 4 灭），所以玩家看到的是「人闪、环也闪」。
+   *  - 上行（判定）：残机圆点 / 炸弹方块 / 擦弹环+数字 / 受击三角+数字；
+   *  - 下行（计分）：符卡星+`get/total`，右端 SCORE 千分位读数。
    *
-   * `height` 由调用方按侧栏高度夹过（见 `render`），这里不再自适应——判定卡片是
-   * 固定单行，拉伸它只会让图标悬空。
+   * 全部是图标与数字，**没有任何自然语言**（文案铁律）。分数变化后的
+   * {@link SCORE_PULSE_TICKS} 个 tick 内用强调色画，作为「刚加分」的提示。
+   *
+   * 几何：卡片占 `(x, y, width, height)`；行位置按 `height` **比例**取，所以
+   * `render` 里按侧栏高度夹小之后两行仍然不压字。无敌期在卡片外框画一圈脉冲
+   * 环，**相位与场上自机相同**（4 亮 4 灭），所以玩家看到的是「人闪、环也闪」。
    */
   private drawJudgmentBadge(
     g: Laya.Graphics,
@@ -552,6 +610,7 @@ export class BossRaceView {
     width: number,
     height: number,
     judgment: JudgmentHudState,
+    tick: number,
   ): void {
     if (width <= 0 || height <= 0) {
       return;
@@ -583,19 +642,21 @@ export class BossRaceView {
     }
 
     const dim = judgment.invulnerable && !judgment.blinkOn;
-    const midY = y + height / 2;
     const pad = theme.SPACE_SM;
+    // 两行的中心线（比例布局：任何卡片高度下都不压字）。
+    const rowTop = y + height * 0.3;
+    const rowBottom = y + height * 0.72;
     let cursor = x + pad + LIFE_ICON_RADIUS;
 
     // 残机：实心圆点，一条命一颗；耗尽时画一个危险色空心圈占位（读数不消失）。
     if (judgment.exhausted) {
-      g.drawCircle(cursor, midY, LIFE_ICON_RADIUS, null, theme.COLOR_DANGER, 1);
+      g.drawCircle(cursor, rowTop, LIFE_ICON_RADIUS, null, theme.COLOR_DANGER, 1);
       cursor += LIFE_ICON_PITCH;
     } else {
       for (let i = 0; i < judgment.lives; i += 1) {
         g.drawCircle(
           cursor,
-          midY,
+          rowTop,
           LIFE_ICON_RADIUS,
           dim ? fade(theme.COLOR_LOCAL_PLAYER, 0.35) : theme.COLOR_LOCAL_PLAYER,
         );
@@ -608,7 +669,7 @@ export class BossRaceView {
     for (let i = 0; i < judgment.bombs; i += 1) {
       g.drawRect(
         cursor - BOMB_ICON_SIZE / 2,
-        midY - BOMB_ICON_SIZE / 2,
+        rowTop - BOMB_ICON_SIZE / 2,
         BOMB_ICON_SIZE,
         BOMB_ICON_SIZE,
         fade(theme.COLOR_INFO, dim ? 0.45 : 0.9),
@@ -618,10 +679,63 @@ export class BossRaceView {
 
     // 擦弹：小环图标 + 纯数字（数字用 Text 画，Graphics 没有文本能力）。
     cursor += theme.SPACE_XS + 4;
-    g.drawCircle(cursor, midY, 4, null, fade(theme.COLOR_TEXT_MUTED, 0.8), 1);
-    this.grazeText.pos(cursor + 7, midY - GRAZE_TEXT_SIZE / 2);
+    g.drawCircle(cursor, rowTop, 4, null, fade(theme.COLOR_TEXT_MUTED, 0.8), 1);
+    this.grazeText.pos(cursor + 7, rowTop - GRAZE_TEXT_SIZE / 2);
     this.grazeText.text = String(judgment.graze);
     this.grazeText.visible = true;
+    // 定宽槽位（不是 `textWidth` 实测）：擦弹数位数会变，槽位固定才不会让
+    // 后面的受击图标随读数左右跳动。
+    cursor += 7 + GRAZE_TEXT_SLOT;
+
+    // 受击（`hit_count`）：顶点朝下的三角 + 数字。三角、擦弹的空心环、残机的
+    // 实心点在同一行里形状互不混淆，一眼能分出是哪一类读数。
+    VectorPainter.polygon(
+      g,
+      cursor,
+      rowTop,
+      3,
+      HIT_ICON_RADIUS,
+      Math.PI / 2,
+      fade(theme.COLOR_DANGER, dim ? 0.45 : 0.9),
+    );
+    this.hitText.pos(cursor + HIT_ICON_RADIUS + 3, rowTop - HIT_TEXT_SIZE / 2);
+    this.hitText.text = String(judgment.hitCount);
+    this.hitText.visible = true;
+
+    // ---- 下行：符卡获取数 + SCORE ----
+    const spellX = x + pad + SPELL_ICON_OUTER;
+    // 符卡：星形图标（符卡） + `get/total`。total = 0 表示本 ruleset 没有符卡，
+    // 仍然把 `0/0` 画出来——那是真实读数，不是占位。
+    VectorPainter.star(
+      g,
+      spellX,
+      rowBottom,
+      5,
+      SPELL_ICON_OUTER,
+      SPELL_ICON_OUTER * 0.45,
+      0,
+      fade(theme.COLOR_ACCENT, dim ? 0.45 : 0.9),
+    );
+    this.spellText.pos(spellX + SPELL_ICON_OUTER + 4, rowBottom - SPELL_TEXT_SIZE / 2);
+    this.spellText.text = `${judgment.spellGet}/${judgment.spellTotal}`;
+    this.spellText.visible = true;
+
+    // SCORE：千分位纯数字，右对齐（`width` 撑满 + `align='right'`，不依赖
+    // `textWidth`——Laya 的原生运行时不一定有那次排版测量）。
+    // 分数刚变化的那几 tick 用强调色，做一个不改变布局的高亮提示。
+    if (this.lastScore !== null && judgment.score !== this.lastScore) {
+      this.scorePulseUntilTick = tick + SCORE_PULSE_TICKS;
+    }
+    this.lastScore = judgment.score;
+    const pulsing = tick < this.scorePulseUntilTick;
+    this.scoreText.pos(x + pad, rowBottom - SCORE_TEXT_SIZE / 2);
+    // 字号跟着卡片高度走：`render` 会把卡片夹到 `hudHeight/3`，矮侧栏上固定
+    // 16px 会顶出卡片底边（压到下面的 HP 卡片）。
+    this.scoreText.fontSize = Math.max(9, Math.round(Math.min(SCORE_TEXT_SIZE, height * 0.36)));
+    this.scoreText.width = Math.max(0, width - pad * 2);
+    this.scoreText.color = pulsing ? theme.COLOR_ACCENT : theme.COLOR_TEXT;
+    this.scoreText.text = judgment.scoreText;
+    this.scoreText.visible = true;
   }
 
   private bulletSprite(index: number): Laya.Sprite {

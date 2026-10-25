@@ -83,6 +83,7 @@ import './stage_parity.test';import './native_random_tiers.test';import './battl
 import './battle_handshake.test';
 import './boss_race_danmaku_mechanics.test';
 import './bullet_kind_atlas_map.test';
+import './boss_race_score.test';
 
 import { runAll } from './harness';
 

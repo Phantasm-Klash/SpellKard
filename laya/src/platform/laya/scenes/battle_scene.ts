@@ -1567,7 +1567,11 @@ export class BattleScene implements ClientScene {
       localHp: local?.bossCurrentHp ?? 0,
       rivalHp: opponent?.bossCurrentHp ?? 0,
       damageDealt,
-      score: damageDealt,
+      // P7：侧栏大 SCORE 卡显示**服务端权威分**（`players[].score`），不再拿
+      // `damageDealt` 冒充——两者量纲不同，占位会让大卡与判定卡片里的真分
+      // 显示两个不同数字。`??` 只对缺字段（老服务端）回退，服务端下发 0 时
+      // 不会被误覆盖。
+      score: local?.score ?? damageDealt,
       ultCooldownRatio: this.ultCooldownRatio(snapshot.tick),
       ultReady: this.ultCooldownRatio(snapshot.tick) <= 0,
       tick: snapshot.tick,

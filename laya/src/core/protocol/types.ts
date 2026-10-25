@@ -407,6 +407,19 @@ export interface BossRacePlayerState {
   defeated: boolean;
   defeatTick: number;
   pointsAwarded: number;
+  /**
+   * P7 计分（TNA 口径）：`score` 总分、`hit_count` 受击数、`spell_get` /
+   * `spell_total` 符卡获取数与总数。
+   *
+   * ★ 目前**只有 JSON 快照链路**（`core/net/battle_codec.ts` 的
+   * `decodeBossRaceSnapshot`）会填这四个字段；`battle.proto` 的
+   * `BossRacePlayerState` 还没有给它们编号，所以 `protocol/codec.ts` 的描述符
+   * 不含它们、protobuf 编解码会丢弃。等 PhK-Protocol 编号后再进描述符。
+   */
+  score?: number;
+  hitCount?: number;
+  spellGet?: number;
+  spellTotal?: number;
 }
 
 export interface BossRaceModeState {

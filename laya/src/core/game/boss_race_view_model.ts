@@ -92,6 +92,16 @@ export interface PlayerRenderItem {
   /** 擦弹计数（服务端未下发时占位 0）。 */
   graze: number;
   /**
+   * P7 计分读数（服务端权威，**原样透传**）。
+   *
+   * `score` 总分、`hitCount` 受击数、`spellGet`/`spellTotal` 符卡获取数与总数。
+   * 视图模型不在这里做任何加分/乘区运算——计分表只有服务端有。
+   */
+  score: number;
+  hitCount: number;
+  spellGet: number;
+  spellTotal: number;
+  /**
    * 服务端是否下发了判定字段（`tna-1.40-danmaku`）。
    *
    * `false` 表示该 ruleset 没有 lives/bombs/graze/无敌帧——渲染层据此隐藏
@@ -276,6 +286,10 @@ export function buildBossRaceFrame(
       lives: player.lives ?? SNAPSHOT_DEFAULT_LIVES,
       bombs: player.bombs ?? SNAPSHOT_DEFAULT_BOMBS,
       graze: player.graze ?? 0,
+      score: player.score ?? 0,
+      hitCount: player.hitCount ?? 0,
+      spellGet: player.spellGet ?? 0,
+      spellTotal: player.spellTotal ?? 0,
       judgmentActive,
     });
     const bossItem: BossRenderItem = {
@@ -413,7 +427,8 @@ export function invulnerableBlinkOn(tick: number, invulnerable: boolean): boolea
 }
 
 /**
- * 判定 HUD（残机 / 炸弹 / 擦弹 / 无敌）的显示状态，已归一化成可画的形式。
+ * 判定 HUD（残机 / 炸弹 / 擦弹 / 无敌 + P7 的分数/受击/符卡）的显示状态，
+ * 已归一化成可画的形式。
  *
  * 由 {@link buildJudgmentHud} 从 {@link BossRaceFrame} 提取，渲染层只负责画
  * 图标与数字——文案铁律：不含任何自然语言。
@@ -435,6 +450,42 @@ export interface JudgmentHudState {
   blinkOn: boolean;
   /** 残机耗尽（`lives <= 0`）——HUD 用危险色提示。 */
   exhausted: boolean;
+  /** P7 总分（服务端权威，客户端只展示）。 */
+  score: number;
+  /** {@link score} 的千分位文本（{@link formatScoreDigits}），渲染层直接画。 */
+  scoreText: string;
+  /** P7 受击数（`hit_count`）。 */
+  hitCount: number;
+  /** P7 符卡获取数（`spell_get`）。 */
+  spellGet: number;
+  /** P7 符卡总数（`spell_total`）；0 = 本 ruleset 没有符卡。 */
+  spellTotal: number;
+}
+
+/**
+ * 分数的千分位格式化（`1234567` → `1,234,567`）。
+ *
+ * ★ 纯数字格式化，**不走 `toLocaleString`**：那依赖运行环境的 locale/ICU，
+ * Laya 的原生运行时不一定带，同一份分数会在不同平台画出不同分隔符。也**不引入
+ * 任何 i18n 文案**——只有数字和分隔符。
+ *
+ * 超过 `2^53` 的分数在解码时就已经退化成最接近的双精度值（与 `damage_dealt`
+ * 同法，见 `battle_codec.optionalUint64At`），这里只负责把拿到的数分组。
+ * 负数/非有限值按 `0` 处理（uint64 不可能为负）。
+ */
+export function formatScoreDigits(value: number): string {
+  if (!Number.isFinite(value) || value < 0) {
+    return '0';
+  }
+  const digits = String(Math.trunc(value));
+  let out = '';
+  for (let i = 0; i < digits.length; i += 1) {
+    if (i > 0 && (digits.length - i) % 3 === 0) {
+      out += ',';
+    }
+    out += digits[i];
+  }
+  return out;
 }
 
 /**
@@ -459,6 +510,11 @@ export function buildJudgmentHud(frame: BossRaceFrame): JudgmentHudState | null 
     invulnerableTicksRemaining: remaining,
     blinkOn: invulnerableBlinkOn(frame.tick, local.invulnerable),
     exhausted: local.lives <= 0,
+    score: Math.max(0, local.score),
+    scoreText: formatScoreDigits(local.score),
+    hitCount: Math.max(0, local.hitCount),
+    spellGet: Math.max(0, local.spellGet),
+    spellTotal: Math.max(0, local.spellTotal),
   };
 }
 
