@@ -74,6 +74,8 @@ export interface Messages {
   'replay.restart': string;
   'replay.close': string;
   'lobby.joinRoom': string;
+  'lobby.joinRoomCode': string;
+  'lobby.roomCodeHint': string;
   'lobby.joinQueue': string;
   'lobby.refreshQueue': string;
   'lobby.cancelQueue': string;
@@ -620,6 +622,8 @@ const ZH_HANS: Messages = {
   'replay.restart': '重播',
   'replay.close': '关闭',
   'lobby.joinRoom': '加入房间',
+  'lobby.joinRoomCode': '加入的房间码',
+  'lobby.roomCodeHint': '输入房主分享的房间码',
   'lobby.joinQueue': '加入匹配队列',
   'lobby.refreshQueue': '刷新队列状态',
   'lobby.cancelQueue': '取消匹配',
@@ -1107,6 +1111,8 @@ const ZH_HANT: Messages = {
   'replay.restart': '重播',
   'replay.close': '關閉',
   'lobby.joinRoom': '加入房間',
+  'lobby.joinRoomCode': '加入的房間碼',
+  'lobby.roomCodeHint': '輸入房主分享的房間碼',
   'lobby.joinQueue': '加入配對佇列',
   'lobby.refreshQueue': '重新整理佇列狀態',
   'lobby.cancelQueue': '取消配對',
@@ -1594,6 +1600,8 @@ const JA: Messages = {
   'replay.restart': '最初から',
   'replay.close': '閉じる',
   'lobby.joinRoom': 'ルームに参加',
+  'lobby.joinRoomCode': '参加するルームコード',
+  'lobby.roomCodeHint': 'ホストが共有したルームコードを入力',
   'lobby.joinQueue': 'マッチメイキング列に参加',
   'lobby.refreshQueue': '順番待ちの状態を更新',
   'lobby.cancelQueue': 'マッチメイキングを中止',
@@ -2083,6 +2091,8 @@ const EN: Messages = {
   'replay.restart': 'Restart',
   'replay.close': 'Close',
   'lobby.joinRoom': 'Join room',
+  'lobby.joinRoomCode': 'Room code to join',
+  'lobby.roomCodeHint': 'Type the code the host shared',
   'lobby.joinQueue': 'Join matchmaking queue',
   'lobby.refreshQueue': 'Refresh queue status',
   'lobby.cancelQueue': 'Cancel matchmaking',

@@ -54,6 +54,7 @@ import './battle_layout.test';
 import './tna_atlas_frames.test';
 import './lobby_auth.test';
 import './login_layout.test';
+import './lobby_language.test';
 import './game_identity.test';
 import './settings.test';
 import './upscale_math.test';

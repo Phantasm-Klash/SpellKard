@@ -31,7 +31,7 @@
 
 import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow';
 import { describeMatchmakingQueue } from '../../../core/game/lobby_flow';
-import { t, language } from '../../../core/game/i18n';
+import { t, language, isLanguageCode, DEFAULT_LANGUAGE, type LanguageCode } from '../../../core/game/i18n';
 import { lobbyTitle } from '../../../core/game/game_identity';
 import { titleLogoFor } from '../../../core/game/ui_assets';
 import { coverFit } from '../../../core/game/login_assets';
@@ -119,6 +119,10 @@ export class LobbyScene implements ClientScene {
   private readonly recordsButton: ButtonHandle;
   /** Gold ring painted over the keyboard-highlighted button (shared overlay). */
   private readonly menuFocusRing: Laya.Sprite;
+  /** "Room code" caption above the highlighted frame on the play page. */
+  private readonly roomCodeCaption: Laya.Text;
+  /** "Room code to join" caption above the free-form field on the play page. */
+  private readonly joinCodeCaption: Laya.Text;
   /** Sprites shown only on the main menu. */
   private readonly menuSprites: Laya.Sprite[] = [];
   /** Sprites shown only on the play sub-page. */
@@ -128,6 +132,18 @@ export class LobbyScene implements ClientScene {
   private menuFocusIndex = -1;
   private roomCodeIndex = 0;
   private busy = false;
+  /**
+   * Language the lobby's own labels were painted in; see {@link applyLanguage}.
+   *
+   * Every string here is resolved from `t()` once, at construction — the scene
+   * has no per-frame repaint — so without this guard a language switch (which
+   * happens in the settings modal and reaches the store, not this scene) would
+   * leave the menu buttons, the captions and the field prompt in the previous
+   * language until the scene was rebuilt.
+   */
+  private paintedLanguage: LanguageCode;
+  /** Detaches the settings listener; called when the scene goes away. */
+  private detachSettingsListener: () => void = () => undefined;
 
   constructor(private readonly options: LobbySceneOptions) {
     const { width, height } = options;
@@ -135,6 +151,10 @@ export class LobbyScene implements ClientScene {
     this.root = new Laya.Sprite();
     this.root.size(width, height);
     this.root.visible = false;
+    // Language the labels below are painted in; the store subscription at the
+    // end of this constructor repaints them when it moves.
+    const storedLanguage = options.settings.get().language;
+    this.paintedLanguage = isLanguageCode(storedLanguage) ? storedLanguage : DEFAULT_LANGUAGE;
 
     // --- backdrop + scrim (bottom-most) ------------------------------------
     // Added before every other child so they paint behind the whole menu. The
@@ -251,9 +271,9 @@ export class LobbyScene implements ClientScene {
     // in the highlighted frame; the join code is typed into the field below.
     const codeCardHeight = 148;
     this.addToPage(this.playSprites, createPanel(margin, contentY, contentWidth, codeCardHeight));
-    const codeCaption = this.makeText(t('ui.roomCode'), theme.FONT_SIZE_CAPTION, theme.COLOR_TEXT_MUTED, false, margin + theme.SPACE_MD);
-    codeCaption.y = contentY + theme.SPACE_SM;
-    this.addToPage(this.playSprites, codeCaption);
+    this.roomCodeCaption = this.makeText(t('ui.roomCode'), theme.FONT_SIZE_CAPTION, theme.COLOR_TEXT_MUTED, false, margin + theme.SPACE_MD);
+    this.roomCodeCaption.y = contentY + theme.SPACE_SM;
+    this.addToPage(this.playSprites, this.roomCodeCaption);
     // Highlight frame around the code so it reads at a glance.
     this.addToPage(
       this.playSprites,
@@ -265,9 +285,9 @@ export class LobbyScene implements ClientScene {
 
     // Join field: the server mints its own room code, so the preset list can
     // never match a real room. A free-form field is the only way to join one.
-    const joinCaption = this.makeText(t('lobby.joinRoomCode'), theme.FONT_SIZE_CAPTION, theme.COLOR_TEXT_MUTED, false, margin + theme.SPACE_MD);
-    joinCaption.y = contentY + 84;
-    this.addToPage(this.playSprites, joinCaption);
+    this.joinCodeCaption = this.makeText(t('lobby.joinRoomCode'), theme.FONT_SIZE_CAPTION, theme.COLOR_TEXT_MUTED, false, margin + theme.SPACE_MD);
+    this.joinCodeCaption.y = contentY + 84;
+    this.addToPage(this.playSprites, this.joinCodeCaption);
 
     this.roomCodeInput = new Laya.Input();
     this.roomCodeInput.editable = true;
@@ -347,6 +367,11 @@ export class LobbyScene implements ClientScene {
     this.applyPageVisibility();
     this.refresh();
     this.relayoutBackground();
+    // The settings modal is where the language moves, and it writes the shared
+    // store — not this scene. Subscribing here (rather than rebuilding on every
+    // flow change) is what makes a switch repaint the lobby in place; the guard
+    // inside {@link applyLanguage} keeps every other settings change a no-op.
+    this.detachSettingsListener = options.settings.subscribe(() => this.applyLanguage());
     void this.loadArt();
     void this.loadTitleLogo();
   }
@@ -378,6 +403,7 @@ export class LobbyScene implements ClientScene {
   destroy(): void {
     Laya.stage.off(Laya.Event.RESIZE, this, this.onStageResize);
     this.detachRoomCodeCaret();
+    this.detachSettingsListener();
     this.root.destroy(true);
   }
 
@@ -640,10 +666,52 @@ export class LobbyScene implements ClientScene {
    * 离线 / 资源未打包的场景也不会出现空标题。
    */
   private async loadTitleLogo(): Promise<void> {
+    // The text title comes back first: a language switch may point at a logo
+    // this build does not ship, and "no image + hidden text" would leave the
+    // screen untitled. It is hidden again the moment the art settles.
+    this.title.visible = true;
     this.titleLogo.setImage(titleLogoFor(language()), theme.FONT_SIZE_TITLE * 1.7);
     if (await this.titleLogo.whenSettled()) {
       this.title.visible = false;
     }
+  }
+
+  /**
+   * Repaints the lobby's own strings in the current language.
+   *
+   * Everything here resolves `t()` once — at construction, or in the snapshot /
+   * refresh paths — so a language switch in the settings modal (which writes
+   * the shared store) would otherwise leave a half-translated screen: the modal
+   * itself in the new language, the menu buttons and captions in the old one.
+   * The no-op guard makes it safe to call from every store change; only the
+   * language itself repaints.
+   */
+  private applyLanguage(): void {
+    const code = this.options.settings.get().language;
+    if (!isLanguageCode(code) || code === this.paintedLanguage) {
+      return;
+    }
+    this.paintedLanguage = code;
+    this.playButton.setText(t('ui.play'));
+    this.checkinButton.setText(t('lobby.checkin'));
+    this.shopButton.setText(t('ui.shop'));
+    this.inventoryButton.setText(t('lobby.inventory'));
+    this.recordsButton.setText(t('ui.records'));
+    this.cycleButton.setText(t('lobby.changeRoomCode'));
+    this.createButton.setText(t('lobby.createRoom'));
+    this.joinButton.setText(t('lobby.joinRoom'));
+    this.joinQueueButton.setText(t('lobby.joinQueue'));
+    this.refreshQueueButton.setText(t('lobby.refreshQueue'));
+    this.cancelQueueButton.setText(t('lobby.cancelQueue'));
+    this.backButton.setText(t('ui.back'));
+    this.roomCodeCaption.text = t('ui.roomCode');
+    this.joinCodeCaption.text = t('lobby.joinRoomCode');
+    this.roomCodeInput.prompt = t('lobby.roomCodeHint');
+    // Snapshot-driven text (page label, account button, profile, status, queue)
+    // re-resolves through these two; the title logo is art, so it reloads.
+    this.applyPageVisibility();
+    this.applySnapshot(this.options.flow.snapshot());
+    void this.loadTitleLogo();
   }
 
   /** Loads one image URL as a texture; returns `null` on any failure. */
