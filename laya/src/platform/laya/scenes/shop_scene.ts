@@ -13,7 +13,8 @@
  */
 
 import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow';
-import { t } from '../../../core/game/i18n';
+import { language, t } from '../../../core/game/i18n';
+import { shopItemName } from '../../../core/game/shop_names';
 import type { ShopItemView } from '../../../core/net/lobby_client';
 import * as theme from '../view/theme';
 import { createButtonEx, createCaption, createDivider, createPanel, type ButtonHandle } from './ui_kit';
@@ -30,6 +31,25 @@ export interface ShopSceneOptions {
 const ROW_HEIGHT = 88;
 /** Width reserved on the right of a row for the buy button. */
 const BUY_BUTTON_WIDTH = 88;
+
+/**
+ * What a purchase grants, as one readable line.
+ *
+ * The server's `grants` is `{ item, count }` (`ShopCatalogResponse` →
+ * `ServerShopProduct`), and it is the only descriptive text the catalogue
+ * carries — `name` and `description` are absent from the wire entirely. So the
+ * row shows the grant instead of an empty description line.
+ */
+function describeGrants(item: ShopItemView): string {
+  const grants = item.grants;
+  const grantedItem = typeof grants.item === 'string' ? grants.item : '';
+  const count = typeof grants.count === 'number' && Number.isFinite(grants.count) ? grants.count : 1;
+  if (grantedItem === '') {
+    return '';
+  }
+  const label = shopItemName(grantedItem, language());
+  return count > 1 ? `${label} ×${count}` : label;
+}
 
 export class ShopScene implements ClientScene {
   readonly root: Laya.Sprite;
@@ -153,7 +173,7 @@ export class ShopScene implements ClientScene {
   private rebuildItems(items: ShopItemView[]): void {
     this.listHost.removeChildren();
     if (items.length === 0) {
-      const empty = this.makeText('No listings', this.width, theme.COLOR_TEXT_DISABLED, false, 0);
+      const empty = this.makeText(t('shop.noListings'), this.width, theme.COLOR_TEXT_DISABLED, false, 0);
       empty.fontSize = theme.FONT_SIZE_BODY;
       this.listHost.addChild(empty);
       return;
@@ -171,15 +191,28 @@ export class ShopScene implements ClientScene {
     row.size(width, ROW_HEIGHT);
     row.addChild(createPanel(0, 0, width, ROW_HEIGHT, { fill: theme.COLOR_PANEL_DEEP }));
 
-    const name = this.makeText(item.name || item.itemId, width - theme.SPACE_MD * 2, theme.COLOR_TITLE, true, theme.SPACE_MD);
+    // The server sends no display name (see `core/game/shop_names.ts`), so the
+    // local table supplies it and the id is only the fallback for a product
+    // this build does not know yet.
+    const name = this.makeText(
+      shopItemName(item.itemId, language()),
+      width - theme.SPACE_MD * 2,
+      theme.COLOR_TITLE,
+      true,
+      theme.SPACE_MD,
+    );
     name.fontSize = theme.FONT_SIZE_LABEL;
     name.y = theme.SPACE_SM;
     name.width = width - theme.SPACE_MD * 2 - BUY_BUTTON_WIDTH;
     name.overflow = 'hidden';
     row.addChild(name);
 
+    // The server sends no description either, so an empty one would leave a
+    // blank line between the name and the price. Show what the product grants
+    // instead, which is information the server *does* send.
+    const grants = describeGrants(item);
     const description = this.makeText(
-      item.description,
+      grants,
       width - theme.SPACE_MD * 2,
       theme.COLOR_TEXT_MUTED,
       false,
@@ -192,9 +225,12 @@ export class ShopScene implements ClientScene {
     description.leading = theme.SPACE_XS;
     row.addChild(description);
 
-    const stock = item.stock < 0 ? 'unlimited' : `stock ${item.stock}`;
+    const stock =
+      item.stock < 0
+        ? t('shop.stockUnlimited')
+        : t('shop.stockCount', { count: item.stock });
     const meta = this.makeText(
-      `Price ${formatAmounts(item.price)} · ${stock} · bought ${item.purchased}`,
+      t('shop.meta', { price: formatAmounts(item.price), stock, count: item.purchased }),
       width - theme.SPACE_MD * 2,
       theme.COLOR_TEXT_MUTED,
       false,
@@ -206,7 +242,7 @@ export class ShopScene implements ClientScene {
     row.addChild(meta);
 
     const buy = createButtonEx(
-      'Buy',
+      t('shop.buy'),
       width - BUY_BUTTON_WIDTH - theme.SPACE_MD,
       (ROW_HEIGHT - theme.BUTTON_HEIGHT) / 2,
       BUY_BUTTON_WIDTH,
