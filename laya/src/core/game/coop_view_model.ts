@@ -20,6 +20,10 @@ import {
   type CoopBossPlayerSnapshot,
   type CoopBossSnapshot,
 } from '../sim/coop_boss';
+import {
+  SNAPSHOT_DEFAULT_BOMBS,
+  SNAPSHOT_DEFAULT_LIVES,
+} from '../sim/boss_race';
 import { extrapolatePos, interpolatePos, normalizeFrac } from './interpolation';
 
 export const COOP_ALLY_ALPHA = 0.45;
@@ -49,6 +53,14 @@ export interface CoopPlayerItem {
   locked: boolean;
   shielded: boolean;
   damageDealt: number;
+  /**
+   * 判定数据透传（§2.8，服务端只在 `tna-1.40-danmaku` 下发；缺省取 wire 占位）。
+   * 无敌帧中（`tick <= invulnerableUntilTick`）→ 渲染层闪烁。
+   */
+  invulnerable: boolean;
+  lives: number;
+  bombs: number;
+  graze: number;
 }
 
 export interface CoopBulletItem {
@@ -203,6 +215,13 @@ export function buildCoopFrame(snapshot: CoopBossSnapshot, options: CoopFrameOpt
       locked: player.locked,
       shielded: player.shielded,
       damageDealt: player.damageDealt,
+      // 判定数据透传（缺省 = 服务端未下发，取 wire 占位值）。
+      invulnerable:
+        player.invulnerableUntilTick !== undefined &&
+        snapshot.tick <= player.invulnerableUntilTick,
+      lives: player.lives ?? SNAPSHOT_DEFAULT_LIVES,
+      bombs: player.bombs ?? SNAPSHOT_DEFAULT_BOMBS,
+      graze: player.graze ?? 0,
     };
   });
 

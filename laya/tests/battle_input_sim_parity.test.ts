@@ -631,24 +631,28 @@ test('every non-synthetic ruleset shares the real-danmaku bullet path', () => {
   expectEqual(usesRealDanmaku(''), true, 'an empty ruleset is "not the legacy one", like the server');
 });
 
-test('the tna-1.40-danmaku mechanics branch is a recorded, unimplemented gap', () => {
+test('the tna-1.40-danmaku mechanics branch is implemented (P2 port)', () => {
   // C++ boss_race.cpp:373-386 / :395-418: under ruleset "tna-1.40-danmaku"
   // (kRulesetDanmakuMechanics, boss_race.hpp:44) the server *consumes* a bomb,
   // grants 120 invulnerable ticks (kDanmakuInvulnerableTicks), emits a
   // `bomb_used` row and settles the bomb damage directly, and turns `shoot`
   // into my-bullet entities instead of the synthetic per-tick damage.
   //
-  // This client models none of that: no bombs ledger, no my-bullets, no
-  // judgment layer. The lobby never mints that ruleset (it signs
-  // `ruleset-local-s0`), so no production prediction depends on the gap — this
-  // test pins the current state so the divergence cannot pass unnoticed.
+  // This used to pin the unimplemented gap (the client kept the synthetic
+  // damage and emitted nothing). The P2 port (route C2) closed it: the client
+  // now mirrors the server's branch — no synthetic damage under this ruleset,
+  // the bomb is consumed locally and the invulnerable window is granted. The
+  // full rule set (hit / graze / lives / dead) lives in
+  // `boss_race_danmaku_mechanics.test.ts`; this seam only checks that a
+  // *decoded wire input* drives the branch.
   const sim = raceSim({ rulesetVersion: 'tna-1.40-danmaku' });
   feedDecoded(sim, 'p1', 1, 1, { shoot: true, bomb: true });
   const snapshot = sim.tick();
-  expectEqual(
-    snapshot.players.find((player) => player.playerId === 'p1')?.damageDealt,
-    10,
-    'the client keeps the synthetic shot damage (the server would settle a bomb instead)',
-  );
-  expectEqual(snapshot.events, undefined, 'and emits no bomb_used row');
+  const p1 = snapshot.players.find((player) => player.playerId === 'p1');
+  expectEqual(p1?.damageDealt, 0, 'no synthetic shot damage under the mechanics ruleset (server parity)');
+  expectEqual(p1?.bombs, 2, 'the decoded bomb press consumed one bomb');
+  expectEqual(p1?.invulnerableUntilTick, 121, 'and granted the 120-tick window');
+  expectEqual(snapshot.events?.length, 1, 'one bomb_used row');
+  expectEqual(snapshot.events?.[0].type, 'bomb_used');
+  expectEqual(snapshot.events?.[0].playerId, 'p1');
 });

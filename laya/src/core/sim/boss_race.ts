@@ -268,6 +268,44 @@ export function usesRealDanmaku(rulesetVersion: string): boolean {
   return rulesetVersion !== MVP_SYNTHETIC_RULESET_VERSION;
 }
 
+/**
+ * 弹幕机制（玩家受击判定）规则集 —— 服务端
+ * `kRulesetDanmakuMechanics`（`boss_race.hpp:44`）的镜像。
+ *
+ * 只有这个字符串启用机制分支（命中/擦弹/无敌帧/残机/炸弹消耗）；其余 ruleset
+ * （含默认 `mvp-boss-race-s0` 与真实弹幕 `tna-1.40-phase`）逐字节保持现状。
+ * 同一开关在服务端还启用自机弹实体/符卡阶段/铁拳/帷幕（§2.4），那些的权威
+ * 判定在服务端，客户端只镜像表现（见视图层）。
+ */
+export const RULESET_DANMAKU_MECHANICS = 'tna-1.40-danmaku';
+
+/** `usesDanmakuMechanics` —— C++ `mechanics_.enabled`（`boss_race.cpp:161-162`）。 */
+export function usesDanmakuMechanics(rulesetVersion: string): boolean {
+  return rulesetVersion === RULESET_DANMAKU_MECHANICS;
+}
+
+// 玩家受击判定常量（§2.4 第 2 条，单位 milli；只在 RULESET_DANMAKU_MECHANICS
+// 下生效）。数值与服务端 `boss_race.hpp:47-51` 逐位对齐。
+export const DANMAKU_HIT_RADIUS_MILLI = 3000; // r_hit ≈3px（判定点）
+export const DANMAKU_GRAZE_RADIUS_MILLI = 20000; // r_graze ≈20px（擦弹圈）
+/** 命中/炸弹后的无敌帧时长（tick）。 */
+export const DANMAKU_INVULNERABLE_TICKS = 120;
+export const DANMAKU_DEFAULT_LIVES = 3;
+export const DANMAKU_DEFAULT_BOMBS = 3;
+
+/**
+ * 快照占位值（`boss_race.hpp:192-193`）：判定系统未启用时服务端 wire 仍带
+ * 这些字段，取「满状态」占位。客户端快照缺省时视图层按同值兜底。
+ */
+export const SNAPSHOT_DEFAULT_LIVES = 1;
+export const SNAPSHOT_DEFAULT_BOMBS = 3;
+
+// 判定事件类型（`boss_race.hpp:54-57`，进快照 events[].type）。
+export const PLAYER_HIT_EVENT = 'player_hit';
+export const PLAYER_GRAZE_EVENT = 'player_graze';
+export const PLAYER_DEAD_EVENT = 'player_dead';
+export const BOMB_USED_EVENT = 'bomb_used';
+
 /** Server input direction bits. */
 export const DIR_UP = 0x1;
 export const DIR_RIGHT = 0x2;
@@ -551,21 +589,31 @@ export function defaultTnaBossRaceConfig(
  * the battle server runs its real-danmaku path. Building the client prediction
  * with `defaultBossRaceConfig` regardless — as this client used to — put the two
  * sides on different bullet models, so the bullet sets could never agree.
+ *
+ * ★ 票据的 ruleset 字符串**原样带进配置**（只借 base 的数值字段）：机制开关
+ * （`tna-1.40-danmaku` 的受击判定，见 {@link usesDanmakuMechanics}）在客户端
+ * 构造期按这个字符串判定，与服务端 `BossRaceSimulation` 构造函数同句
+ * （`boss_race.cpp:161-162`）。DEM 重放器 `bossRaceConfigFromDemHeader` 同样
+ * 直通 header 的 `ruleset_version`。
  */
 export function bossRaceConfigForRuleset(
   matchId: string,
   matchSeed: BossRaceSeed | number,
   rulesetVersion: string,
 ): BossRaceConfig {
-  return usesRealDanmaku(rulesetVersion)
+  const base = usesRealDanmaku(rulesetVersion)
     ? defaultTnaBossRaceConfig(matchId, matchSeed)
     : defaultBossRaceConfig(matchId, matchSeed);
+  return { ...base, rulesetVersion };
 }
 
 interface PlayerState {
   playerId: string;
   xMilli: number;
   yMilli: number;
+  /** 本 tick 位移速度（milli/tick）—— C++ `PlayerState::vx/vy_milli`（E3）。 */
+  vxMilli: number;
+  vyMilli: number;
   lastSeq: number;
   bossCurrentHp: number;
   damageDealt: number;
@@ -575,6 +623,15 @@ interface PlayerState {
   hand: HandState;
   /** The tick the player is immune until (`invulnerable` cards). */
   invulnerableUntilTick: number;
+  /**
+   * 受击判定状态（§2.4 第 2 条，只在 `RULESET_DANMAKU_MECHANICS` 下被写）——
+   * C++ `PlayerState`（`boss_race.hpp:341-346`）。默认 ruleset 保持初始值。
+   */
+  lives: number;
+  bombs: number;
+  graze: number;
+  /** `false` = lives 归零（停射/停判）；默认 ruleset 恒 `true`。 */
+  alive: boolean;
 }
 
 /**
@@ -595,6 +652,11 @@ interface LiveBullet {
    */
   generation: number;
   motion: BulletMotion;
+  /**
+   * 擦弹去重：同一颗弹对同一玩家只计一次 —— C++ `LiveBullet::grazed`
+   * （`boss_race.hpp:366-367`）。仅本地状态，不进快照/hash。
+   */
+  grazed: boolean;
 }
 
 function emptyInput(playerId: string): BossRaceInput {
@@ -676,6 +738,7 @@ export class BossRaceSimulation {
       spawnIndex: 0,
       generation,
       motion,
+      grazed: false,
     });
     this.nextBulletId += 1;
     return true;
@@ -701,6 +764,12 @@ export class BossRaceSimulation {
   /** Whether the card pipeline runs — see {@link BossRaceConfig.cardMechanics}. */
   private readonly cardMechanics: boolean;
   /**
+   * Whether the danmaku judgment mechanics run — mirrors the C++
+   * `mechanics_.enabled` flag (`boss_race.cpp:161-162`), i.e. the ruleset is
+   * {@link RULESET_DANMAKU_MECHANICS}. See {@link usesDanmakuMechanics}.
+   */
+  private readonly danmakuMechanics: boolean;
+  /**
    * The lobby seed the `bullet_purge` selection is scored with — the signed
    * ticket's `server_seed` as decimal text (C++ `card_purge_seed_`,
    * `simulation.cpp:2494-2495`: the **ticket** seed, never the derived match
@@ -715,6 +784,7 @@ export class BossRaceSimulation {
   constructor(config: BossRaceConfig) {
     this.bossEntry = findBossCatalogEntry(config.bossId ?? '');
     this.cardMechanics = config.cardMechanics ?? false;
+    this.danmakuMechanics = usesDanmakuMechanics(config.rulesetVersion);
     const catalogHp = this.bossEntry === null ? null : this.bossEntry.bossMaxHp;
     this.config = {
       ...config,
@@ -819,13 +889,22 @@ export class BossRaceSimulation {
   }
 
   /**
-   * True when this simulation must take the real-danmaku path.
+   * True when this simulation runs the real-danmaku path.
    *
    * Mirrors `BossRaceSimulation::SpawnBulletsForTick` exactly: the legacy
    * synthetic scheduler runs only for {@link MVP_SYNTHETIC_RULESET_VERSION}.
    */
   usesRealDanmaku(): boolean {
     return usesRealDanmaku(this.config.rulesetVersion);
+  }
+
+  /**
+   * True when this simulation runs the danmaku judgment mechanics
+   * (hit / graze / invulnerable frames / lives / bombs) — mirrors the C++
+   * `mechanics_.enabled` gate (`boss_race.cpp:161-162`, `:1028`).
+   */
+  usesDanmakuMechanics(): boolean {
+    return this.danmakuMechanics;
   }
 
   /**
@@ -858,6 +937,8 @@ export class BossRaceSimulation {
       playerId,
       xMilli: clampMilli(xMilli, -ARENA_HALF_WIDTH_MILLI, ARENA_HALF_WIDTH_MILLI),
       yMilli: clampMilli(yMilli, -ARENA_HALF_HEIGHT_MILLI, ARENA_HALF_HEIGHT_MILLI),
+      vxMilli: 0,
+      vyMilli: 0,
       lastSeq: 0,
       bossCurrentHp: this.config.bossMaxHp,
       damageDealt: 0,
@@ -865,6 +946,10 @@ export class BossRaceSimulation {
       lastInput: emptyInput(playerId),
       hand: createHandState(),
       invulnerableUntilTick: 0,
+      lives: DANMAKU_DEFAULT_LIVES,
+      bombs: DANMAKU_DEFAULT_BOMBS,
+      graze: 0,
+      alive: true,
     });
     return true;
   }
@@ -988,6 +1073,27 @@ export class BossRaceSimulation {
       }
       player.xMilli = clampMilli(serverPlayer.xMilli, -ARENA_HALF_WIDTH_MILLI, ARENA_HALF_WIDTH_MILLI);
       player.yMilli = clampMilli(serverPlayer.yMilli, -ARENA_HALF_HEIGHT_MILLI, ARENA_HALF_HEIGHT_MILLI);
+      // §2.8 增补字段按「服务端下发了才采纳」处理（老服务端缺省 → 保留本地值）。
+      if (serverPlayer.vxMilli !== undefined) {
+        player.vxMilli = serverPlayer.vxMilli;
+      }
+      if (serverPlayer.vyMilli !== undefined) {
+        player.vyMilli = serverPlayer.vyMilli;
+      }
+      if (serverPlayer.lives !== undefined) {
+        player.lives = serverPlayer.lives;
+        // lives 归零 = 死亡（服务端 `player_dead` 后 alive=false）。
+        player.alive = serverPlayer.lives > 0;
+      }
+      if (serverPlayer.bombs !== undefined) {
+        player.bombs = serverPlayer.bombs;
+      }
+      if (serverPlayer.graze !== undefined) {
+        player.graze = serverPlayer.graze;
+      }
+      if (serverPlayer.invulnerableUntilTick !== undefined) {
+        player.invulnerableUntilTick = serverPlayer.invulnerableUntilTick;
+      }
       player.bossCurrentHp = serverPlayer.bossCurrentHp;
       player.damageDealt = serverPlayer.damageDealt;
       player.connected = serverPlayer.connected;
@@ -1056,25 +1162,51 @@ export class BossRaceSimulation {
       if (this.cardMechanics) {
         accrueCardEnergy(player.hand);
       }
+      // Movement: 8-direction bitmask (0=up,1=right,2=down,3=left), 3000 milli/tick.
+      // vx/vy 每 tick 按输入方向**重算**（含归零）—— C++ `ApplyPlayerTick`
+      // （`boss_race.cpp:356-365`），快照据此产出 `vx_milli/vy_milli`（E3）。
+      let vx = 0;
+      let vy = 0;
       if ((input.directionBits & DIR_UP) !== 0) {
-        player.yMilli -= MOVE_MILLI_PER_TICK;
+        vy -= MOVE_MILLI_PER_TICK;
       }
       if ((input.directionBits & DIR_RIGHT) !== 0) {
-        player.xMilli += MOVE_MILLI_PER_TICK;
+        vx += MOVE_MILLI_PER_TICK;
       }
       if ((input.directionBits & DIR_DOWN) !== 0) {
-        player.yMilli += MOVE_MILLI_PER_TICK;
+        vy += MOVE_MILLI_PER_TICK;
       }
       if ((input.directionBits & DIR_LEFT) !== 0) {
-        player.xMilli -= MOVE_MILLI_PER_TICK;
+        vx -= MOVE_MILLI_PER_TICK;
       }
+      player.vxMilli = vx;
+      player.vyMilli = vy;
+      player.xMilli += vx;
+      player.yMilli += vy;
       player.xMilli = clampMilli(player.xMilli, -ARENA_HALF_WIDTH_MILLI, ARENA_HALF_WIDTH_MILLI);
       player.yMilli = clampMilli(player.yMilli, -ARENA_HALF_HEIGHT_MILLI, ARENA_HALF_HEIGHT_MILLI);
+
+      // 炸弹（只在 RULESET_DANMAKU_MECHANICS 下消耗残弹并给无敌帧；默认
+      // ruleset 保持现状：只按自机表加伤害，不消耗炸弹、不加无敌帧）——
+      // C++ `boss_race.cpp:371-386`。炸弹伤害由服务端权威结算（客户端不重算）。
+      if (this.danmakuMechanics && input.bomb && player.bombs > 0 && player.alive) {
+        player.bombs -= 1;
+        player.invulnerableUntilTick = tick + DANMAKU_INVULNERABLE_TICKS;
+        this.tickEvents.push({
+          tick,
+          type: BOMB_USED_EVENT,
+          playerId: player.playerId,
+          data: {},
+        });
+      }
 
       // 伤害：默认每 tick BOSS_RACE_DAMAGE_PER_SHOT_TICK（与现状一致）。
       // 配置自机 loadout 后改为真实自机表（shot 主弹伤害 / bomb 主弹伤害），
       // 与服务端 `ApplyPlayerTick` 逐位一致。
-      if (player.bossCurrentHp > 0) {
+      // ★ mechanics 下服务端改为「自机弹实体 vs Boss 命中盒」真实判定
+      // （`boss_race.cpp:393-418`），这里不再叠加合成伤害：权威在服务端，
+      // 客户端经快照/boss_damage 事件同步（§2.4 第 1 条）。
+      if (!this.danmakuMechanics && player.bossCurrentHp > 0 && player.alive) {
         const tickDamage = bossRaceTickDamage(
           input.shoot,
           input.bomb,
@@ -1272,6 +1404,7 @@ export class BossRaceSimulation {
           spawnIndex: this.nextBulletId,
           generation: 0,
           motion,
+          grazed: false,
         });
         this.nextBulletId += 1;
       } else if (delta.op === 'despawn') {
@@ -1358,6 +1491,7 @@ export class BossRaceSimulation {
           spawnIndex: spawnIndex++,
           generation: 0,
           motion,
+          grazed: false,
         });
         this.nextBulletId += 1;
       }
@@ -1420,6 +1554,7 @@ export class BossRaceSimulation {
           spawnIndex: spawnIndex++,
           generation: 0,
           motion,
+          grazed: false,
         });
         this.nextBulletId += 1;
       };
@@ -1600,6 +1735,7 @@ export class BossRaceSimulation {
           spawnIndex: child.spawnIndex,
           generation: request.generation + 1,
           motion: makeChainSplitChildMotion(host.motion, child),
+          grazed: false,
         });
         this.nextBulletId += 1;
       }
@@ -1628,6 +1764,80 @@ export class BossRaceSimulation {
     }
   }
 
+  /**
+   * 玩家受击判定（§2.4 第 2 条）—— C++ `JudgePlayerContacts`
+   * （`boss_race.cpp:1027-1084`）的镜像。只在 RULESET_DANMAKU_MECHANICS 下生效：
+   *   * 命中（dist² ≤ (弹半径 + r_hit)²）→ lives-1、无敌帧 120 tick、事件
+   *     player_hit（lives 归零再发 player_dead 并置 alive=false）；
+   *   * 擦弹（dist² ≤ (弹半径 + r_graze)² 且未命中）→ graze+1、事件
+   *     player_graze，同一颗弹对同一玩家只计一次（`LiveBullet::grazed`）；
+   *   * 无敌帧内两者都不计。
+   * 子弹按 `ownerPlayerId` 归属到「自己那份 Boss 副本」，故只判定该玩家自己的弹。
+   */
+  private judgePlayerContacts(tick: number): void {
+    if (!this.danmakuMechanics) {
+      return;
+    }
+    for (const playerId of this.sortedPlayerIds()) {
+      const player = this.players.get(playerId);
+      if (player === undefined || !player.connected || !player.alive) {
+        continue;
+      }
+      const invulnerable = tick <= player.invulnerableUntilTick;
+      for (const live of this.liveBullets) {
+        if (live.ownerPlayerId !== player.playerId) {
+          continue;
+        }
+        const m = live.motion;
+        // 弹位置折成 centered milli（与快照/hash 同一次折叠），半径 llround 一次。
+        const bulletX = toMilli(m.x - SCREEN_CENTER_X_PX);
+        const bulletY = toMilli(m.y - SCREEN_CENTER_Y_PX);
+        const bulletRadius = llround(m.hit_dis * MILLI_PER_PIXEL);
+        // 服务端 `DistanceSquaredMilli` 是 int64；这些量级下 JS number 是精确整数。
+        const dx = bulletX - player.xMilli;
+        const dy = bulletY - player.yMilli;
+        const distanceSquared = dx * dx + dy * dy;
+        if (invulnerable) {
+          continue;
+        }
+        const hitRadius = bulletRadius + DANMAKU_HIT_RADIUS_MILLI;
+        if (distanceSquared <= hitRadius * hitRadius) {
+          if (player.lives > 0) {
+            player.lives -= 1;
+          }
+          player.invulnerableUntilTick = tick + DANMAKU_INVULNERABLE_TICKS;
+          this.tickEvents.push({
+            tick,
+            type: PLAYER_HIT_EVENT,
+            playerId: player.playerId,
+            data: {},
+          });
+          if (player.lives === 0) {
+            player.alive = false;
+            this.tickEvents.push({
+              tick,
+              type: PLAYER_DEAD_EVENT,
+              playerId: player.playerId,
+              data: {},
+            });
+          }
+          break; // 本 tick 已进入无敌帧，剩余子弹不再判定
+        }
+        const grazeRadius = bulletRadius + DANMAKU_GRAZE_RADIUS_MILLI;
+        if (!live.grazed && distanceSquared <= grazeRadius * grazeRadius) {
+          live.grazed = true;
+          player.graze += 1;
+          this.tickEvents.push({
+            tick,
+            type: PLAYER_GRAZE_EVENT,
+            playerId: player.playerId,
+            data: {},
+          });
+        }
+      }
+    }
+  }
+
   /** Advance exactly one fixed tick. */
   tick(): BossRaceSnapshot {
     if (this.state === BossRaceState.Finished) {
@@ -1641,6 +1851,9 @@ export class BossRaceSimulation {
       this.applyPlayerTick(tickToApply);
       this.spawnBulletsForTick(tickToApply);
       this.advanceBullets(tickToApply);
+      // 受击判定在推进之后、判胜之前（服务端 `Tick()` 同序，
+      // `boss_race.cpp:1112-1120`）。
+      this.judgePlayerContacts(tickToApply);
       this.checkRaceWinner(tickToApply);
     }
     this.currentTick = tickToApply;
@@ -1681,11 +1894,20 @@ export class BossRaceSimulation {
         playerId: player.playerId,
         xMilli: player.xMilli,
         yMilli: player.yMilli,
+        // §2.8：本 tick 速度（milli/tick），供插值外推（E3）。与服务端 wire
+        // 一致恒下发（缺省 0），canonical hash 不含该字段。
+        vxMilli: player.vxMilli,
+        vyMilli: player.vyMilli,
         bossCurrentHp: player.bossCurrentHp,
         damageDealt: player.damageDealt,
         connected: player.connected,
-        ...(this.cardMechanics
+        ...(this.danmakuMechanics || this.cardMechanics
           ? { invulnerableUntilTick: player.invulnerableUntilTick }
+          : {}),
+        // 受击判定状态只在 mechanics 下下发真实值（服务端
+        // `boss_race.cpp:1188-1200` 同构：默认 ruleset 走 wire 占位）。
+        ...(this.danmakuMechanics
+          ? { lives: player.lives, bombs: player.bombs, graze: player.graze }
           : {}),
       });
     }

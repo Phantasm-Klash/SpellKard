@@ -81,6 +81,7 @@ import './room_setup.test';
 import './danmaku_client_engine.test';
 import './stage_parity.test';import './native_random_tiers.test';import './battle_aead.test';import './shop_names.test';
 import './battle_handshake.test';
+import './boss_race_danmaku_mechanics.test';
 
 import { runAll } from './harness';
 

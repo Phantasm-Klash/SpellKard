@@ -19,6 +19,10 @@ import type { BossRaceEffect, BossRaceSnapshot } from '../sim/boss_race';
 import {
   BOSS_ORIGIN_X_MILLI,
   BOSS_ORIGIN_Y_MILLI,
+  DANMAKU_GRAZE_RADIUS_MILLI,
+  DANMAKU_HIT_RADIUS_MILLI,
+  SNAPSHOT_DEFAULT_BOMBS,
+  SNAPSHOT_DEFAULT_LIVES,
   SCREEN_HALF_HEIGHT_MILLI,
   SCREEN_HALF_WIDTH_MILLI,
 } from '../sim/boss_race';
@@ -66,6 +70,25 @@ export interface PlayerRenderItem {
   playerId: string;
   position: RenderPoint;
   isLocal: boolean;
+  /**
+   * 判定点半径（像素）—— 服务端 `kDanmakuHitRadiusMilli`（3000 milli ≈ 3px）
+   * 经 {@link PlayfieldTransform} 缩放：参考 640×960 布局下正好 3px。
+   */
+  hitboxRadiusPx: number;
+  /**
+   * 擦弹圈半径（像素）—— 服务端 `kDanmakuGrazeRadiusMilli`（20000 milli ≈ 20px），
+   * 参考布局下正好 20px。**仅当快照下发判定字段**（`tna-1.40-danmaku`）时非 0；
+   * 其余 ruleset 为 0，渲染层跳过（默认规则集无擦弹判定）。
+   */
+  grazeRadiusPx: number;
+  /** 无敌帧中（`tick <= invulnerableUntilTick`）→ 渲染层闪烁。 */
+  invulnerable: boolean;
+  /** 残机数（服务端未下发时取 wire 占位 {@link SNAPSHOT_DEFAULT_LIVES}）。 */
+  lives: number;
+  /** 炸弹数（服务端未下发时取 wire 占位 {@link SNAPSHOT_DEFAULT_BOMBS}）。 */
+  bombs: number;
+  /** 擦弹计数（服务端未下发时占位 0）。 */
+  graze: number;
 }
 
 export interface BossRenderItem {
@@ -224,10 +247,25 @@ export function buildBossRaceFrame(
     const position = before === null
       ? current
       : extrapolatePos(current, { x: before.xMilli, y: before.yMilli }, frac);
+    // 判定字段（lives/graze/invulnerable）只在 `tna-1.40-danmaku` 下由服务端
+    // 下发（`boss_race.cpp:1188-1200`）；缺省 = 判定系统未启用，按 wire 占位值
+    // 兜底，擦弹圈不画。
+    const judgmentActive =
+      player.lives !== undefined ||
+      player.graze !== undefined ||
+      player.invulnerableUntilTick !== undefined;
     players.push({
       playerId: player.playerId,
       position: transform.toPixels(position.x, position.y),
       isLocal,
+      hitboxRadiusPx: transform.radiusToPixels(DANMAKU_HIT_RADIUS_MILLI),
+      grazeRadiusPx: judgmentActive ? transform.radiusToPixels(DANMAKU_GRAZE_RADIUS_MILLI) : 0,
+      invulnerable:
+        player.invulnerableUntilTick !== undefined &&
+        snapshot.tick <= player.invulnerableUntilTick,
+      lives: player.lives ?? SNAPSHOT_DEFAULT_LIVES,
+      bombs: player.bombs ?? SNAPSHOT_DEFAULT_BOMBS,
+      graze: player.graze ?? 0,
     });
     const bossItem: BossRenderItem = {
       playerId: player.playerId,

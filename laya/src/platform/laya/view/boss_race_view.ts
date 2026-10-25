@@ -20,7 +20,7 @@ import { drawPlayfield } from './arena';
 import { sharedTnaFrameSource } from './bullet_atlas';
 import { vectorBulletRenderer } from './bullets';
 import { drawHudBar, type HudState } from './hud';
-import type { BulletRenderer } from './sprites';
+import { fade, type BulletRenderer } from './sprites';
 import * as theme from './theme';
 
 const COLOR_BACKGROUND = theme.COLOR_BACKGROUND;
@@ -31,6 +31,22 @@ const BOSS_RADIUS_LOCAL = 22;
 const BOSS_RADIUS_RIVAL = 16;
 /** Pixel radius of the player ship hitbox. */
 const PLAYER_RADIUS = 4;
+
+/**
+ * 判定指示层（铁拳/帷幕同族「玩法指示」）：判定点、擦弹圈、残机/炸弹图标。
+ *
+ * 几何全部来自 `core/game/boss_race_view_model`（服务端常量经
+ * {@link PlayfieldTransform} 缩放的像素值），本层只画不判定。文案铁律：
+ * 只用纯图标与数字，不硬编码任何中英文。
+ */
+const INDICATOR_MARGIN = 10;
+const LIFE_ICON_RADIUS = 3;
+const LIFE_ICON_PITCH = 10;
+const BOMB_ICON_SIZE = 6;
+const BOMB_ICON_PITCH = 10;
+const GRAZE_TEXT_SIZE = 12;
+/** 无敌帧闪烁周期（tick）：4 亮 4 灭 ≈ 8Hz。 */
+const INVULNERABLE_BLINK_TICKS = 8;
 
 export interface BossRaceViewOptions {
   /** Playfield size in pixels (the 2:3 portrait battle area). */
@@ -100,6 +116,10 @@ export class BossRaceView {
   private readonly backdrop: Laya.Sprite;
   private readonly bulletLayer: Laya.Sprite;
   private readonly actorLayer: Laya.Sprite;
+  /** 判定点 / 擦弹圈 / 残机炸弹图标层（bullet+actor 之上）。 */
+  private readonly indicatorLayer: Laya.Sprite;
+  /** 擦弹计数（纯数字；无判定的 ruleset 下隐藏）。 */
+  private readonly grazeText: Laya.Text;
   private readonly watermark: Laya.Sprite | null;
   private readonly hudLayer: Laya.Sprite;
   private readonly hud: Laya.Text;
@@ -165,6 +185,18 @@ export class BossRaceView {
     this.actorLayer.pos(this.playfieldX, this.playfieldY);
     this.root.addChild(this.bulletLayer);
     this.root.addChild(this.actorLayer);
+
+    // Judgment indicators sit above the actors (the hitbox dot must stay
+    // readable over the ship art) and below the watermark/HUD strip.
+    this.indicatorLayer = new Laya.Sprite();
+    this.indicatorLayer.pos(this.playfieldX, this.playfieldY);
+    this.root.addChild(this.indicatorLayer);
+
+    this.grazeText = new Laya.Text();
+    this.grazeText.fontSize = GRAZE_TEXT_SIZE;
+    this.grazeText.color = theme.COLOR_TEXT_MUTED;
+    this.grazeText.visible = false;
+    this.indicatorLayer.addChild(this.grazeText);
 
     // Watermark portraits sit above the actors but below the HUD strip.
     if (this.watermark !== null) {
@@ -298,6 +330,7 @@ export class BossRaceView {
     this.playfield.pos(this.playfieldX, this.playfieldY);
     this.bulletLayer.pos(this.playfieldX, this.playfieldY);
     this.actorLayer.pos(this.playfieldX, this.playfieldY);
+    this.indicatorLayer.pos(this.playfieldX, this.playfieldY);
     // Re-apply the watermark's stage-sized geometry. Its z-order was fixed at
     // construction (above actors, below the HUD) and is left untouched.
     if (this.watermark !== null) {
@@ -321,6 +354,7 @@ export class BossRaceView {
   render(frame: BossRaceFrame, hudLines: string[] = [], hudState?: HudState): void {
     this.drawBullets(frame);
     this.drawActors(frame);
+    this.drawJudgment(frame);
     if (hudState !== undefined) {
       this.hud.text = '';
       this.hud.visible = false;
@@ -375,7 +409,11 @@ export class BossRaceView {
     }
     for (const player of frame.players) {
       const sprite = this.actorSprite(this.activeActors);
-      sprite.visible = true;
+      // 无敌帧闪烁（4 亮 4 灭）：受击/炸弹后的 120 tick 无敌期内玩家闪殉提示。
+      const blinkOn =
+        !player.invulnerable ||
+        Math.floor(frame.tick / (INVULNERABLE_BLINK_TICKS / 2)) % 2 === 0;
+      sprite.visible = blinkOn;
       sprite.pos(player.position.x, player.position.y);
       // `PlayerRenderItem` carries no facing yet, so ships default to +x.
       this.actorRenderer.drawPlayer(sprite, PLAYER_RADIUS, player.isLocal, false, 0);
@@ -399,6 +437,76 @@ export class BossRaceView {
       tick,
     );
     this.activeActors += 1;
+  }
+
+  /**
+   * 判定玩法指示（§2.4 客户端镜像表现）：判定点、擦弹圈、残机/炸弹/擦弹读数。
+   *
+   * 全部数据来自 `PlayerRenderItem`（服务端常量经 PlayfieldTransform 的像素值），
+   * 本方法不做任何判定：
+   *  - 判定点：每颗自机一颗实心点（`r_hit` = 3000 milli ≈ 3px）；
+   *  - 擦弹圈：仅当快照下发判定字段（`tna-1.40-danmaku`）时画（`r_graze` =
+   *    20000 milli ≈ 20px），其余 ruleset 不画；
+   *  - 残机/炸弹：左上角纯图标（圆点/方块，一格一条命/一颗弹）；
+   *  - 擦弹：纯数字读数。
+   * 文案铁律：图标 + 数字，无硬编码文字。
+   */
+  private drawJudgment(frame: BossRaceFrame): void {
+    const g = this.indicatorLayer.graphics;
+    g.clear();
+    const local = frame.players.find((player) => player.isLocal) ?? null;
+    this.grazeText.visible = false;
+
+    for (const player of frame.players) {
+      // 判定点（本地高亮、对手压暗）。
+      g.drawCircle(
+        player.position.x,
+        player.position.y,
+        Math.max(1, player.hitboxRadiusPx),
+        player.isLocal ? theme.COLOR_HITBOX : fade(theme.COLOR_HITBOX, 0.45),
+      );
+      // 擦弹圈（只有判定数据存在时才画）。
+      if (player.grazeRadiusPx > 0) {
+        g.drawCircle(
+          player.position.x,
+          player.position.y,
+          player.grazeRadiusPx,
+          null,
+          fade(theme.COLOR_INFO, player.isLocal ? 0.5 : 0.3),
+          1,
+        );
+      }
+    }
+
+    // 残机/炸弹读数：仅本地玩家、且服务端确实下发了判定字段时显示。
+    if (local === null || local.grazeRadiusPx <= 0) {
+      return;
+    }
+    const top = INDICATOR_MARGIN;
+    for (let i = 0; i < local.lives; i += 1) {
+      g.drawCircle(
+        INDICATOR_MARGIN + LIFE_ICON_RADIUS + i * LIFE_ICON_PITCH,
+        top + LIFE_ICON_RADIUS,
+        LIFE_ICON_RADIUS,
+        theme.COLOR_LOCAL_PLAYER,
+      );
+    }
+    const bombY = top + LIFE_ICON_RADIUS * 2 + BOMB_ICON_PITCH;
+    for (let i = 0; i < local.bombs; i += 1) {
+      g.drawRect(
+        INDICATOR_MARGIN + i * BOMB_ICON_PITCH,
+        bombY,
+        BOMB_ICON_SIZE,
+        BOMB_ICON_SIZE,
+        fade(theme.COLOR_INFO, 0.9),
+      );
+    }
+    // 擦弹：小环图标 + 纯数字。
+    const grazeX = INDICATOR_MARGIN + local.bombs * BOMB_ICON_PITCH + 6;
+    g.drawCircle(grazeX + 4, bombY + BOMB_ICON_SIZE / 2, 4, null, fade(theme.COLOR_TEXT_MUTED, 0.8), 1);
+    this.grazeText.pos(grazeX + 11, bombY - 2);
+    this.grazeText.text = String(local.graze);
+    this.grazeText.visible = true;
   }
 
   private bulletSprite(index: number): Laya.Sprite {
