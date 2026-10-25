@@ -347,7 +347,7 @@ export class BattleScene implements ClientScene {
     // instead of re-deriving width/640: on a 2:3 playfield they are identical,
     // but if the playfield ever leaves 2:3 the two would drift apart and bullet
     // art would stop matching the positions next to it.
-    const artScale = new PlayfieldTransform(this.geometry.playfield).radiusToPixels(1000);
+    const artScale = this.artScale();
     this.bulletRenderer = new AtlasBulletRenderer(this.bulletAtlas, artScale);
     void this.bulletAtlas.load();
     // Best-effort: the gift bar draws its vector glyphs until (and unless) the
@@ -818,8 +818,19 @@ export class BattleScene implements ClientScene {
       this.geometry.playfield.height,
     );
     // Real art is authored for a 640-wide playfield; keep it in step with ours.
-    this.bulletRenderer.setArtScale(this.geometry.playfield.width / 640);
+    // Same derivation as the constructor — one art pixel is 1000 milli, so the
+    // scale comes from the render transform, never from a second formula.
+    this.bulletRenderer.setArtScale(this.artScale());
     this.renderFrame();
+  }
+
+  /**
+   * 子弹美术缩放：**1 个美术像素 = 1000 milli**，所以直接取渲染变换的换算，
+   * 而不是另写一份 `playfield.width / 640`。两者在 2:3 场地上数值相同，但一旦
+   * 场地不是 2:3（或将来改布局），第二份公式就会让美术尺寸与弹幕坐标分叉。
+   */
+  private artScale(): number {
+    return new PlayfieldTransform(this.geometry.playfield).radiusToPixels(1000);
   }
 
   /**

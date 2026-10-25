@@ -329,6 +329,7 @@ test('the invulnerable window reports the remaining ticks and blinks in phase', 
   );
   const hud = buildJudgmentHud(frame)!;
   expectEqual(hud.invulnerable, true, 'tick 100 <= 140');
+  expectEqual(hud.invulnerableUntilTick, 140, 'the end tick reaches the HUD card');
   expectEqual(hud.invulnerableTicksRemaining, 40, '140 - 100 remaining');
   expectEqual(hud.blinkOn, invulnerableBlinkOn(frame.tick, true), 'HUD uses the shared phase');
 });
