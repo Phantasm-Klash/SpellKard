@@ -225,6 +225,31 @@ export function devHandshakeKeyRef(transcriptHashHex: string, direction: string)
   return `hkdf-dev:${direction}:${material.slice(0, 32)}`;
 }
 
+/**
+ * Lowercase hex of a byte string.
+ *
+ * The header's `nonce` is `bytes` on the wire while the server's nonce check is
+ * defined over a 24-character hex string, so the two encodings have to be
+ * convertible without pulling in a platform helper.
+ */
+export function aeadBytesToHex(bytes: Uint8Array): string {
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    out += bytes[i].toString(16).padStart(2, '0');
+  }
+  return out;
+}
+
+/** Inverse of {@link aeadBytesToHex}; odd-length input is truncated. */
+export function aeadHexToBytes(hex: string): Uint8Array {
+  const pairs = Math.floor(hex.length / 2);
+  const out = new Uint8Array(pairs);
+  for (let i = 0; i < pairs; i += 1) {
+    out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
 /** UTF-8 encoding without DOM/Node globals. */
 function utf8Local(text: string): Uint8Array {
   const out: number[] = [];

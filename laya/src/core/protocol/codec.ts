@@ -565,6 +565,15 @@ const BATTLE_PACKET_HEADER = define({
   ],
 });
 
+const BATTLE_ENCRYPTED_PACKET = define({
+  name: 'BattleEncryptedPacket',
+  fields: [
+    { no: 1, name: 'header', kind: 'message', sub: () => BATTLE_PACKET_HEADER },
+    { no: 2, name: 'ciphertext', kind: 'bytes' },
+    { no: 3, name: 'authTag', kind: 'bytes' },
+  ],
+});
+
 const BATTLE_HANDSHAKE_HELLO = define({
   name: 'BattleHandshakeHello',
   fields: [
@@ -938,6 +947,7 @@ function requireSub(field: FieldSpec): MessageSpec {
 // ---------------------------------------------------------------------------
 
 import type {
+  BattleEncryptedPacket,
   BattleHandshakeAccept,
   BattleHandshakeHello,
   BattleInput,
@@ -1018,6 +1028,11 @@ export const codec = {
   battlePacketHeader: {
     encode: (message: BattlePacketHeader) => encodeMessage(BATTLE_PACKET_HEADER, message as unknown as AnyMessage),
     decode: (data: Uint8Array) => decodeMessage<BattlePacketHeader & AnyMessage>(BATTLE_PACKET_HEADER, data),
+  },
+  battleEncryptedPacket: {
+    encode: (message: BattleEncryptedPacket) =>
+      encodeMessage(BATTLE_ENCRYPTED_PACKET, message as unknown as AnyMessage),
+    decode: (data: Uint8Array) => decodeMessage<BattleEncryptedPacket & AnyMessage>(BATTLE_ENCRYPTED_PACKET, data),
   },
   battleHandshakeHello: {
     encode: (message: BattleHandshakeHello) => encodeMessage(BATTLE_HANDSHAKE_HELLO, message as unknown as AnyMessage),

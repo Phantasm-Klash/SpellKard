@@ -38,6 +38,8 @@
  */
 
 import type {
+  BattleEncryptedPacket,
+  BattleHandshakeAccept,
   BattleHandshakeHello,
   BattleInput,
   BattlePayloadType as BattlePayloadTypeEnum,
@@ -822,6 +824,68 @@ export function encodeHandshakeHello(hello: BattleHandshakeHello): Uint8Array {
   writer.u8(BattlePayloadType.HANDSHAKE_HELLO);
   writer.raw(codec.battleHandshakeHello.encode(hello));
   return writer.finish();
+}
+
+/**
+ * Encodes a `HANDSHAKE_ACCEPT` frame.
+ *
+ * The client never sends one, but tests and fixtures need to be able to stand
+ * in for the server, and having the frame built by the same codec the reader
+ * uses is what keeps them from drifting apart.
+ */
+export function encodeHandshakeAccept(accept: BattleHandshakeAccept): Uint8Array {
+  const writer = new ByteWriter();
+  writer.u8(BattlePayloadType.HANDSHAKE_ACCEPT);
+  writer.raw(codec.battleHandshakeAccept.encode(accept));
+  return writer.finish();
+}
+
+/**
+ * Decodes a `HANDSHAKE_ACCEPT` frame — the server's answer to
+ * {@link encodeHandshakeHello}.
+ *
+ * The frame carries the leading payload-type byte every other client frame has,
+ * so the caller can dispatch on `peekPayloadType` before decoding.
+ */
+export function decodeHandshakeAccept(payload: Uint8Array): BattleHandshakeAccept | null {
+  if (payload.length === 0 || payload[0] !== BattlePayloadType.HANDSHAKE_ACCEPT) {
+    return null;
+  }
+  try {
+    return codec.battleHandshakeAccept.decode(payload.subarray(1)) as BattleHandshakeAccept;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Wraps a sealed body in the `BattleEncryptedPacket` envelope from
+ * `battle.proto`.
+ *
+ * The frame is the **bare** protobuf message, with no leading payload-type
+ * byte: the type already lives in `header.payload_type`, and the missing
+ * prefix is what keeps an encrypted frame from being mistaken for one of the
+ * hand-rolled plaintext frames this module encodes (all of which *do* start
+ * with their type byte).
+ *
+ * NOTE: `MatchServer` (the deployed battle server) does **not** implement this
+ * envelope — see the module header. It is the long-term contract in
+ * `battle.proto` and is exercised by tests, not by the live match path.
+ */
+export function encodeEncryptedPacket(packet: BattleEncryptedPacket): Uint8Array {
+  return codec.battleEncryptedPacket.encode(packet);
+}
+
+/** Inverse of {@link encodeEncryptedPacket}; `null` when the frame is not one. */
+export function decodeEncryptedPacket(payload: Uint8Array): BattleEncryptedPacket | null {
+  if (payload.length === 0) {
+    return null;
+  }
+  try {
+    return codec.battleEncryptedPacket.decode(payload) as BattleEncryptedPacket;
+  } catch {
+    return null;
+  }
 }
 
 export function encodePingPayload(): Uint8Array {

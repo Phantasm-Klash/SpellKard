@@ -24,17 +24,35 @@ import {
   bossRaceConfigForRuleset,
   classifyReconcile,
 } from '../sim/boss_race';
-import type { BattleInput } from '../protocol/types';
-import { emptyVersionStamp } from '../protocol/types';
+import type { BattleHandshakeHello, BattleInput, BattlePacketHeader } from '../protocol/types';
+import { BattlePayloadType, emptyVersionStamp } from '../protocol/types';
 import {
   decodeBattleResult,
   decodeBossRaceSnapshot,
   decodeCoopBossSnapshot,
+  decodeEncryptedPacket,
+  decodeHandshakeAccept,
+  decodeUtf8,
   encodeBattleInput,
   encodeBattleInputWithTicket,
+  encodeEncryptedPacket,
+  encodeHandshakeHello,
   peekPayloadType,
   type BattleResultPayload,
 } from './battle_codec';
+import { resolveCipher, selectBattleCipher, type AeadSelection, type BattleCryptoProvider } from './battle_aead';
+import {
+  BATTLE_AEAD_CHACHA20_POLY1305,
+  BATTLE_AEAD_XCHACHA20_POLY1305,
+  BATTLE_DIRECTION_CLIENT_TO_SERVER,
+  BATTLE_DIRECTION_SERVER_TO_CLIENT,
+  devBattleAadBytes,
+  devBattleNonceHex,
+  devHandshakeKeyRef,
+  aeadHexToBytes as hexToBytes,
+  type BattleCipher,
+  UnsupportedKeyAgreement,
+} from './battle_crypto';
 import { KcpSession } from './kcp_transport';
 import type { DatagramFactory, DatagramLike, Logger, TimerLike } from './transport';
 import { nullLogger } from './transport';
@@ -45,6 +63,12 @@ import { nullLogger } from './transport';
  * backgrounded tab, a long GC pause) can do inside one frame.
  */
 const BATTLE_MAX_CATCH_UP_TICKS = 600;
+
+/**
+ * How long {@link BattleClient.performHandshake} waits for `HANDSHAKE_ACCEPT`
+ * before giving up and leaving the session on plaintext.
+ */
+const BATTLE_HANDSHAKE_TIMEOUT_MS = 5000;
 
 export enum BattleConnectionState {
   Idle = 'idle',
@@ -76,6 +100,15 @@ export interface BattleSessionInfo {
    * the field is optional by design.
    */
   signedTicket?: Record<string, unknown>;
+  /**
+   * The AEAD suite the server selected in `BattleHandshakeAccept.selected_aead`.
+   *
+   * Absent means the dev plaintext path, which is what the deployed server
+   * answers — so a session that does not carry this field behaves exactly as it
+   * did before encryption existed. See `core/net/battle_aead.ts` for why the
+   * client follows the server rather than deciding for itself.
+   */
+  selectedAead?: string;
 }
 
 export interface BattleClientConfig {
@@ -85,6 +118,13 @@ export interface BattleClientConfig {
   /** Overrides the derived conv; mainly for tests. */
   convOverride?: number;
   tickRateHz?: number;
+  /**
+   * What this platform can offer for AEAD: the X25519 + HKDF key agreement and
+   * the cipher factory. Omit to stay on plaintext even if the server asks for
+   * encryption — the browser build supplies the WebCrypto pair, the native build
+   * the plain-TypeScript one.
+   */
+  crypto?: BattleCryptoProvider;
 }
 
 export interface BattleCorrectionMetrics {
@@ -133,6 +173,28 @@ export class BattleClient {
    * `BossRaceSimulation` is built with no server state at all.
    */
   private adoptedAuthoritative = false;
+  /**
+   * Whether this session seals its packets, and with what. Decided once, in
+   * {@link connect}, from what the server negotiated — never per packet, so the
+   * send and receive paths cannot disagree.
+   */
+  private aead: AeadSelection | null = null;
+  /** The AEAD cipher, once the key agreement has derived the session key. */
+  private cipher: BattleCipher | null = null;
+  /**
+   * The directional key reference the server expects in `header.key_id`.
+   *
+   * Not on the wire — `BattleHandshakeAccept` carries only the transcript hash,
+   * and both sides derive the reference from it.
+   */
+  private keyId: string | null = null;
+  /** The client's own handshake random, needed again to derive the session key. */
+  private clientRandom: Uint8Array | null = null;
+  /** Resolver for the promise {@link performHandshake} returned. */
+  private handshakeWaiter: ((ok: boolean) => void) | null = null;
+  private handshakeTimer: number | null = null;
+  /** Re-entrancy guard: a flush awaits, so a second one could reorder frames. */
+  private flushing = false;
 
   state = BattleConnectionState.Idle;
   lastError = '';
@@ -231,6 +293,15 @@ export class BattleClient {
     this.state = BattleConnectionState.Connecting;
     this.lastError = '';
 
+    // Decide the cipher once, from what the server negotiated. A session with no
+    // `selectedAead` is the dev plaintext path, which is what the deployed server
+    // answers; a real one selects ChaCha20-Poly1305 and the cipher appears once
+    // the key agreement has derived the session key.
+    this.aead = selectBattleCipher(info.selectedAead ?? 'PLAINTEXT_DEV', this.config.crypto);
+    this.logger.info(
+      `battle aead: selected=${this.aead.selected} encrypted=${this.aead.encrypted} (${this.aead.reason})`,
+    );
+
     // Pick the bullet model the *ticket's* ruleset selects, not a hard-coded
     // one: the battle server runs its real-danmaku path for everything except
     // the legacy `mvp-boss-race-s0`, and the lobby signs tickets with
@@ -271,7 +342,10 @@ export class BattleClient {
       noCongestion: true,
       logger: this.logger,
     });
-    this.session.onMessage((payload) => this.handlePayload(payload));
+    // Opening a sealed frame awaits the cipher, so the receive path is async.
+    // The KCP callback cannot await it; a rejection would be swallowed, which is
+    // why `openFromWire` never throws.
+    this.session.onMessage((payload) => this.receive(payload));
 
     this.state = BattleConnectionState.Running;
     this.logger.info(`battle connected: match=${info.matchId} player=${info.playerId} conv=${conv}`);
@@ -336,7 +410,10 @@ export class BattleClient {
       modeActionId: input.modeActionId,
     });
     this.inputQueue.push(input);
-    this.flushInputQueue();
+    // Sealing awaits, so the flush is no longer synchronous with the send. The
+    // input is already in the queue and in the local prediction, which is what
+    // keeps the tick loop moving regardless.
+    void this.flushInputQueue();
     return true;
   }
 
@@ -354,6 +431,10 @@ export class BattleClient {
   }
 
   close(): void {
+    // A handshake that never got its accept must not leave a promise pending.
+    if (this.handshakeWaiter !== null) {
+      this.settleHandshake(false, 'battle_handshake_closed');
+    }
     this.session?.close();
     this.session = null;
     this.datagram = null;
@@ -362,7 +443,29 @@ export class BattleClient {
     }
   }
 
+  /**
+   * Drains the input queue onto the channel.
+   *
+   * The plaintext path is **synchronous** on purpose: `sendInput` and the tests
+   * both assume the frame is on the wire before `sendInput` returns, and
+   * awaiting there would put every send a microtask late for no reason. Only
+   * the sealed path pays for the async cipher.
+   */
   private flushInputQueue(): void {
+    // Nothing may go out before the handshake has produced the session key —
+    // a frame sealed with no cipher, or sent in the clear after one, would be
+    // rejected by the server.
+    if (this.handshakeWaiter !== null) {
+      return;
+    }
+    if (this.isSealing()) {
+      void this.flushSealedQueue();
+      return;
+    }
+    this.flushPlainQueue();
+  }
+
+  private flushPlainQueue(): void {
     const session = this.session;
     if (session === null) {
       return;
@@ -393,11 +496,75 @@ export class BattleClient {
     }
   }
 
-  private handlePayload(payload: Uint8Array): void {
-    switch (peekPayloadType(payload)) {
+  private async flushSealedQueue(): Promise<void> {
+    // Sealing is async (WebCrypto, and the native binding returns a promise), so
+    // a flush can overlap the next `sendInput`. One flush at a time keeps the
+    // queue FIFO — a second concurrent one could reorder frames, and the server
+    // rejects out-of-order `seq`.
+    if (this.flushing) {
+      return;
+    }
+    this.flushing = true;
+    try {
+      while (this.inputQueue.length > 0) {
+        const session = this.session;
+        if (session === null) {
+          return;
+        }
+        const input = this.inputQueue[0];
+        const ticket = this.sessionInfo?.signedTicket;
+        let sent: boolean;
+        try {
+          const body = ticket === undefined ? encodeBattleInput(input) : encodeBattleInputWithTicket(input, ticket);
+          sent = session.send(await this.sealForWire(body, input, peekPayloadType(body)));
+        } catch (error) {
+          this.lastError = `battle_send_threw:${String(error)}`;
+          this.logger.warn(this.lastError);
+          sent = true;
+        }
+        if (!sent) {
+          this.lastError = 'battle_send_failed';
+          return;
+        }
+        this.inputQueue.shift();
+      }
+    } finally {
+      this.flushing = false;
+    }
+  }
+
+  private receive(payload: Uint8Array): void {
+    // The handshake itself is always in the clear — there is no key yet.
+    if (peekPayloadType(payload) === BattlePayloadType.HANDSHAKE_ACCEPT) {
+      void this.completeHandshake(payload);
+      return;
+    }
+    if (this.isSealing()) {
+      void this.receiveSealed(payload);
+      return;
+    }
+    this.handleFrame(payload);
+  }
+
+  private async receiveSealed(payload: Uint8Array): Promise<void> {
+    const opened = await this.openFromWire(payload);
+    if (opened === null) {
+      // The auth tag failed. Dropping the packet is the only safe response:
+      // retrying it as plaintext would turn a forgery into an accepted frame,
+      // which is exactly what the tag exists to prevent.
+      this.lastError = 'battle_auth_tag_invalid';
+      this.logger.warn(this.lastError);
+      return;
+    }
+    this.handleFrame(opened);
+  }
+
+  /** Dispatches one already-decoded frame by its payload type. */
+  private handleFrame(frame: Uint8Array): void {
+    switch (peekPayloadType(frame)) {
       case 4: {
         // Snapshot
-        const snapshot = decodeBossRaceSnapshot(payload);
+        const snapshot = decodeBossRaceSnapshot(frame);
         if (snapshot !== null) {
           this.applySnapshot(snapshot);
         }
@@ -405,7 +572,7 @@ export class BattleClient {
       }
       case 12: {
         // CoopSnapshot（合作模式；JSON 体）
-        const coop = decodeCoopBossSnapshot(payload);
+        const coop = decodeCoopBossSnapshot(frame);
         if (coop !== null) {
           for (const listener of this.coopSnapshotListeners) {
             listener(coop);
@@ -415,7 +582,7 @@ export class BattleClient {
       }
       case 8: {
         // Result
-        const result = decodeBattleResult(payload);
+        const result = decodeBattleResult(frame);
         if (result !== null) {
           this.state = BattleConnectionState.Finished;
           for (const listener of this.resultListeners) {
@@ -565,6 +732,220 @@ export class BattleClient {
 
     for (const listener of this.snapshotListeners) {
       listener(snapshot, reconcile.hardSnap);
+    }
+  }
+
+  /**
+   * Whether this session seals its packets.
+   *
+   * Decided once in {@link connect}, so the send and receive paths cannot
+   * disagree — if one sealed while the other read plaintext, every packet would
+   * fail.
+   */
+  private isSealing(): boolean {
+    return this.aead !== null && this.aead.encrypted && this.cipher !== null;
+  }
+
+  /**
+   * Performs the AEAD handshake and installs the session cipher.
+   *
+   * Sends `HANDSHAKE_HELLO` and resolves once the server answers
+   * `HANDSHAKE_ACCEPT` and the session key has been derived — or `false` if the
+   * platform has no key agreement, no channel is open, or the server never
+   * answers within {@link BATTLE_HANDSHAKE_TIMEOUT_MS}.
+   *
+   * **Nothing calls this on the live path.** `MatchServer`, the deployed battle
+   * server, decodes `BattleInput` straight off the wire and has no handshake at
+   * all (`src/match_lifecycle.cpp`); sending a hello there would make every
+   * input undeliverable. It is here so that flipping the client onto the
+   * `battle.proto` AEAD path is one call once the server answers it — see
+   * `docs/battle-aead-server-spec.md`.
+   */
+  async performHandshake(): Promise<boolean> {
+    const info = this.sessionInfo;
+    const crypto = this.config.crypto;
+    if (info === null || this.session === null || crypto === undefined) {
+      return false;
+    }
+    if (crypto.keyAgreement instanceof UnsupportedKeyAgreement) {
+      return false;
+    }
+    if (this.isSealing()) {
+      return true;
+    }
+    let pair: { publicKey: Uint8Array; random: Uint8Array };
+    try {
+      pair = await crypto.keyAgreement.generateClientKeyPair();
+    } catch (error) {
+      this.lastError = `battle_handshake_keypair_failed:${String(error)}`;
+      this.logger.warn(this.lastError);
+      return false;
+    }
+    this.clientRandom = pair.random;
+    this.session.send(
+      encodeHandshakeHello({
+        version: { ...emptyVersionStamp(), protocolVersion: 1 },
+        clientX25519Pub: pair.publicKey,
+        clientRandom: pair.random,
+        supportedAead: [BATTLE_AEAD_CHACHA20_POLY1305, BATTLE_AEAD_XCHACHA20_POLY1305],
+        ...(info.signedTicket === undefined
+          ? {}
+          : { battleTicket: info.signedTicket as unknown as BattleHandshakeHello['battleTicket'] }),
+      }),
+    );
+    return await new Promise<boolean>((resolve) => {
+      this.handshakeWaiter = resolve;
+      this.handshakeTimer = this.config.timer.setTimeout(() => {
+        this.settleHandshake(false, 'battle_handshake_timeout');
+      }, BATTLE_HANDSHAKE_TIMEOUT_MS);
+    });
+  }
+
+  /** Resolves the pending handshake promise exactly once. */
+  private settleHandshake(ok: boolean, reason: string): void {
+    if (this.handshakeTimer !== null) {
+      this.config.timer.clearTimeout(this.handshakeTimer);
+      this.handshakeTimer = null;
+    }
+    const waiter = this.handshakeWaiter;
+    this.handshakeWaiter = null;
+    if (!ok) {
+      this.lastError = reason;
+      this.logger.warn(reason);
+    }
+    waiter?.(ok);
+  }
+
+  /** Handles the server's `HANDSHAKE_ACCEPT`. */
+  private async completeHandshake(payload: Uint8Array): Promise<void> {
+    const accept = decodeHandshakeAccept(payload);
+    const crypto = this.config.crypto;
+    if (accept === null) {
+      this.settleHandshake(false, 'battle_handshake_accept_undecodable');
+      return;
+    }
+    if (crypto === undefined || this.clientRandom === null) {
+      this.settleHandshake(false, 'battle_handshake_not_started');
+      return;
+    }
+    let sessionKey: Uint8Array;
+    try {
+      sessionKey = await crypto.keyAgreement.deriveSessionKey(
+        accept.serverX25519Pub,
+        this.clientRandom,
+        accept.serverRandom,
+      );
+    } catch (error) {
+      this.settleHandshake(false, `battle_handshake_derive_failed:${String(error)}`);
+      return;
+    }
+    const selection = selectBattleCipher(accept.selectedAead, crypto);
+    const cipher = resolveCipher(selection, crypto, sessionKey);
+    if (cipher === null) {
+      this.settleHandshake(false, 'battle_handshake_no_cipher');
+      return;
+    }
+    // The server validates `header.key_id` against the direction key reference
+    // it derived from the transcript hash, and that reference is not on the
+    // wire — only the transcript hash is. So the client recomputes it.
+    //
+    // `transcript_hash` is `bytes` in the proto but carries the *ASCII* of a
+    // 32-character hex string: that is what the server's own check requires
+    // (`handshake_transcript_hash.size() == 32 && IsHex(...)`), so it has to be
+    // read as text, not re-hexed.
+    this.keyId = devHandshakeKeyRef(decodeUtf8(accept.transcriptHash), BATTLE_DIRECTION_CLIENT_TO_SERVER);
+    this.cipher = cipher;
+    this.aead = { ...selection, cipher };
+    this.logger.info(`battle handshake done: aead=${accept.selectedAead} key_id=${this.keyId}`);
+    this.settleHandshake(true, 'ok');
+    // Everything queued while the handshake was in flight goes out now, sealed.
+    this.flushInputQueue();
+  }
+
+  /**
+   * Seals an encoded input frame into a `BattleEncryptedPacket`, or returns it
+   * untouched on the plaintext path.
+   *
+   * The nonce is derived from the header, so the header has to be built first
+   * and then fed back into {@link devBattleNonceHex} — which is why this takes
+   * the input rather than just the bytes: `tick` and `seq` are nonce material.
+   */
+  private async sealForWire(body: Uint8Array, input: BattleInput, payloadType: number): Promise<Uint8Array> {
+    const cipher = this.cipher;
+    if (!this.isSealing() || cipher === null || this.keyId === null) {
+      return body;
+    }
+    const nonceInput = {
+      keyId: this.keyId,
+      matchId: input.matchId,
+      playerId: input.playerId,
+      payloadType,
+      tick: input.tick,
+      seq: input.seq,
+      ack: 0,
+    };
+    const nonce = hexToBytes(devBattleNonceHex(nonceInput, BATTLE_DIRECTION_CLIENT_TO_SERVER));
+    const aad = devBattleAadBytes(nonceInput, BATTLE_DIRECTION_CLIENT_TO_SERVER);
+    const sealed = await cipher.seal(body, aad, nonce);
+    return encodeEncryptedPacket({
+      header: {
+        version: { ...emptyVersionStamp(), protocolVersion: 1 },
+        matchId: input.matchId,
+        playerId: input.playerId,
+        tick: input.tick,
+        seq: input.seq,
+        ack: 0,
+        payloadType: payloadType as BattlePacketHeader['payloadType'],
+        keyId: this.keyId,
+        nonce,
+      },
+      ciphertext: sealed.ciphertext,
+      authTag: sealed.authTag,
+    });
+  }
+
+  /**
+   * Opens a sealed frame from the wire.
+   *
+   * @returns the plaintext body, or `null` when there was nothing to open
+   *   (the plaintext path) or the auth tag failed.
+   *
+   * `null` therefore means two different things, which is why the caller checks
+   * {@link isSealing} before treating it as a failure.
+   */
+  private async openFromWire(payload: Uint8Array): Promise<Uint8Array | null> {
+    const cipher = this.cipher;
+    if (!this.isSealing() || cipher === null) {
+      return null;
+    }
+    const packet = decodeEncryptedPacket(payload);
+    if (packet === null) {
+      return null;
+    }
+    const header = packet.header;
+    if (header === undefined) {
+      return null;
+    }
+    const nonceInput = {
+      keyId: header.keyId,
+      matchId: header.matchId,
+      playerId: header.playerId,
+      payloadType: Number(header.payloadType),
+      tick: header.tick,
+      seq: header.seq,
+      ack: header.ack,
+    };
+    try {
+      return await cipher.open(
+        packet.ciphertext,
+        packet.authTag,
+        devBattleAadBytes(nonceInput, BATTLE_DIRECTION_SERVER_TO_CLIENT),
+        header.nonce,
+      );
+    } catch {
+      // A failed tag is a failure, not an exception to propagate: the receive
+      // path is called from the KCP callback, where a throw would be lost.
+      return null;
     }
   }
 }

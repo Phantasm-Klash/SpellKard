@@ -28,6 +28,32 @@
 - **建议**：按规格实现；实现时先让服务端**同时**接受明文 dev 会话与 AEAD 会话
   （按 `key_id` 区分），双方各自开开关跑一轮互通，最后关明文。
 
+#### A1-bis. ★★ 2026-10-25 追加：现网对战服**根本没有握手与 AEAD 这条路**，比 A1 更靠前
+
+- **现象**（两条独立查证一致）：真正提供对战的是 `MatchServer`
+  （`src/match_lifecycle.cpp`，也是 `apps/phk_battle_server/main.cpp` 唯一启动的
+  服务）。它的收包入口 `HandleSessionPayload`（`match_lifecycle.cpp:1096`）
+  **只调 `DecodeBattleInputPayload`**，即首字节必须是 `0x03` 的手搓二进制：
+  - 无 `HANDSHAKE_HELLO` 分支 → 发握手包会被静默丢弃；
+  - 无 `BattleEncryptedPacket`（protobuf）解析 → 首字节 `0x0A` 的 AEAD 包同样丢弃；
+  - 广播回客户端的快照/结果是 `[type byte][JSON]`，**不加密**。
+- **更关键**：`src/server.cpp` / `protocol.cpp` / `handshake.cpp` 里那套完整的
+  `BattleServer` + `DispatchEncrypted` + `HandshakeManager`（含
+  `nonce_mismatch` / `session_key_mismatch` / `handshake_required` 校验）
+  **没有接入任何可执行文件**，只在测试里被实例化。也就是说：
+  A1 说的"脚手架"连脚手架都还没上线——它是一份**离线的协议一致性实现**。
+- **影响（结论）**：**客户端无法单方面"切换 AEAD"**。任何切换都会让现网每一帧
+  输入不可投递，对战立即坏。这与用户 2026-10-24「先不动对战端」的指令一致。
+- **客户端已做到位**（2026-10-25）：`core/net/battle_aead.ts` + `BattleClient`
+  的 `performHandshake()` / `sealForWire()` / `openFromWire()` 全部实现并测试
+  （`tests/battle_handshake.test.ts`，5 例：默认明文同步、无 provider 拒绝、
+  hello 字段、accept 后逐帧密封且 nonce/key_id 可验、篡改 tag 丢弃不降级）。
+  **但 `performHandshake()` 在现网路径上无人调用**——服务端不回答就永远不该发。
+- **解锁条件**：服务端先在 `MatchServer` 上落地
+  ① 收 `HANDSHAKE_HELLO` 并回 `HANDSHAKE_ACCEPT`；② 解析
+  `BattleEncryptedPacket`；③ 真 X25519 + HKDF（替换 `FillDevBytes`）。
+  客户端侧只需在开战处加一次 `await client.performHandshake()`。
+
 ### A2. 竞速模式服务端丢弃 `card_slot`
 
 - **现象**：`grep -c card_slot src/boss_race.cpp` = **0**。
