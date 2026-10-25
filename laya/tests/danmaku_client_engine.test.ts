@@ -29,7 +29,7 @@ import {
   normalizeAngleDeg,
   normalizeFrac,
 } from '../src/core/game/interpolation';
-import { buildBossRaceFrame } from '../src/core/game/boss_race_view_model';
+import { buildBossRaceFrame, PlayfieldTransform } from '../src/core/game/boss_race_view_model';
 import {
   buildHandBar,
   CardActionController,
@@ -382,8 +382,9 @@ test('frac 0 renders the authoritative tick unchanged', () => {
     localPlayerId: 'p1',
     bossMaxHp: 6000,
   });
-  // scale = 480 / 240000 = 0.002; x=1000 → (1000+120000)*0.002 = 242
-  expectClose(frame.bullets[0].position.x, 242, 1e-9, 'authoritative x');
+  // E1: 屏幕盒变换。scale = min(480/640000, 720/960000) = 0.00075；
+  // x=1000 → (1000+320000)*0.00075 = 240.75
+  expectClose(frame.bullets[0].position.x, 240.75, 1e-9, 'authoritative x');
 });
 
 test('frac extrapolates bullets with their snapshot velocity', () => {
@@ -393,8 +394,8 @@ test('frac extrapolates bullets with their snapshot velocity', () => {
     bossMaxHp: 6000,
     frac: 0.5,
   });
-  // 1000 + 2000*0.5 = 2000 milli → 244 px
-  expectClose(frame.bullets[0].position.x, 244, 1e-9, 'half a tick of extrapolation');
+  // 1000 + 2000*0.5 = 2000 milli → (2000+320000)*0.00075 = 241.5 px
+  expectClose(frame.bullets[0].position.x, 241.5, 1e-9, 'half a tick of extrapolation');
 });
 
 test('frac extrapolates players forward from the authoritative tick', () => {
@@ -408,8 +409,9 @@ test('frac extrapolates players forward from the authoritative tick', () => {
     previous,
     frac: 0.5,
   });
-  // 基准是当前 tick（1000），外推「上一 tick 位移」(+1000) 的一半 → 1500 milli → 243 px
-  expectClose(frame.players[0].position.x, 243, 1e-9, 'forward extrapolation from the current tick');
+  // 基准是当前 tick（1000），外推「上一 tick 位移」(+1000) 的一半 → 1500 milli
+  // → (1500+320000)*0.00075 = 241.125 px
+  expectClose(frame.players[0].position.x, 241.125, 1e-9, 'forward extrapolation from the current tick');
   const atZero = buildBossRaceFrame(current, {
     layout: LAYOUT,
     localPlayerId: 'p1',
@@ -417,8 +419,8 @@ test('frac extrapolates players forward from the authoritative tick', () => {
     previous,
     frac: 0,
   });
-  // §4.1：frac = 0 必须逐像素等于权威 tick。
-  expectClose(atZero.players[0].position.x, 242, 1e-9, 'frac 0 equals the authoritative position');
+  // §4.1：frac = 0 必须逐像素等于权威 tick → (1000+320000)*0.00075 = 240.75。
+  expectClose(atZero.players[0].position.x, 240.75, 1e-9, 'frac 0 equals the authoritative position');
 });
 
 test('boss effects are mapped to playfield pixels', () => {
@@ -441,11 +443,53 @@ test('boss effects are mapped to playfield pixels', () => {
   expectEqual(frame.bossEffects.length, 2);
   const fist = frame.bossEffects[0];
   expectEqual(fist.type, 'iron_fist');
-  // (0,0) → 240,360；方向 +x，长度 10000 milli = 20 px
+  // (0,0) → (240,360)（屏幕盒中心 = 2:3 画面中心）；方向 +x，长度 10000 milli
+  // = 10 屏幕 px → to.x = (10000+320000)*0.00075 = 247.5
   expectClose(fist.from!.x, 240, 1e-9);
-  expectClose(fist.to!.x, 260, 1e-9);
+  expectClose(fist.from!.y, 360, 1e-9);
+  expectClose(fist.to!.x, 247.5, 1e-9);
   expectClose(fist.to!.y, fist.from!.y, 1e-9, 'a +x fist line stays horizontal');
-  expectClose(frame.bossEffects[1].edgeY!, 180, 1e-9, 'edge_y_milli 0 maps to the arena centre row');
+  expectClose(frame.bossEffects[1].edgeY!, 360, 1e-9, 'edge_y_milli 0 maps to the screen centre row');
+});
+
+test('the transform maps the 640x960 screen box, not the player-clamp arena (E1)', () => {
+  const t = new PlayfieldTransform(LAYOUT);
+  // 2:3 画面恰好装满：scale = 480/640000 = 720/960000 = 0.00075（milli → 画面 px）。
+  expectClose(t.scale, 0.00075, 1e-15, 'uniform scale from the screen box');
+  expectClose(t.offsetX, 0, 1e-12, 'no letterbox on a 2:3 playfield');
+  expectClose(t.offsetY, 0, 1e-12, 'no letterbox on a 2:3 playfield');
+  // 屏幕盒四角 → 画面四角。
+  const corners: Array<[number, number, number, number]> = [
+    [-320000, -480000, 0, 0],
+    [320000, -480000, 480, 0],
+    [-320000, 480000, 0, 720],
+    [320000, 480000, 480, 720],
+  ];
+  for (const [mx, my, px, py] of corners) {
+    const point = t.toPixels(mx, my);
+    expectClose(point.x, px, 1e-9, `screen x ${mx}`);
+    expectClose(point.y, py, 1e-9, `screen y ${my}`);
+  }
+  // 竞技场钳制盒（玩家活动区）→ 画面中央 180x135（240x180 屏 px × 0.75）。
+  const arena = t.toPixels(120000, 90000);
+  expectClose(arena.x, 330, 1e-9, 'arena right edge');
+  expectClose(arena.y, 427.5, 1e-9, 'arena bottom edge');
+  // Boss 在 (0,-60000) → 画面中央偏上。
+  const boss = t.toPixels(0, -60000);
+  expectClose(boss.x, 240, 1e-9, 'boss centred');
+  expectClose(boss.y, 315, 1e-9, 'boss a quarter down from the top');
+});
+
+test('an off-aspect playfield letterboxes instead of stretching', () => {
+  // 宽扁画面（960x480）：高度是瓶颈，scale=480/960000=0.0005 → 屏盒占 320px 宽，
+  // 左右各留 320px 边。
+  const t = new PlayfieldTransform({ width: 960, height: 480 });
+  expectClose(t.scale, 0.0005, 1e-15, 'height-bound scale');
+  expectClose(t.offsetX, 320, 1e-12, 'centred horizontally');
+  expectClose(t.offsetY, 0, 1e-12, 'fills the height');
+  const point = t.toPixels(320000, 480000);
+  expectClose(point.x, 640, 1e-9, 'right screen edge inside the letterbox');
+  expectClose(point.y, 480, 1e-9, 'bottom screen edge flush');
 });
 
 suite('danmaku engine: in-match card actions (§2.3/§2.8)');

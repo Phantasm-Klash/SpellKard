@@ -7,17 +7,20 @@
  * mapping is unit-testable and reusable by any renderer.
  *
  * Coordinate systems:
- *  - Simulation: milli-units, x ∈ [-120000, 120000], y ∈ [-90000, 90000],
- *    origin at the arena centre, Boss at (0, -60000), +y points down.
+ *  - Simulation: milli-units, origin at the arena centre, Boss at (0, -60000),
+ *    +y points down. Players are clamped to ±120000/±90000; bullets live in the
+ *    wider 640×960 screen box (±320000/±480000).
  *  - Render: pixels inside a portrait playfield, origin top-left, +y down.
+ *    {@link PlayfieldTransform} maps the **screen box** uniformly into the
+ *    playfield (E1: not the player-clamp arena — see the class comment).
  */
 
 import type { BossRaceEffect, BossRaceSnapshot } from '../sim/boss_race';
 import {
-  ARENA_HALF_HEIGHT_MILLI,
-  ARENA_HALF_WIDTH_MILLI,
   BOSS_ORIGIN_X_MILLI,
   BOSS_ORIGIN_Y_MILLI,
+  SCREEN_HALF_HEIGHT_MILLI,
+  SCREEN_HALF_WIDTH_MILLI,
 } from '../sim/boss_race';
 import { bulletMotionFamily, type BulletMotionFamily } from '../sim/danmaku/bullet_motion';
 import { clamp01, lerpF64, RAD_TO_DEG } from '../math/float_lib';
@@ -136,15 +139,31 @@ export interface BossRaceFrameOptions {
  */
 export class PlayfieldTransform {
   readonly scale: number;
+  /** Letterbox offsets: the screen box is scaled uniformly and centred. */
+  readonly offsetX: number;
+  readonly offsetY: number;
 
   constructor(readonly layout: PlayfieldLayout) {
-    this.scale = layout.width / (ARENA_HALF_WIDTH_MILLI * 2);
+    // ★ E1（2026-10-25）：渲染场 = 640×960 **屏幕盒**（子弹生活的世界，
+    // `BossRaceSimulation` 就在这个盒里积分并按它±20 剔除），不是 ±120/±90 的
+    // 竞技场钳制盒。修复前用竞技场盒且 scale 只按宽度推导：① 竞技场外的子弹
+    // （服务端照发）被画出画面 2.67 倍错位；② scale 只按宽度算却用于两轴，
+    // 2:3 画面下战场只占上半。修复后与三处同源：美术按 640 宽排版
+    // （`battle_scene.ts` artScale=playfield.width/640）、客户端剔除常量是
+    // 屏盒（BULLET_CULL_HALF_*）、服务端 kScreenW/H。竞技场盒保持为玩法约束
+    // （玩家活动区在屏幕中央，与服务端钳制一致）。
+    this.scale = Math.min(
+      layout.width / (SCREEN_HALF_WIDTH_MILLI * 2),
+      layout.height / (SCREEN_HALF_HEIGHT_MILLI * 2),
+    );
+    this.offsetX = (layout.width - SCREEN_HALF_WIDTH_MILLI * 2 * this.scale) / 2;
+    this.offsetY = (layout.height - SCREEN_HALF_HEIGHT_MILLI * 2 * this.scale) / 2;
   }
 
   toPixels(xMilli: number, yMilli: number): RenderPoint {
     return {
-      x: (xMilli + ARENA_HALF_WIDTH_MILLI) * this.scale,
-      y: (yMilli + ARENA_HALF_HEIGHT_MILLI) * this.scale,
+      x: this.offsetX + (xMilli + SCREEN_HALF_WIDTH_MILLI) * this.scale,
+      y: this.offsetY + (yMilli + SCREEN_HALF_HEIGHT_MILLI) * this.scale,
     };
   }
 

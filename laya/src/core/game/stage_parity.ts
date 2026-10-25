@@ -7,7 +7,7 @@
  *  1. **tick 边界**（`frac = 0`）：渲染实体数 == 可见弹幕数（`hidden` 不渲染），
  *     每个实体位置 == trace 位置（milli → 像素后误差 ≤1px）。
  *  2. **tick 内**（`frac ∈ {0.25, 0.5, 0.75}`）：弹幕插值位置 == `p + v * frac`
- *     （相对误差 ≤1e-6），且与「当前 → 下一 tick」弦的偏差 ≤ |Δv|·frac + 容差
+ *     （相对误差 ≤1e-6），且与「当前 → 下一 tick」同 frac 弦点的距离 ≤ |Δv|·frac + 容差
  *     （线性弹紧约束、曲率弹按速度差放宽、位置跳变会抓）；玩家 / Boss 等于前向
  *     外推公式 `p_n + (p_n - p_{n-1}) * frac`，且不超前一 tick 以上的运动（离权威
  *     下一 tick 位置 ≤ 两个一 tick 位移之和）——即「插帧永不超出服务端核算允许
@@ -460,21 +460,27 @@ export function checkStageParity(
         if (following === undefined || source === undefined || following.hidden === true) {
           continue;
         }
-        const from = transform.toPixels(source.xMilli, source.yMilli);
-        const to = transform.toPixels(following.xMilli, following.yMilli);
+        // 参考点 = 同 frac 的**弦点** `p + (p_{n+1} - p)·frac`（两个权威位置
+        // 之间的直线路径在该 frac 的位置），不是「到直线的垂距」——垂距在垂直
+        // 传送时只有 |v|·frac（渲染点就在弦起点附近），抓不到跳变；弦点距离
+        // 才是插值质量的正确度量。
+        const chordPoint = transform.toPixels(
+          source.xMilli + (following.xMilli - source.xMilli) * frac,
+          source.yMilli + (following.yMilli - source.yMilli) * frac,
+        );
         const deltaVPx = Math.hypot(following.vxMilli - source.vxMilli, following.vyMilli - source.vyMilli) / 1000;
         const speedPx = Math.hypot(source.vxMilli, source.vyMilli) / 1000;
         // |Δv| 覆盖 tick 间速度变化；0.25·|v| 是 tick 内连续曲率的余量——服务端
         // 以 tick 粒度积分，一 tick 的位移与两个端速度都可能有分数级差异
         // （正弦调速实测 4.8px @ frac=0.75，Δv 项只给到 4.68px）。
         const allowance = (deltaVPx + 0.25 * speedPx) * frac + tolerancePx;
-        const offChord = distanceToSegment(rendered.position, from, to);
+        const offChord = distance(rendered.position.x, rendered.position.y, chordPoint.x, chordPoint.y);
         if (offChord > allowance) {
           failures.push({
             tick: current.tick,
             check: 'bullet-trajectory',
-            detail: `bullet ${rendered.bulletId} frac=${frac} ${offChord.toFixed(4)}px off the chord (allowance ${allowance.toFixed(4)}px)`,
-            expected: to.x,
+            detail: `bullet ${rendered.bulletId} frac=${frac} ${offChord.toFixed(4)}px off the chord point (allowance ${allowance.toFixed(4)}px)`,
+            expected: chordPoint.x,
             actual: rendered.position.x,
           });
         }
@@ -750,25 +756,6 @@ export function serializeStageTrace(trace: readonly StageTraceTick[]): string {
       }),
     )
     .join('\n')}\n`;
-}
-
-/**
- * 点到线段 `a → b` 的距离（像素）。弹幕轨迹检查的参考量：相邻两个权威 tick
- * 之间的弦。切线与弦的偏差上界 = |Δv| * frac（见调用处推导）。
- */
-function distanceToSegment(
-  point: { x: number; y: number },
-  a: { x: number; y: number },
-  b: { x: number; y: number },
-): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const lengthSquared = dx * dx + dy * dy;
-  if (lengthSquared <= 1e-12) {
-    return distance(point.x, point.y, a.x, a.y);
-  }
-  const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared));
-  return distance(point.x, point.y, a.x + dx * t, a.y + dy * t);
 }
 
 // ---------------------------------------------------------------------------

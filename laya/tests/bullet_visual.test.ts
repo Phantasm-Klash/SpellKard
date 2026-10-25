@@ -30,7 +30,9 @@ import { BULLET_KIND_COUNT } from '../src/core/sim/danmaku/bullet_kind';
 import { expect, expectClose, expectEqual, suite, test } from './harness';
 
 /** width == full arena width ⇒ scale 1.0, so milli-units map 1:1 to pixels. */
-const LAYOUT: PlayfieldLayout = { width: 240000, height: 180000 };
+// E1: the render field is the 640×960 **screen box**, so a 1-px-per-milli
+// layout is the screen box in milli (not the player-clamp arena).
+const LAYOUT: PlayfieldLayout = { width: 640000, height: 960000 };
 
 const VALID_CLASSES: readonly BulletVisualClass[] = ['linear', 'curve', 'orbit', 'homing', 'spread'];
 
@@ -120,8 +122,8 @@ test('interpolateFrames preserves angleRad while lerping position', () => {
   const blended = interpolateFrames(previous, current, 0.5);
   const item = blended.bullets[0];
   expectClose(item.angleRad, 0, 1e-9, 'angleRad must survive interpolation');
-  // scale 1.0 and arena half-width 120000 ⇒ pixel x is milli + 120000.
-  expectClose(item.position.x, 120000 + 1500, 1e-6, 'position should be halfway');
+  // scale 1.0 and screen half-width 320000 ⇒ pixel x is milli + 320000.
+  expectClose(item.position.x, 320000 + 1500, 1e-6, 'position should be halfway');
 });
 
 test('the classifier assigns every simulated pattern id to a trajectory family', () => {

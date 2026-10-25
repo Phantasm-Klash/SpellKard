@@ -60,8 +60,9 @@ test('hidden bullets are excluded from the rendered entity count', () => {
 test('a bullet that teleports fails the trajectory check', () => {
   const trace = synthesizeStageTrace(60);
   // 第 30 tick 垂直跳变 20px（ring-0 速度沿 +x，跳变沿 +y，不共线）：边界断言
-  // 仍然通过（它就是权威值），但第 29 tick 的插值点（沿速度的切线）会大幅偏离
-  // [p29, p30] 弦，只有 bullet-trajectory 能抓到这种位置跳变。
+  // 仍然通过（它就是权威值），但第 29 tick 的插值点（沿速度的切线）到同 frac
+  // 弦点的距离 ≈ 10px，远超曲率容差（|Δv|·frac + 0.25·|v|·frac + 1px ≈ 1.2px），
+  // 只有 bullet-trajectory 能抓到这种位置跳变。
   trace[30].bullets[0] = { ...trace[30].bullets[0], yMilli: trace[30].bullets[0].yMilli + 20000 };
   const report = checkStageParity(trace);
   const offending = report.ticks[29].failures.some((failure) => failure.check === 'bullet-trajectory');

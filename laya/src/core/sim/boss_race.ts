@@ -236,6 +236,17 @@ export const MOVE_MILLI_PER_TICK = 3000;
 export const BULLET_CULL_HALF_WIDTH_MILLI = 340000;
 export const BULLET_CULL_HALF_HEIGHT_MILLI = 500000;
 
+/**
+ * The 640×960 **screen box** in centered milli — the world bullets actually
+ * live in (`BossRaceSimulation` integrates in screen coordinates and culls on
+ * this box). The arena box above (±120000/±90000) is only where *players* are
+ * clamped; bullets fly across the whole screen, so the render transform maps
+ * THIS box, not the arena. Mirrors `kScreenW/kScreenH` (`boss_race.cpp:26-27`),
+ * i.e. the APK's field.
+ */
+export const SCREEN_HALF_WIDTH_MILLI = (SCREEN_W_PX / 2) * MILLI_PER_PIXEL;
+export const SCREEN_HALF_HEIGHT_MILLI = (SCREEN_H_PX / 2) * MILLI_PER_PIXEL;
+
 /** Screen-space (pixel) constants the bullet library works in. */
 export { SCREEN_CENTER_X_PX, SCREEN_CENTER_Y_PX, MILLI_PER_PIXEL };
 
