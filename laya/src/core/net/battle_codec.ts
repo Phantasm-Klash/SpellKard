@@ -419,7 +419,15 @@ export function decodeBattleInput(payload: Uint8Array): BattleInput | null {
     let cardDraw: boolean | undefined;
     let cardSelect: number | undefined;
     let cardUse: boolean | undefined;
-    if (reader.remaining >= 4 && reader.peekU8() === CARD_BLOCK_MAGIC) {
+    if (reader.peekU8() === CARD_BLOCK_MAGIC) {
+      // Server parity: the C++ `ReadBattleInputBody`
+      // (`PhK-BattleServer/src/match_lifecycle.cpp`) hard-fails a magic byte
+      // that is not followed by its three payload bytes, so a truncated card
+      // block is a malformed frame here too — never a legacy input whose tail
+      // is silently dropped (the server would have rejected the frame).
+      if (reader.remaining < 4) {
+        return null;
+      }
       reader.u8();
       cardDraw = reader.u8() !== 0;
       cardSelect = reader.i8();
@@ -516,7 +524,7 @@ export function decodeBossRaceSnapshot(payload: Uint8Array): BossRaceSnapshot | 
         bulletKind: optionalNumberAt(bullet, 'bullet_kind'),
         motionFunc: optionalNumberAt(bullet, 'motion_func'),
         // §2.8 chain/hidden extensions.
-        chainId: optionalStringAt(bullet, 'chain_id'),
+        chainId: optionalWireStringAt(bullet, 'chain_id'),
         generation: optionalNumberAt(bullet, 'generation'),
         hidden: optionalBoolAt(bullet, 'hidden'),
       }),
@@ -629,7 +637,7 @@ function parseChainList(value: unknown): BossWireChain[] | undefined {
     return undefined;
   }
   return value.filter(isRecord).map((chain) => ({
-    chainId: stringAt(chain, 'chain_id'),
+    chainId: optionalWireStringAt(chain, 'chain_id') ?? '',
     patternIndex: numberAt(chain, 'pattern_index'),
     nodeId: numberAt(chain, 'node_id'),
     generation: numberAt(chain, 'generation'),
@@ -743,7 +751,7 @@ export function decodeCoopBossSnapshot(payload: Uint8Array): CoopBossSnapshot | 
         radiusMilli: numberAt(bullet, 'radius_milli'),
         kind: numberAt(bullet, 'kind'),
         patternId: stringAt(bullet, 'pattern_id'),
-        chainId: optionalStringAt(bullet, 'chain_id'),
+        chainId: optionalWireStringAt(bullet, 'chain_id'),
         generation: optionalNumberAt(bullet, 'generation'),
         hidden: optionalBoolAt(bullet, 'hidden'),
       }),
@@ -867,6 +875,33 @@ export function optionalStringAt(
     return undefined;
   }
   return source[key] as string;
+}
+
+/**
+ * `chain_id` on the §2.8 wire: the C++ server writes it as a JSON **number**
+ * (`std::to_string(std::uint32_t)` — see `BossRaceBullet::chain_id` /
+ * `BossChainWire::chain_id` in `PhK-BattleServer/include/phk/battle/
+ * boss_race.hpp`), while the long-term contract carries it as text. Accept
+ * both and normalise a number to the decimal text it would print as, so every
+ * downstream consumer keeps the single `string` type; absent stays
+ * `undefined`, so an old server that predates the field is still told apart
+ * from "chain 0".
+ */
+export function optionalWireStringAt(
+  source: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  if (!(key in source)) {
+    return undefined;
+  }
+  const value = source[key];
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(Math.trunc(value));
+  }
+  return undefined;
 }
 
 /** Like {@link optionalNumberAt} for booleans: absent stays `undefined`. */
