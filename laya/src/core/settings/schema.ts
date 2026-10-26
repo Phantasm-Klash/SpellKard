@@ -28,21 +28,12 @@ export const FRAME_CAPS = [30, 60, 120, 0] as const;
 export type FrameCap = (typeof FRAME_CAPS)[number];
 
 /**
- * Render-resolution multiplier applied to the canvas backing store. `1` is the
- * native device resolution; lower values render fewer pixels and let the
- * browser/native scaler upscale them (a big win on weak GPUs), higher values
- * supersample for sharper text on strong ones.
- */
-export const RENDER_SCALES = [0.5, 0.75, 1, 1.5] as const;
-export type RenderScale = (typeof RENDER_SCALES)[number];
-
-/**
  * How large the **host window** should be, as a multiple of the design stage
  * (900x1200).
  *
- * This is the window, not the canvas: `renderScale` above decides how many
- * pixels are drawn into whatever surface exists, while this decides how big
- * that surface's window is on the desktop.
+ * This is the window, and the only resolution knob there is: the canvas
+ * renders at the window's own pixel size, so this decides both how big the
+ * window is on the desktop and how many pixels it has.
  *
  * `auto` picks the largest whole multiple that still fits the monitor, which is
  * what a portrait game needs on a landscape display — see
@@ -64,8 +55,15 @@ export type NetworkMode = (typeof NETWORK_MODES)[number];
 // --- groups -----------------------------------------------------------------
 
 export interface DisplaySettings {
-  renderScale: RenderScale;
-  /** Host-window size as a multiple of the design stage; `'auto'` fits the monitor. */
+  /**
+   * Host-window size as a multiple of the design stage; `'auto'` fills the
+   * monitor.
+   *
+   * There is deliberately **no** render-resolution multiplier any more: the
+   * canvas always renders at the window's own pixel size, so the picture the
+   * player sees is the picture the window is. The window size is the only knob,
+   * and it moves both axes together.
+   */
   windowScale: WindowScale;
   effectLevel: EffectLevel;
   frameCap: FrameCap;
@@ -186,7 +184,6 @@ export function defaultSettings(): GameSettings {
   return {
     language: DEFAULT_LANGUAGE,
     display: {
-      renderScale: 1,
       windowScale: 'auto',
       effectLevel: 'high',
       frameCap: 60,

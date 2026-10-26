@@ -46,11 +46,7 @@ const CAP_TOLERANCE_MS = 2;
  * pixels per frame). The setter clamps rather than rejects so a corrupt stored
  * value cannot blank the canvas.
  */
-const MIN_RENDER_SCALE = 0.5;
-const MAX_RENDER_SCALE = 2;
 
-/** Live render-scale factor read by the patched `getPixelRatio`. */
-let renderScaleFactor = 1;
 let pixelRatioPatched = false;
 
 /**
@@ -59,7 +55,13 @@ let pixelRatioPatched = false;
  */
 export function applyDisplaySettings(display: DisplaySettings): void {
   applyFrameCap(display.frameCap);
-  applyRenderScale(display.renderScale);
+  // The canvas renders at the window's own pixel size — there is no
+  // render-resolution multiplier to apply any more (the window size is the
+  // only knob, and it moves both axes). Turning the retina canvas on and
+  // leaving `getPixelRatio` alone is what keeps that true: the backing store
+  // matches the window, one pixel to one.
+  enableRetinalCanvas();
+  patchPixelRatio();
 }
 
 /**
@@ -89,38 +91,6 @@ export function applyFrameCap(cap: number): void {
     lastAccepted = timestamp;
     return true;
   };
-}
-
-/**
- * Sets the render-resolution multiplier and re-measures the canvas.
- *
- * Three things have to line up for this to actually change the sample count:
- *
- *  1. **`Config.useRetinalCanvas` must be on.** It defaults to `false`, and with
- *     it off `Stage.setScreenSize` sizes the backing store from the *design*
- *     size and lets the CSS matrix do the fitting — so the canvas was always
- *     900x1200 no matter what the setting said. This was the bug: the slider
- *     moved, the stored value changed, and nothing on screen ever did.
- *  2. **`getPixelRatio` must report device ratio × scale**, which is what
- *     {@link patchPixelRatio} installs. The engine multiplies the backing store
- *     by it and divides the draw scale back out, so the on-screen size is
- *     unchanged and only the pixel count moves.
- *  3. **The stage must re-measure**, which `updateCanvasSize` does; the engine
- *     only calls it on a real window resize, so we ask for it directly.
- */
-export function applyRenderScale(scale: number): void {
-  renderScaleFactor = clampRenderScale(scale);
-  enableRetinalCanvas();
-  patchPixelRatio();
-  requestCanvasResize();
-}
-
-/** Clamps the multiplier into {@link MIN_RENDER_SCALE}..{@link MAX_RENDER_SCALE}. */
-export function clampRenderScale(scale: number): number {
-  if (!Number.isFinite(scale) || scale <= 0) {
-    return 1;
-  }
-  return Math.min(MAX_RENDER_SCALE, Math.max(MIN_RENDER_SCALE, scale));
 }
 
 /**
@@ -156,42 +126,11 @@ function patchPixelRatio(): void {
   }
   const original = host.getPixelRatio;
   host.getPixelRatio = function patchedPixelRatio(this: unknown): number {
-    return original.call(host) * renderScaleFactor;
+    return original.call(host);
   };
   pixelRatioPatched = true;
 }
 
-/**
- * Re-runs the engine's canvas sizing so a new render scale becomes visible
- * immediately.
- *
- * `Stage.updateCanvasSize` is the engine's own entry point (it is what the
- * window `resize` handler calls); we hit it directly because a synthetic
- * `resize` event is not guaranteed to reach `PAL.browser`'s listener. The
- * event dispatch is kept as the fallback for runtimes that only react to the
- * real thing.
- */
-function requestCanvasResize(): void {
-  const stage = (Laya as unknown as { stage?: { updateCanvasSize?: (delay?: boolean) => void } }).stage;
-  if (typeof stage?.updateCanvasSize === 'function') {
-    stage.updateCanvasSize(true);
-    return;
-  }
-  const win = Laya.Browser.window as {
-    dispatchEvent?: (event: unknown) => void;
-    Event?: new (type: string) => unknown;
-  } | null;
-  const EventCtor = win?.Event;
-  if (win?.dispatchEvent === undefined || EventCtor === undefined) {
-    return;
-  }
-  try {
-    win.dispatchEvent(new EventCtor('resize'));
-  } catch {
-    // A runtime that rejects synthetic events is not a reason to fail a
-    // settings change.
-  }
-}
 
 /** Handle for the optional frame-rate readout. */
 export interface FpsOverlayHandle {

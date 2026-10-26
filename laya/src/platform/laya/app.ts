@@ -224,8 +224,8 @@ export class SpellKardApp {
     // ★ 按分组去重 —— 哪一组真的动了才应用哪一组。
     //
     // 不加这层判断时，任何一次设置变更都会把下面四个全跑一遍，而其中
-    // `applyDisplaySettings` 会调 `applyRenderScale`（改渲染缩放）、
-    // `upscalers.apply` 会重建升频器，两者都是**整屏重绘**级别的操作。
+    // `applyDisplaySettings` 会重设帧率上限与画布尺寸、`upscalers.apply`
+    // 会重建升频器，两者都是**整屏重绘**级别的操作。
     // 于是拖一下音量、或者按下设置里任何一个按钮，整个画面连所有按钮
     // 都会闪一次 —— 与改动的那一项毫无关系的部分也跟着重绘。
     let appliedDisplay = this.settings.get().display;

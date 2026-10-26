@@ -44,7 +44,7 @@ test('defaults are a complete, self-consistent tree', () => {
   const s = defaultSettings();
   expectEqual(s.display.effectLevel, 'high');
   expectEqual(s.display.frameCap, 60);
-  expectEqual(s.display.renderScale, 1);
+  expectEqual(s.display.windowScale, 'auto');
   expectEqual(s.audio.muted, false);
   expectEqual(s.hud.showOpponentHud, true);
   expectEqual(s.network.mode, 'official');
@@ -70,8 +70,8 @@ test('garbage input collapses to the defaults', () => {
 });
 
 test('wrong types fall back per field instead of poisoning the group', () => {
-  const s = normalizeSettings({ display: { renderScale: 'huge', showFps: 'yes' } });
-  expectEqual(s.display.renderScale, 1);
+  const s = normalizeSettings({ display: { windowScale: 'huge', showFps: 'yes' } });
+  expectEqual(s.display.windowScale, 'auto');
   expectEqual(s.display.showFps, false);
 });
 
@@ -101,14 +101,14 @@ test('mod ids are trimmed, de-duplicated and order-preserving', () => {
 });
 
 test('unknown keys are dropped rather than carried along', () => {
-  const s = normalizeSettings({ display: { renderScale: 0.5, bogus: 1 }, extra: true });
+  const s = normalizeSettings({ display: { windowScale: 3, bogus: 1 }, extra: true });
   expectDeepEqual(Object.keys(s.display).sort(), [
     'effectLevel',
     'frameCap',
-    'renderScale',
     'showFps',
     'upscaler',
     'upscalerSharpness',
+    'windowScale',
   ]);
   expect(!('extra' in s), 'top-level unknown key must not survive');
 });

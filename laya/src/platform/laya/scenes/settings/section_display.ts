@@ -12,7 +12,6 @@
 import {
   type EffectLevel,
   type FrameCap,
-  type RenderScale,
   type WindowScale,
 } from '../../../../core/settings';
 import {
@@ -38,15 +37,6 @@ import { t } from '../../../../core/game/i18n';
 // The numeric labels are language-neutral; only the named ones go through `t()`,
 // which is why this is a function rather than a constant — a rebuild after a
 // language switch has to re-read the table.
-function renderScaleChoices(): readonly OptionChoice<RenderScale>[] {
-  return [
-    { id: 0.5, label: '0.5×' },
-    { id: 0.75, label: '0.75×' },
-    { id: 1, label: '1×' },
-    { id: 1.5, label: '1.5×' },
-  ];
-}
-
 /**
  * Window-size choices. `1×` / `2×` / `4×` are integer multiples of the design
  * stage; `auto` is resolved against the monitor at apply time, so its label
@@ -130,16 +120,6 @@ export class DisplaySection extends BaseSettingsSection {
 
     const rows: RowHandle[] = [
       createGroupHeading(t('settings.tab.display'), width),
-      createOptionRow<RenderScale>({
-        width,
-        label: t('settings.display.resolutionScale'),
-        description: t('settings.display.resolutionScale.desc'),
-        choices: renderScaleChoices(),
-        value: display.renderScale,
-        onChange: (renderScale) => {
-          this.store.update({ display: { renderScale } });
-        },
-      }),
       createOptionRow<WindowScale>({
         width,
         label: t('settings.display.windowScale'),

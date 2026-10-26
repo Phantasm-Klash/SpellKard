@@ -188,8 +188,6 @@ export interface Messages {
   'settings.display.sharpening.desc': string;
   'settings.display.upscaler': string;
   'settings.display.upscaler.desc': string;
-  'settings.display.resolutionScale': string;
-  'settings.display.resolutionScale.desc': string;
   'settings.display.windowScale': string;
   'settings.display.windowScale.desc': string;
   'settings.display.windowScale.auto': string;
@@ -733,8 +731,6 @@ const ZH_HANS: Messages = {
   'settings.display.sharpening.desc': '在软件放大后应用的对比度自适应锐化。0% 即普通双线性放大。',
   'settings.display.upscaler': '放大器',
   'settings.display.upscaler.desc': '后处理放大后端。仅可选择此版本实际可用的后端，其余列在下方。',
-  'settings.display.resolutionScale': '分辨率倍率',
-  'settings.display.resolutionScale.desc': '渲染分辨率倍率。倍率越低渲染像素越少，对弱显卡更友好。',
 'settings.display.windowScale': '窗口大小',
 'settings.display.windowScale.desc': '以界面设计尺寸（900×1200）的整数倍设置游戏窗口大小。',
 'settings.display.windowScale.auto': '自动',
@@ -1225,8 +1221,6 @@ const ZH_HANT: Messages = {
   'settings.display.sharpening.desc': '在軟體放大後套用的對比度自适应銳化。0% 即普通雙線性放大。',
   'settings.display.upscaler': '放大器',
   'settings.display.upscaler.desc': '後處理放大後端。僅可選擇此版本實際可用的後端，其餘列在下方。',
-  'settings.display.resolutionScale': '解析度倍率',
-  'settings.display.resolutionScale.desc': '渲染解析度倍率。倍率越低渲染像素越少，對弱顯示卡更友好。',
 'settings.display.windowScale': '視窗大小',
 'settings.display.windowScale.desc': '以介面設計尺寸（900×1200）的整數倍設定遊戲視窗大小。',
 'settings.display.windowScale.auto': '自動',
@@ -1717,8 +1711,6 @@ const JA: Messages = {
   'settings.display.sharpening.desc': 'ソフトウェアアップスケール後に適用するコントラスト適応シャープニング。0% は通常のバイリニア拡大です。',
   'settings.display.upscaler': 'アップスケーラー',
   'settings.display.upscaler.desc': 'ポストプロセス後のアップスケーリング基盤。このビルドで実際に動作するものだけが選択でき、それ以外は下に表示されます。',
-  'settings.display.resolutionScale': '解像度スケール',
-  'settings.display.resolutionScale.desc': 'レンダリング解像度の倍率。低い値ほど描画ピクセルが減り、非力なGPUでも軽快です。',
 'settings.display.windowScale': 'ウィンドウサイズ',
 'settings.display.windowScale.desc': 'デザイン寸法（900×1200）の整数倍でウィンドウサイズを設定します。',
 'settings.display.windowScale.auto': '自動',
@@ -2213,9 +2205,6 @@ const EN: Messages = {
   'settings.display.upscaler': 'Upscaler',
   'settings.display.upscaler.desc':
     'Post-process upscaling backend. Only backends this build can actually run are selectable; the rest are listed below.',
-  'settings.display.resolutionScale': 'Resolution scale',
-  'settings.display.resolutionScale.desc':
-    'Render resolution multiplier. Lower values render fewer pixels and are cheaper on weak GPUs.',
 'settings.display.windowScale': 'Window size',
 'settings.display.windowScale.desc': 'Sets the game window to a whole multiple of the design size (900x1200).',
 'settings.display.windowScale.auto': 'Auto',

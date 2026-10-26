@@ -1,4 +1,37 @@
 /**
+ * Resolves a window-scale setting into a concrete window size.
+ *
+ * `auto` needs the monitor size, so it takes the desktop as an argument rather
+ * than reaching for the extension - that keeps this a pure function and makes
+ * the fit testable without a native host. When the desktop is unknown, `auto`
+ * degrades to the design size rather than refusing: an unknown monitor should
+ * not leave the window at whatever size it happened to start at.
+ *
+ * The fixed multiples are whole numbers, so the window keeps the design stage's
+ * exact 3:4 shape at 1x, 2x and 4x. `auto` is the only one that can land on a
+ * fraction, because it is the one that answers to the monitor.
+ */
+export function windowSizeForScale(
+  scale: WindowScale,
+  desktop: NativeDesktopSize | null
+): NativeWindowSize {
+  if (scale === 'auto') {
+    const fit = fitWindowScale(desktop ?? { width: DESIGN_WIDTH, height: DESIGN_HEIGHT });
+    return {
+      width: Math.round(DESIGN_WIDTH * fit),
+      height: Math.round(DESIGN_HEIGHT * fit),
+      scale: fit,
+    };
+  }
+  const safe = scale > 0 ? scale : 1;
+  return {
+    width: DESIGN_WIDTH * safe,
+    height: DESIGN_HEIGHT * safe,
+    scale: safe,
+  };
+}
+
+/**
  * Window-control wrapper for **native** (LayaNative) builds.
  *
  * LayaNative has no DOM `requestFullscreen`, and the engine's own
@@ -68,56 +101,24 @@ export interface NativeWindowSize {
 }
 
 /**
- * The whole multiples of the design stage worth offering.
+ * The factor that makes the window fill the monitor.
  *
- * Only integer multiples are offered, and only powers of two: a window at 1.37x
- * would scale the pixel art by a non-integer factor and make the sprites
- * uneven, which is very visible on a portrait shooter.
- */
-const FIXED_SCALES = [1, 2, 4] as const;
-
-/**
- * Picks the largest offered multiple that still fits the monitor.
+ * The window keeps the design stage's 3:4 portrait shape and grows until one
+ * axis is exactly full and the other still fits - which is the "fill the height
+ * or the width" condition. It is deliberately *not* rounded to a whole
+ * multiple: on a 1080p display the fill is 0.9 (810x1080), and rounding that
+ * down to 1 would leave a band of unused screen, while rounding up would
+ * overflow it.
  *
- * The fit is on *both* axes — a portrait window (900x1200) on a landscape
- * monitor runs out of height long before width, so the height is usually what
- * decides. Falls back to `1` when even that does not fit: a window slightly
- * larger than the monitor is worse than one that is slightly smaller, because
- * the former puts the title bar and the bottom edge off-screen.
+ * The factor is `min(desktopW / DESIGN_WIDTH, desktopH / DESIGN_HEIGHT)`: the
+ * smaller of the two fits is the largest that still fits both, and the axis
+ * that produced it ends up exactly full.
  */
 export function fitWindowScale(desktop: NativeDesktopSize): number {
   if (desktop.width <= 0 || desktop.height <= 0) {
     return 1;
   }
-  let best = 1;
-  for (const scale of FIXED_SCALES) {
-    if (DESIGN_WIDTH * scale <= desktop.width && DESIGN_HEIGHT * scale <= desktop.height) {
-      best = scale;
-    }
-  }
-  return best;
-}
-
-/**
- * Resolves a window-scale setting into a concrete window size.
- *
- * `auto` needs the monitor size, so it takes the desktop as an argument rather
- * than reaching for the extension — that keeps this a pure function and makes
- * the fit testable without a native host. When the desktop is unknown, `auto`
- * degrades to `1` rather than refusing: an unknown monitor should not leave the
- * window at whatever size it happened to start at.
- */
-export function windowSizeForScale(
-  scale: WindowScale,
-  desktop: NativeDesktopSize | null
-): NativeWindowSize {
-  const effective = scale === 'auto' ? (desktop === null ? 1 : fitWindowScale(desktop)) : scale;
-  const safe = effective > 0 ? effective : 1;
-  return {
-    width: DESIGN_WIDTH * safe,
-    height: DESIGN_HEIGHT * safe,
-    scale: safe,
-  };
+  return Math.min(desktop.width / DESIGN_WIDTH, desktop.height / DESIGN_HEIGHT);
 }
 
 /**
