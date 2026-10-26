@@ -215,9 +215,29 @@ export class TnaUiImage {
       this.sprite.scaleX = scale;
       this.sprite.scaleY = scale;
     }
+    // ★ 复用同一个 `Rectangle`，只在裁剪宽度真的变了时才动它。
+    //
+    // 滑杆拖动时 `setCrop` 由每个 `MOUSE_MOVE` 调用。每次 `new` 一个新矩形再
+    // 赋给 `scrollRect`，等于每帧换一个裁剪对象 —— 引擎看到的是"裁剪发生了
+    // 变化"，于是把这块标记失效重绘；在设置面板这种同屏控件很多的地方，频繁
+    // 失效会被放大成肉眼可见的闪烁。
     if (this.crop < 1) {
-      this.sprite.scrollRect = new Laya.Rectangle(0, 0, this.sourceW * this.crop, this.sourceH);
-    } else {
+      const width = this.sourceW * this.crop;
+      const rect = this.sprite.scrollRect;
+      // 只在宽度真的变了时才换一个对象。
+      //
+      // 这里必须赋**新的** Rectangle 而不是改旧对象的字段：引擎看到的是
+      // "scrollRect 被赋了新值"才会重新应用裁剪，改 `rect.width` 它察觉不到
+      // （曾经这么写过，结果拖动时填充段一动不动，只有滑块在跑）。
+      //
+      // 而"只在变化时赋值"仍然保住了去重的收益：滑杆的取值是量化的（步长
+      // 5%），拖动过程中宽度并不会每帧都变，于是绝大多数 MOUSE_MOVE 根本
+      // 不会碰到 scrollRect。
+      if (rect === null || rect === undefined || rect.width !== width ||
+          rect.height !== this.sourceH) {
+        this.sprite.scrollRect = new Laya.Rectangle(0, 0, width, this.sourceH);
+      }
+    } else if (this.sprite.scrollRect !== null && this.sprite.scrollRect !== undefined) {
       this.sprite.scrollRect = null;
     }
   }

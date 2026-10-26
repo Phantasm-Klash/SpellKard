@@ -822,9 +822,19 @@ export function createSliderRow(options: SliderRowOptions): SliderRowHandle {
   let enabled = true;
   let dragging = false;
 
+  /**
+   * 只在文本真的变化时写回。
+   *
+   * `Text.text` 的赋值会重排并重建这行字的纹理，而 `paint()` 在拖动时由每个
+   * `MOUSE_MOVE` 触发 —— 无条件赋值等于每帧重建一次读数纹理。
+   */
+  const setReadout = (text: string): void => {
+    if (valueText.text !== text) {
+      valueText.text = text;
+    }
+  };
+
   const paint = (): void => {
-    const g = track.graphics;
-    g.clear();
     const barY = (SLIDER_HIT_H - SLIDER_BAR_H) / 2;
     const filled = Math.round(SLIDER_W * value);
     // The knob's centre travels within `[KNOB_R, W - KNOB_R]` so it stays inside
@@ -833,45 +843,86 @@ export function createSliderRow(options: SliderRowOptions): SliderRowHandle {
     const travel = SLIDER_W - SLIDER_KNOB_R * 2;
     const knobX = SLIDER_KNOB_R + Math.round(travel * value);
 
-    // Official prefab: drive its `bar` (fill) and `grip` (thumb) from the value.
-    // The parts are scaled/positioned rather than repainted each frame — their
-    // art was already replaced with the TNA paint by `skinSliderH`.
+    // ★ 两套视觉，二选一 —— 不能都画。
+    //
+    // 官方 `SliderH.lh` 预制体自带 bg/bar/grip 三个部件（bar 被 `skinSliderH`
+    // 重绘成金色），而上面又叠了 TNA 三件套（轨道 / 蓝色进度段 / 滑块）。
+    // 两套都画的话，同一条轨道上会出现一金一蓝两条填充段；更糟的是原来走到
+    // 官方分支就 `return`，TNA 那套永远得不到定位与裁剪，于是两条都留在屏幕上。
+    //
+    // 所以：TNA 美术到位就用 TNA（官方部件隐藏），否则退回官方部件。任何时刻
+    // 只有一条填充段。
+    const useTna = trackArt.isReady && fillArt.isReady && knobArt.isReady;
     if (officialSlider !== null) {
-      const bar = childByName(officialSlider, 'bar');
-      if (bar !== null) {
-        // The part's own box is the prefab's 200-wide frame, so scale from the
-        // track the row actually sized — otherwise the fill overruns it.
-        bar.width = Math.max(0.001, SLIDER_W * value);
-        bar.visible = value > 0;
+      for (const name of ['bg', 'bar', 'grip']) {
+        const part = childByName(officialSlider, name);
+        if (part !== null && part.visible !== !useTna) {
+          part.visible = !useTna;
+        }
       }
-      const grip = childByName(officialSlider, 'grip');
-      if (grip !== null) {
-        grip.x = knobX - grip.width / 2;
-        grip.alpha = enabled ? 1 : 0.45;
+      if (!useTna) {
+        // The parts are scaled/positioned rather than repainted each frame —
+        // their art was already replaced with the TNA paint by `skinSliderH`.
+        const bar = childByName(officialSlider, 'bar');
+        if (bar !== null) {
+          // The part's own box is the prefab's 200-wide frame, so scale from the
+          // track the row actually sized — otherwise the fill overruns it.
+          const width = Math.max(0.001, SLIDER_W * value);
+          if (bar.width !== width) {
+            bar.width = width;
+          }
+          const visible = value > 0;
+          if (bar.visible !== visible) {
+            bar.visible = visible;
+          }
+        }
+        const grip = childByName(officialSlider, 'grip');
+        if (grip !== null) {
+          grip.x = knobX - grip.width / 2;
+          const alpha = enabled ? 1 : 0.45;
+          if (grip.alpha !== alpha) {
+            grip.alpha = alpha;
+          }
+        }
       }
-      valueText.text = format(value);
-      return;
     }
     // TNA 美术优先：轨道 + 已填充段 + 滑块都就绪时不再画矢量条。
-    if (trackArt.isReady && fillArt.isReady && knobArt.isReady) {
+    if (useTna) {
       const centerY = barY + SLIDER_BAR_H / 2;
       trackArt.sprite.pos(0, centerY);
       fillArt.sprite.pos(0, centerY);
       fillArt.setCrop(value);
-      fillArt.sprite.visible = value > 0;
-      fillArt.sprite.alpha = enabled ? 1 : 0.45;
+      const visible = value > 0;
+      if (fillArt.sprite.visible !== visible) {
+        fillArt.sprite.visible = visible;
+      }
+      const alpha = enabled ? 1 : 0.45;
+      if (fillArt.sprite.alpha !== alpha) {
+        fillArt.sprite.alpha = alpha;
+      }
       knobArt.sprite.pos(knobX, SLIDER_HIT_H / 2);
-      knobArt.sprite.alpha = enabled ? 1 : 0.45;
-      valueText.text = format(value);
+      if (knobArt.sprite.alpha !== alpha) {
+        knobArt.sprite.alpha = alpha;
+      }
+      setReadout(format(value));
       return;
     }
+    if (officialSlider !== null) {
+      // 官方部件已经在画轨道、填充和滑块，别再叠一层矢量。
+      setReadout(format(value));
+      return;
+    }
+    // 只有真的要画矢量时才清：无条件的 `clear()` 会把这个 sprite 的图形标记
+    // 为失效，而 TNA / 官方部件两条路径根本不往里画东西。
+    const g = track.graphics;
+    g.clear();
     VectorPainter.roundedPanel(g, 0, barY, SLIDER_W, SLIDER_BAR_H, SLIDER_BAR_H / 2, theme.COLOR_PANEL_DEEP, theme.COLOR_DIVIDER, 1);
     if (filled > 0) {
       const fill = enabled ? theme.COLOR_ACCENT : theme.COLOR_TEXT_DISABLED;
       VectorPainter.roundedPanel(g, 0, barY, Math.max(SLIDER_BAR_H, filled), SLIDER_BAR_H, SLIDER_BAR_H / 2, fill, undefined, 0);
     }
     g.drawCircle(knobX, SLIDER_HIT_H / 2, SLIDER_KNOB_R, enabled ? theme.COLOR_TEXT : theme.COLOR_TEXT_DISABLED);
-    valueText.text = format(value);
+    setReadout(format(value));
   };
   paint();
   // 美术是异步到的：到位后重画一次，把矢量条换成 TNA 条。

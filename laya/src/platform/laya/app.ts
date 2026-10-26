@@ -98,6 +98,28 @@ export interface ClientConfig {
   language?: string;
 }
 
+/**
+ * 两个设置分组是否等价（只看一层字段）。
+ *
+ * 不能用引用比较：`SettingsStore.update` 把整个 payload 过一遍 normaliser，
+ * 所以哪怕一个值都没变，各分组拿到的也是**新对象**，引用比较永远判为"变了"。
+ */
+function sameSettingsGroup(a: unknown, b: unknown): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) {
+    return false;
+  }
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) {
+    return false;
+  }
+  return keys.every((key) => left[key] === right[key]);
+}
+
 export class SpellKardApp {
   private readonly timer: TimerLike;
   private readonly settings: SettingsStore;
@@ -179,12 +201,31 @@ export class SpellKardApp {
     this.fpsOverlay = createFpsOverlay();
     this.fpsOverlay.setVisible(this.settings.get().display.showFps);
 
+    // ★ 按分组去重 —— 哪一组真的动了才应用哪一组。
+    //
+    // 不加这层判断时，任何一次设置变更都会把下面四个全跑一遍，而其中
+    // `applyDisplaySettings` 会调 `applyRenderScale`（改渲染缩放）、
+    // `upscalers.apply` 会重建升频器，两者都是**整屏重绘**级别的操作。
+    // 于是拖一下音量、或者按下设置里任何一个按钮，整个画面连所有按钮
+    // 都会闪一次 —— 与改动的那一项毫无关系的部分也跟着重绘。
+    let appliedDisplay = this.settings.get().display;
+    let appliedAudio = this.settings.get().audio;
+    let appliedLanguage = this.settings.get().language;
     this.settings.subscribe((next) => {
-      applyDisplaySettings(next.display);
-      applyAudioSettings(next.audio);
-      this.upscalers.apply(next.display);
-      this.fpsOverlay.setVisible(next.display.showFps);
-      setLanguage(next.language);
+      if (!sameSettingsGroup(next.display, appliedDisplay)) {
+        applyDisplaySettings(next.display);
+        this.upscalers.apply(next.display);
+        this.fpsOverlay.setVisible(next.display.showFps);
+        appliedDisplay = next.display;
+      }
+      if (!sameSettingsGroup(next.audio, appliedAudio)) {
+        applyAudioSettings(next.audio);
+        appliedAudio = next.audio;
+      }
+      if (next.language !== appliedLanguage) {
+        setLanguage(next.language);
+        appliedLanguage = next.language;
+      }
     });
 
     const httpTransport = new HttpLobbyTransport(new LayaHttpClient(config.lobbyHttpBase));
