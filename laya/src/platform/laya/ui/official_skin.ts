@@ -129,9 +129,11 @@ export function skinCheckBox(widget: Laya.Sprite): void {
     graphics.drawCircle(knobR + 3, h / 2, knobR, theme.COLOR_TEXT_DISABLED);
   });
   paintPart(widget, 'selected', (_p, graphics, w, h) => {
-    plate(graphics, w, h, radiusFor(w, h), theme.COLOR_SUCCESS, theme.COLOR_SUCCESS);
+    // Blue, like the option rows and the hand-painted fallback: green read as
+    // "something else is on" rather than "this one is on".
+    plate(graphics, w, h, radiusFor(w, h), theme.COLOR_INFO, theme.COLOR_INFO);
     const knobR = Math.max(2, h / 2 - 3);
-    graphics.drawCircle(w - knobR - 3, h / 2, knobR, theme.COLOR_TEXT);
+    graphics.drawCircle(w - knobR - 3, h / 2, knobR, theme.COLOR_VOID);
   });
 }
 

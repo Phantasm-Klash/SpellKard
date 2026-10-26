@@ -1,102 +1,119 @@
 /**
- * 窗口倍率（1× / 2× / 4× / 自动）的纯逻辑。
+ * 窗口尺寸档位（1× / 1.5× / 2× / 自动）的纯逻辑。
  *
- * 分辨率换算本身与原生窗口无关：给定倍率和显示器尺寸就能算出窗口该多大，
- * 所以这里全部可测。真正的 resize 门（原生扩展）缺失时只是不改窗口，
- * 计算部分不受影响 —— 这也是把它做成纯函数的理由。
+ * 分辨率换算本身与原生窗口无关：给定档位和屏幕就能算出窗口该多大，所以这里全部可测。
+ * 真正的 resize 门（原生扩展）缺失时只是不改窗口，计算部分不受影响 —— 这也是把它做成
+ * 纯函数的理由。
+ *
+ * 语义：
+ *  - 固定档是**绝对尺寸**：1× = 800×600，1.5× = 1200×900，2× = 1600×1200（都是 4:3）。
+ *  - 「自动」保持 4:3，在屏幕内把长和宽中**任意一边扩到最大**后截止：
+ *    2560×1440 的屏幕 → 1920×1440（高度撑满，宽度是剩下的）。
  */
 
 import { expect, expectClose, expectEqual, suite, test } from './harness';
 import {
-  DESIGN_HEIGHT,
-  DESIGN_WIDTH,
-  fitWindowScale,
+  WINDOW_ASPECT,
+  WINDOW_SIZES,
   windowSizeForScale,
-  type NativeDesktopSize,
+  type NativeScreenGeometry,
 } from '../src/platform/native/native_window';
 
-const FHD: NativeDesktopSize = { width: 1920, height: 1080 };
-const QHD: NativeDesktopSize = { width: 2560, height: 1440 };
-const TALL: NativeDesktopSize = { width: 3840, height: 2400 };
+/** A 2560x1440 display. */
+const SCREEN: NativeScreenGeometry = {
+  desktop: { width: 2560, height: 1440 },
+  workArea: { width: 2560, height: 1392 },
+};
 
-suite('window scale: design size and fixed multiples');
+suite('window scale: the fixed sizes are absolute');
 
-test('the fixed multiples are integer multiples of the design stage', () => {
-  expectEqual(DESIGN_WIDTH, 900, 'design width');
-  expectEqual(DESIGN_HEIGHT, 1200, 'design height');
-  expectEqual(windowSizeForScale(1, null).width, 900, '1x width');
-  expectEqual(windowSizeForScale(1, null).height, 1200, '1x height');
-  expectEqual(windowSizeForScale(2, null).width, 1800, '2x width');
-  expectEqual(windowSizeForScale(2, null).height, 2400, '2x height');
-  expectEqual(windowSizeForScale(4, null).width, 3600, '4x width');
-  expectEqual(windowSizeForScale(4, null).height, 4800, '4x height');
+test('1x is 800x600', () => {
+  const size = windowSizeForScale(1, SCREEN);
+  expectEqual(size.width, 800, '1x width');
+  expectEqual(size.height, 600, '1x height');
 });
 
-test('the resolved size reports the multiple it used', () => {
-  expectEqual(windowSizeForScale(2, null).scale, 2, 'fixed 2x reports 2');
-  expectEqual(windowSizeForScale(1, null).scale, 1, 'fixed 1x reports 1');
+test('2x is 1600x1200', () => {
+  const size = windowSizeForScale(2, SCREEN);
+  expectEqual(size.width, 1600, '2x width');
+  expectEqual(size.height, 1200, '2x height');
 });
 
-suite('window scale: auto fills the monitor');
-
-test('auto fills the axis that runs out first, keeping the 3:4 shape', () => {
-  // 900x1200 is portrait, so a landscape monitor runs out of height first:
-  // the window fills the height and the width follows the aspect ratio.
-  // 1080 / 1200 = 0.9 -> 810x1080.
-  const fhd = windowSizeForScale('auto', FHD);
-  expectEqual(fhd.height, 1080, '1080p fills the height exactly');
-  expectEqual(fhd.width, 810, 'and the width follows 3:4');
-  expectClose(fhd.scale, 0.9, 1e-9, 'the factor is 0.9');
-
-  // 1440p: 1440 / 1200 = 1.2 -> 1080x1440.
-  const qhd = windowSizeForScale('auto', QHD);
-  expectEqual(qhd.height, 1440, '1440p fills the height exactly');
-  expectEqual(qhd.width, 1080, 'and the width follows 3:4');
-
-  // A tall monitor: the width runs out first instead.
-  const tall = windowSizeForScale('auto', TALL);
-  expectEqual(tall.height, 2400, '3840x2400 fills the height (width would overflow)');
-  expectEqual(tall.width, 1800, 'and the width follows 3:4');
+test('every fixed size keeps the 4:3 shape', () => {
+  for (const scale of [1, 1.5, 2] as const) {
+    const size = windowSizeForScale(scale, SCREEN);
+    expectClose(size.width / size.height, WINDOW_ASPECT, 1e-9, `${scale}x is 4:3`);
+  }
 });
 
-test('auto fills whichever axis allows it, never overflowing the other', () => {
-  // A very wide, short monitor: the height is the limit.
-  const wide: NativeDesktopSize = { width: 3440, height: 1440 };
-  const fitted = windowSizeForScale('auto', wide);
-  expect(fitted.height <= wide.height, 'the height fits');
-  expect(fitted.width <= wide.width, 'the width fits');
-  expect(
-    fitted.height === wide.height || fitted.width === wide.width,
-    'and one axis is exactly full',
-  );
+test('the sizes do not depend on the screen', () => {
+  // The setting says "make the window this big" - not "some multiple of the
+  // display", so a bigger monitor must not change what 1x means.
+  const small: NativeScreenGeometry = {
+    desktop: { width: 1280, height: 720 },
+    workArea: { width: 1280, height: 672 },
+  };
+  expectEqual(windowSizeForScale(1, small).width, 800, '1x on a small screen');
+  expectEqual(windowSizeForScale(1, small).height, 600, '1x on a small screen');
+  expectEqual(windowSizeForScale(2, small).width, 1600, '2x on a small screen');
 });
 
-test('auto is allowed to land on a fraction', () => {
-  // Rounding the factor to a whole multiple would either leave a band of
-  // unused screen (0.9 -> 1) or overflow it (0.9 -> 0.5 would be 450x600,
-  // wasting half the display).
-  expectClose(fitWindowScale(FHD), 0.9, 1e-9, '1080p fits at 0.9');
-  expectClose(fitWindowScale(QHD), 1.2, 1e-9, '1440p fits at 1.2');
-  expectClose(fitWindowScale(TALL), 2, 1e-9, '2400p fits at 2');
+test('the size table is the one the setting offers', () => {
+  expectEqual(WINDOW_SIZES['1'].width, 800, '1x width');
+  expectEqual(WINDOW_SIZES['1'].height, 600, '1x height');
+  expectEqual(WINDOW_SIZES['1.5'].width, 1200, '1.5x width');
+  expectEqual(WINDOW_SIZES['1.5'].height, 900, '1.5x height');
+  expectEqual(WINDOW_SIZES['2'].width, 1600, '2x width');
+  expectEqual(WINDOW_SIZES['2'].height, 1200, '2x height');
 });
 
-test('a monitor smaller than the design stage still gets a usable window', () => {
-  const tiny: NativeDesktopSize = { width: 800, height: 600 };
-  const fitted = windowSizeForScale('auto', tiny);
-  expect(fitted.width <= 800, 'the width fits');
-  expect(fitted.height <= 600, 'the height fits');
-  expect(fitted.width > 0 && fitted.height > 0, 'and it is not degenerate');
+suite('window scale: auto fills the screen in 4:3');
+
+test('auto on a 2560x1440 screen is 1920x1440', () => {
+  // The height is full and the width is what the aspect leaves over - the
+  // width cannot be 2560, because a 4:3 window that wide would be 1920 tall
+  // and would not fit.
+  const auto = windowSizeForScale('auto', SCREEN);
+  expectEqual(auto.width, 1920, 'the width');
+  expectEqual(auto.height, 1440, 'the height');
 });
 
-test('a degenerate monitor size is treated as unknown', () => {
-  expectEqual(fitWindowScale({ width: 0, height: 0 }), 1, 'zero desktop -> 1x');
+test('auto keeps the 4:3 shape and never overflows the screen', () => {
+  for (const screen of [
+    { width: 2560, height: 1440 },
+    { width: 1920, height: 1080 },
+    { width: 3840, height: 2160 },
+    { width: 1280, height: 720 },
+    { width: 1024, height: 768 },
+  ]) {
+    const auto = windowSizeForScale('auto', {
+      desktop: screen,
+      workArea: screen,
+    });
+    expect(auto.width <= screen.width, `${screen.width}x${screen.height}: the width fits`);
+    expect(auto.height <= screen.height, `${screen.width}x${screen.height}: the height fits`);
+    expectClose(auto.width / auto.height, WINDOW_ASPECT, 1e-9, 'and it is 4:3');
+  }
 });
 
-test('auto needs the desktop, and falls back to the design size without it', () => {
-  // An unknown monitor should not leave the window at whatever size it started
-  // at; the design size is a defined, predictable one.
-  const withoutDesktop = windowSizeForScale('auto', null);
-  expectEqual(withoutDesktop.scale, 1, 'unknown monitor -> the design size');
-  expectEqual(withoutDesktop.width, DESIGN_WIDTH, 'at design width');
-  expectEqual(withoutDesktop.height, DESIGN_HEIGHT, 'at design height');
+test('auto reaches the screen on at least one axis', () => {
+  // "Grow until one side is full" - that is what makes it fill rather than
+  // merely fit.
+  for (const screen of [
+    { width: 2560, height: 1440 },
+    { width: 1920, height: 1080 },
+    { width: 1280, height: 1024 },
+  ]) {
+    const auto = windowSizeForScale('auto', { desktop: screen, workArea: screen });
+    expect(
+      auto.width === screen.width || auto.height === screen.height,
+      `${screen.width}x${screen.height}: one axis is exactly full`,
+    );
+  }
+});
+
+test('auto without a screen falls back to the smallest fixed size', () => {
+  const auto = windowSizeForScale('auto', null);
+  expectEqual(auto.width, WINDOW_SIZES['1'].width, 'the 1x width');
+  expectEqual(auto.height, WINDOW_SIZES['1'].height, 'the 1x height');
 });

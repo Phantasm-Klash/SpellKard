@@ -41,7 +41,7 @@ export type FrameCap = (typeof FRAME_CAPS)[number];
  * offered: a window that is 1.37x the design size would scale the pixel art by
  * a non-integer factor and make it uneven.
  */
-export const WINDOW_SCALES = [1, 2, 4, 'auto'] as const;
+export const WINDOW_SCALES = [1, 1.5, 2, 'auto'] as const;
 export type WindowScale = (typeof WINDOW_SCALES)[number];
 
 /**

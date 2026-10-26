@@ -75,17 +75,21 @@ const LABEL_LINE_H = theme.FONT_SIZE_LABEL + 2;
 const DESC_LINE_H = theme.FONT_SIZE_CAPTION + 3;
 /** Width of the toggle pill. */
 const TOGGLE_W = 46;
-const TOGGLE_H = 24;
+// Every control in a row is the same height: the segmented control, the
+// toggle and the slider's hit box. They were 26 / 24 / 26, which made the
+// rows look ragged — and the toggle, being the shortest, read as the one that
+// was slightly wrong.
+const TOGGLE_H = 30;
 /** Width of the slider control (its hit box; the bar drawn inside is thinner). */
 const SLIDER_W = 108;
-const SLIDER_HIT_H = 26;
+const SLIDER_HIT_H = 30;
 const SLIDER_BAR_H = 4;
 const SLIDER_KNOB_R = 6;
 /** Width of the value readout next to a slider. */
 const SLIDER_VALUE_W = 40;
 /** Horizontal padding inside one segmented option button. */
 const OPTION_PAD = 8;
-const OPTION_H = 26;
+const OPTION_H = 30;
 
 // ---------------------------------------------------------------------------
 // text measurement (shared with the About / note rows)

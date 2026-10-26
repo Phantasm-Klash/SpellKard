@@ -36,7 +36,7 @@ import { isLanguageCode, setLanguage } from '../../core/game/i18n';
 import { applyDisplaySettings, createFpsOverlay, type FpsOverlayHandle } from './display';
 import type { WindowScale } from '../../core/settings/schema';
 import {
-  nativeDesktopSize,
+  nativeScreenGeometry,
   requestNativeWindowSize,
   windowSizeForScale,
 } from '../native/native_window';
@@ -136,7 +136,11 @@ function sameSettingsGroup(a: unknown, b: unknown): boolean {
  * and changes the monitor's mode.
  */
 function applyWindowScale(scale: WindowScale): void {
-  requestNativeWindowSize(windowSizeForScale(scale, nativeDesktopSize()));
+  // The fixed multiples are multiples of the screen and "auto" fills the work
+  // area (the screen minus the taskbar), so every setting keeps the monitor's
+  // shape - the layout is width-adaptive, so a screen-shaped window shows more
+  // playfield than a 3:4 one would.
+  requestNativeWindowSize(windowSizeForScale(scale, nativeScreenGeometry()));
 }
 
 export class SpellKardApp {
@@ -200,7 +204,17 @@ export class SpellKardApp {
     // restored from storage is honoured before the first frame, and the panel
     // stays a pure UI component with no engine knowledge.
     applyDisplaySettings(this.settings.get().display);
-    applyWindowScale(this.settings.get().display.windowScale);
+    // The window is resized *after* the engine is up, not here: at construction
+    // time the native host window is still being set up, and resizing it there
+    // took the process down with it. `Laya.init` has already run by the time
+    // this constructor is called, but the first frames are when the window
+    // settles, so the size is applied on the next tick.
+    // The window is resized shortly after the engine is up, not here: at
+    // construction time the native host window is still settling, and resizing
+    // it there is too early.
+    this.timer.setTimeout(() => {
+      applyWindowScale(this.settings.get().display.windowScale);
+    }, 500);
     applyAudioSettings(this.settings.get().audio);
     this.upscalers.apply(this.settings.get().display);
     // The language is applied here, not in the settings panel, so a value

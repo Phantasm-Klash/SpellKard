@@ -45,8 +45,8 @@ import { t } from '../../../../core/game/i18n';
 function windowScaleChoices(): readonly OptionChoice<WindowScale>[] {
   return [
     { id: 1, label: '1×' },
+    { id: 1.5, label: '1.5×' },
     { id: 2, label: '2×' },
-    { id: 4, label: '4×' },
     { id: 'auto', label: t('settings.display.windowScale.auto') },
   ];
 }

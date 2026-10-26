@@ -224,10 +224,20 @@ export function loginLayout(stageWidth: number, stageHeight: number): LoginLayou
 
   if (stacked) {
     // Portrait centred under the title band; card centred below the portrait.
+    //
+    // The card has to fit **completely**: register mode is five fields and two
+    // buttons, which needs LOGIN_CARD_CONTENT_H. The portrait used to take its
+    // full height first and squeezed the card into whatever was left - on a
+    // 800x600 portrait that left 168px of a 502px card, and the buttons ended
+    // up past its border. So the portrait only gets the room the card does not
+    // need, and the card starts right under the title band.
+    const cardTop = px(titleBand);
+    const cardRoom = Math.max(0, h - cardTop - LOGIN_MARGIN);
+    const portraitRoom = Math.max(0, cardRoom - px(LOGIN_CARD_CONTENT_H));
     portraitX = px((w - portraitW) / 2);
-    portraitY = px(titleBand);
+    portraitY = cardTop + Math.max(0, portraitRoom);
     cardX = px((w - cardWidth) / 2);
-    cardY = px(Math.min(portraitY + portraitH + LOGIN_BLOCK_GAP, h));
+    cardY = cardTop;
   } else {
     // Card pinned to the left gutter; portrait centred vertically on the right.
     cardX = px(LOGIN_MARGIN);

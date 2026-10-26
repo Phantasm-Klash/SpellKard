@@ -43,3 +43,13 @@ endif()
 if(WIN32)
   target_link_libraries(win_control PUBLIC user32)
 endif()
+
+# The sources carry Chinese comments, so MSVC has to be told the encoding.
+# Without this it assumes the ANSI code page (936 here) and warns C4819 on
+# every file - and a Chinese string *literal* would be mangled rather than
+# merely warned about. /utf-8 is set per target rather than through
+# CMAKE_CXX_FLAGS, which would clobber the default /EHsc and trip C4530.
+if(MSVC)
+  target_compile_options(win_control PRIVATE /utf-8)
+  target_compile_options(spk_win PRIVATE /utf-8)
+endif()

@@ -1,34 +1,39 @@
 /**
  * Resolves a window-scale setting into a concrete window size.
  *
- * `auto` needs the monitor size, so it takes the desktop as an argument rather
- * than reaching for the extension - that keeps this a pure function and makes
- * the fit testable without a native host. When the desktop is unknown, `auto`
- * degrades to the design size rather than refusing: an unknown monitor should
- * not leave the window at whatever size it happened to start at.
+ * `auto` needs the work area, so it takes it as an argument rather than
+ * reaching for the extension - that keeps this a pure function and makes the
+ * fit testable without a native host. When the area is unknown, `auto` degrades
+ * to the design size rather than refusing: an unknown monitor should not leave
+ * the window at whatever size it happened to start at.
  *
- * The fixed multiples are whole numbers, so the window keeps the design stage's
- * exact 3:4 shape at 1x, 2x and 4x. `auto` is the only one that can land on a
- * fraction, because it is the one that answers to the monitor.
+ * The fixed multiples are whole numbers, so the window keeps the **monitor's**
+ * exact shape at 1x, 2x and 4x - the layout is width-adaptive (the playfield
+ * takes the room the fixed HUD leaves), so a screen-shaped window shows more
+ * playfield than one locked to the design stage's 3:4. `auto` is the only one
+ * that answers to the work area rather than to a multiple of the screen.
  */
 export function windowSizeForScale(
   scale: WindowScale,
-  desktop: NativeDesktopSize | null
+  geometry: NativeScreenGeometry | null
 ): NativeWindowSize {
   if (scale === 'auto') {
-    const fit = fitWindowScale(desktop ?? { width: DESIGN_WIDTH, height: DESIGN_HEIGHT });
-    return {
-      width: Math.round(DESIGN_WIDTH * fit),
-      height: Math.round(DESIGN_HEIGHT * fit),
-      scale: fit,
-    };
+    // Grow the 4:3 shape until one side reaches the screen and the other still
+    // fits: the width is capped by the screen's width *and* by the height times
+    // the aspect. On a 2560x1440 display that is 1920x1440 - the height is
+    // full and the width is what is left over.
+    const desktop = geometry?.desktop ?? null;
+    if (desktop === null) {
+      return { width: WINDOW_SIZES['1'].width, height: WINDOW_SIZES['1'].height, scale: 1 };
+    }
+    const width = Math.min(desktop.width, Math.round(desktop.height * WINDOW_ASPECT));
+    const height = Math.round(width / WINDOW_ASPECT);
+    return { width, height, scale: width / WINDOW_SIZES['1'].width };
   }
-  const safe = scale > 0 ? scale : 1;
-  return {
-    width: DESIGN_WIDTH * safe,
-    height: DESIGN_HEIGHT * safe,
-    scale: safe,
-  };
+  // The fixed settings are absolute sizes; the setting says "make the window
+  // this big", not "make it some multiple of the screen".
+  const size = WINDOW_SIZES[String(scale)] ?? WINDOW_SIZES['1'];
+  return { width: size.width, height: size.height, scale };
 }
 
 /**
@@ -88,9 +93,61 @@ export interface NativeDesktopSize {
   readonly height: number;
 }
 
-/** The stage the UI is laid out for; the window is an integer multiple of it. */
+/**
+ * The usable part of the monitor, in device pixels — the work area, i.e. the
+ * screen minus the taskbar and any other app bars.
+ *
+ * This is what an "auto" window should fill: a window sized to the whole
+ * monitor loses its bottom edge behind the taskbar.
+ */
+export interface NativeWorkArea {
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * The two screen rectangles a window size can be derived from.
+ *
+ * The **desktop** is the whole monitor and the **work area** is what is left
+ * once the taskbar is subtracted. They share the monitor's aspect ratio, so a
+ * window derived from either keeps the screen's shape — which is what the game
+ * wants: its layout is width-adaptive (the playfield takes the room the fixed
+ * HUD leaves, `core/game/battle_layout.ts`), so a screen-shaped window shows
+ * more playfield, while a window locked to the design stage's 3:4 would leave
+ * wide black bars on a 16:9 display.
+ */
+export interface NativeScreenGeometry {
+  readonly desktop: NativeDesktopSize;
+  readonly workArea: NativeWorkArea;
+}
+
+/**
+ * The stage the UI is laid out for.
+ *
+ * It is **not** the window's shape: the stage is portrait (the playfield is
+ * 640 wide with the HUD beside it), while the window sizes below are landscape
+ * 4:3. The window is what the player sees; the stage is what the layout is
+ * measured against.
+ */
 export const DESIGN_WIDTH = 900;
 export const DESIGN_HEIGHT = 1200;
+
+/**
+ * The window sizes the fixed settings choose, in device pixels.
+ *
+ * They are absolute rather than multiples of anything: the setting says "make
+ * the window this big", and the numbers are the classic 4:3 desktop sizes the
+ * game is meant to run in. All of them keep the 4:3 shape, so "auto" can keep
+ * it too.
+ */
+export const WINDOW_SIZES: Readonly<Record<string, { width: number; height: number }>> = {
+  '1': { width: 800, height: 600 },
+  '1.5': { width: 1200, height: 900 },
+  '2': { width: 1600, height: 1200 },
+};
+
+/** The shape every window size keeps: 4:3. */
+export const WINDOW_ASPECT = 4 / 3;
 
 /** A concrete window size in logical pixels. */
 export interface NativeWindowSize {
@@ -100,26 +157,6 @@ export interface NativeWindowSize {
   readonly scale: number;
 }
 
-/**
- * The factor that makes the window fill the monitor.
- *
- * The window keeps the design stage's 3:4 portrait shape and grows until one
- * axis is exactly full and the other still fits - which is the "fill the height
- * or the width" condition. It is deliberately *not* rounded to a whole
- * multiple: on a 1080p display the fill is 0.9 (810x1080), and rounding that
- * down to 1 would leave a band of unused screen, while rounding up would
- * overflow it.
- *
- * The factor is `min(desktopW / DESIGN_WIDTH, desktopH / DESIGN_HEIGHT)`: the
- * smaller of the two fits is the largest that still fits both, and the axis
- * that produced it ends up exactly full.
- */
-export function fitWindowScale(desktop: NativeDesktopSize): number {
-  if (desktop.width <= 0 || desktop.height <= 0) {
-    return 1;
-  }
-  return Math.min(desktop.width / DESIGN_WIDTH, desktop.height / DESIGN_HEIGHT);
-}
 
 /**
  * Parses the extension's `"2048x1280"` desktop-size string.
@@ -253,6 +290,96 @@ export function requestNativeWindowSize(
     return api.setWindowSize(size.width, size.height) === 1;
   } catch {
     return false;
+  }
+}
+
+/**
+ * The work area of the monitor the window is on, or `null` when it cannot be
+ * read.
+ *
+ * The extension's `getState()` already reports it (`workW` / `workH`), so this
+ * is a parse of that JSON rather than a second native call.
+ */
+export function nativeWorkArea(scope: unknown = globalThis): NativeWorkArea | null {
+  const api = spkWin(scope);
+  if (api === null) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(api.getState());
+    if (typeof parsed !== 'object' || parsed === null) {
+      return null;
+    }
+    const record = parsed as Record<string, unknown>;
+    const width = Number(record.workW);
+    const height = Number(record.workH);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      return null;
+    }
+    return { width, height };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The window's current outer size, or `null` when it cannot be read.
+ *
+ * Used to tell whether the native window has stopped moving yet.
+ */
+export function nativeWindowSize(scope: unknown = globalThis): NativeDesktopSize | null {
+  const api = spkWin(scope);
+  if (api === null) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(api.getState());
+    if (typeof parsed !== 'object' || parsed === null) {
+      return null;
+    }
+    const record = parsed as Record<string, unknown>;
+    const width = Number(record.windowW);
+    const height = Number(record.windowH);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      return null;
+    }
+    return { width, height };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The monitor's desktop and work area together, or `null` when the extension
+ * is not there.
+ *
+ * The two come from one native call — `getState()` reports both — so they are
+ * always consistent with each other.
+ */
+export function nativeScreenGeometry(scope: unknown = globalThis): NativeScreenGeometry | null {
+  const api = spkWin(scope);
+  if (api === null) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(api.getState());
+    if (typeof parsed !== 'object' || parsed === null) {
+      return null;
+    }
+    const record = parsed as Record<string, unknown>;
+    const desktopW = Number(record.desktopW);
+    const desktopH = Number(record.desktopH);
+    const workW = Number(record.workW);
+    const workH = Number(record.workH);
+    if (!Number.isFinite(desktopW) || !Number.isFinite(desktopH) || desktopW <= 0 || desktopH <= 0) {
+      return null;
+    }
+    const workArea = Number.isFinite(workW) && Number.isFinite(workH) && workW > 0 && workH > 0
+      ? { width: workW, height: workH }
+      : { width: desktopW, height: desktopH };
+    return { desktop: { width: desktopW, height: desktopH }, workArea };
+  } catch {
+    return null;
   }
 }
 

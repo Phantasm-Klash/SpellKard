@@ -549,19 +549,38 @@ export class LoginScene implements ClientScene {
     const innerW = Math.max(0, cardWidth - LOGIN_CARD_PAD * 2);
 
     const fields = this.visibleFields();
-    const fieldsHeight = fields.length * LOGIN_FIELD_H + Math.max(0, fields.length - 1) * LOGIN_FIELD_GAP;
-    const buttonsHeight = LOGIN_BUTTON_COUNT * LOGIN_BUTTON_H + Math.max(0, LOGIN_BUTTON_COUNT - 1) * LOGIN_BUTTON_GAP;
-    const contentHeight =
-      LOGIN_CARD_PAD +
+
+    // The content is measured in two parts: the parts that have a minimum size
+    // (the fields, the buttons, the captions) and the gaps between them.
+    //
+    // Only the gaps are compressible. When the card is shorter than the
+    // content - a 800x600 portrait window in register mode needs 502px and
+    // gets 480 - the gaps shrink to make it fit, because the alternative is
+    // the buttons ending up past the card's border.
+    const fixedHeight =
+      LOGIN_CARD_PAD * 2 +
       LOGIN_CARD_TITLE_H +
-      LOGIN_BLOCK_GAP +
-      fieldsHeight +
-      LOGIN_BLOCK_GAP +
       LOGIN_STATUS_H +
       LOGIN_ENDPOINT_H +
-      LOGIN_BLOCK_GAP +
-      buttonsHeight +
-      LOGIN_CARD_PAD;
+      fields.length * LOGIN_FIELD_H +
+      LOGIN_BUTTON_COUNT * LOGIN_BUTTON_H;
+    const gapsHeight =
+      LOGIN_BLOCK_GAP * 3 +
+      Math.max(0, fields.length - 1) * LOGIN_FIELD_GAP +
+      Math.max(0, LOGIN_BUTTON_COUNT - 1) * LOGIN_BUTTON_GAP;
+
+    let blockGap = LOGIN_BLOCK_GAP;
+    let fieldGap = LOGIN_FIELD_GAP;
+    let buttonGap = LOGIN_BUTTON_GAP;
+    if (fixedHeight + gapsHeight > cardHeight && gapsHeight > 0) {
+      const factor = Math.max(0, (cardHeight - fixedHeight) / gapsHeight);
+      blockGap = Math.round(LOGIN_BLOCK_GAP * factor);
+      fieldGap = Math.round(LOGIN_FIELD_GAP * factor);
+      buttonGap = Math.round(LOGIN_BUTTON_GAP * factor);
+    }
+    const contentHeight = fixedHeight + (blockGap * 3 +
+      Math.max(0, fields.length - 1) * fieldGap +
+      Math.max(0, LOGIN_BUTTON_COUNT - 1) * buttonGap);
 
     // `LOGIN_CARD_CONTENT_H` (inside `loginLayout`) reserves the tallest
     // (register) form; centre the shorter login form inside it instead of
@@ -570,7 +589,7 @@ export class LoginScene implements ClientScene {
 
     this.cardTitle.pos(innerX, y);
     this.cardTitle.width = innerW;
-    y += LOGIN_CARD_TITLE_H + LOGIN_BLOCK_GAP;
+    y += LOGIN_CARD_TITLE_H + blockGap;
 
     // The e-mail row is split between the address input and the compact
     // "Send code" button; every other row spans the card.
@@ -585,7 +604,7 @@ export class LoginScene implements ClientScene {
           emailRow.buttonWidth,
         );
       }
-      y += LOGIN_FIELD_H + LOGIN_FIELD_GAP;
+      y += LOGIN_FIELD_H + fieldGap;
     }
     // Fields the current mode hides still need sane geometry, so a later mode
     // flip does not flash them at a stale position/size.
@@ -596,8 +615,8 @@ export class LoginScene implements ClientScene {
     }
     this.applyFieldVisibility(fields);
     this.emailSendButton.sprite.visible = this.mode === 'register';
-    y -= LOGIN_FIELD_GAP; // the loop added one gap too many after the last field
-    y += LOGIN_BLOCK_GAP;
+    y -= fieldGap; // the loop added one gap too many after the last field
+    y += blockGap;
 
     this.statusText.pos(innerX, y);
     this.statusText.width = innerW;
@@ -605,9 +624,9 @@ export class LoginScene implements ClientScene {
     // always reserved so the card never reflows when it appears.
     this.endpointText.pos(innerX, y + LOGIN_STATUS_H);
     this.endpointText.width = innerW;
-    y += LOGIN_STATUS_H + LOGIN_ENDPOINT_H + LOGIN_BLOCK_GAP;
+    y += LOGIN_STATUS_H + LOGIN_ENDPOINT_H + blockGap;
 
-    this.ensureButtons(innerX, y, innerW);
+    this.ensureButtons(innerX, y, innerW, buttonGap);
   }
 
   /** Positions a field's frame + input inside the card at `(x, y)`. */
@@ -653,7 +672,7 @@ export class LoginScene implements ClientScene {
    * which dropped hover/pressed state and re-parented the sprites on each
    * stage resize.
    */
-  private ensureButtons(x: number, y: number, width: number): void {
+  private ensureButtons(x: number, y: number, width: number, buttonGap: number): void {
     if (this.primaryButton === undefined) {
       // Icons are named explicitly (not derived from the label) so a language
       // switch cannot drop them: `iconNameForLabel` matches English substrings.
@@ -686,7 +705,7 @@ export class LoginScene implements ClientScene {
       this.buttonsWidth = width;
     }
 
-    const step = LOGIN_BUTTON_H + LOGIN_BUTTON_GAP;
+    const step = LOGIN_BUTTON_H + buttonGap;
     this.primaryButton.sprite.pos(x, y);
     this.secondaryButton.sprite.pos(x, y + step);
   }
