@@ -34,6 +34,12 @@ import type { ShortcutAction } from '../../core/input/shortcuts';
 import { applyAudioSettings } from './audio';
 import { isLanguageCode, setLanguage } from '../../core/game/i18n';
 import { applyDisplaySettings, createFpsOverlay, type FpsOverlayHandle } from './display';
+import type { WindowScale } from '../../core/settings/schema';
+import {
+  nativeDesktopSize,
+  requestNativeWindowSize,
+  windowSizeForScale,
+} from '../native/native_window';
 import { toggleFullscreen, fullscreenDebugState } from './fullscreen';
 import { LayaInput } from './laya_input';
 import { LayaTimer } from './laya_timer';
@@ -120,6 +126,19 @@ function sameSettingsGroup(a: unknown, b: unknown): boolean {
   return keys.every((key) => left[key] === right[key]);
 }
 
+/**
+ * Sizes the host window from the stored window scale.
+ *
+ * A no-op when the running build has no window-resize door — web builds, and
+ * the current prebuilt `spk_win.dll` — because `requestNativeWindowSize`
+ * reports that instead of throwing. It deliberately does not fall back to
+ * `PAL.browser.setResolution`, which on Windows reaches `conch.setResolution`
+ * and changes the monitor's mode.
+ */
+function applyWindowScale(scale: WindowScale): void {
+  requestNativeWindowSize(windowSizeForScale(scale, nativeDesktopSize()));
+}
+
 export class SpellKardApp {
   private readonly timer: TimerLike;
   private readonly settings: SettingsStore;
@@ -181,6 +200,7 @@ export class SpellKardApp {
     // restored from storage is honoured before the first frame, and the panel
     // stays a pure UI component with no engine knowledge.
     applyDisplaySettings(this.settings.get().display);
+    applyWindowScale(this.settings.get().display.windowScale);
     applyAudioSettings(this.settings.get().audio);
     this.upscalers.apply(this.settings.get().display);
     // The language is applied here, not in the settings panel, so a value
@@ -216,6 +236,7 @@ export class SpellKardApp {
         applyDisplaySettings(next.display);
         this.upscalers.apply(next.display);
         this.fpsOverlay.setVisible(next.display.showFps);
+        applyWindowScale(next.display.windowScale);
         appliedDisplay = next.display;
       }
       if (!sameSettingsGroup(next.audio, appliedAudio)) {

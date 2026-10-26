@@ -190,6 +190,9 @@ export interface Messages {
   'settings.display.upscaler.desc': string;
   'settings.display.resolutionScale': string;
   'settings.display.resolutionScale.desc': string;
+  'settings.display.windowScale': string;
+  'settings.display.windowScale.desc': string;
+  'settings.display.windowScale.auto': string;
   'settings.display.effects': string;
   'settings.display.effects.desc': string;
   'settings.display.effect.low': string;
@@ -732,6 +735,9 @@ const ZH_HANS: Messages = {
   'settings.display.upscaler.desc': '后处理放大后端。仅可选择此版本实际可用的后端，其余列在下方。',
   'settings.display.resolutionScale': '分辨率倍率',
   'settings.display.resolutionScale.desc': '渲染分辨率倍率。倍率越低渲染像素越少，对弱显卡更友好。',
+'settings.display.windowScale': '窗口大小',
+'settings.display.windowScale.desc': '以界面设计尺寸（900×1200）的整数倍设置游戏窗口大小。',
+'settings.display.windowScale.auto': '自动',
   'settings.display.effects': '特效',
   'settings.display.effects.desc': '弹幕拖尾、辉光与命中特效。',
   'settings.display.effect.low': '低',
@@ -1221,6 +1227,9 @@ const ZH_HANT: Messages = {
   'settings.display.upscaler.desc': '後處理放大後端。僅可選擇此版本實際可用的後端，其餘列在下方。',
   'settings.display.resolutionScale': '解析度倍率',
   'settings.display.resolutionScale.desc': '渲染解析度倍率。倍率越低渲染像素越少，對弱顯示卡更友好。',
+'settings.display.windowScale': '視窗大小',
+'settings.display.windowScale.desc': '以介面設計尺寸（900×1200）的整數倍設定遊戲視窗大小。',
+'settings.display.windowScale.auto': '自動',
   'settings.display.effects': '特效',
   'settings.display.effects.desc': '彈幕拖尾、輝光與命中特效。',
   'settings.display.effect.low': '低',
@@ -1710,6 +1719,9 @@ const JA: Messages = {
   'settings.display.upscaler.desc': 'ポストプロセス後のアップスケーリング基盤。このビルドで実際に動作するものだけが選択でき、それ以外は下に表示されます。',
   'settings.display.resolutionScale': '解像度スケール',
   'settings.display.resolutionScale.desc': 'レンダリング解像度の倍率。低い値ほど描画ピクセルが減り、非力なGPUでも軽快です。',
+'settings.display.windowScale': 'ウィンドウサイズ',
+'settings.display.windowScale.desc': 'デザイン寸法（900×1200）の整数倍でウィンドウサイズを設定します。',
+'settings.display.windowScale.auto': '自動',
   'settings.display.effects': 'エフェクト',
   'settings.display.effects.desc': '弾の軌跡、輝き、命中エフェクト。',
   'settings.display.effect.low': '低',
@@ -2204,6 +2216,9 @@ const EN: Messages = {
   'settings.display.resolutionScale': 'Resolution scale',
   'settings.display.resolutionScale.desc':
     'Render resolution multiplier. Lower values render fewer pixels and are cheaper on weak GPUs.',
+'settings.display.windowScale': 'Window size',
+'settings.display.windowScale.desc': 'Sets the game window to a whole multiple of the design size (900x1200).',
+'settings.display.windowScale.auto': 'Auto',
   'settings.display.effects': 'Effects',
   'settings.display.effects.desc': 'Bullet trails, glow and impact effects.',
   'settings.display.effect.low': 'Low',

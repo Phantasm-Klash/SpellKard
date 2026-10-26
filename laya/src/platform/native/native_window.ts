@@ -36,12 +36,88 @@ export interface SpkWinApi {
   getState(): string;
   /** Enters (`1`) or leaves (`0`) borderless windowed fullscreen; `1` on success. */
   setFullscreen(enable: number): number;
+  /**
+   * Resizes the window's client area to `width`x`height`; `1` on success.
+   *
+   * Optional on purpose: older builds of the extension do not export it, and
+   * this module's contract is that a missing capability degrades instead of
+   * throwing. Until it is compiled in, {@link requestNativeWindowSize} reports
+   * `false` and the window simply stays as it is.
+   */
+  setWindowSize?(width: number, height: number): number;
 }
+
+import type { WindowScale } from '../../core/settings/schema';
 
 /** A monitor size in device pixels. */
 export interface NativeDesktopSize {
   readonly width: number;
   readonly height: number;
+}
+
+/** The stage the UI is laid out for; the window is an integer multiple of it. */
+export const DESIGN_WIDTH = 900;
+export const DESIGN_HEIGHT = 1200;
+
+/** A concrete window size in logical pixels. */
+export interface NativeWindowSize {
+  readonly width: number;
+  readonly height: number;
+  /** The multiple of the design stage this corresponds to. */
+  readonly scale: number;
+}
+
+/**
+ * The whole multiples of the design stage worth offering.
+ *
+ * Only integer multiples are offered, and only powers of two: a window at 1.37x
+ * would scale the pixel art by a non-integer factor and make the sprites
+ * uneven, which is very visible on a portrait shooter.
+ */
+const FIXED_SCALES = [1, 2, 4] as const;
+
+/**
+ * Picks the largest offered multiple that still fits the monitor.
+ *
+ * The fit is on *both* axes — a portrait window (900x1200) on a landscape
+ * monitor runs out of height long before width, so the height is usually what
+ * decides. Falls back to `1` when even that does not fit: a window slightly
+ * larger than the monitor is worse than one that is slightly smaller, because
+ * the former puts the title bar and the bottom edge off-screen.
+ */
+export function fitWindowScale(desktop: NativeDesktopSize): number {
+  if (desktop.width <= 0 || desktop.height <= 0) {
+    return 1;
+  }
+  let best = 1;
+  for (const scale of FIXED_SCALES) {
+    if (DESIGN_WIDTH * scale <= desktop.width && DESIGN_HEIGHT * scale <= desktop.height) {
+      best = scale;
+    }
+  }
+  return best;
+}
+
+/**
+ * Resolves a window-scale setting into a concrete window size.
+ *
+ * `auto` needs the monitor size, so it takes the desktop as an argument rather
+ * than reaching for the extension — that keeps this a pure function and makes
+ * the fit testable without a native host. When the desktop is unknown, `auto`
+ * degrades to `1` rather than refusing: an unknown monitor should not leave the
+ * window at whatever size it happened to start at.
+ */
+export function windowSizeForScale(
+  scale: WindowScale,
+  desktop: NativeDesktopSize | null
+): NativeWindowSize {
+  const effective = scale === 'auto' ? (desktop === null ? 1 : fitWindowScale(desktop)) : scale;
+  const safe = effective > 0 ? effective : 1;
+  return {
+    width: DESIGN_WIDTH * safe,
+    height: DESIGN_HEIGHT * safe,
+    scale: safe,
+  };
 }
 
 /**
@@ -154,6 +230,31 @@ export function nativeDesktopSize(scope: unknown = globalThis): NativeDesktopSiz
  * extension, a `0` result, a thrown error) collapses to `false` so callers can
  * stay no-op-safe inside a keyboard handler.
  */
+/**
+ * Asks the host to resize its window, and reports whether it did.
+ *
+ * `false` is not an error worth surfacing: it means the running build has no
+ * window-resize door (web builds, or the current prebuilt `spk_win.dll`), so
+ * the caller should leave the window alone rather than fall back to something
+ * louder. Deliberately *not* wired to `PAL.browser.setResolution`, which on
+ * Windows reaches `conch.setResolution` and changes the monitor's mode — see
+ * the module header.
+ */
+export function requestNativeWindowSize(
+  size: NativeWindowSize,
+  scope: unknown = globalThis
+): boolean {
+  const api = spkWin(scope);
+  if (api === null || typeof api.setWindowSize !== 'function') {
+    return false;
+  }
+  try {
+    return api.setWindowSize(size.width, size.height) === 1;
+  } catch {
+    return false;
+  }
+}
+
 export function setNativeFullscreen(enable: boolean, scope: unknown = globalThis): boolean {
   const api = spkWin(scope);
   if (api === null) {

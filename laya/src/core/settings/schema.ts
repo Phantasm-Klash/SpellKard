@@ -37,6 +37,23 @@ export const RENDER_SCALES = [0.5, 0.75, 1, 1.5] as const;
 export type RenderScale = (typeof RENDER_SCALES)[number];
 
 /**
+ * How large the **host window** should be, as a multiple of the design stage
+ * (900x1200).
+ *
+ * This is the window, not the canvas: `renderScale` above decides how many
+ * pixels are drawn into whatever surface exists, while this decides how big
+ * that surface's window is on the desktop.
+ *
+ * `auto` picks the largest whole multiple that still fits the monitor, which is
+ * what a portrait game needs on a landscape display — see
+ * `platform/native/native_window.ts` for the fit. Fractional multiples are not
+ * offered: a window that is 1.37x the design size would scale the pixel art by
+ * a non-integer factor and make it uneven.
+ */
+export const WINDOW_SCALES = [1, 2, 4, 'auto'] as const;
+export type WindowScale = (typeof WINDOW_SCALES)[number];
+
+/**
  * Where the client looks for the lobby / battle services.
  *  - `official` — the endpoints baked into the build.
  *  - `lan`      — a Gensoulkyo host on the local network (`lanHost`).
@@ -48,6 +65,8 @@ export type NetworkMode = (typeof NETWORK_MODES)[number];
 
 export interface DisplaySettings {
   renderScale: RenderScale;
+  /** Host-window size as a multiple of the design stage; `'auto'` fits the monitor. */
+  windowScale: WindowScale;
   effectLevel: EffectLevel;
   frameCap: FrameCap;
   /** Draw a frame-rate / frame-time counter in the corner. */
@@ -168,6 +187,7 @@ export function defaultSettings(): GameSettings {
     language: DEFAULT_LANGUAGE,
     display: {
       renderScale: 1,
+      windowScale: 'auto',
       effectLevel: 'high',
       frameCap: 60,
       showFps: false,

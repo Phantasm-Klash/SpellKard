@@ -13,6 +13,7 @@ import {
   type EffectLevel,
   type FrameCap,
   type RenderScale,
+  type WindowScale,
 } from '../../../../core/settings';
 import {
   UpscalerRegistry,
@@ -43,6 +44,20 @@ function renderScaleChoices(): readonly OptionChoice<RenderScale>[] {
     { id: 0.75, label: '0.75×' },
     { id: 1, label: '1×' },
     { id: 1.5, label: '1.5×' },
+  ];
+}
+
+/**
+ * Window-size choices. `1×` / `2×` / `4×` are integer multiples of the design
+ * stage; `auto` is resolved against the monitor at apply time, so its label
+ * cannot say a number here.
+ */
+function windowScaleChoices(): readonly OptionChoice<WindowScale>[] {
+  return [
+    { id: 1, label: '1×' },
+    { id: 2, label: '2×' },
+    { id: 4, label: '4×' },
+    { id: 'auto', label: t('settings.display.windowScale.auto') },
   ];
 }
 
@@ -123,6 +138,16 @@ export class DisplaySection extends BaseSettingsSection {
         value: display.renderScale,
         onChange: (renderScale) => {
           this.store.update({ display: { renderScale } });
+        },
+      }),
+      createOptionRow<WindowScale>({
+        width,
+        label: t('settings.display.windowScale'),
+        description: t('settings.display.windowScale.desc'),
+        choices: windowScaleChoices(),
+        value: display.windowScale,
+        onChange: (windowScale) => {
+          this.store.update({ display: { windowScale } });
         },
       }),
       createOptionRow<EffectLevel>({

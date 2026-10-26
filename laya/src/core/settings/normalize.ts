@@ -21,6 +21,7 @@ import {
   FRAME_CAPS,
   NETWORK_MODES,
   RENDER_SCALES,
+  WINDOW_SCALES,
   defaultSettings,
   type AudioSettings,
   type DisplaySettings,
@@ -33,6 +34,7 @@ import {
   type NetworkSettings,
   type PluginSettings,
   type RenderScale,
+  type WindowScale,
 } from './schema';
 import {
   UPSCALER_BACKENDS,
@@ -91,6 +93,7 @@ export function normalizeDisplay(raw: unknown, fallback: DisplaySettings): Displ
   const source = isRecord(raw) ? raw : {};
   return {
     renderScale: readEnum<RenderScale>(source.renderScale, RENDER_SCALES, fallback.renderScale),
+    windowScale: readEnum<WindowScale>(source.windowScale, WINDOW_SCALES, fallback.windowScale),
     effectLevel: readEnum<EffectLevel>(source.effectLevel, EFFECT_LEVELS, fallback.effectLevel),
     frameCap: readEnum<FrameCap>(source.frameCap, FRAME_CAPS, fallback.frameCap),
     showFps: readBoolean(source.showFps, fallback.showFps),
