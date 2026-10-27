@@ -49,10 +49,10 @@ export function createSettingsButton(
     const base = pressed
       ? mix(theme.COLOR_PANEL, theme.COLOR_VOID, 0.28)
       : hover
-        ? mix(theme.COLOR_PANEL, theme.COLOR_ACCENT, 0.14)
+        ? mix(theme.COLOR_PANEL, theme.COLOR_INFO, 0.14)
         : theme.COLOR_PANEL;
     const border = hover
-      ? mix(theme.COLOR_PANEL_BORDER, theme.COLOR_ACCENT, 0.5)
+      ? mix(theme.COLOR_PANEL_BORDER, theme.COLOR_INFO, 0.5)
       : theme.COLOR_PANEL_BORDER;
     VectorPainter.roundedPanel(g, 0, 0, size, size, theme.RADIUS_SM, base, border, 2);
     drawGear(g, size / 2, size / 2, size * 0.3, hover ? theme.COLOR_TITLE : theme.COLOR_TEXT);

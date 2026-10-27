@@ -50,6 +50,14 @@ interface Part {
 type Painter = {
   clear: () => void;
   drawCircle: (x: number, y: number, radius: number, fill: string) => void;
+  drawLine: (
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    color: string,
+    lineWidth?: number
+  ) => void;
 };
 
 function partAt(widget: Laya.Sprite, name: string): Laya.Sprite | null {
@@ -119,37 +127,37 @@ function plate(
  * the two aligned without a third part.
  */
 export function skinCheckBox(widget: Laya.Sprite): void {
-  // The parts do **not** follow the parent's size, so they are resized to the
-  // widget's own box (and moved to its origin) before they are painted.
+  // The parts do **not** follow the parent's size, and the prefab is 132x40 -
+  // so they have to be resized to fit the row's control, or the circle is drawn
+  // at the prefab's proportions and squashed.
   //
-  // Without this the box is drawn at the prefab's original size - which is
-  // bigger than the row's control - and sits low in the row, off-centre.
-  // `skinSliderH` does the same for its `bg` / `bar` parts.
+  // They are made **square** and centred, because the control is a circle: a
+  // part resized to the widget's 46x30 would draw an ellipse. The tick inside
+  // is drawn from the part's own size, so it keeps its proportions too.
   const boxW = Number(widget.width) || 0;
   const boxH = Number(widget.height) || 0;
+  const side = Math.min(boxW, boxH);
   for (const name of ['normal', 'selected']) {
     const part = partAt(widget, name);
-    if (part !== null && boxW > 0 && boxH > 0) {
-      part.size(boxW, boxH);
-      part.pos(0, 0);
+    if (part !== null && side > 0) {
+      part.size(side, side);
+      part.pos(Math.round((boxW - side) / 2), Math.round((boxH - side) / 2));
     }
   }
 
-  // Derived from each part's own box rather than the widget's, because the row
-  // sizes the widget before skinning and the parts are what actually get
-  // painted. Reading the widget here would use a stale box.
   const radiusFor = (w: number, h: number): number => Math.min(w, h) / 2;
   paintPart(widget, 'normal', (_p, graphics, w, h) => {
     plate(graphics, w, h, radiusFor(w, h), theme.COLOR_PANEL_DEEP, theme.COLOR_PANEL_BORDER);
-    const knobR = Math.max(2, h / 2 - 3);
-    graphics.drawCircle(knobR + 3, h / 2, knobR, theme.COLOR_TEXT_DISABLED);
   });
   paintPart(widget, 'selected', (_p, graphics, w, h) => {
     // Blue, like the option rows and the hand-painted fallback: green read as
     // "something else is on" rather than "this one is on".
     plate(graphics, w, h, radiusFor(w, h), theme.COLOR_INFO, theme.COLOR_INFO);
-    const knobR = Math.max(2, h / 2 - 3);
-    graphics.drawCircle(w - knobR - 3, h / 2, knobR, theme.COLOR_VOID);
+    // A tick, not a dot: this is the "ticked" state, and a dot in the middle of
+    // a circle read as a radio button.
+    const stroke = Math.max(1.5, side * 0.09);
+    graphics.drawLine(w * 0.26, h * 0.52, w * 0.43, h * 0.69, theme.COLOR_VOID, stroke);
+    graphics.drawLine(w * 0.43, h * 0.69, w * 0.75, h * 0.32, theme.COLOR_VOID, stroke);
   });
 }
 
@@ -254,7 +262,7 @@ export function skinSliderH(widget: Laya.Sprite): void {
       trackW,
       barH,
       barH / 2,
-      theme.COLOR_ACCENT,
+      theme.COLOR_INFO,
       undefined,
       0,
     );

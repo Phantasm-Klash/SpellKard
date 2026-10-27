@@ -228,8 +228,11 @@ function makeText(text: string, size: number, color: string, bold: boolean): Lay
 // The little "?" marker and the hint it shows
 // ---------------------------------------------------------------------------
 
-/** Diameter of the marker, in pixels. */
+/** Diameter of the drawn marker, in pixels. */
 const HINT_MARKER_D = 15;
+
+/** The square the marker is hit-tested over, in pixels. */
+const HINT_MARKER_HIT = 32;
 
 /** The shared hint layer: one box, reused, parented to the stage. */
 let hintLayer: Laya.Sprite | null = null;
@@ -287,6 +290,11 @@ function showSettingsHint(anchor: Laya.Sprite, text: string): void {
     // `Text` has no padding in this project's typing, so the inset is done by
     // placing the text inside the box.
     hintText.pos(HINT_PAD, HINT_PAD);
+    // Nothing in the hint may take the pointer: a box that swallows the mouse
+    // stops the MOUSE_OUT that is supposed to close the hint, and the hint
+    // then sticks to the screen.
+    hintText.mouseEnabled = false;
+    hintBox.mouseEnabled = false;
     hintBox.addChild(hintText);
     hintLayer.addChild(hintBox);
     hintLayer.mouseEnabled = false;
@@ -295,11 +303,14 @@ function showSettingsHint(anchor: Laya.Sprite, text: string): void {
   }
 
   const lines = wrapText(text, HINT_MAX_W - HINT_PAD * 2, theme.FONT_SIZE_CAPTION);
-  hintText.text = lines.join('\n');
-  hintText.width = HINT_MAX_W - HINT_PAD * 2;
   const widest = lines.reduce((max, line) => Math.max(max, estimateTextWidth(line, theme.FONT_SIZE_CAPTION)), 0);
   const boxW = Math.min(HINT_MAX_W, widest + HINT_PAD * 2);
   const boxH = lines.length * DESC_LINE_H + HINT_PAD * 2;
+  // The text is sized to the box, not the other way round: the box is as wide
+  // as the text needs, and the text has to fit *inside* it.
+  hintText.text = lines.join('\n');
+  hintText.width = boxW - HINT_PAD * 2;
+  hintText.height = lines.length * DESC_LINE_H;
   hintBox.size(boxW, boxH);
   hintBox.graphics.clear();
   VectorPainter.roundedPanel(hintBox.graphics, 0, 0, boxW, boxH, theme.RADIUS_SM,
@@ -335,8 +346,14 @@ function showSettingsHint(anchor: Laya.Sprite, text: string): void {
  */
 function createHintMarker(text: string): Laya.Sprite {
   const marker = new Laya.Sprite();
-  marker.size(HINT_MARKER_D, HINT_MARKER_D);
-  marker.graphics.drawCircle(HINT_MARKER_D / 2, HINT_MARKER_D / 2, HINT_MARKER_D / 2 - 1,
+  // The marker is drawn small, but it is hit-tested over a larger square: a
+  // 15px circle is a hard target, and a hint that only shows when the pointer
+  // happens to be exactly on the stroke reads as a broken hover.
+  marker.size(HINT_MARKER_HIT, HINT_MARKER_HIT);
+  const dot = new Laya.Sprite();
+  dot.pos(Math.round((HINT_MARKER_HIT - HINT_MARKER_D) / 2), Math.round((HINT_MARKER_HIT - HINT_MARKER_D) / 2));
+  dot.size(HINT_MARKER_D, HINT_MARKER_D);
+  dot.graphics.drawCircle(HINT_MARKER_D / 2, HINT_MARKER_D / 2, HINT_MARKER_D / 2 - 1,
     null, theme.COLOR_INFO, 1);
   const question = makeText('?', 11, theme.COLOR_INFO, true);
   question.align = 'center';
@@ -344,12 +361,18 @@ function createHintMarker(text: string): Laya.Sprite {
   question.width = HINT_MARKER_D;
   question.height = HINT_MARKER_D;
   question.mouseEnabled = false;
-  marker.addChild(question);
+  dot.addChild(question);
+  marker.addChild(dot);
   marker.mouseEnabled = true;
   marker.on(Laya.Event.MOUSE_OVER, undefined, () => {
     showSettingsHint(marker, text);
   });
   marker.on(Laya.Event.MOUSE_OUT, undefined, () => {
+    hideSettingsHint();
+  });
+  // A click closes the hint too: moving the pointer away is not always
+  // possible (the hint may be over another control).
+  marker.on(Laya.Event.CLICK, undefined, () => {
     hideSettingsHint();
   });
   return marker;
@@ -473,7 +496,7 @@ function buildRow(
       ? estimateTextWidth(labelLines[0], theme.FONT_SIZE_LABEL)
       : 0;
     hintMarker.x = ROW_PAD + labelWidth + 6;
-    hintMarker.y = textTop + Math.round((LABEL_LINE_H - HINT_MARKER_D) / 2);
+    hintMarker.y = textTop + Math.round((LABEL_LINE_H - HINT_MARKER_HIT) / 2);
     sprite.addChild(hintMarker);
   }
 
@@ -737,12 +760,18 @@ export function createToggleRow(options: ToggleRowOptions): ToggleRowHandle {
     const g = track.graphics;
     g.clear();
     const on = value;
+    // Blue like the option rows and the official checkbox: green read as a
+    // different kind of state rather than the same state in another colour.
     const fill = !enabled
       ? theme.COLOR_PANEL_DEEP
       : on
-        ? mix(theme.COLOR_SUCCESS, theme.COLOR_VOID, 0.15)
+        ? mix(theme.COLOR_INFO, theme.COLOR_VOID, 0.32)
         : theme.COLOR_PANEL_DEEP;
-    const border = !enabled ? theme.COLOR_DIVIDER : on ? theme.COLOR_SUCCESS : theme.COLOR_PANEL_BORDER;
+    const border = !enabled
+      ? theme.COLOR_DIVIDER
+      : on
+        ? theme.COLOR_INFO
+        : theme.COLOR_PANEL_BORDER;
     VectorPainter.roundedPanel(g, 0, 0, TOGGLE_W, TOGGLE_H, TOGGLE_H / 2, fill, border, 1);
     const knobR = TOGGLE_H / 2 - 3;
     const knobX = on ? TOGGLE_W - knobR - 3 : knobR + 3;
@@ -834,12 +863,19 @@ export function createOptionRow<T extends string | number>(options: OptionRowOpt
       const active = segment.id === selected;
       const g = segment.sprite.graphics;
       g.clear();
+      // The selected segment is **blue**, not gold. Gold was the panel's
+      // accent, and next to the blue toggles it read as a different kind of
+      // control; blue is the colour the panel uses for "this one is on".
       const fill = !enabled
         ? theme.COLOR_PANEL_DEEP
         : active
-          ? mix(theme.COLOR_PANEL, theme.COLOR_ACCENT, 0.3)
+          ? mix(theme.COLOR_PANEL, theme.COLOR_INFO, 0.38)
           : theme.COLOR_PANEL_DEEP;
-      const border = !enabled ? theme.COLOR_DIVIDER : active ? theme.COLOR_ACCENT : theme.COLOR_PANEL_BORDER;
+      const border = !enabled
+        ? theme.COLOR_DIVIDER
+        : active
+          ? theme.COLOR_INFO
+          : theme.COLOR_PANEL_BORDER;
       VectorPainter.roundedPanel(g, 0, 0, segmentWidth, OPTION_H, theme.RADIUS_SM, fill, border, active ? 2 : 1);
       segment.label.color = !enabled
         ? theme.COLOR_TEXT_DISABLED
@@ -1056,7 +1092,7 @@ export function createSliderRow(options: SliderRowOptions): SliderRowHandle {
     g.clear();
     VectorPainter.roundedPanel(g, 0, barY, SLIDER_W, SLIDER_BAR_H, SLIDER_BAR_H / 2, theme.COLOR_PANEL_DEEP, theme.COLOR_DIVIDER, 1);
     if (filled > 0) {
-      const fill = enabled ? theme.COLOR_ACCENT : theme.COLOR_TEXT_DISABLED;
+      const fill = enabled ? theme.COLOR_INFO : theme.COLOR_TEXT_DISABLED;
       VectorPainter.roundedPanel(g, 0, barY, Math.max(SLIDER_BAR_H, filled), SLIDER_BAR_H, SLIDER_BAR_H / 2, fill, undefined, 0);
     }
     g.drawCircle(knobX, SLIDER_HIT_H / 2, SLIDER_KNOB_R, enabled ? theme.COLOR_TEXT : theme.COLOR_TEXT_DISABLED);
