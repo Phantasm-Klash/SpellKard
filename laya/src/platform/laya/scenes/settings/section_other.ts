@@ -26,7 +26,13 @@ import {
   type RowHandle,
 } from './widgets';
 import type { NetworkMode } from '../../../../core/settings';
-import { t } from '../../../../core/game/i18n';
+import {
+  DEFAULT_LANGUAGE,
+  LANGUAGES,
+  isLanguageCode,
+  t,
+  type LanguageCode,
+} from '../../../../core/game/i18n';
 
 /**
  * Rebuilt per `build()` rather than kept at module level: the labels come from
@@ -199,7 +205,28 @@ export class OtherSection extends BaseSettingsSection {
       },
     });
 
+    // The language picker lives here rather than in a tab of its own: the
+    // panel had seven tabs, and the language is one line among the other
+    // preferences rather than a section worth a tab.
+    const storedLanguage = this.store.get().language;
+    const currentLanguage: LanguageCode = isLanguageCode(storedLanguage)
+      ? storedLanguage
+      : DEFAULT_LANGUAGE;
+    const languageRow = createOptionRow<LanguageCode>({
+      width,
+      label: t('settings.language'),
+      description: t('settings.language.hint'),
+      choices: LANGUAGES.map((info) => ({ id: info.code, label: info.label })),
+      value: currentLanguage,
+      onChange: (language) => {
+        this.store.update({ language });
+      },
+    });
+
     return [
+      createGroupHeading(t('settings.language.heading'), width),
+      languageRow,
+      createNoteRow(width, t('settings.language.hint')),
       createGroupHeading(t('settings.network.heading'), width),
       modeRow,
       lanRow,

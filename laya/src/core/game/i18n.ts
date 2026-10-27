@@ -164,6 +164,7 @@ export interface Messages {
   'settings.close': string;
   'settings.restoreDefaults': string;
   'settings.language': string;
+  'settings.language.heading': string;
   'settings.language.hint': string;
   'settings.language.zh-Hans': string;
   'settings.language.zh-Hant': string;
@@ -710,6 +711,7 @@ const ZH_HANS: Messages = {
   'settings.close': '关闭',
   'settings.restoreDefaults': '恢复默认设置',
   'settings.language': '语言',
+  'settings.language.heading': '语言',
   'settings.language.hint': '切换后立即生效，并会记住你的选择。',
   'settings.language.zh-Hans': '简体中文',
   'settings.language.zh-Hant': '繁體中文',
@@ -1201,6 +1203,7 @@ const ZH_HANT: Messages = {
   'settings.title': '設定',
   'settings.close': '關閉',
   'settings.restoreDefaults': '恢復預設設定',
+  'settings.language.heading': '語言',
   'settings.language': '語言',
   'settings.language.hint': '切換後立即生效，並會記住你的選擇。',
   'settings.language.zh-Hans': '简体中文',
@@ -1692,6 +1695,7 @@ const JA: Messages = {
 
   'settings.title': '設定',
   'settings.close': '閉じる',
+  'settings.language.heading': '言語',
   'settings.restoreDefaults': '設定を復元',
   'settings.language': '言語',
   'settings.language.hint': '切り替えるとすぐに反映され、選択内容は保存されます。',
@@ -2185,6 +2189,7 @@ const EN: Messages = {
   'shop.meta': 'Price {price} · {stock} · bought {count}',
 
   'settings.title': 'Settings',
+  'settings.language.heading': 'Language',
   'settings.close': 'Close',
   'settings.restoreDefaults': 'Restore defaults',
   'settings.language': 'Language',

@@ -119,6 +119,22 @@ function plate(
  * the two aligned without a third part.
  */
 export function skinCheckBox(widget: Laya.Sprite): void {
+  // The parts do **not** follow the parent's size, so they are resized to the
+  // widget's own box (and moved to its origin) before they are painted.
+  //
+  // Without this the box is drawn at the prefab's original size - which is
+  // bigger than the row's control - and sits low in the row, off-centre.
+  // `skinSliderH` does the same for its `bg` / `bar` parts.
+  const boxW = Number(widget.width) || 0;
+  const boxH = Number(widget.height) || 0;
+  for (const name of ['normal', 'selected']) {
+    const part = partAt(widget, name);
+    if (part !== null && boxW > 0 && boxH > 0) {
+      part.size(boxW, boxH);
+      part.pos(0, 0);
+    }
+  }
+
   // Derived from each part's own box rather than the widget's, because the row
   // sizes the widget before skinning and the parts are what actually get
   // painted. Reading the widget here would use a stale box.
