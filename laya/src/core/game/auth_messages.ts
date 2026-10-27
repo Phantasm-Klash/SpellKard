@@ -15,7 +15,8 @@
  * here, because that mapping is what the wire defines.
  */
 
-import { t } from './i18n';
+import { describeError, isKnownErrorCode, type ErrorLocale } from '../i18n/errors';
+import { language, t } from './i18n';
 
 /** Server error code → i18n key. Unknown codes fall through untouched. */
 const MESSAGES: Record<string, string> = {
@@ -57,11 +58,29 @@ const MESSAGES: Record<string, string> = {
   session_expired: 'auth.sessionExpired',
 };
 
+/**
+ * The locale the error sentences are read in.
+ *
+ * The interface offers four languages and the error table has sentences for
+ * all four, so the error text follows the interface rather than defaulting to
+ * one language.
+ */
+function errorLocale(): ErrorLocale {
+  return language();
+}
+
 export function describeAuthError(code: string): string {
   // `Object.prototype.hasOwnProperty` rather than a truthiness check: the empty
   // code maps to the empty string, which must not be mistaken for "unknown".
   if (Object.prototype.hasOwnProperty.call(MESSAGES, code)) {
     return t(MESSAGES[code]);
+  }
+  // The table above only covers the account and transport codes. The lobby
+  // also answers with gacha, shop and battle codes, and those used to reach
+  // the player as the raw code - so the full table is the fallback, in the
+  // language the interface is currently in.
+  if (isKnownErrorCode(code)) {
+    return describeError(code, errorLocale());
   }
   return code;
 }

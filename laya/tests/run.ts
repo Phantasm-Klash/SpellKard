@@ -82,6 +82,7 @@ import './danmaku_client_engine.test';
 import './stage_parity.test';import './native_random_tiers.test';import './battle_aead.test';import './shop_names.test';
 import './battle_handshake.test';
 import './native_window_scale.test';
+import './error_messages.test';
 import './boss_race_danmaku_mechanics.test';
 import './bullet_kind_atlas_map.test';
 import './boss_race_score.test';

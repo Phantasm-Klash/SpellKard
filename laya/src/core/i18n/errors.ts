@@ -17,7 +17,7 @@
  */
 
 import type { LocaleId } from './messages';
-import { jaErrors, zhHansErrors, zhHantErrors } from './error_messages';
+import { enErrors, jaErrors, zhHansErrors, zhHantErrors } from './error_messages';
 
 /**
  * Every code the client can surface.
@@ -109,6 +109,16 @@ export const ERROR_CODES = [
   'chest_open_missing_pool',
   'activity_claim_missing_id',
   'match_start_missing_match_id',
+  // gacha / shop / battle
+  'gacha_pull_missing_pool',
+  'gacha_pull_invalid_count',
+  'gacha_exchange_missing_item',
+  'battle_send_failed',
+  'battle_key_id_missing',
+  'battle_auth_tag_invalid',
+  // nakama transport
+  'nakama_email_code_unsupported',
+  'nakama_authenticate_failed',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -116,17 +126,29 @@ export type ErrorCode = (typeof ERROR_CODES)[number];
 /** One sentence per code. Missing entry = compile error. */
 export type ErrorMessages = Record<ErrorCode, string>;
 
-const TABLES: Readonly<Record<LocaleId, ErrorMessages>> = {
+/**
+ * The locales the error text exists in.
+ *
+ * This is wider than the interface's own locale list on purpose: the interface
+ * offers English as a fourth language, so the error sentences have to exist in
+ * English too. English is not in `core/i18n`'s `SUPPORTED_LOCALES` because that
+ * list is about the *interface* strings, which live in a different table.
+ */
+export type ErrorLocale = LocaleId | 'en';
+
+const TABLES: Readonly<Record<ErrorLocale, ErrorMessages>> = {
   'zh-Hans': zhHansErrors,
   'zh-Hant': zhHantErrors,
   ja: jaErrors,
+  en: enErrors,
 };
 
 /** The generic sentence for an unrecognised code; `{code}` is the raw code. */
-export const UNKNOWN_ERROR: Readonly<Record<LocaleId, string>> = {
+export const UNKNOWN_ERROR: Readonly<Record<ErrorLocale, string>> = {
   'zh-Hans': '发生未知错误（{code}）',
   'zh-Hant': '發生未知錯誤（{code}）',
   ja: '不明なエラーが発生しました（{code}）',
+  en: 'Something went wrong ({code})',
 };
 
 function isErrorCode(code: string): code is ErrorCode {
@@ -151,7 +173,7 @@ export function fillTemplate(template: string, params?: Readonly<Record<string, 
  * suffix in the raw-code form: the player gets the generic sentence and the
  * code, which is the only way to tell which call failed without a second table.
  */
-export function describeError(code: string, locale: LocaleId = 'zh-Hans'): string {
+export function describeError(code: string, locale: ErrorLocale = 'zh-Hans'): string {
   if (code === '') {
     return '';
   }
@@ -160,4 +182,9 @@ export function describeError(code: string, locale: LocaleId = 'zh-Hans'): strin
     return table[code];
   }
   return fillTemplate(UNKNOWN_ERROR[locale], { code });
+}
+
+/** True when `code` has a sentence of its own (rather than the generic one). */
+export function isKnownErrorCode(code: string): boolean {
+  return isErrorCode(code);
 }
