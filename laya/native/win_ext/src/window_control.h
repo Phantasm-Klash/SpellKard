@@ -57,6 +57,16 @@ bool isFullscreen();
 // Like everything else here, this never touches the display mode.
 bool setWindowSize(int width, int height);
 
+// Sizes the window so that its outer rectangle is exactly the work area (the
+// screen minus the taskbar). The client area is then the work area minus the
+// frame: nothing is hidden behind the taskbar and the window's border sits
+// inside the usable area.
+//
+// This is the "auto" size. Unlike `setWindowSize` it needs no numbers from
+// the caller, which is what keeps it exact: the frame's height is a window
+// style detail, and only the window itself knows it.
+bool fitWindowToWorkArea();
+
 }  // namespace spellkard
 
 #endif  // SPELLKARD_WIN_EXT_WINDOW_CONTROL_H

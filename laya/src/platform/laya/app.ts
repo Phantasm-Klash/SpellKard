@@ -37,6 +37,7 @@ import { applyDisplaySettings, createFpsOverlay, type FpsOverlayHandle } from '.
 import type { WindowScale } from '../../core/settings/schema';
 import {
   nativeScreenGeometry,
+  requestNativeWindowFill,
   requestNativeWindowSize,
   windowSizeForScale,
 } from '../native/native_window';
@@ -136,6 +137,13 @@ function sameSettingsGroup(a: unknown, b: unknown): boolean {
  * and changes the monitor's mode.
  */
 function applyWindowScale(scale: WindowScale): void {
+  if (scale === 'auto') {
+    // The exact "fill the work area" size is a native operation: the frame's
+    // height is a window-style detail, and only the window knows it.
+    if (requestNativeWindowFill()) {
+      return;
+    }
+  }
   // The fixed multiples are multiples of the screen and "auto" fills the work
   // area (the screen minus the taskbar), so every setting keeps the monitor's
   // shape - the layout is width-adaptive, so a screen-shaped window shows more

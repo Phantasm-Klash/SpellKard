@@ -18,15 +18,16 @@ export function windowSizeForScale(
   geometry: NativeScreenGeometry | null
 ): NativeWindowSize {
   if (scale === 'auto') {
-    // Grow the 4:3 shape until one side reaches the screen and the other still
-    // fits: the width is capped by the screen's width *and* by the height times
-    // the aspect. On a 2560x1440 display that is 1920x1440 - the height is
-    // full and the width is what is left over.
-    const desktop = geometry?.desktop ?? null;
-    if (desktop === null) {
+    // The *work area* - the screen minus the taskbar - is what the window
+    // fills, and the frame comes out of it as well, so the client area ends up
+    // slightly smaller than this. That last part is done natively
+    // (`fitWindowToWorkArea`), because only the window knows how tall its own
+    // frame is; this is the size the arithmetic can predict.
+    const area = geometry?.workArea ?? null;
+    if (area === null) {
       return { width: WINDOW_SIZES['1'].width, height: WINDOW_SIZES['1'].height, scale: 1 };
     }
-    const width = Math.min(desktop.width, Math.round(desktop.height * WINDOW_ASPECT));
+    const width = Math.min(area.width, Math.round(area.height * WINDOW_ASPECT));
     const height = Math.round(width / WINDOW_ASPECT);
     return { width, height, scale: width / WINDOW_SIZES['1'].width };
   }
@@ -83,6 +84,13 @@ export interface SpkWinApi {
    * `false` and the window simply stays as it is.
    */
   setWindowSize?(width: number, height: number): number;
+  /**
+   * Sizes the window so its outer rectangle is exactly the work area.
+   *
+   * Optional like {@link SpkWinApi.setWindowSize}: a build without it simply
+   * cannot fill the screen.
+   */
+  fitWindowToWorkArea?(): number;
 }
 
 import type { WindowScale } from '../../core/settings/schema';
@@ -380,6 +388,26 @@ export function nativeScreenGeometry(scope: unknown = globalThis): NativeScreenG
     return { desktop: { width: desktopW, height: desktopH }, workArea };
   } catch {
     return null;
+  }
+}
+
+/**
+ * Fills the work area: the window's outer rectangle becomes the work area, so
+ * the client area is the work area minus the frame.
+ *
+ * This is the exact "auto" size - the taskbar and the window's own border are
+ * both excluded, because only the window knows how tall its frame is. It is
+ * done natively rather than by computing a number here for that reason.
+ */
+export function requestNativeWindowFill(scope: unknown = globalThis): boolean {
+  const api = spkWin(scope);
+  if (api === null || typeof api.fitWindowToWorkArea !== 'function') {
+    return false;
+  }
+  try {
+    return api.fitWindowToWorkArea() === 1;
+  } catch {
+    return false;
   }
 }
 

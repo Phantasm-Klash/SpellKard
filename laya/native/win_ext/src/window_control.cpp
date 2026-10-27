@@ -176,8 +176,8 @@ bool setWindowSize(int width, int height) {
   if (!AdjustWindowRectEx(&client, style, FALSE, 0)) {
     return false;
   }
-  const int outerW = client.right - client.left;
-  const int outerH = client.bottom - client.top;
+  int outerW = client.right - client.left;
+  int outerH = client.bottom - client.top;
   if (outerW <= 0 || outerH <= 0) {
     return false;
   }
@@ -191,8 +191,25 @@ bool setWindowSize(int width, int height) {
     return false;
   }
   const RECT& area = info.rcWork;
-  int x = area.left + (area.right - area.left - outerW) / 2;
-  int y = area.top + (area.bottom - area.top - outerH) / 2;
+  const int areaW = area.right - area.left;
+  const int areaH = area.bottom - area.top;
+
+  // Clamp the *outer* window into the work area. The taskbar lives outside it,
+  // and a window taller than the work area loses its bottom edge behind it.
+  //
+  // This is what makes the fixed sizes safe on a small display: 2x asks for a
+  // 1600x1200 client area, whose frame is 1616x1239, and on a 1080p screen the
+  // work area is only 2048x1232 - two pixels short. Without the clamp the
+  // window would hang under the taskbar.
+  if (outerW > areaW) {
+    outerW = areaW;
+  }
+  if (outerH > areaH) {
+    outerH = areaH;
+  }
+
+  int x = area.left + (areaW - outerW) / 2;
+  int y = area.top + (areaH - outerH) / 2;
   if (x < area.left) {
     x = area.left;
   }
@@ -203,6 +220,34 @@ bool setWindowSize(int width, int height) {
   // SetWindowPos only moves and resizes the window; it does not touch the
   // display mode. SWP_NOZORDER keeps the window from jumping to the front.
   return SetWindowPos(hwnd, nullptr, x, y, outerW, outerH,
+                      SWP_NOZORDER | SWP_NOOWNERZORDER) != FALSE;
+#else
+  return false;
+#endif
+}
+
+bool fitWindowToWorkArea() {
+#ifdef _WIN32
+  HWND hwnd = findMainWindow();
+  if (hwnd == nullptr) {
+    return false;
+  }
+  HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+  MONITORINFO info{};
+  info.cbSize = sizeof(MONITORINFO);
+  if (monitor == nullptr || !GetMonitorInfoW(monitor, &info)) {
+    return false;
+  }
+  // The outer window is made exactly the work area, so the *client* area is
+  // the work area minus the frame - which is what "fill the screen" means:
+  // no taskbar, no frame, nothing hidden.
+  const RECT& area = info.rcWork;
+  const int width = area.right - area.left;
+  const int height = area.bottom - area.top;
+  if (width <= 0 || height <= 0) {
+    return false;
+  }
+  return SetWindowPos(hwnd, nullptr, area.left, area.top, width, height,
                       SWP_NOZORDER | SWP_NOOWNERZORDER) != FALSE;
 #else
   return false;

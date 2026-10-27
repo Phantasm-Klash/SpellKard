@@ -38,6 +38,10 @@ const MESSAGES: Record<string, string> = {
   verification_code_expired: 'auth.codeExpired',
   verification_rate_limited: 'auth.codeRateLimited',
   mail_unavailable: 'auth.mailUnavailable',
+  // Locally minted, not from the lobby: Nakama's own e-mail authentication
+  // sends no mail, so asking it for a verification code cannot work.
+  nakama_email_code_unsupported: 'auth.nakamaEmailCodeUnsupported',
+  nakama_authenticate_failed: 'auth.nakamaAuthenticateFailed',
   accounts_unavailable: 'auth.accountsUnavailable',
   invalid_request: 'auth.invalidRequest',
   storage_unavailable: 'auth.storageUnavailable',

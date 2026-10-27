@@ -16,6 +16,7 @@
 //   spk_win.getState(): string             // JSON snapshot, see below
 //   spk_win.setFullscreen(enable): number  // 1 ok, 0 fail
 //   spk_win.setWindowSize(w, h): number    // 1 ok, 0 fail (client area size)
+//   spk_win.fitWindowToWorkArea(): number   // 1 ok, 0 fail (fill the work area)
 //
 // getState() JSON shape:
 //   {"fullscreen":0,"desktopW":2048,"desktopH":1280,"workW":2048,"workH":1232,
@@ -156,6 +157,16 @@ jsvm_value jsSetWindowSize(jsvm_env env, jsvm_callback_info info) {
   return makeInt(env, spellkard::setWindowSize(width, height) ? 1 : 0);
 }
 
+// fitWindowToWorkArea(): number -> 1 ok, 0 fail.
+//
+// Sizes the window so its outer rectangle is exactly the work area, so the
+// client area is the work area minus the frame - "fill the screen" without the
+// taskbar or the border eating into it.
+jsvm_value jsFitWindowToWorkArea(jsvm_env env, jsvm_callback_info info) {
+  (void)info;
+  return makeInt(env, spellkard::fitWindowToWorkArea() ? 1 : 0);
+}
+
 void registerFunction(jsvm_env env, jsvm_value exports, const char* name, jsvm_callback callback) {
   jsvm_value fn;
   if (jsvm_create_function(env, name, JSVM_AUTO_LENGTH, callback, nullptr, &fn) != jsvm_ok) {
@@ -184,6 +195,7 @@ int onEvent(LayaExtEventType event, const LayaExtensionInterface* iface, void* u
     registerFunction(env, exports, "getState", jsGetState);
     registerFunction(env, exports, "setFullscreen", jsSetFullscreen);
     registerFunction(env, exports, "setWindowSize", jsSetWindowSize);
+    registerFunction(env, exports, "fitWindowToWorkArea", jsFitWindowToWorkArea);
     logInfo("spk_win extension loaded");
   } else if (event == LAYA_EXT_EVENT_DEINIT) {
     // Leave windowed fullscreen so the app does not exit chrome-less.

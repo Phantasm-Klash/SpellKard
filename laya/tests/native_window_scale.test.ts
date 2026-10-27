@@ -69,13 +69,16 @@ test('the size table is the one the setting offers', () => {
 
 suite('window scale: auto fills the screen in 4:3');
 
-test('auto on a 2560x1440 screen is 1920x1440', () => {
-  // The height is full and the width is what the aspect leaves over - the
-  // width cannot be 2560, because a 4:3 window that wide would be 1920 tall
-  // and would not fit.
+test('auto fills the work area, not the whole screen', () => {
+  // The taskbar is not usable space, so auto works against the work area
+  // (2560x1392 here), not the screen (2560x1440). The window's own frame
+  // comes out of it as well - that part is done natively, because only the
+  // window knows how tall its frame is.
   const auto = windowSizeForScale('auto', SCREEN);
-  expectEqual(auto.width, 1920, 'the width');
-  expectEqual(auto.height, 1440, 'the height');
+  expectEqual(auto.width, 1856, 'the width');
+  expectEqual(auto.height, 1392, 'the height');
+  expect(auto.height <= SCREEN.workArea.height, 'and it stays inside the work area');
+  expect(auto.height < SCREEN.desktop.height, 'the taskbar band is left alone');
 });
 
 test('auto keeps the 4:3 shape and never overflows the screen', () => {
@@ -90,6 +93,7 @@ test('auto keeps the 4:3 shape and never overflows the screen', () => {
       desktop: screen,
       workArea: screen,
     });
+
     expect(auto.width <= screen.width, `${screen.width}x${screen.height}: the width fits`);
     expect(auto.height <= screen.height, `${screen.width}x${screen.height}: the height fits`);
     expectClose(auto.width / auto.height, WINDOW_ASPECT, 1e-9, 'and it is 4:3');

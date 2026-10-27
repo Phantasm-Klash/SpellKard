@@ -41,7 +41,7 @@ import { HudSection } from './section_hud';
 import { KeysSection } from './section_keys';
 import { OtherSection } from './section_other';
 import { LanguageSection } from './section_language';
-import { ROW_HEIGHT } from './widgets';
+import { ROW_HEIGHT, hideSettingsHint } from './widgets';
 
 const CARD_MAX_WIDTH = 560;
 const CARD_MAX_HEIGHT = 660;
@@ -271,6 +271,8 @@ export class SettingsPanel {
     if (!this.shown) {
       return;
     }
+    // A hint left on screen over a closed panel would look like a bug.
+    hideSettingsHint();
     this.shown = false;
     this.root.visible = false;
     this.options.onClose?.();

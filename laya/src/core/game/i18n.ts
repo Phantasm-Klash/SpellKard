@@ -484,6 +484,8 @@ export interface Messages {
   'auth.codeExpired': string;
   'auth.codeRateLimited': string;
   'auth.mailUnavailable': string;
+  'auth.nakamaEmailCodeUnsupported': string;
+  'auth.nakamaAuthenticateFailed': string;
   'auth.accountsUnavailable': string;
   'auth.invalidRequest': string;
   'auth.storageUnavailable': string;
@@ -1010,6 +1012,8 @@ const ZH_HANS: Messages = {
   'auth.codeExpired': '验证码已过期 —— 请重新获取',
   'auth.codeRateLimited': '请稍候再请求新的验证码',
   'auth.mailUnavailable': '大厅暂时无法发送邮件 —— 请稍后重试',
+  'auth.nakamaEmailCodeUnsupported': '当前登录方式不支持邮箱验证码 —— 请用用户名和密码登录',
+  'auth.nakamaAuthenticateFailed': '登录服务拒绝了这次登录 —— 请稍后重试',
   'auth.accountsUnavailable': '账号服务暂不可用 —— 请稍后重试',
   'auth.invalidRequest': '用户名须为 3-24 位字母、数字或下划线，密码至少 8 个字符',
   'auth.storageUnavailable': '大厅暂时无法连接数据库 —— 请稍后重试',
@@ -1509,6 +1513,8 @@ const ZH_HANT: Messages = {
   'auth.codeRequired': '請輸入我們傳送到電子郵件的 6 位驗證碼',
   'auth.codeInvalid': '驗證碼不正確',
   'auth.codeExpired': '驗證碼已過期 —— 請重新取得',
+  'auth.nakamaEmailCodeUnsupported': '目前的登入方式不支援電子郵件驗證碼 —— 請用使用者名稱與密碼登入',
+  'auth.nakamaAuthenticateFailed': '登入服務拒絕了這次登入 —— 請稍後重試',
   'auth.codeRateLimited': '請稍候再請求新的驗證碼',
   'auth.mailUnavailable': '大廳暫時無法傳送郵件 —— 請稍後重試',
   'auth.accountsUnavailable': '帳號服務暫不可用 —— 請稍後重試',
@@ -1997,6 +2003,8 @@ const JA: Messages = {
   'auth.emailTaken': 'このメールアドレスは登録済みです —— ログインしてください',
   'auth.emailNotVerified': 'ログイン前にメールアドレスを確認してください',
   'auth.codeRequired': 'メールに送信された 6 桁の確認コードを入力してください',
+  'auth.nakamaEmailCodeUnsupported': '現在のログイン方法はメール認証コードに対応していません —— ユーザー名とパスワードでログインしてください',
+  'auth.nakamaAuthenticateFailed': 'ログインサービスがこのログインを拒否しました —— しばらくしてからお試しください',
   'auth.codeInvalid': '確認コードが正しくありません',
   'auth.codeExpired': '確認コードの有効期限が切れました —— 再取得してください',
   'auth.codeRateLimited': 'しばらく待ってから再度お試しください',
@@ -2497,6 +2505,8 @@ const EN: Messages = {
   'auth.passwordWeak': 'Password must be at least 8 characters',
   'auth.usernameTaken': 'That username is already taken',
   'auth.emailTaken': 'That e-mail is already registered — sign in instead',
+  'auth.nakamaEmailCodeUnsupported': 'This sign-in method does not support e-mail codes - use your name and password',
+  'auth.nakamaAuthenticateFailed': 'The sign-in service refused this attempt - please try again later',
   'auth.emailNotVerified': 'Verify your e-mail before signing in',
   'auth.codeRequired': 'Enter the 6-digit code we e-mailed you',
   'auth.codeInvalid': 'That verification code is incorrect',

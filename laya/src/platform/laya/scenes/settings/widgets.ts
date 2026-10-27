@@ -224,6 +224,138 @@ function makeText(text: string, size: number, color: string, bold: boolean): Lay
   return label;
 }
 
+// ---------------------------------------------------------------------------
+// The little "?" marker and the hint it shows
+// ---------------------------------------------------------------------------
+
+/** Diameter of the marker, in pixels. */
+const HINT_MARKER_D = 15;
+
+/** The shared hint layer: one box, reused, parented to the stage. */
+let hintLayer: Laya.Sprite | null = null;
+let hintBox: Laya.Sprite | null = null;
+let hintText: Laya.Text | null = null;
+
+/** The widest a hint may be before it wraps, in pixels. */
+const HINT_MAX_W = 300;
+
+/** Inset between the hint box's edge and its text, in pixels. */
+const HINT_PAD = 8;
+
+/**
+ * Hides the hint, if one is showing.
+ *
+ * Exported so the panel can call it when it closes: a hint left on screen over
+ * a hidden panel would look like a bug.
+ */
+export function hideSettingsHint(): void {
+  if (hintLayer !== null) {
+    hintLayer.visible = false;
+  }
+}
+
+/** Global position of a sprite, in stage coordinates. */
+function globalPosition(sprite: Laya.Sprite): { x: number; y: number } {
+  let x = 0;
+  let y = 0;
+  let node: Laya.Sprite | null = sprite;
+  while (node !== null) {
+    x += node.x;
+    y += node.y;
+    // `parent` is not in this project's Sprite typing, so it is read through a
+    // narrow cast rather than by widening the whole type.
+    node = (node as unknown as { parent: Laya.Sprite | null }).parent;
+  }
+  return { x, y };
+}
+
+/**
+ * Shows the hint text next to the marker.
+ *
+ * The box lives on the stage rather than inside the row: the settings panel
+ * clips its content to the scroll viewport, so a hint parented to the row
+ * would be cut off the moment the row sat near the edge.
+ */
+function showSettingsHint(anchor: Laya.Sprite, text: string): void {
+  if (Laya.stage === undefined || Laya.stage === null) {
+    return;
+  }
+  if (hintLayer === null || hintBox === null || hintText === null) {
+    hintLayer = new Laya.Sprite();
+    hintBox = new Laya.Sprite();
+    hintText = makeText('', theme.FONT_SIZE_CAPTION, theme.COLOR_TEXT, false);
+    // `Text` has no padding in this project's typing, so the inset is done by
+    // placing the text inside the box.
+    hintText.pos(HINT_PAD, HINT_PAD);
+    hintBox.addChild(hintText);
+    hintLayer.addChild(hintBox);
+    hintLayer.mouseEnabled = false;
+    hintLayer.visible = false;
+    Laya.stage.addChild(hintLayer);
+  }
+
+  const lines = wrapText(text, HINT_MAX_W - HINT_PAD * 2, theme.FONT_SIZE_CAPTION);
+  hintText.text = lines.join('\n');
+  hintText.width = HINT_MAX_W - HINT_PAD * 2;
+  const widest = lines.reduce((max, line) => Math.max(max, estimateTextWidth(line, theme.FONT_SIZE_CAPTION)), 0);
+  const boxW = Math.min(HINT_MAX_W, widest + HINT_PAD * 2);
+  const boxH = lines.length * DESC_LINE_H + HINT_PAD * 2;
+  hintBox.size(boxW, boxH);
+  hintBox.graphics.clear();
+  VectorPainter.roundedPanel(hintBox.graphics, 0, 0, boxW, boxH, theme.RADIUS_SM,
+    theme.COLOR_PANEL_DEEP, theme.COLOR_INFO, 1);
+
+  const at = globalPosition(anchor);
+  const stageW = Laya.stage.width;
+  const stageH = Laya.stage.height;
+  // Below the marker, centred on it, and nudged back inside the stage when it
+  // would hang off an edge.
+  let x = at.x + anchor.width / 2 - boxW / 2;
+  let y = at.y + anchor.height + 6;
+  if (x + boxW > stageW - 8) {
+    x = Math.max(8, stageW - boxW - 8);
+  }
+  if (x < 8) {
+    x = 8;
+  }
+  if (y + boxH > stageH - 8) {
+    y = Math.max(8, at.y - boxH - 6);
+  }
+  hintLayer.pos(x, y);
+  hintLayer.visible = true;
+}
+
+/**
+ * The "?" marker that stands in for a row's small print.
+ *
+ * The small print used to be a second line of text under the label, which made
+ * every row with an explanation twice as tall and left the explanation to be
+ * read rather than looked up. Now the label carries a small marker and the
+ * explanation appears when the pointer rests on it.
+ */
+function createHintMarker(text: string): Laya.Sprite {
+  const marker = new Laya.Sprite();
+  marker.size(HINT_MARKER_D, HINT_MARKER_D);
+  marker.graphics.drawCircle(HINT_MARKER_D / 2, HINT_MARKER_D / 2, HINT_MARKER_D / 2 - 1,
+    null, theme.COLOR_INFO, 1);
+  const question = makeText('?', 11, theme.COLOR_INFO, true);
+  question.align = 'center';
+  question.valign = 'middle';
+  question.width = HINT_MARKER_D;
+  question.height = HINT_MARKER_D;
+  question.mouseEnabled = false;
+  marker.addChild(question);
+  marker.mouseEnabled = true;
+  marker.on(Laya.Event.MOUSE_OVER, undefined, () => {
+    showSettingsHint(marker, text);
+  });
+  marker.on(Laya.Event.MOUSE_OUT, undefined, () => {
+    hideSettingsHint();
+  });
+  return marker;
+}
+
+
 /** Paints the row's own rounded background. */
 function paintRow(sprite: Laya.Sprite, width: number, height: number, enabled: boolean): void {
   const g = sprite.graphics;
@@ -248,7 +380,7 @@ interface RowScaffold {
   readonly sprite: Laya.Sprite;
   readonly height: number;
   readonly label: Laya.Text;
-  readonly description: Laya.Text | null;
+  readonly hintMarker: Laya.Sprite | null;
   /** Right edge of the row, i.e. where a control aligns to. */
   readonly controlRight: number;
   /** Available width for the label / description block. */
@@ -291,11 +423,9 @@ function buildRow(
     stacked ? width - ROW_PAD * 2 : width - ROW_PAD * 2 - controlWidth - theme.SPACE_MD,
   );
   const labelLines = wrapText(label, textWidth, theme.FONT_SIZE_LABEL);
-  const descLines = hasDescription
-    ? wrapText(description as string, textWidth, theme.FONT_SIZE_CAPTION)
-    : [];
-  const textHeight =
-    labelLines.length * LABEL_LINE_H + (descLines.length > 0 ? 2 + descLines.length * DESC_LINE_H : 0);
+  // The explanation is a hover hint now, so it does not take up a line of its
+  // own: the row is as tall as its label and its control.
+  const textHeight = labelLines.length * LABEL_LINE_H;
 
   const height = Math.round(
     Math.max(
@@ -334,21 +464,24 @@ function buildRow(
   labelText.leading = 2;
   sprite.addChild(labelText);
 
-  let descriptionText: Laya.Text | null = null;
+  // The small print is a "?" marker next to the label; the text itself shows
+  // when the pointer rests on it.
+  let hintMarker: Laya.Sprite | null = null;
   if (hasDescription) {
-    descriptionText = makeText(descLines.join('\n'), theme.FONT_SIZE_CAPTION, theme.COLOR_TEXT_MUTED, false);
-    descriptionText.x = ROW_PAD;
-    descriptionText.width = textWidth;
-    descriptionText.y = textTop + labelLines.length * LABEL_LINE_H + 2;
-    descriptionText.leading = 3;
-    sprite.addChild(descriptionText);
+    hintMarker = createHintMarker(description as string);
+    const labelWidth = labelLines.length > 0
+      ? estimateTextWidth(labelLines[0], theme.FONT_SIZE_LABEL)
+      : 0;
+    hintMarker.x = ROW_PAD + labelWidth + 6;
+    hintMarker.y = textTop + Math.round((LABEL_LINE_H - HINT_MARKER_D) / 2);
+    sprite.addChild(hintMarker);
   }
 
   return {
     sprite,
     height,
     label: labelText,
-    description: descriptionText,
+    hintMarker,
     controlRight: width - ROW_PAD,
     textWidth,
     controlTop: textTop + textHeight + theme.SPACE_SM,
@@ -356,8 +489,9 @@ function buildRow(
       enabled = value;
       paintRow(sprite, width, height, value);
       labelText.color = value ? theme.COLOR_TEXT : theme.COLOR_TEXT_DISABLED;
-      if (descriptionText !== null) {
-        descriptionText.color = value ? theme.COLOR_TEXT_MUTED : theme.COLOR_TEXT_DISABLED;
+      if (hintMarker !== null) {
+        // The marker dims with the row; its text only shows on hover.
+        hintMarker.alpha = value ? 1 : 0.45;
       }
     },
   };
