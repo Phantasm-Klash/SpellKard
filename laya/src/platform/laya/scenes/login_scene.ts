@@ -183,8 +183,14 @@ export class LoginScene implements ClientScene {
    * False on Nakama, which authenticates e-mail accounts without mailing
    * anything - so the code field and its button are dropped and registration
    * completes on name, address and password alone.
+   *
+   * Read on demand rather than cached: the player can switch the lobby between
+   * the official deployment and a self-hosted one from the settings panel, and
+   * only the self-hosted one mails codes.
    */
-  private codeRequired = true;
+  private get codeRequired(): boolean {
+    return this.options.flow.client.supportsEmailCode();
+  }
   private buttonsWidth = -1;
   /** Seconds left before "Send code" becomes clickable again (0 = ready). */
   private codeResendSeconds = 0;
@@ -210,7 +216,6 @@ export class LoginScene implements ClientScene {
 
   constructor(options: LoginSceneOptions) {
     this.options = options;
-    this.codeRequired = options.flow.client.supportsEmailCode();
     const { width, height } = this.stageSize();
     this.layout = loginLayout(width, height);
 
