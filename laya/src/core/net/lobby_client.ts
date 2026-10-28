@@ -993,6 +993,17 @@ export class LobbyClient {
     return isNakamaAccountTransport(this.transport) ? this.transport : null;
   }
 
+  /**
+   * Whether this transport can mail a registration verification code.
+   *
+   * Nakama's native e-mail authentication mails nothing - the address is
+   * verified outside the lobby - so the registration form must not offer a
+   * field it has no way to fill.
+   */
+  supportsEmailCode(): boolean {
+    return this.nakamaTransport() === null;
+  }
+
   /** The Nakama account session behind the current lobby session, if any. */
   nakamaSession(): NakamaAccountSession | null {
     return this.nakamaAccount;
@@ -1134,13 +1145,12 @@ export class LobbyClient {
       this.lastError = 'account_password_required';
       return null;
     }
-    if (code.trim() === '') {
-      this.lastError = 'verification_code_required';
-      return null;
-    }
+    // The Nakama path is checked **before** the code is required: Nakama's own
+    // e-mail authentication has no mailed verification step, so the code cannot
+    // be honoured there. Requiring it first made registration impossible on
+    // that transport - the player was asked for a code the client had just
+    // refused to send.
     if (this.nakamaTransport() !== null) {
-      // Nakama's native e-mail authentication has no mailed verification
-      // step, so `code` cannot be honoured on this path.
       const account = await this.authenticateNakama({
         kind: 'email',
         email: address,
@@ -1153,6 +1163,11 @@ export class LobbyClient {
         return null;
       }
       return this.sessionFromNakamaAccount(account, displayName || user);
+    }
+    // Only the lobby-managed account path mails a code, so only it demands one.
+    if (code.trim() === '') {
+      this.lastError = 'verification_code_required';
+      return null;
     }
     const response = await this.call('auth.register', {
       username: user,

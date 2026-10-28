@@ -177,6 +177,14 @@ export class LoginScene implements ClientScene {
   private secondaryButton!: ButtonHandle;
   /** Compact button inside the e-mail row that mails the verification code. */
   private emailSendButton!: ButtonHandle;
+  /**
+   * Whether the current transport can mail a verification code.
+   *
+   * False on Nakama, which authenticates e-mail accounts without mailing
+   * anything - so the code field and its button are dropped and registration
+   * completes on name, address and password alone.
+   */
+  private codeRequired = true;
   private buttonsWidth = -1;
   /** Seconds left before "Send code" becomes clickable again (0 = ready). */
   private codeResendSeconds = 0;
@@ -202,6 +210,7 @@ export class LoginScene implements ClientScene {
 
   constructor(options: LoginSceneOptions) {
     this.options = options;
+    this.codeRequired = options.flow.client.supportsEmailCode();
     const { width, height } = this.stageSize();
     this.layout = loginLayout(width, height);
 
@@ -614,7 +623,7 @@ export class LoginScene implements ClientScene {
       }
     }
     this.applyFieldVisibility(fields);
-    this.emailSendButton.sprite.visible = this.mode === 'register';
+    this.emailSendButton.sprite.visible = this.mode === 'register' && this.codeRequired;
     y -= fieldGap; // the loop added one gap too many after the last field
     y += blockGap;
 
@@ -865,9 +874,15 @@ export class LoginScene implements ClientScene {
    * was mailed to the address.
    */
   private visibleFields(): Field[] {
-    return this.mode === 'register'
+    if (this.mode !== 'register') {
+      return [this.email, this.password];
+    }
+    // The code field is only offered when the transport can actually mail one.
+    // Nakama's own e-mail authentication sends nothing, and a field the player
+    // has no way to fill is a dead end - registration could never complete.
+    return this.codeRequired
       ? [this.username, this.email, this.password, this.confirm, this.code]
-      : [this.email, this.password];
+      : [this.username, this.email, this.password, this.confirm];
   }
 
   /** Every field the card owns, whether or not the current mode shows it. */
@@ -1064,7 +1079,9 @@ export class LoginScene implements ClientScene {
         this.refresh();
         return;
       }
-      if (code.trim() === '') {
+      // Only demanded where a code can actually arrive; on a transport that
+      // mails nothing this guard would block registration for ever.
+      if (this.codeRequired && code.trim() === '') {
         this.localError = t('login.error.codeRequired');
         this.refresh();
         return;
