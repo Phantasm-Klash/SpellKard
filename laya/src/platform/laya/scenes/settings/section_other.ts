@@ -234,6 +234,10 @@ export class OtherSection extends BaseSettingsSection {
       wsRow,
       relayRow,
       createNoteRow(width, t('settings.network.officialNote')),
+      // The address is fixed when the client builds its transport at startup,
+      // so an edit here does not take effect in this session. Say so, or the
+      // player edits the field and nothing happens.
+      createNoteRow(width, t('settings.network.restartNote')),
       createGroupHeading(t('settings.mods.heading'), width),
       workshopRow,
       customModsRow,

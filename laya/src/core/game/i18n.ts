@@ -221,6 +221,7 @@ export interface Messages {
   'settings.network.wsUrl': string;
   'settings.network.relayUrl': string;
   'settings.network.officialNote': string;
+  'settings.network.restartNote': string;
   // Mods group (Other tab)
   'settings.mods.heading': string;
   'settings.mods.workshop': string;
@@ -766,6 +767,8 @@ const ZH_HANS: Messages = {
   'settings.network.httpBase.desc': '第三方部署的 REST 基础地址。',
   'settings.network.wsUrl': '大厅 WebSocket 地址',
   'settings.network.relayUrl': '对战中继地址',
+  'settings.network.restartNote':
+    '修改大厅地址后需重启客户端才会生效',
   'settings.network.officialNote':
     '官方模式使用编译进此版本的大厅与对战中继地址。局域网模式会从你输入的主机派生 http://<host>、ws://<host>/ws 与 ws://<host>/relay，因此只需填写主机。',
   'settings.mods.heading': '模组',
@@ -1259,6 +1262,8 @@ const ZH_HANT: Messages = {
   'settings.network.httpBase.desc': '第三方部署的 REST 基礎位址。',
   'settings.network.wsUrl': '大廳 WebSocket 位址',
   'settings.network.relayUrl': '對戰中繼位址',
+  'settings.network.restartNote':
+    '修改大廳位址後需重新啟動用戶端才會生效',
   'settings.network.officialNote':
     '官方模式使用編譯進此版本的大廳與對戰中繼位址。區域網路模式會從你輸入的主機派生 http://<host>、ws://<host>/ws 與 ws://<host>/relay，因此只需填寫主機。',
   'settings.mods.heading': '模組',
@@ -1752,6 +1757,8 @@ const JA: Messages = {
   'settings.network.httpBase.desc': 'サードパーティ配置の REST ベースURL。',
   'settings.network.wsUrl': 'ロビー WebSocket URL',
   'settings.network.relayUrl': '対戦リレー URL',
+  'settings.network.restartNote':
+    'ロビーのアドレスを変更した後は、クライアントを再起動するまで反映されません',
   'settings.network.officialNote':
     '公式モードはこのビルドにコンパイルされたロビーと対戦リレーのエンドポイントを使用します。LAN モードは入力したホストから http://<host>、ws://<host>/ws、ws://<host>/relay を導出するため、ホストだけで構いません。',
   'settings.mods.heading': 'モッド',
@@ -2253,6 +2260,8 @@ const EN: Messages = {
   'settings.network.httpBase.desc': 'REST base of the third-party deployment.',
   'settings.network.wsUrl': 'Lobby WebSocket URL',
   'settings.network.relayUrl': 'Battle relay URL',
+  'settings.network.restartNote':
+    'Changing the lobby address takes effect after the client is restarted',
   'settings.network.officialNote':
     'Official uses the lobby and battle relay endpoints compiled into this build. LAN derives http://<host>, ws://<host>/ws and ws://<host>/relay from the host you enter, so only the host is needed.',
   'settings.mods.heading': 'Mods',
