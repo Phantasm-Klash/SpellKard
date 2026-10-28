@@ -197,15 +197,22 @@ bool setWindowSize(int width, int height) {
   // Clamp the *outer* window into the work area. The taskbar lives outside it,
   // and a window taller than the work area loses its bottom edge behind it.
   //
-  // This is what makes the fixed sizes safe on a small display: 2x asks for a
-  // 1600x1200 client area, whose frame is 1616x1239, and on a 1080p screen the
-  // work area is only 2048x1232 - two pixels short. Without the clamp the
-  // window would hang under the taskbar.
-  if (outerW > areaW) {
-    outerW = areaW;
-  }
-  if (outerH > areaH) {
-    outerH = areaH;
+  // The clamp scales **both** axes by the same factor rather than cutting each
+  // one separately: cutting them separately changes the shape, and the shape is
+  // the whole point — it is the stage's. A 3:4 window must still be 3:4 after
+  // it has been made to fit.
+  if (outerW > areaW || outerH > areaH) {
+    const double fitX = areaW > 0 ? static_cast<double>(areaW) / outerW : 1.0;
+    const double fitY = areaH > 0 ? static_cast<double>(areaH) / outerH : 1.0;
+    const double fit = fitX < fitY ? fitX : fitY;
+    outerW = static_cast<int>(outerW * fit);
+    outerH = static_cast<int>(outerH * fit);
+    if (outerW < 1) {
+      outerW = 1;
+    }
+    if (outerH < 1) {
+      outerH = 1;
+    }
   }
 
   int x = area.left + (areaW - outerW) / 2;

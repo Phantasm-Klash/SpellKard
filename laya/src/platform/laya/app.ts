@@ -37,7 +37,6 @@ import { applyDisplaySettings, createFpsOverlay, type FpsOverlayHandle } from '.
 import type { WindowScale } from '../../core/settings/schema';
 import {
   nativeScreenGeometry,
-  requestNativeWindowFill,
   requestNativeWindowSize,
   windowSizeForScale,
 } from '../native/native_window';
@@ -137,17 +136,13 @@ function sameSettingsGroup(a: unknown, b: unknown): boolean {
  * and changes the monitor's mode.
  */
 function applyWindowScale(scale: WindowScale): void {
-  if (scale === 'auto') {
-    // The exact "fill the work area" size is a native operation: the frame's
-    // height is a window-style detail, and only the window knows it.
-    if (requestNativeWindowFill()) {
-      return;
-    }
-  }
-  // The fixed multiples are multiples of the screen and "auto" fills the work
-  // area (the screen minus the taskbar), so every setting keeps the monitor's
-  // shape - the layout is width-adaptive, so a screen-shaped window shows more
-  // playfield than a 3:4 one would.
+  // Every setting keeps the **stage's** shape, including "auto".
+  //
+  // "Auto" used to fill the work area outright, which sounds right and is not:
+  // the work area is the monitor's shape (16:10 here), the stage is 3:4, and
+  // `showall` then letterboxes the stage into the middle of it — a wide window
+  // with the game in a narrow column down the centre. Auto now grows the stage
+  // shape until it meets the work area instead, so the stage fills the window.
   requestNativeWindowSize(windowSizeForScale(scale, nativeScreenGeometry()));
 }
 

@@ -148,14 +148,28 @@ export const DESIGN_HEIGHT = 1200;
  * game is meant to run in. All of them keep the 4:3 shape, so "auto" can keep
  * it too.
  */
+/**
+ * The design stage, and the shape the window keeps.
+ *
+ * The stage is **portrait** (900x1200, 3:4) — the playfield is a tall block
+ * with the HUD beside it — so the window has to be portrait too. It used to be
+ * 4:3 landscape, which is the stage turned on its side: with `showall` the
+ * stage was then letterboxed down the sides and only about 56% of the width
+ * carried any game.
+ */
+export const STAGE_WIDTH = 900;
+export const STAGE_HEIGHT = 1200;
+
 export const WINDOW_SIZES: Readonly<Record<string, { width: number; height: number }>> = {
-  '1': { width: 800, height: 600 },
-  '1.5': { width: 1200, height: 900 },
-  '2': { width: 1600, height: 1200 },
+  '1': { width: 600, height: 800 },
+  // Exactly the design stage: one stage pixel per screen pixel, the sharpest
+  // of the three.
+  '1.5': { width: STAGE_WIDTH, height: STAGE_HEIGHT },
+  '2': { width: 1200, height: 1600 },
 };
 
-/** The shape every window size keeps: 4:3. */
-export const WINDOW_ASPECT = 4 / 3;
+/** The shape every window size keeps: 3:4, the stage's own. */
+export const WINDOW_ASPECT = STAGE_WIDTH / STAGE_HEIGHT;
 
 /** A concrete window size in logical pixels. */
 export interface NativeWindowSize {
