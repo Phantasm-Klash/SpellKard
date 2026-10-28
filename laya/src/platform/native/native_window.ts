@@ -149,27 +149,21 @@ export const DESIGN_HEIGHT = 1200;
  * it too.
  */
 /**
- * The design stage, and the shape the window keeps.
+ * The window's shape: 4:3 landscape.
  *
- * The stage is **portrait** (900x1200, 3:4) — the playfield is a tall block
- * with the HUD beside it — so the window has to be portrait too. It used to be
- * 4:3 landscape, which is the stage turned on its side: with `showall` the
- * stage was then letterboxed down the sides and only about 56% of the width
- * carried any game.
+ * This is the **shell's** shape, not the battle stage's. The stage inside a
+ * battle is portrait (900x1200, 3:4) because the playfield and the HUD are
+ * stacked; that is a layout decision inside the battle screen and it is still
+ * changing. The window around all of it stays landscape.
  */
-export const STAGE_WIDTH = 900;
-export const STAGE_HEIGHT = 1200;
-
 export const WINDOW_SIZES: Readonly<Record<string, { width: number; height: number }>> = {
-  '1': { width: 600, height: 800 },
-  // Exactly the design stage: one stage pixel per screen pixel, the sharpest
-  // of the three.
-  '1.5': { width: STAGE_WIDTH, height: STAGE_HEIGHT },
-  '2': { width: 1200, height: 1600 },
+  '1': { width: 800, height: 600 },
+  '1.5': { width: 1200, height: 900 },
+  '2': { width: 1600, height: 1200 },
 };
 
-/** The shape every window size keeps: 3:4, the stage's own. */
-export const WINDOW_ASPECT = STAGE_WIDTH / STAGE_HEIGHT;
+/** The shape every window size keeps: 4:3 landscape. */
+export const WINDOW_ASPECT = 4 / 3;
 
 /** A concrete window size in logical pixels. */
 export interface NativeWindowSize {

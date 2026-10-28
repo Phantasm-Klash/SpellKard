@@ -136,13 +136,16 @@ function sameSettingsGroup(a: unknown, b: unknown): boolean {
  * and changes the monitor's mode.
  */
 function applyWindowScale(scale: WindowScale): void {
-  // Every setting keeps the **stage's** shape, including "auto".
+  // "Auto" used to fill the work area outright, which gave the window the
+  // **monitor's** shape (16:10 on this screen) instead of 4:3 — the shape the
+  // player picked. Now it grows 4:3 until it meets the work area instead, so
+  // the window has the shape it is supposed to have and is as large as it can
+  // be at that shape.
   //
-  // "Auto" used to fill the work area outright, which sounds right and is not:
-  // the work area is the monitor's shape (16:10 here), the stage is 3:4, and
-  // `showall` then letterboxes the stage into the middle of it — a wide window
-  // with the game in a narrow column down the centre. Auto now grows the stage
-  // shape until it meets the work area instead, so the stage fills the window.
+  // The window shape and the battle stage's shape are two different things and
+  // are meant to differ: the stage is portrait (900x1200) because the playfield
+  // and the HUD are stacked, and that layout is still moving. The shell around
+  // it stays 4:3 landscape.
   requestNativeWindowSize(windowSizeForScale(scale, nativeScreenGeometry()));
 }
 

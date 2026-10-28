@@ -27,19 +27,19 @@ const SCREEN: NativeScreenGeometry = {
 
 suite('window scale: the fixed sizes are absolute');
 
-test('1x is 600x800 — portrait, like the stage', () => {
+test('1x is 800x600', () => {
   const size = windowSizeForScale(1, SCREEN);
-  expectEqual(size.width, 600, '1x width');
-  expectEqual(size.height, 800, '1x height');
+  expectEqual(size.width, 800, '1x width');
+  expectEqual(size.height, 600, '1x height');
 });
 
-test('2x is 1200x1600', () => {
+test('2x is 1600x1200', () => {
   const size = windowSizeForScale(2, SCREEN);
-  expectEqual(size.width, 1200, '2x width');
-  expectEqual(size.height, 1600, '2x height');
+  expectEqual(size.width, 1600, '2x width');
+  expectEqual(size.height, 1200, '2x height');
 });
 
-test('every fixed size keeps the stage 3:4 shape', () => {
+test('every fixed size keeps the 4:3 shape', () => {
   for (const scale of [1, 1.5, 2] as const) {
     const size = windowSizeForScale(scale, SCREEN);
     expectClose(size.width / size.height, WINDOW_ASPECT, 1e-9, `${scale}x is 4:3`);
@@ -53,22 +53,21 @@ test('the sizes do not depend on the screen', () => {
     desktop: { width: 1280, height: 720 },
     workArea: { width: 1280, height: 672 },
   };
-  expectEqual(windowSizeForScale(1, small).width, 600, '1x on a small screen');
-  expectEqual(windowSizeForScale(1, small).height, 800, '1x on a small screen');
-  expectEqual(windowSizeForScale(2, small).width, 1200, '2x on a small screen');
+  expectEqual(windowSizeForScale(1, small).width, 800, '1x on a small screen');
+  expectEqual(windowSizeForScale(1, small).height, 600, '1x on a small screen');
+  expectEqual(windowSizeForScale(2, small).width, 1600, '2x on a small screen');
 });
 
 test('the size table is the one the setting offers', () => {
-  expectEqual(WINDOW_SIZES['1'].width, 600, '1x width');
-  expectEqual(WINDOW_SIZES['1'].height, 800, '1x height');
-  // 1.5x is exactly the design stage.
-  expectEqual(WINDOW_SIZES['1.5'].width, 900, '1.5x width');
-  expectEqual(WINDOW_SIZES['1.5'].height, 1200, '1.5x height');
-  expectEqual(WINDOW_SIZES['2'].width, 1200, '2x width');
-  expectEqual(WINDOW_SIZES['2'].height, 1600, '2x height');
+  expectEqual(WINDOW_SIZES['1'].width, 800, '1x width');
+  expectEqual(WINDOW_SIZES['1'].height, 600, '1x height');
+  expectEqual(WINDOW_SIZES['1.5'].width, 1200, '1.5x width');
+  expectEqual(WINDOW_SIZES['1.5'].height, 900, '1.5x height');
+  expectEqual(WINDOW_SIZES['2'].width, 1600, '2x width');
+  expectEqual(WINDOW_SIZES['2'].height, 1200, '2x height');
 });
 
-suite('window scale: auto fills the work area in the stage 3:4 shape');
+suite('window scale: auto fills the work area in 4:3');
 
 test('auto fills the work area, not the whole screen', () => {
   // The taskbar is not usable space, so auto works against the work area
@@ -76,7 +75,7 @@ test('auto fills the work area, not the whole screen', () => {
   // comes out of it as well - that part is done natively, because only the
   // window knows how tall its frame is.
   const auto = windowSizeForScale('auto', SCREEN);
-  expectEqual(auto.width, 1044, 'the width');
+  expectEqual(auto.width, 1856, 'the width');
   expectEqual(auto.height, 1392, 'the height');
   expect(auto.height <= SCREEN.workArea.height, 'and it stays inside the work area');
   expect(auto.height < SCREEN.desktop.height, 'the taskbar band is left alone');
@@ -97,7 +96,7 @@ test('auto keeps the 4:3 shape and never overflows the screen', () => {
 
     expect(auto.width <= screen.width, `${screen.width}x${screen.height}: the width fits`);
     expect(auto.height <= screen.height, `${screen.width}x${screen.height}: the height fits`);
-    expectClose(auto.width / auto.height, WINDOW_ASPECT, 1e-9, 'and it is 3:4');
+    expectClose(auto.width / auto.height, WINDOW_ASPECT, 1e-9, 'and it is 4:3');
   }
 });
 
