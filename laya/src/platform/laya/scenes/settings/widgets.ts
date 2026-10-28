@@ -239,6 +239,9 @@ let hintLayer: Laya.Sprite | null = null;
 let hintBox: Laya.Sprite | null = null;
 let hintText: Laya.Text | null = null;
 
+/** Which marker the hint is currently for, so a tap can toggle it off. */
+let hintShownFor: Laya.Sprite | null = null;
+
 /** The widest a hint may be before it wraps, in pixels. */
 const HINT_MAX_W = 300;
 
@@ -255,6 +258,7 @@ export function hideSettingsHint(): void {
   if (hintLayer !== null) {
     hintLayer.visible = false;
   }
+  hintShownFor = null;
 }
 
 /** Global position of a sprite, in stage coordinates. */
@@ -334,6 +338,7 @@ function showSettingsHint(anchor: Laya.Sprite, text: string): void {
   }
   hintLayer.pos(x, y);
   hintLayer.visible = true;
+  hintShownFor = anchor;
 }
 
 /**
@@ -370,10 +375,17 @@ function createHintMarker(text: string): Laya.Sprite {
   marker.on(Laya.Event.MOUSE_OUT, undefined, () => {
     hideSettingsHint();
   });
-  // A click closes the hint too: moving the pointer away is not always
-  // possible (the hint may be over another control).
+  // A click **toggles** the hint rather than only closing it.
+  //
+  // A hover-only hint is unreachable without a pointer: a touch screen never
+  // hovers, so the explanation would be gone for everyone playing on one.
+  // Tapping the marker shows it, tapping again (or moving away) dismisses it.
   marker.on(Laya.Event.CLICK, undefined, () => {
-    hideSettingsHint();
+    if (hintShownFor === marker) {
+      hideSettingsHint();
+      return;
+    }
+    showSettingsHint(marker, text);
   });
   return marker;
 }
