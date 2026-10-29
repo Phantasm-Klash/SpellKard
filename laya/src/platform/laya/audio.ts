@@ -29,6 +29,18 @@ import { resolveVolumes, type AudioSettings, type ResolvedVolumes } from '../../
 /** The independent sound-effect channels the player can mix. */
 export type SfxCategory = 'graze' | 'playerShot' | 'skill';
 
+/**
+ * Whose sound is playing: a character (the player's own ship) or a boss.
+ *
+ * Lets a single sound get its own slider on top of its category's — the way
+ * Mahjong Soul lets one voice be louder than another.
+ */
+export interface SfxSource {
+  readonly kind: 'character' | 'boss';
+  /** The server's id for the character or boss. */
+  readonly id: string;
+}
+
 /** Effective gains for the last applied settings; used by the play helpers. */
 let volumes: ResolvedVolumes = resolveVolumes({
   muted: false,
@@ -37,10 +49,47 @@ let volumes: ResolvedVolumes = resolveVolumes({
   grazeVolume: 1,
   playerShotVolume: 1,
   skillVolume: 1,
+  characterVolumes: {},
+  bossVolumes: {},
 });
+
+/** The last applied group, kept so a per-id slider can be read at play time. */
+let audioSettings: AudioSettings | null = null;
+
+/**
+ * Ids the player has actually heard: characters and bosses.
+ *
+ * The settings screen lists these so it can offer a slider per one, which is
+ * how Mahjong Soul does it — you tune the voices you have. A boss never
+ * encountered is not listed (there is nothing to judge yet), and a slider the
+ * player already set survives here because its id is also in the saved map.
+ */
+const heardCharacters = new Set<string>();
+const heardBosses = new Set<string>();
+
+/** The ids heard so far, each list alphabetically ordered. */
+export function heardSfxSources(): { readonly characters: string[]; readonly bosses: string[] } {
+  return {
+    characters: [...heardCharacters].sort(),
+    bosses: [...heardBosses].sort(),
+  };
+}
+
+/** Records that a source was played, so the settings screen can list it. */
+function noteSfxSource(source: SfxSource | undefined): void {
+  if (source === undefined || source.id === '') {
+    return;
+  }
+  if (source.kind === 'character') {
+    heardCharacters.add(source.id);
+  } else {
+    heardBosses.add(source.id);
+  }
+}
 
 /** Applies the whole Audio group. Safe to call before `Laya.init`. */
 export function applyAudioSettings(audio: AudioSettings): void {
+  audioSettings = audio;
   volumes = resolveVolumes(audio);
 
   // Buses stay at unity — see the file header for why.
@@ -60,17 +109,52 @@ export function sfxGain(category: SfxCategory): number {
 }
 
 /**
+ * One character's or boss's own volume, 0..1.
+ *
+ * An id with no entry means "follow the category" — so a boss the player has
+ * never touched a slider for still sounds right, and nothing has to be seeded
+ * when the server adds one.
+ */
+export function sourceVolume(source: SfxSource | undefined): number {
+  if (source === undefined || audioSettings === null || source.id === '') {
+    return 1;
+  }
+  const map = source.kind === 'character'
+    ? audioSettings.characterVolumes
+    : audioSettings.bossVolumes;
+  const value = map[source.id];
+  return typeof value === 'number' ? value : 1;
+}
+
+/**
+ * The effective gain for one sound, category × the source's own slider.
+ *
+ * `sfxGain` stays the plain category gain for callers that have no source.
+ */
+export function sfxGainFor(category: SfxCategory, source?: SfxSource): number {
+  return sfxGain(category) * sourceVolume(source);
+}
+
+/**
  * Plays a one-shot sound effect at its channel's gain.
  *
  * Returns `null` when there is nothing to play (empty URL, or the mix is
  * silent), so callers can treat "no asset yet" and "muted" the same way and
  * skip whatever visual work would accompany the sound.
  */
-export function playSfx(category: SfxCategory, url: string, loops = 1): Laya.SoundChannel | null {
-  const gain = sfxGain(category);
+export function playSfx(
+  category: SfxCategory,
+  url: string,
+  loops = 1,
+  source?: SfxSource,
+): Laya.SoundChannel | null {
+  const gain = sfxGainFor(category, source);
   if (url === '' || gain <= 0) {
     return null;
   }
+  // Noted on the way out, not on the way in: a source whose slider is at zero
+  // has still been met, and muting one channel must not hide another's setting.
+  noteSfxSource(source);
   const channel = Laya.SoundManager.playSound(url, loops);
   if (channel !== null && channel !== undefined) {
     channel.volume = gain;

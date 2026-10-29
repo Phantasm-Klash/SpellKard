@@ -113,7 +113,31 @@ export function normalizeAudio(raw: unknown, fallback: AudioSettings): AudioSett
     grazeVolume: readNumber(source.grazeVolume, fallback.grazeVolume, 0, 1),
     playerShotVolume: readNumber(source.playerShotVolume, fallback.playerShotVolume, 0, 1),
     skillVolume: readNumber(source.skillVolume, fallback.skillVolume, 0, 1),
+    characterVolumes: normalizeVolumeMap(source.characterVolumes),
+    bossVolumes: normalizeVolumeMap(source.bossVolumes),
   };
+}
+
+/**
+ * A per-id volume map.
+ *
+ * Every value is clamped to 0..1 and non-numeric entries are dropped: the map
+ * round-trips through JSON and can be hand-edited, so it is treated as
+ * untrusted. Keys are left exactly as they are — they are server ids, and
+ * rewriting them would silently detach a player's setting from its sound.
+ */
+function normalizeVolumeMap(raw: unknown): Readonly<Record<string, number>> {
+  if (!isRecord(raw)) {
+    return {};
+  }
+  const out: Record<string, number> = {};
+  for (const key of Object.keys(raw)) {
+    const value = raw[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      out[key] = value < 0 ? 0 : value > 1 ? 1 : value;
+    }
+  }
+  return out;
 }
 
 export function normalizeHud(raw: unknown, fallback: HudSettings): HudSettings {

@@ -94,6 +94,20 @@ export interface AudioSettings {
   playerShotVolume: number;
   /** 技能音效 — bombs / spell cards. */
   skillVolume: number;
+  /**
+   * 自机ごとの音量：character id → 0..1。
+   *
+   * Mahjong Soul's volume screen is the model: a global slider per category,
+   * and then a per-character one on top of it, so a player who likes one
+   * character's cues and not another's can tune them apart. Missing ids mean
+   * "follow the category" — nothing has to be set up before it works.
+   *
+   * The ids come from the server (the session's unlocked characters), so this
+   * is a map rather than a fixed set of fields.
+   */
+  readonly characterVolumes: Readonly<Record<string, number>>;
+  /** Boss ごとの音量：boss id → 0..1. Same rule as {@link characterVolumes}. */
+  readonly bossVolumes: Readonly<Record<string, number>>;
 }
 
 /**
@@ -198,6 +212,8 @@ export function defaultSettings(): GameSettings {
       grazeVolume: 0.6,
       playerShotVolume: 0.7,
       skillVolume: 0.8,
+      characterVolumes: {},
+      bossVolumes: {},
     },
     hud: {
       showOpponentHud: true,

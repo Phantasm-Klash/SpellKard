@@ -265,6 +265,11 @@ export interface Messages {
   'settings.audio.playerShot': string;
   'settings.audio.playerShot.desc': string;
   'settings.audio.skill': string;
+  'settings.audio.heading.characters': string;
+  'settings.audio.characters.desc': string;
+  'settings.audio.heading.bosses': string;
+  'settings.audio.bosses.desc': string;
+  'settings.audio.noneHeard': string;
   'settings.audio.skill.desc': string;
   'settings.audio.noAssetsNote': string;
   // HUD tab
@@ -745,7 +750,7 @@ const ZH_HANS: Messages = {
   'settings.display.effect.medium': '中',
   'settings.display.effect.high': '高',
   'settings.display.frameRate': '帧率上限',
-  'settings.display.frameRate.desc': '限制游戏重绘频率。对局过程由服务端权威计算，此设置不会影响模拟。',
+  'settings.display.frameRate.desc': '限制游戏重绘频率。上限只能向下限制——实际帧率不会超过显示器刷新率；对局由服务器权威计算，此设置不影响模拟。',
   'settings.display.frameCap.uncapped': '不限制',
   'settings.display.showFps': '显示帧率',
   'settings.display.showFps.desc': '在对局画面角落显示帧率计数器。',
@@ -812,6 +817,11 @@ const ZH_HANS: Messages = {
   'settings.audio.playerShot': '自机射击',
   'settings.audio.playerShot.desc': '你自机的射击音效。',
   'settings.audio.skill': '技能',
+  'settings.audio.heading.characters': '自机音效',
+  'settings.audio.characters.desc': '每个自机单独调。未列出的自机跟随上面的通道音量。',
+  'settings.audio.heading.bosses': 'Boss 音效',
+  'settings.audio.bosses.desc': '每个 Boss 单独调。遇到过的 Boss 才会出现在这里。',
+  'settings.audio.noneHeard': '还没有听到过——打一场之后这里就会出现。',
   'settings.audio.skill.desc': '炸弹与符卡音效。',
   'settings.audio.noAssetsNote':
     '此版本未随附音频文件。下方的音量设置会被保存并推送到引擎混音器，但在加入声音素材之前不会有任何声音。',
@@ -1240,7 +1250,7 @@ const ZH_HANT: Messages = {
   'settings.display.effect.medium': '中',
   'settings.display.effect.high': '高',
   'settings.display.frameRate': '訊框率上限',
-  'settings.display.frameRate.desc': '限制遊戲重繪頻率。對局過程由伺服器權威計算，此設定不會影響模擬。',
+  'settings.display.frameRate.desc': '限制遊戲重繪頻率。上限只能向下限制——實際幀率不會超過顯示器刷新率；對局由伺服器權威計算，此設定不影響模擬。',
   'settings.display.frameCap.uncapped': '不限制',
   'settings.display.showFps': '顯示訊框率',
   'settings.display.showFps.desc': '在對局畫面角落顯示訊框率計數器。',
@@ -1307,6 +1317,11 @@ const ZH_HANT: Messages = {
   'settings.audio.playerShot': '自機射擊',
   'settings.audio.playerShot.desc': '你自機的射擊音效。',
   'settings.audio.skill': '技能',
+  'settings.audio.heading.characters': '自機音效',
+  'settings.audio.characters.desc': '每個自機單獨調整。未列出的自機跟隨上面的通道音量。',
+  'settings.audio.heading.bosses': 'Boss 音效',
+  'settings.audio.bosses.desc': '每個 Boss 單獨調整。遇到過的 Boss 才會出現在這裡。',
+  'settings.audio.noneHeard': '還沒有聽過——打一場之後這裡就會出現。',
   'settings.audio.skill.desc': '炸彈與符卡音效。',
   'settings.audio.noAssetsNote':
     '此版本未隨附音訊檔案。下方的音量設定會被儲存並推送到引擎混音器，但在加入聲音素材之前不會有任何聲音。',
@@ -1735,7 +1750,7 @@ const JA: Messages = {
   'settings.display.effect.medium': '中',
   'settings.display.effect.high': '高',
   'settings.display.frameRate': 'フレームレート上限',
-  'settings.display.frameRate.desc': 'ゲームの再描画頻度を制限します。対局はサーバー権威なので、シミュレーションには影響しません。',
+  'settings.display.frameRate.desc': 'ゲームの再描画頻度を制限します。上限は下げるだけで、実際のフレームレートはディスプレイのリフレッシュレートを超えません。対局はサーバー権威なのでシミュレーションには影響しません。',
   'settings.display.frameCap.uncapped': '無制限',
   'settings.display.showFps': 'フレームレートを表示',
   'settings.display.showFps.desc': '対局画面の隅にフレームレートカウンターを表示します。',
@@ -1802,6 +1817,11 @@ const JA: Messages = {
   'settings.audio.playerShot': '自機ショット',
   'settings.audio.playerShot.desc': '自機のショット音。',
   'settings.audio.skill': 'スペル',
+  'settings.audio.heading.characters': '自機効果音',
+  'settings.audio.characters.desc': '自機ごとに調整できます。ここに無い自機は上のチャンネル音量に従います。',
+  'settings.audio.heading.bosses': 'ボス効果音',
+  'settings.audio.bosses.desc': 'ボスごとに調整できます。遭遇したボスだけがここに表示されます。',
+  'settings.audio.noneHeard': 'まだ聞いていません——1 戦行うとここに表示されます。',
   'settings.audio.skill.desc': 'ボムとスペルカード。',
   'settings.audio.noAssetsNote':
     'このビルドには音声ファイルが同梱されていません。下のレベルは保存されてエンジンのミキサーに送られますが、サウンドアセットが追加されるまで音は鳴りません。',
@@ -2235,7 +2255,7 @@ const EN: Messages = {
   'settings.display.effect.high': 'High',
   'settings.display.frameRate': 'Frame rate limit',
   'settings.display.frameRate.desc':
-    'Caps how often the game redraws. Gameplay stays server-authoritative, so this never changes the simulation.',
+    'Caps how often the game redraws. It can only cap downward - the real frame rate will not exceed the display refresh rate. The match is server-authoritative, so this does not affect simulation.',
   'settings.display.frameCap.uncapped': 'Uncapped',
   'settings.display.showFps': 'Show frame rate',
   'settings.display.showFps.desc': 'Draws a frame-rate counter in the corner of the battle screen.',
@@ -2309,6 +2329,11 @@ const EN: Messages = {
   'settings.audio.playerShot': 'Player shot',
   'settings.audio.playerShot.desc': 'Your own ship\u2019s shot cues.',
   'settings.audio.skill': 'Skill',
+  'settings.audio.heading.characters': 'Character cues',
+  'settings.audio.characters.desc': 'One slider per character. Any not listed follows the channel above.',
+  'settings.audio.heading.bosses': 'Boss cues',
+  'settings.audio.bosses.desc': 'One slider per boss. Only bosses you have met appear here.',
+  'settings.audio.noneHeard': 'Nothing heard yet - play a match and they will appear here.',
   'settings.audio.skill.desc': 'Bombs and spell cards.',
   'settings.audio.noAssetsNote':
     'No audio files ship with this build. The levels below are stored and pushed to the engine\u2019s mixer, but nothing will be audible until sound assets are added.',

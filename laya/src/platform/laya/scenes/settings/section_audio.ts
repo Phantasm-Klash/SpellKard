@@ -23,6 +23,7 @@ import {
   type RowHandle,
 } from './widgets';
 import { t } from '../../../../core/game/i18n';
+import { heardSfxSources } from '../../audio';
 
 export class AudioSection extends BaseSettingsSection {
   get title(): string {
@@ -93,6 +94,40 @@ export class AudioSection extends BaseSettingsSection {
       slider.setEnabled(!audio.muted);
     }
 
+    // One slider per character and per boss, on top of the channel above.
+    //
+    // The ids are the server's, and only the ones the player has actually
+    // heard are listed — Mahjong Soul's volume screen does the same with the
+    // characters you own, and it keeps this list short instead of enumerating
+    // a roster the client does not have.
+    const heard = heardSfxSources();
+    const perSource = (kind: 'character' | 'boss'): RowHandle[] => {
+      const saved = kind === 'character' ? audio.characterVolumes : audio.bossVolumes;
+      const ids = [...new Set([...heard[kind === 'character' ? 'characters' : 'bosses'], ...Object.keys(saved)])].sort();
+      if (ids.length === 0) {
+        return [createNoteRow(width, t('settings.audio.noneHeard'))];
+      }
+      return ids.map((id) =>
+        createSliderRow({
+          width,
+          label: id,
+          value: saved[id] ?? 1,
+          onChange: (value) => {
+            // Read the map back rather than closing over `audio`: two sliders
+            // in the same group would otherwise overwrite each other.
+            const current = this.store.get().audio;
+            const map = kind === 'character' ? current.characterVolumes : current.bossVolumes;
+            this.store.update({
+              audio:
+                kind === 'character'
+                  ? { characterVolumes: { ...map, [id]: value } }
+                  : { bossVolumes: { ...map, [id]: value } },
+            });
+          },
+        }),
+      );
+    };
+
     return [
       createGroupHeading(t('settings.audio.heading.audio'), width),
       mute,
@@ -103,6 +138,12 @@ export class AudioSection extends BaseSettingsSection {
       graze,
       playerShot,
       skill,
+      createGroupHeading(t('settings.audio.heading.characters'), width),
+      createNoteRow(width, t('settings.audio.characters.desc')),
+      ...perSource('character'),
+      createGroupHeading(t('settings.audio.heading.bosses'), width),
+      createNoteRow(width, t('settings.audio.bosses.desc')),
+      ...perSource('boss'),
       createNoteRow(width, t('settings.audio.noAssetsNote')),
     ];
   }
