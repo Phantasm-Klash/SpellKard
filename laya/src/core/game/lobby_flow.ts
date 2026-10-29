@@ -150,6 +150,28 @@ export function describeMatchmakingQueue(snapshot: LobbyFlowSnapshot): string {
   );
 }
 
+/**
+ * The extra parameters the queue entry carries.
+ *
+ * The certification rating goes in `mode_params` rather than in a new field of
+ * its own: the queue call already takes a free-form parameter map, so a client
+ * that sends it and a server that does not read it yet simply agree to ignore
+ * the extra key. That lets the two sides land in either order — the matchmaking
+ * rule (queue with your own rating, widen to neighbouring ratings after a wait)
+ * is the server's to make, and this side does not have to wait for it.
+ *
+ * `records` is only loaded while the records screen is open, so the rating is
+ * sent when it happens to be known and omitted otherwise; a player who has
+ * never opened that screen is queued exactly as before.
+ */
+export function matchmakingParams(records: RecordsView | null): Record<string, unknown> {
+  const ratingCode = records?.ratingCode ?? '';
+  if (ratingCode === '') {
+    return {};
+  }
+  return { rating_code: ratingCode };
+}
+
 export class LobbyFlow {
   private screen = LobbyScreen.Login;
   private statusText = t('flow.notConnected');
@@ -614,7 +636,7 @@ export class LobbyFlow {
   async joinMatchmaking(modeId = DEFAULT_MODE_ID): Promise<boolean> {
     this.statusText = t('flow.queue.joining');
     this.notify();
-    const ticket = await this.client.joinMatchmaking(modeId);
+    const ticket = await this.client.joinMatchmaking(modeId, matchmakingParams(this.records));
     if (ticket === null) {
       this.fail(t('flow.queue.joinFailed', { error: this.client.lastError }));
       return false;
