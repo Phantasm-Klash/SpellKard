@@ -7,16 +7,20 @@
 
 ## 0. 一句话结论
 
-**服务端的数据模型已经齐了，缺的是"把它暴露出来"和"用它分组"。**
+**服务端不只是数据齐了——分组逻辑也早就在跑；真正缺的只有"把它暴露出来"。**
+
+> 修订（2026-10-31）：初版这里写"缺匹配分组"，**是错的**。`queueKeyFor`
+> 对考证模式返回的 key 是 `mode:rating:stage`，分组一直都在，且评级取自服务端自身的
+> `user.Certification` 而非客户端提交。下面 §1 已按实际情况更正。
+
 `CertificationProfile` 已含 `ChallengeStageID`（考证关卡）、`RatingCode`、`RankScore`、
-`Percentile`、`Top30Qualified`、`NextCertificationUnlocked` —— 也就是文档
-`08_game_modes/certification_ranked_mode.md` 里要求的评级数据**基本都有了**。
+`Percentile`、`Top30Qualified`、`NextCertificationUnlocked`。
 
-缺的三件事：
+真正缺的两件事：
 
-1. `Records` 接口只回 `RatingCode / RankScore / SeasonID`，**考证关卡与晋级资格没回**；
-2. `matchmaking.join` **不按评级分组**（优先同评级、等待超时放宽到相邻评级这条规则没实现）；
-3. 客户端**没有模式选择 UI**，也没有"只能进某等级房间"的展示。
+1. `Records` 接口只回 `RatingCode / RankScore / SeasonID`，**考证关卡与晋级资格没回**
+   （已在 `Gensoulkyo 223224e` 补上）；
+2. 客户端**没有模式选择 UI**，也还没有"只能进某等级房间"的展示。
 
 ---
 
@@ -30,8 +34,9 @@
 | 考证模式已注册 | `runtime/core/service.go:1270,1438`（`modeID = "certification"`） | ✅ |
 | 关卡（stage）已在用 | `runtime/core/boss_selection.go`：`ModeParams["stage_id"]`（如 `lunar_maze`）+ `validateLoadout(..., CertificationProfile{})` | ✅ 关卡已经是考证流程的一部分 |
 | 结算写回评级 | `runtime/core/service.go:4633`（`rankScoreBefore` → 更新） | ✅ |
-| **Records 只暴露三个字段** | `runtime/core/service.go:1810 Records()` → `Points/RatingCode/SeasonID` | ❌ 缺 `ChallengeStageID` / `Top30Qualified` / `NextCertificationUnlocked` / `RankScoreFloor` / `Percentile` |
-| **匹配不按评级** | `matchmaking.join` 只读 `mode_id` / `mode_params` | ❌ |
+| Records 只暴露三个字段 | `runtime/core/service.go:1810 Records()` → `Points/RatingCode/SeasonID` | ❌ → **已补**（`223224e`） |
+| **匹配按「评级 + 关卡」分组** | `service.go:5071 queueKeyFor()`：考证模式返回 `mode:rating:stage` | ✅ **本来就有** |
+| 评级取自服务端自身 | `validateLoadout(modeID, req.ModeParams, user.Certification)` → `loadout.RatingCode` | ✅ 客户端伪造不了 |
 
 ### 协议（PhK-Protocol）
 
@@ -57,7 +62,7 @@
 
 ## 2. 落地步骤（按顺序，每步可独立回滚）
 
-### 第 1 步：把考证关卡与晋级资格暴露给客户端（服务端）
+### 第 1 步：把考证关卡与晋级资格暴露给客户端（服务端）— ✅ 已完成（`223224e` + `c17fb02`）
 
 `Records()` 的 `RecordsView` 里补上（**都是 `CertificationProfile` 已有的字段，只是没返回**）：
 
@@ -74,19 +79,23 @@ percentile                    float
 > 这一步**不需要动 wire**：`records.get` 的响应体是服务端自由定义的视图，
 > 加字段对老客户端无影响。
 
-### 第 2 步：匹配按评级分组（服务端）
+### 第 2 步：~~匹配按评级分组~~ — 不需要做，已有
 
-`matchmaking.join` 已有 `mode_params`，客户端会把自己的评级放在
-`mode_params.rating_code`（**客户端侧已完成，见 §3**）。服务端据此：
+`queueKeyFor()`（`service.go:5071`）对考证模式返回：
 
-1. 优先把 `rating_code` 相同的玩家配在一起；
-2. 等待超过阈值后放宽到**相邻**评级；
-3. 跨评级对局时，rank 分变化按评级差修正。
+```go
+return modeID + ":" + ratingCode + ":" + stageID
+```
 
-> 这样第 2 步可以**先于协议扩展**落地：客户端现在就发 `rating_code`，
-> 服务端读不读都不会出错（老服务端直接忽略这个键）。
+队列 key 已经是「模式 + 评级 + 关卡」，**同评级同关卡才会配到一起**，而且评级来自服务端
+自己的 `user.Certification`，客户端无法伪造。
+
+> 附注：`matchmakingParams()`（`lobby_flow.ts`）仍会把评级放进 `mode_params.rating_code`，
+> 但服务端并不读它——它按自己的 profile 分组。留着无害（老服务端忽略该键），
+> 但没有它功能也是完整的。
 
 ### 第 3 步：房间带等级 + 大厅按等级过滤
+
 
 - `RoomCreateRequest` 已经能带 `loadout.ratingCode`，但 `RoomStateMessage` 不回它
   → **需要给 `RoomStateMessage` 补一个评级字段**（这一步要动 wire，
@@ -117,10 +126,11 @@ percentile                    float
 
 | # | 内容 | 属于 |
 | --- | --- | --- |
-| 1 | `RecordsView` 补考证字段（§1 步） | Gensoulkyo |
-| 2 | `matchmaking.join` 按 `mode_params.rating_code` 分组（§2 步） | Gensoulkyo |
+| ~~1~~ | ~~`RecordsView` 补考证字段~~ | ✅ 已完成（`223224e` + `c17fb02`） |
+| ~~2~~ | ~~`matchmaking` 按评级分组~~ | ✅ **本来就不需要**——`queueKeyFor` 已按 `mode:rating:stage` 分组 |
 | 3 | `RoomStateMessage` 补评级字段（§3 步） | PhK-Protocol（**wire 冻结，需登记**） |
 | 4 | 考证关卡的 seed / 禁卡 / 通关条件怎么用 `stage_id` 表达 | 设计确认 |
+| 5 | **`certification` 要能打**：对局服里还没有它的模拟实现，`PLAYABLE_MODE_IDS` 因此没有它 | PhK-BattleServer（对局服） |
 
 ## 5. 测试重点
 
