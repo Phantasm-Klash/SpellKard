@@ -12,6 +12,7 @@ import type {
   BattleTicketView,
   CharacterRosterView,
   CheckinView,
+  DecksView,
   GachaPoolsView,
   GachaPullView,
   InventoryView,
@@ -26,6 +27,7 @@ import type {
 } from '../net/lobby_client';
 import { SESSION_EXPIRED_CODE, SESSION_REPLACED_CODE } from '../net/lobby_client';
 import { describeAuthError } from './auth_messages';
+import { deckSourceFromDecks } from './deck_view';
 import { t } from './i18n';
 
 export enum LobbyScreen {
@@ -39,6 +41,7 @@ export enum LobbyScreen {
   Shop = 'shop',
   Gacha = 'gacha',
   Inventory = 'inventory',
+  Deck = 'deck',
   Records = 'records',
   Error = 'error',
 }
@@ -102,6 +105,8 @@ export interface LobbyFlowSnapshot {
   gachaLastPull: GachaPullView | null;
   /** Owned card stacks, loaded while the inventory screen is open. */
   inventory: InventoryView | null;
+  /** Saved decks + active deck id, loaded while the deck editor is open. */
+  decks: DecksView | null;
   /** Personal records dashboard, loaded while the records screen is open. */
   records: RecordsView | null;
   /** Which form the login screen shows. */
@@ -183,6 +188,7 @@ export class LobbyFlow {
   private gachaRoster: CharacterRosterView | null = null;
   private gachaLastPull: GachaPullView | null = null;
   private inventory: InventoryView | null = null;
+  private decks: DecksView | null = null;
   private records: RecordsView | null = null;
   private authMode: AuthMode = 'login';
   private authUsername = '';
@@ -266,6 +272,7 @@ export class LobbyFlow {
       gachaRoster: this.gachaRoster,
       gachaLastPull: this.gachaLastPull,
       inventory: this.inventory,
+      decks: this.decks,
       records: this.records,
       authMode: this.authMode,
       authUsername: this.authUsername,
@@ -318,6 +325,7 @@ export class LobbyFlow {
       this.checkin = null;
       this.shop = null;
       this.inventory = null;
+      this.decks = null;
       this.records = null;
       this.setScreen(LobbyScreen.Login);
       this.fail(t('flow.bootstrapFailed', { reason: this.client.lastError || 'bootstrap_invalid_payload' }));
@@ -511,6 +519,7 @@ export class LobbyFlow {
     this.checkin = null;
     this.shop = null;
     this.inventory = null;
+    this.decks = null;
     this.authMode = 'login';
     this.authUsername = '';
     this.lastError = '';
@@ -931,6 +940,40 @@ export class LobbyFlow {
     this.statusText = t('flow.inventory.summary', { count: view.items.length });
     this.notify();
     return true;
+  }
+
+  /**
+   * Opens the deck editor and loads the saved decks (`decks.list`).
+   *
+   * The deck screen also needs the owned cards (the candidate pool), which it
+   * gets from the flow's inventory snapshot — loading it here when it is not
+   * cached means the editor opens with a filled pool instead of an empty one.
+   */
+  async openDeck(): Promise<boolean> {
+    this.statusText = t('flow.deck.loading');
+    this.setScreen(LobbyScreen.Deck);
+    const view = await this.client.fetchDecks();
+    if (view === null) {
+      this.fail(t('flow.deck.loadFailed', { error: this.client.lastError }));
+      return false;
+    }
+    this.decks = view;
+    this.lastError = '';
+    const active = deckSourceFromDecks(view);
+    this.statusText = t('flow.deck.summary', { count: active.cardIds.length, total: view.decks.length });
+    this.notify();
+    return true;
+  }
+
+  /**
+   * Stores a refreshed deck list (e.g. the one `decks.save` answered with) and
+   * repaints listeners. The deck screen owns the save call itself — it needs the
+   * per-save status line — but the list belongs to the flow, so it goes through
+   * here rather than being cached privately by the scene.
+   */
+  applyDecks(view: DecksView | null): void {
+    this.decks = view;
+    this.notify();
   }
 
   /** Opens the records screen and loads the personal record dashboard. */

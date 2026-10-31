@@ -36,6 +36,7 @@ export const SHORTCUT_SCOPES = [
   'shop',
   'gacha',
   'inventory',
+  'deck',
   'records',
   'settings',
 ] as const;
@@ -437,6 +438,9 @@ export const DEFAULT_BINDINGS: readonly ShortcutBinding[] = [
   { action: 'ui.prev', scope: 'inventory', chord: { key: 'arrowup' }, label: 'shortcuts.ui.prev' },
   { action: 'ui.activate', scope: 'inventory', chord: { key: 'enter' }, label: 'shortcuts.ui.use' },
   { action: 'ui.back', scope: 'inventory', chord: { key: 'escape' }, label: 'shortcuts.ui.back' },
+  { action: 'ui.next', scope: 'deck', chord: { key: 'arrowdown' }, label: 'shortcuts.ui.next' },
+  { action: 'ui.prev', scope: 'deck', chord: { key: 'arrowup' }, label: 'shortcuts.ui.prev' },
+  { action: 'ui.back', scope: 'deck', chord: { key: 'escape' }, label: 'shortcuts.ui.back' },
   { action: 'ui.next', scope: 'records', chord: { key: 'arrowdown' }, label: 'shortcuts.ui.next' },
   { action: 'ui.prev', scope: 'records', chord: { key: 'arrowup' }, label: 'shortcuts.ui.prev' },
   { action: 'ui.back', scope: 'records', chord: { key: 'escape' }, label: 'shortcuts.ui.back' },

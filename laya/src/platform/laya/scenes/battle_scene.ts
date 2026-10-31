@@ -717,6 +717,7 @@ export class BattleScene implements ClientScene {
     hand: readonly BossRaceHandCard[] | undefined,
     deckRemaining: number | undefined,
     drawCooldownTicks: number | undefined,
+    energy?: number,
   ): void {
     if (hand === undefined) {
       return;
@@ -725,13 +726,20 @@ export class BattleScene implements ClientScene {
     this.cardActions.syncFromSnapshot(serverSelected);
     const key = `${hand
       .map((entry) => `${entry.slot}:${entry.cardId}:${entry.selected ? 1 : 0}`)
-      .join(',')}|${deckRemaining ?? 'x'}|${drawCooldownTicks ?? 'x'}|${this.cardActions.selectedSlot}`;
+      .join(',')}|${deckRemaining ?? 'x'}|${drawCooldownTicks ?? 'x'}|${this.cardActions.selectedSlot}|${energy ?? 'x'}`;
     if (key === this.lastSnapshotHandKey) {
       return;
     }
     this.lastSnapshotHandKey = key;
+    // 能量：服务端下发（`players[].energy`，每 tick 回复 + 出牌扣费）优先；
+    // 老服务端不发 → 沿用票据开局值（`handController.energy`），不自己估算。
     this.handBar.setView(
-      snapshotHandBar(hand, deckRemaining, drawCooldownTicks, this.handController.energy),
+      snapshotHandBar(
+        hand,
+        deckRemaining,
+        drawCooldownTicks,
+        energy ?? this.handController.energy,
+      ),
     );
   }
 
@@ -1201,7 +1209,17 @@ export class BattleScene implements ClientScene {
       return;
     }
     // §2.8：权威快照的手牌/牌库/抽卡冷却驱动手牌栏（预测帧没有这些字段）。
-    this.syncSnapshotHand(source.hand, source.deckRemaining, source.drawCooldownTicks);
+    // 手牌权威在 `players[].hand`（快照是单份广播，顶层 `hand` 只是单人别名）；
+    // 多玩家时取本地玩家自己那一份，别读广播的扁平数组。
+    const localPlayer = source.players.find(
+      (player) => player.playerId === this.options.localPlayerId(),
+    );
+    this.syncSnapshotHand(
+      localPlayer?.hand ?? source.hand,
+      source.deckRemaining,
+      source.drawCooldownTicks,
+      localPlayer?.energy,
+    );
     this.noteCardEvents(source);
     // 非合作对局：MVP 视图是唯一渲染者（合作视图若曾创建则收起）。
     this.view.root.visible = true;

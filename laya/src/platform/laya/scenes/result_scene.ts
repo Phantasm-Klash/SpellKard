@@ -24,6 +24,7 @@ import {
 } from './ui_kit';
 import type { ShortcutAction, ShortcutScope } from '../../../core/input/shortcuts';
 import type { ClientScene } from './scene';
+import { handleBattleResult } from '../../native/steam/steam_session';
 
 export interface ResultSceneOptions {
   width: number;
@@ -251,6 +252,14 @@ export class ResultScene implements ClientScene {
     const localId = signedInId !== '' ? signedInId : scoreIds[0] ?? '';
     const opponentId = scoreIds.find((id) => id !== localId) ?? '';
     const won = localId !== '' && result.winnerPlayerId === localId;
+    // Steam achievement unlock for a completed level — best-effort and
+    // invisible to the UI; without the native extension this is a no-op.
+    void handleBattleResult({
+      modeId: snapshot.match?.modeId ?? snapshot.room?.modeId ?? '',
+      bossId: snapshot.room?.bossId ?? null,
+      won,
+      endpoint: snapshot.allocation?.endpoint ?? null,
+    });
     this.headline.text = won ? t('result.victory') : t('result.defeat');
     this.headline.color = won ? theme.COLOR_ACCENT : theme.COLOR_DANGER;
     this.showTitlePlaque(won ? 'stageClear' : 'gameOver');

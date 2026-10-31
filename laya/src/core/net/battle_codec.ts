@@ -512,6 +512,10 @@ export function decodeBossRaceSnapshot(payload: Uint8Array): BossRaceSnapshot | 
       // 这里的 `score` 为准——客户端不累加、不预测。
       score: optionalUint64At(player, 'score') ?? 0,
       hitCount: optionalUint64At(player, 'hit_count') ?? 0,
+      // §2.3 局内手牌按玩家下发（快照是单份广播，顶层 `hand` 只是单人别名）。
+      // 老服务端不发 → `undefined`，调用方回落顶层 / 票据开局手牌。
+      hand: parseHandList(player.hand),
+      energy: optionalNumberAt(player, 'energy'),
       spellGet: optionalUint64At(player, 'spell_get') ?? 0,
       spellTotal: optionalUint64At(player, 'spell_total') ?? 0,
     })),

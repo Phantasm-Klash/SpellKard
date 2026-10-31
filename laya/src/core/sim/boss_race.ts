@@ -398,6 +398,21 @@ export interface BossRacePlayerSnapshot {
    */
   score?: number;
   hitCount?: number;
+  /**
+   * §2.3 局内手牌：**每个玩家自己那一份**。
+   *
+   * 快照是单份广播（服务端 `BroadcastSnapshotPayload` 把同一个 payload 发给
+   * 所有会话），所以顶层的 {@link BossRaceSnapshot.hand} 只能表示「某一个人的
+   * 手牌」，多人局里必然错。权威在 `players[].hand`；顶层那份只当单人兼容别名
+   * （服务端仅在 `players.size() == 1` 时填）。老服务端两者都不发 → `undefined`。
+   */
+  hand?: BossRaceHandCard[];
+  /**
+   * 该玩家当前能量（服务端权威：每 tick 回复 + 出牌扣费）。
+   *
+   * 老服务端 / 服务端没发 → `undefined`，调用方回落到票据开局能量显示。
+   */
+  energy?: number;
   spellGet?: number;
   spellTotal?: number;
 }
@@ -482,6 +497,14 @@ export interface BossRaceSnapshot {
   /** §2.8：本快照携带的事件（与 `event_cursor` 配合）。 */
   events?: BossRaceEventView[];
   eventCursor?: number;
+  /**
+   * P4 难度档位（0/1/2/3 = easy/normal/hard/lunatic）。
+   *
+   * 服务端权威：缩放系数只在服务端发射时生效，客户端**不做本地难度换算**，
+   * 只把这个值透传到 HUD 供玩家确认自己进的是哪一档。老服务端不发 → `undefined`
+   * （调用方按「未知」处理，不要伪装成 normal）。
+   */
+  difficulty?: number;
 }
 
 /**
@@ -1141,6 +1164,17 @@ export class BossRaceSimulation {
       }
       if (serverPlayer.spellTotal !== undefined) {
         player.spellTotal = serverPlayer.spellTotal;
+      }
+      // §2.3 手牌/能量：服务端下发了就整份覆盖本地镜像。
+      //
+      // 本地预测只在「出牌那一 tick」给即时反馈（扣费/移槽），任何分叉——比如
+      // 服务端因能量不足拒绝了这次出牌——都在下一次快照被纠正。冷却表与牌堆游标
+      // 不在快照里，保留本地值（它们只影响下一次补抽，由服务端权威手牌兜底）。
+      if (serverPlayer.hand !== undefined) {
+        player.hand.cardIds = serverPlayer.hand.map((entry) => trimCardId(entry.cardId));
+        if (serverPlayer.energy !== undefined) {
+          player.hand.energy = serverPlayer.energy;
+        }
       }
       player.bossCurrentHp = serverPlayer.bossCurrentHp;
       player.damageDealt = serverPlayer.damageDealt;

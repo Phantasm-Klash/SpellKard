@@ -5,8 +5,8 @@
  * The lobby is two levels inside a single scene, switched by `page` and grouped
  * visibility rather than separate screens:
  *
- *   - `menu` — the main menu: five buttons (Play / Check-in / Shop / Inventory /
- *     Records). The account control lives in the profile card above them, not
+ *   - `menu` — the main menu: six buttons (Play / Check-in / Shop / Inventory /
+ *     Deck / Records). The account control lives in the profile card above them, not
  *     as a menu row: a signed-in player must never see "Sign out" sitting next
  *     to "Play", and the menu's button count and keyboard order stay the same
  *     whether or not a session exists. The card's button is context-sensitive —
@@ -116,6 +116,7 @@ export class LobbyScene implements ClientScene {
   private readonly checkinButton: ButtonHandle;
   private readonly shopButton: ButtonHandle;
   private readonly inventoryButton: ButtonHandle;
+  private readonly deckButton: ButtonHandle;
   private readonly recordsButton: ButtonHandle;
   /** Gold ring painted over the keyboard-highlighted button (shared overlay). */
   private readonly menuFocusRing: Laya.Sprite;
@@ -256,6 +257,11 @@ export class LobbyScene implements ClientScene {
 
     this.inventoryButton = createButton(t('lobby.inventory'), buttonX, y, contentWidth, () => void this.openInventory());
     this.addToPage(this.menuSprites, this.inventoryButton.sprite);
+    y += step;
+
+    // 卡组编辑：组卡是开打前的一步，所以紧挨背包（同为「我的东西」）。
+    this.deckButton = createArtButton(t('lobby.deck'), buttonX, y, contentWidth, () => void this.openDeck(), 'deck');
+    this.addToPage(this.menuSprites, this.deckButton.sprite);
     y += step;
 
     this.recordsButton = createArtButton(t('ui.records'), buttonX, y, contentWidth, () => void this.openRecords(), 'records');
@@ -456,6 +462,7 @@ export class LobbyScene implements ClientScene {
         { handle: this.checkinButton, activate: () => void this.openCheckin() },
         { handle: this.shopButton, activate: () => this.openShop() },
         { handle: this.inventoryButton, activate: () => void this.openInventory() },
+        { handle: this.deckButton, activate: () => void this.openDeck() },
         { handle: this.recordsButton, activate: () => void this.openRecords() },
       ];
     }
@@ -696,6 +703,7 @@ export class LobbyScene implements ClientScene {
     this.checkinButton.setText(t('lobby.checkin'));
     this.shopButton.setText(t('ui.shop'));
     this.inventoryButton.setText(t('lobby.inventory'));
+    this.deckButton.setText(t('lobby.deck'));
     this.recordsButton.setText(t('ui.records'));
     this.cycleButton.setText(t('lobby.changeRoomCode'));
     this.createButton.setText(t('lobby.createRoom'));
@@ -829,6 +837,7 @@ export class LobbyScene implements ClientScene {
     this.checkinButton.setEnabled(signedIn && !this.busy);
     this.shopButton.setEnabled(signedIn && !this.busy);
     this.inventoryButton.setEnabled(signedIn && !this.busy);
+    this.deckButton.setEnabled(signedIn && !this.busy);
     this.recordsButton.setEnabled(signedIn && !this.busy);
   }
 
@@ -882,6 +891,10 @@ export class LobbyScene implements ClientScene {
 
   private async openInventory(): Promise<void> {
     await this.run(() => this.options.flow.openInventory());
+  }
+
+  private async openDeck(): Promise<void> {
+    await this.run(() => this.options.flow.openDeck());
   }
 
   private async openRecords(): Promise<void> {

@@ -19,8 +19,10 @@
  *     behave exactly like the C++ race simulation for every ruleset the lobby
  *     can actually mint: movement 3000 milli/tick with the server bit layout
  *     (`boss_race.cpp:356-369`), the synthetic per-tick damage rule
- *     (`:395-414`), `card_slot` inert by default (no occurrence of `card_slot`
- *     anywhere in `boss_race.cpp`), and the `-1` sentinel semantics of
+ *     (`:395-414`), `card_slot` inert **while the client's `cardMechanics`
+ *     flag is off** (the server consumes it once the ticket seeds a hand —
+ *     `BossRaceSimulation::SeedHand` — but the client only predicts casts when
+ *     that flag is set), and the `-1` sentinel semantics of
  *     `ValidateCast` (`card_hand.cpp:66-77`).
  *
  * Everything runs offline: no sockets, no servers, no C++ compilation.
@@ -515,9 +517,12 @@ test('the slow flag does not change race movement, matching boss_race.cpp:356-36
 });
 
 test('the race simulation consumes a decoded card_slot only when cardMechanics is on', () => {
-  // Default off — the server-parity decision: `boss_race.cpp` never reads
-  // card_slot (grep: zero occurrences), so a card frame must be
-  // indistinguishable from an idle one, hash included.
+  // Default off on the **client**: the battle server consumes `card_slot` once
+  // the ticket seeded a hand (`BossRaceSimulation::SeedHand`), but the client
+  // only predicts the cast locally when `cardMechanics` is enabled — until
+  // then a card frame must stay indistinguishable from an idle one, hash
+  // included, and the authoritative snapshot is the only thing that moves the
+  // boss.
   const plain = raceSim();
   const carded = raceSim();
   for (let tick = 1; tick <= 5; tick += 1) {

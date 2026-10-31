@@ -90,6 +90,8 @@ import './boss_race_danmaku_mechanics.test';
 import './bullet_kind_atlas_map.test';
 import './boss_race_score.test';
 import './render_state_judgment.test';
+import './steam_native.test';
+import './deck_view.test';
 
 import { runAll } from './harness';
 

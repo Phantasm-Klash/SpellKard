@@ -58,6 +58,7 @@ export interface Messages {
   'lobby.signOut': string;
   'lobby.checkin': string;
   'lobby.inventory': string;
+  'lobby.deck': string;
   'lobby.page.menu': string;
   'lobby.page.play': string;
   'lobby.changeRoomCode': string;
@@ -68,6 +69,36 @@ export interface Messages {
   'inventory.chests': string;
   'inventory.open': string;
   'inventory.empty': string;
+  // --- deck editor ---
+  'deck.title': string;
+  'deck.current': string;
+  'deck.pool': string;
+  'deck.count': string;
+  'deck.emptySlot': string;
+  'deck.emptyPool': string;
+  'deck.add': string;
+  'deck.remove': string;
+  'deck.save': string;
+  'deck.clear': string;
+  'deck.saving': string;
+  'deck.saved': string;
+  'deck.saveFailed': string;
+  'deck.dirty': string;
+  'deck.synced': string;
+  'deck.owned': string;
+  'deck.missing': string;
+  'deck.highRarity': string;
+  'deck.interference': string;
+  'deck.more': string;
+  'deck.problem.deck_incomplete': string;
+  'deck.problem.deck_overflow': string;
+  'deck.problem.card_not_owned': string;
+  'deck.problem.copy_cap': string;
+  'deck.problem.copy_limit': string;
+  'deck.problem.high_rarity_limit': string;
+  'deck.problem.interference_limit': string;
+  'deck.problem.ranked_banned': string;
+  'deck.problem.slot_invalid': string;
   'replay.session': string;
   'replay.play': string;
   'replay.pause': string;
@@ -308,6 +339,7 @@ export interface Messages {
   'settings.keys.scope.checkin': string;
   'settings.keys.scope.shop': string;
   'settings.keys.scope.inventory': string;
+  'settings.keys.scope.deck': string;
   'settings.keys.scope.records': string;
   'settings.keys.scope.settings': string;
 
@@ -466,6 +498,9 @@ export interface Messages {
   'flow.inventory.loading': string;
   'flow.inventory.loadFailed': string;
   'flow.inventory.summary': string;
+  'flow.deck.loading': string;
+  'flow.deck.loadFailed': string;
+  'flow.deck.summary': string;
   'flow.records.loading': string;
   'flow.records.loadFailed': string;
   'flow.records.summary': string;
@@ -631,6 +666,36 @@ const ZH_HANS: Messages = {
   'inventory.chests': '卡包',
   'inventory.open': '开启',
   'inventory.empty': '背包是空的',
+  'lobby.deck': '卡组',
+  'deck.title': '卡组编辑',
+  'deck.current': '当前卡组',
+  'deck.pool': '我的卡牌',
+  'deck.count': '{count} / {max} 张',
+  'deck.emptySlot': '空',
+  'deck.emptyPool': '你还没有任何卡牌',
+  'deck.add': '加入',
+  'deck.remove': '移除',
+  'deck.save': '保存卡组',
+  'deck.clear': '清空',
+  'deck.saving': '正在保存…',
+  'deck.saved': '已保存（{count} 张）',
+  'deck.saveFailed': '保存失败：{error}',
+  'deck.dirty': '有未保存的改动',
+  'deck.synced': '与服务器一致',
+  'deck.owned': '已用 {used} / 上限 {cap} / 拥有 {owned}',
+  'deck.missing': '还差 {count} 张',
+  'deck.highRarity': '高稀有 {count}/{max}',
+  'deck.interference': '干扰 {count}/{max}',
+  'deck.more': '还有 {count} 张未显示',
+  'deck.problem.deck_incomplete': '卡组需要正好 {max} 张，还差 {missing} 张',
+  'deck.problem.deck_overflow': '卡组不能超过 {max} 张',
+  'deck.problem.card_not_owned': '没有这张卡：{card}',
+  'deck.problem.copy_cap': '{card} 最多只能放 {cap} 张',
+  'deck.problem.copy_limit': '{card} 超过拥有数（拥有 {owned} 张）',
+  'deck.problem.high_rarity_limit': '高稀有卡超过上限（{count}/{max}）',
+  'deck.problem.interference_limit': '强力干扰卡超过上限（{count}/{max}）',
+  'deck.problem.ranked_banned': '{card} 在排位赛中禁用',
+  'deck.problem.slot_invalid': '位置无效',
   'replay.session': '对战信息',
   'replay.play': '播放',
   'replay.pause': '暂停',
@@ -867,6 +932,7 @@ const ZH_HANS: Messages = {
   'settings.keys.scope.checkin': '签到',
   'settings.keys.scope.shop': '商店',
   'settings.keys.scope.inventory': '背包',
+  'settings.keys.scope.deck': '卡组',
   'settings.keys.scope.records': '战绩',
   'settings.keys.scope.settings': '设置',
   'checkin.title': '签到',
@@ -1016,6 +1082,9 @@ const ZH_HANS: Messages = {
   'flow.inventory.loading': '正在加载背包…',
   'flow.inventory.loadFailed': '加载背包失败：{error}',
   'flow.inventory.summary': '背包：{count} 组物品',
+  'flow.deck.loading': '正在加载卡组…',
+  'flow.deck.loadFailed': '加载卡组失败：{error}',
+  'flow.deck.summary': '卡组：{count} 张 · 共 {total} 套',
   'flow.records.loading': '正在加载记录…',
   'flow.records.loadFailed': '加载记录失败：{error}',
   'flow.records.summary': '记录：{wins} 胜 {losses} 负 {draws} 平',
@@ -1136,6 +1205,36 @@ const ZH_HANT: Messages = {
   'inventory.chests': '卡包',
   'inventory.open': '開啟',
   'inventory.empty': '背包是空的',
+  'lobby.deck': '卡組',
+  'deck.title': '卡組編輯',
+  'deck.current': '目前卡組',
+  'deck.pool': '我的卡牌',
+  'deck.count': '{count} / {max} 張',
+  'deck.emptySlot': '空',
+  'deck.emptyPool': '你還沒有任何卡牌',
+  'deck.add': '加入',
+  'deck.remove': '移除',
+  'deck.save': '儲存卡組',
+  'deck.clear': '清空',
+  'deck.saving': '正在儲存…',
+  'deck.saved': '已儲存（{count} 張）',
+  'deck.saveFailed': '儲存失敗：{error}',
+  'deck.dirty': '有未儲存的改動',
+  'deck.synced': '與伺服器一致',
+  'deck.owned': '已用 {used} / 上限 {cap} / 擁有 {owned}',
+  'deck.missing': '還差 {count} 張',
+  'deck.highRarity': '高稀有 {count}/{max}',
+  'deck.interference': '干擾 {count}/{max}',
+  'deck.more': '還有 {count} 張未顯示',
+  'deck.problem.deck_incomplete': '卡組需要正好 {max} 張，還差 {missing} 張',
+  'deck.problem.deck_overflow': '卡組不能超過 {max} 張',
+  'deck.problem.card_not_owned': '沒有這張卡：{card}',
+  'deck.problem.copy_cap': '{card} 最多只能放 {cap} 張',
+  'deck.problem.copy_limit': '{card} 超過擁有數（擁有 {owned} 張）',
+  'deck.problem.high_rarity_limit': '高稀有卡超過上限（{count}/{max}）',
+  'deck.problem.interference_limit': '強力干擾卡超過上限（{count}/{max}）',
+  'deck.problem.ranked_banned': '{card} 在排位賽中禁用',
+  'deck.problem.slot_invalid': '位置無效',
   'replay.session': '對戰資訊',
   'replay.play': '播放',
   'replay.pause': '暫停',
@@ -1372,6 +1471,7 @@ const ZH_HANT: Messages = {
   'settings.keys.scope.checkin': '簽到',
   'settings.keys.scope.shop': '商店',
   'settings.keys.scope.inventory': '背包',
+  'settings.keys.scope.deck': '卡組',
   'settings.keys.scope.records': '戰績',
   'settings.keys.scope.settings': '設定',
   'checkin.title': '簽到',
@@ -1532,6 +1632,9 @@ const ZH_HANT: Messages = {
   'flow.inventory.loading': '正在載入背包…',
   'flow.inventory.loadFailed': '載入背包失敗：{error}',
   'flow.inventory.summary': '背包：{count} 組物品',
+  'flow.deck.loading': '正在載入卡組…',
+  'flow.deck.loadFailed': '載入卡組失敗：{error}',
+  'flow.deck.summary': '卡組：{count} 張 · 共 {total} 套',
   'flow.records.loading': '正在載入記錄…',
   'flow.records.loadFailed': '載入記錄失敗：{error}',
   'flow.records.summary': '記錄：{wins} 勝 {losses} 負 {draws} 平',
@@ -1641,6 +1744,36 @@ const JA: Messages = {
   'inventory.chests': 'パック',
   'inventory.open': '開ける',
   'inventory.empty': '持ち物は空です',
+  'lobby.deck': 'デッキ',
+  'deck.title': 'デッキ編集',
+  'deck.current': '現在のデッキ',
+  'deck.pool': '所持カード',
+  'deck.count': '{count} / {max} 枚',
+  'deck.emptySlot': '空き',
+  'deck.emptyPool': 'カードをまだ持っていません',
+  'deck.add': '追加',
+  'deck.remove': '外す',
+  'deck.save': 'デッキを保存',
+  'deck.clear': 'クリア',
+  'deck.saving': '保存中…',
+  'deck.saved': '保存しました（{count} 枚）',
+  'deck.saveFailed': '保存に失敗しました：{error}',
+  'deck.dirty': '未保存の変更があります',
+  'deck.synced': 'サーバーと同期済み',
+  'deck.owned': '使用 {used} / 上限 {cap} / 所持 {owned}',
+  'deck.missing': 'あと {count} 枚',
+  'deck.highRarity': '高レア {count}/{max}',
+  'deck.interference': '妨害 {count}/{max}',
+  'deck.more': '残り {count} 枚は非表示',
+  'deck.problem.deck_incomplete': 'デッキはちょうど {max} 枚必要です（あと {missing} 枚）',
+  'deck.problem.deck_overflow': 'デッキは {max} 枚を超えられません',
+  'deck.problem.card_not_owned': 'このカードを持っていません：{card}',
+  'deck.problem.copy_cap': '{card} は {cap} 枚までです',
+  'deck.problem.copy_limit': '{card} は所持数（{owned} 枚）を超えています',
+  'deck.problem.high_rarity_limit': '高レアカードが上限を超えています（{count}/{max}）',
+  'deck.problem.interference_limit': '強力妨害カードが上限を超えています（{count}/{max}）',
+  'deck.problem.ranked_banned': '{card} はランク戦で使用できません',
+  'deck.problem.slot_invalid': '枠が不正です',
   'replay.session': '対戦情報',
   'replay.play': '再生',
   'replay.pause': '一時停止',
@@ -1877,6 +2010,7 @@ const JA: Messages = {
   'settings.keys.scope.checkin': 'デイリーログイン',
   'settings.keys.scope.shop': '商店',
   'settings.keys.scope.inventory': '所持品',
+  'settings.keys.scope.deck': 'デッキ',
   'settings.keys.scope.records': '戦績',
   'settings.keys.scope.settings': '設定',
   'checkin.title': 'デイリーログイン',
@@ -2037,6 +2171,9 @@ const JA: Messages = {
   'flow.inventory.loading': 'インベントリを読み込み中…',
   'flow.inventory.loadFailed': 'インベントリの読み込みに失敗しました：{error}',
   'flow.inventory.summary': 'インベントリ：{count} スタック',
+  'flow.deck.loading': 'デッキを読み込み中…',
+  'flow.deck.loadFailed': 'デッキの読み込みに失敗しました：{error}',
+  'flow.deck.summary': 'デッキ：{count} 枚 · 全 {total} 個',
   'flow.records.loading': '戦績を読み込み中…',
   'flow.records.loadFailed': '戦績の読み込みに失敗しました：{error}',
   'flow.records.summary': '戦績：{wins}勝 {losses}敗 {draws}分',
@@ -2148,6 +2285,36 @@ const EN: Messages = {
   'inventory.chests': 'Chests',
   'inventory.open': 'Open',
   'inventory.empty': 'Your inventory is empty',
+  'lobby.deck': 'Deck',
+  'deck.title': 'Deck editor',
+  'deck.current': 'Current deck',
+  'deck.pool': 'My cards',
+  'deck.count': '{count} / {max} cards',
+  'deck.emptySlot': 'Empty',
+  'deck.emptyPool': 'You own no cards yet',
+  'deck.add': 'Add',
+  'deck.remove': 'Remove',
+  'deck.save': 'Save deck',
+  'deck.clear': 'Clear',
+  'deck.saving': 'Saving…',
+  'deck.saved': 'Saved ({count} cards)',
+  'deck.saveFailed': 'Save failed: {error}',
+  'deck.dirty': 'Unsaved changes',
+  'deck.synced': 'In sync with the server',
+  'deck.owned': 'Used {used} / cap {cap} / owned {owned}',
+  'deck.missing': '{count} more needed',
+  'deck.highRarity': 'High rarity {count}/{max}',
+  'deck.interference': 'Interference {count}/{max}',
+  'deck.more': '{count} more not shown',
+  'deck.problem.deck_incomplete': 'A deck needs exactly {max} cards — {missing} more',
+  'deck.problem.deck_overflow': 'A deck cannot hold more than {max} cards',
+  'deck.problem.card_not_owned': 'You do not own this card: {card}',
+  'deck.problem.copy_cap': '{card} is limited to {cap} copies',
+  'deck.problem.copy_limit': '{card} exceeds the copies you own ({owned})',
+  'deck.problem.high_rarity_limit': 'Too many high-rarity cards ({count}/{max})',
+  'deck.problem.interference_limit': 'Too many interference cards ({count}/{max})',
+  'deck.problem.ranked_banned': '{card} is banned in ranked',
+  'deck.problem.slot_invalid': 'Invalid slot',
   'replay.session': 'Session',
   'replay.play': 'Play',
   'replay.pause': 'Pause',
@@ -2394,6 +2561,7 @@ const EN: Messages = {
   'settings.keys.scope.checkin': 'Check-in',
   'settings.keys.scope.shop': 'Shop',
   'settings.keys.scope.inventory': 'Inventory',
+  'settings.keys.scope.deck': 'Deck',
   'settings.keys.scope.records': 'Records',
   'settings.keys.scope.settings': 'Settings',
   'checkin.title': 'Check-in',
@@ -2554,6 +2722,9 @@ const EN: Messages = {
   'flow.inventory.loading': 'Loading inventory…',
   'flow.inventory.loadFailed': 'Inventory load failed: {error}',
   'flow.inventory.summary': 'Inventory: {count} stack(s)',
+  'flow.deck.loading': 'Loading decks…',
+  'flow.deck.loadFailed': 'Deck load failed: {error}',
+  'flow.deck.summary': 'Deck: {count} card(s) · {total} saved',
   'flow.records.loading': 'Loading records…',
   'flow.records.loadFailed': 'Records load failed: {error}',
   'flow.records.summary': 'Records: {wins}W-{losses}L-{draws}D',

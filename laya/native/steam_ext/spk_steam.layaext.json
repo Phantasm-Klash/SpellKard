@@ -1,0 +1,12 @@
+{
+  "extension": {
+    "name": "spk_steam",
+    "version": "1.0.0",
+    "api_version": 1,
+    "description": "SpellKard Steamworks bridge: init/SteamID, DLC ownership, Workshop subscription state, per-level achievements"
+  },
+  "libraries": {
+    "windows.x86_64": "spk_steam.dll"
+  },
+  "dependencies": []
+}

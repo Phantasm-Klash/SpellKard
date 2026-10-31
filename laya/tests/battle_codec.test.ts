@@ -328,3 +328,70 @@ function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
   out.set(b, a.length);
   return out;
 }
+
+// §2.3 局内手牌：快照是**单份广播**（服务端 `BroadcastSnapshotPayload` 把同一个
+// payload 发给所有会话），所以顶层的 `hand` 只能表示「某一个人的手牌」。权威在
+// `players[].hand`，客户端必须取本地玩家自己那一份，否则多人局会显示别人的牌。
+test('decodeBossRaceSnapshot reads the hand per player and keeps the top-level one as a fallback', () => {
+  const perPlayer = JSON.stringify({
+    tick: 12,
+    state: 'running',
+    winner_player_id: '',
+    winner_tick: 0,
+    state_hash: 'aabb',
+    players: [
+      {
+        player_id: 'p1',
+        x_milli: 0,
+        y_milli: 0,
+        boss_current_hp: 100,
+        damage_dealt: 0,
+        hand: [{ card_id: 'focus_lens', slot: 0, selected: true }],
+        energy: 6.5,
+      },
+      {
+        player_id: 'p2',
+        x_milli: 0,
+        y_milli: 0,
+        boss_current_hp: 100,
+        damage_dealt: 0,
+        hand: [{ card_id: 'purge_bell', slot: 0, selected: false }],
+      },
+    ],
+    bullets: [],
+  });
+  const decoded = decodeBossRaceSnapshot(
+    concat(new Uint8Array([BattlePayloadType.SNAPSHOT]), utf8(perPlayer)),
+  );
+  expect(decoded !== null, 'snapshot should decode');
+  expectEqual(decoded!.players[0].hand?.length, 1);
+  expectEqual(decoded!.players[0].hand![0].cardId, 'focus_lens');
+  expectEqual(decoded!.players[0].hand![0].selected, true);
+  expectEqual(decoded!.players[0].energy, 6.5);
+  expectEqual(decoded!.players[1].hand![0].cardId, 'purge_bell');
+  // 服务端没发能量 → `undefined`，不能伪装成 0（0 是「能量耗尽」的合法读数）。
+  expectEqual(decoded!.players[1].energy, undefined);
+  // 顶层那份在多玩家局里是空的（服务端只在单人局填别名）。
+  expectEqual(decoded!.hand, undefined);
+
+  // 单人局兼容别名：只有顶层 `hand` 的老形状仍然要能读出来。
+  const legacy = JSON.stringify({
+    tick: 3,
+    state: 'running',
+    winner_player_id: '',
+    winner_tick: 0,
+    state_hash: 'ccdd',
+    players: [{ player_id: 'p1', x_milli: 0, y_milli: 0, boss_current_hp: 9, damage_dealt: 0 }],
+    hand: [{ card_id: 'aegis_ward', slot: 0, selected: false }],
+    deck_remaining: 15,
+    bullets: [],
+  });
+  const old = decodeBossRaceSnapshot(
+    concat(new Uint8Array([BattlePayloadType.SNAPSHOT]), utf8(legacy)),
+  );
+  expect(old !== null, 'legacy snapshot should decode');
+  expectEqual(old!.hand?.[0].cardId, 'aegis_ward');
+  expectEqual(old!.deckRemaining, 15);
+  // 老形状没有每玩家手牌 → 保持 `undefined`，调用方回落顶层 `hand`。
+  expectEqual(old!.players[0].hand, undefined);
+});

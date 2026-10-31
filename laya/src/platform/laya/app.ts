@@ -42,6 +42,7 @@ import {
 } from '../native/native_window';
 import { toggleFullscreen, fullscreenDebugState } from './fullscreen';
 import { LayaInput } from './laya_input';
+import { initSteamSession } from '../native/steam/steam_session';
 import { LayaTimer } from './laya_timer';
 import { installNativeCaretFix, nativeCaretFixInstalled } from './native_caret';
 import { ShortcutDispatcher, type ShortcutHost } from './shortcuts';
@@ -50,6 +51,7 @@ import { textInputDebugState } from './text_input';
 import { BattleScene } from './scenes/battle_scene';
 import { CheckinScene } from './scenes/checkin_scene';
 import { InventoryScene } from './scenes/inventory_scene';
+import { DeckScene } from './scenes/deck_scene';
 import { LobbyScene } from './scenes/lobby_scene';
 import { LoginScene } from './scenes/login_scene';
 import { RecordsScene } from './scenes/records_scene';
@@ -188,6 +190,7 @@ export class SpellKardApp {
   private readonly shopScene: ShopScene;
   private readonly gachaScene: GachaScene;
   private readonly inventoryScene: InventoryScene;
+  private readonly deckScene: DeckScene;
   private readonly recordsScene: RecordsScene;
   private readonly demPlayerScene: DemPlayerScene;
   /**
@@ -449,6 +452,7 @@ export class SpellKardApp {
     this.shopScene = new ShopScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
     this.gachaScene = new GachaScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
     this.inventoryScene = new InventoryScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
+    this.deckScene = new DeckScene({ width: config.stageWidth, height: config.stageHeight, flow: this.flow });
     this.recordsScene = new RecordsScene({
       width: config.stageWidth,
       height: config.stageHeight,
@@ -488,6 +492,9 @@ export class SpellKardApp {
     // `Laya.NativeTextLayout` after `Laya.init`, so the patch is installed here.
     // On web this is a no-op (the class does not exist) and returns false.
     installNativeCaretFix();
+    // Steam (DLC + achievements) is optional: without the native extension or
+    // the Steam client this is a silent no-op; the game never waits on it.
+    void initSteamSession();
     void this.loadConfiguredModules();
   }
 
@@ -565,6 +572,7 @@ export class SpellKardApp {
       this.shopScene,
       this.gachaScene,
       this.inventoryScene,
+      this.deckScene,
       this.recordsScene,
       this.demPlayerScene,
     ];
@@ -606,6 +614,9 @@ export class SpellKardApp {
         break;
       case LobbyScreen.Inventory:
         this.inventoryScene.applySnapshot(snapshot);
+        break;
+      case LobbyScreen.Deck:
+        this.deckScene.applySnapshot(snapshot);
         break;
       case LobbyScreen.Records:
         this.recordsScene.applySnapshot(snapshot);
@@ -836,6 +847,8 @@ export class SpellKardApp {
         return this.gachaScene;
       case LobbyScreen.Inventory:
         return this.inventoryScene;
+      case LobbyScreen.Deck:
+        return this.deckScene;
       case LobbyScreen.Records:
         return this.recordsScene;
       default:
@@ -871,6 +884,7 @@ export class SpellKardApp {
     shop: ShopScene;
     gacha: GachaScene;
     inventory: InventoryScene;
+    deck: DeckScene;
     records: RecordsScene;
     demPlayer: DemPlayerScene;
     flow: LobbyFlow;
@@ -898,6 +912,7 @@ export class SpellKardApp {
       shop: this.shopScene,
       gacha: this.gachaScene,
       inventory: this.inventoryScene,
+      deck: this.deckScene,
       records: this.recordsScene,
       demPlayer: this.demPlayerScene,
       flow: this.flow,
