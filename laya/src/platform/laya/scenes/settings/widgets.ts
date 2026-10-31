@@ -234,6 +234,16 @@ const HINT_MARKER_D = 15;
 /** The square the marker is hit-tested over, in pixels. */
 const HINT_MARKER_HIT = 32;
 
+/**
+ * Slack added to the hint text's width, in pixels.
+ *
+ * The line breaks are computed from an estimated glyph width. A line that
+ * renders slightly wider than its estimate would run past the box, because the
+ * text is not re-wrapped and not clipped — so the box is given a little more
+ * room than the longest line measured.
+ */
+const HINT_SLACK = 4;
+
 /** The shared hint layer: one box, reused, parented to the stage. */
 let hintLayer: Laya.Sprite | null = null;
 let hintBox: Laya.Sprite | null = null;
@@ -309,12 +319,29 @@ function showSettingsHint(anchor: Laya.Sprite, text: string): void {
   const lines = wrapText(text, HINT_MAX_W - HINT_PAD * 2, theme.FONT_SIZE_CAPTION);
   const widest = lines.reduce((max, line) => Math.max(max, estimateTextWidth(line, theme.FONT_SIZE_CAPTION)), 0);
   const boxW = Math.min(HINT_MAX_W, widest + HINT_PAD * 2);
-  const boxH = lines.length * DESC_LINE_H + HINT_PAD * 2;
   // The text is sized to the box, not the other way round: the box is as wide
   // as the text needs, and the text has to fit *inside* it.
   hintText.text = lines.join('\n');
-  hintText.width = boxW - HINT_PAD * 2;
-  hintText.height = lines.length * DESC_LINE_H;
+  // `wrapText` decides where the breaks go using `estimateTextWidth`, which is
+  // a per-character estimate. Left alone, a line that renders a pixel wider
+  // than the estimate is simply drawn past the right edge of the box — the
+  // text is not wrapped again (wordWrap is off) and not clipped. Two guards
+  // against that: a couple of pixels of slack on the width, and a line height
+  // that is stated outright rather than left to the engine's default, so the
+  // box's own height arithmetic matches what the text actually occupies.
+  hintText.width = boxW - HINT_PAD * 2 + HINT_SLACK;
+  hintText.leading = DESC_LINE_H - theme.FONT_SIZE_CAPTION;
+  // The height comes from what the engine measured for this text, not from
+  // `lines.length * DESC_LINE_H`: with the leading stated above the two agree,
+  // but asking is free and it keeps the box right if the font's own metrics
+  // ever differ from the per-character estimate the wrap was computed with.
+  // `textHeight` is real at runtime (measured: 3 lines at size 13 come out at
+  // 49px) but is not in this project's `Text` typing, so it is read through a
+  // narrow cast rather than by widening the Text type for everyone.
+  const measuredH = (hintText as unknown as { textHeight?: number }).textHeight ?? 0;
+  const textH = measuredH > 0 ? measuredH : lines.length * DESC_LINE_H;
+  const boxH = textH + HINT_PAD * 2;
+  hintText.height = textH;
   hintBox.size(boxW, boxH);
   hintBox.graphics.clear();
   VectorPainter.roundedPanel(hintBox.graphics, 0, 0, boxW, boxH, theme.RADIUS_SM,
