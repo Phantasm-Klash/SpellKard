@@ -373,6 +373,19 @@ test('the view exposes all 20 slots, filled ones first in order', () => {
   expectEqual(view.maxInterference, MAX_INTERFERENCE_CARDS);
 });
 
+test('the cap readouts count the whole deck, not just the prefix that validated', () => {
+  // 4 copies of `thunder_fall` trip the copy cap at slot 4, but the readouts
+  // must still report all 8 high-rarity copies so the player can see the real
+  // total (that is what the screen's "high rarity x/6" line shows).
+  const deck = ['thunder_fall', 'thunder_fall', 'thunder_fall', 'thunder_fall', ...HIGH6, ...LOW14.slice(0, 10)];
+  expectEqual(deck.length, DECK_SIZE);
+  const draft = new DeckDraft({ deckId: '', name: '', format: '', cardIds: deck }, POOL);
+  const view = draft.view();
+  expectEqual(view.problem, 'copy_cap');
+  expectEqual(view.highRarity, 10);
+  expectEqual(draft.tally().highRarity, 10);
+});
+
 test('an incomplete deck reports how many cards are missing', () => {
   const draft = new DeckDraft({ deckId: '', name: '', format: '', cardIds: LEGAL_DECK.slice(0, 17) }, POOL);
   const view = draft.view();
