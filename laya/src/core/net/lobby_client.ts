@@ -716,6 +716,18 @@ export interface RecordsView {
   points: number;
   ratingCode: string;
   seasonId: string;
+  // Certification proper: which stage the player sits, and whether the next
+  // one is open. The server has always had these on its own profile; it just
+  // never sent them, so the screen could only show a bare rating code.
+  /** The stage this rating's exam runs on. */
+  challengeStageId: string;
+  /** The floor the rank score cannot fall below in this rating. */
+  rankScoreFloor: number;
+  /** Where the player sits in this rating, 0..1. */
+  percentile: number;
+  /** Enters the top 30%, which is what unlocks the next exam. */
+  top30Qualified: boolean;
+  nextCertificationUnlocked: boolean;
   matchesPlayed: number;
   wins: number;
   losses: number;
@@ -2127,6 +2139,15 @@ export class LobbyClient {
       points: numberField(payload, 'points'),
       ratingCode: stringField(payload, 'rating_code', 'ratingCode'),
       seasonId: stringField(payload, 'season_id', 'seasonId'),
+      challengeStageId: stringField(payload, 'challenge_stage_id', 'challengeStageId'),
+      rankScoreFloor: numberField(payload, 'rank_score_floor', 'rankScoreFloor'),
+      percentile: numberField(payload, 'percentile'),
+      top30Qualified: booleanField(payload, 'top_30_qualified', 'top30Qualified'),
+      nextCertificationUnlocked: booleanField(
+        payload,
+        'next_certification_unlocked',
+        'nextCertificationUnlocked',
+      ),
       matchesPlayed: numberField(payload, 'matches_played', 'matchesPlayed'),
       wins: numberField(payload, 'wins'),
       losses: numberField(payload, 'losses'),

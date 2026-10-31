@@ -136,6 +136,11 @@ export interface Messages {
   'records.tickets': string;
   'records.points': string;
   'records.season': string;
+  'records.examStage': string;
+  'records.promotion': string;
+  'records.promotion.open': string;
+  'records.promotion.qualified': string;
+  'records.promotion.locked': string;
   'records.matches': string;
   'records.wld': string;
   'records.winRate': string;
@@ -691,6 +696,11 @@ const ZH_HANS: Messages = {
   'records.tickets': '抽奖券',
   'records.points': '点数',
   'records.season': '赛季',
+  'records.examStage': '考证关卡',
+  'records.promotion': '晋级',
+  'records.promotion.open': '已解锁下一级考证',
+  'records.promotion.qualified': '已进前 30%，可考下一级',
+  'records.promotion.locked': '未达前 30%，暂不可晋级',
   'records.matches': '对局数',
   'records.wld': '胜-负-平',
   'records.winRate': '胜率',
@@ -1191,6 +1201,11 @@ const ZH_HANT: Messages = {
   'records.tickets': '抽獎券',
   'records.points': '點數',
   'records.season': '賽季',
+  'records.examStage': '考證關卡',
+  'records.promotion': '晉級',
+  'records.promotion.open': '已解鎖下一級考證',
+  'records.promotion.qualified': '已進前 30%，可考下一級',
+  'records.promotion.locked': '未達前 30%，暫不可晉級',
   'records.matches': '對局數',
   'records.wld': '勝-負-平',
   'records.winRate': '勝率',
@@ -1691,6 +1706,11 @@ const JA: Messages = {
   'records.tickets': 'チケット',
   'records.points': 'ポイント',
   'records.season': 'シーズン',
+  'records.examStage': '考査ステージ',
+  'records.promotion': '昇級',
+  'records.promotion.open': '次の段位の考査が解放されています',
+  'records.promotion.qualified': '上位 30% に入りました。次の段位を受験できます',
+  'records.promotion.locked': '上位 30% に届いていません。まだ昇級できません',
   'records.matches': '対局数',
   'records.wld': '勝-敗-分',
   'records.winRate': '勝率',
@@ -2193,6 +2213,11 @@ const EN: Messages = {
   'records.tickets': 'Tickets',
   'records.points': 'Points',
   'records.season': 'Season',
+  'records.examStage': 'Exam stage',
+  'records.promotion': 'Promotion',
+  'records.promotion.open': 'The next exam is unlocked',
+  'records.promotion.qualified': 'In the top 30% — the next exam is open',
+  'records.promotion.locked': 'Below the top 30% — not yet eligible',
   'records.matches': 'Matches',
   'records.wld': 'W-L-D',
   'records.winRate': 'Win rate',

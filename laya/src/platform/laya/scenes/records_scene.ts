@@ -165,6 +165,17 @@ export class RecordsScene implements ClientScene {
       [t('records.tickets'), `${view.tickets}`],
       [t('records.points'), `${view.points} (${view.ratingCode || '-'})`],
       [t('records.season'), view.seasonId || '-'],
+      // The exam a rating is earned on, and whether the next one is open. The
+      // rating code alone tells the player nothing about either.
+      [t('records.examStage'), view.challengeStageId || '-'],
+      [
+        t('records.promotion'),
+        view.nextCertificationUnlocked
+          ? t('records.promotion.open')
+          : view.top30Qualified
+            ? t('records.promotion.qualified')
+            : t('records.promotion.locked'),
+      ],
       [t('records.matches'), `${view.matchesPlayed}`],
       [t('records.wld'), `${view.wins}-${view.losses}-${view.draws}`],
       [t('records.winRate'), `${(view.winRate * 100).toFixed(1)}%`],
@@ -295,6 +306,10 @@ type RecordsViewLike = {
   points: number;
   ratingCode: string;
   seasonId: string;
+  challengeStageId: string;
+  percentile: number;
+  top30Qualified: boolean;
+  nextCertificationUnlocked: boolean;
   matchesPlayed: number;
   wins: number;
   losses: number;
