@@ -236,6 +236,14 @@ export interface SetupRow {
 export interface SetupRowsContext {
   readonly isHost: boolean;
   readonly roomStatus: string;
+  /**
+   * The modes the server says it can actually run.
+   *
+   * Optional because it travels with the room state, which a caller may not
+   * have yet. Without it the local playable list stands in, which is the same
+   * fallback {@link resolvePlayableModes} already makes.
+   */
+  readonly serverModeIds?: readonly string[];
 }
 
 /**
@@ -261,7 +269,18 @@ export function setupRows(state: RoomSetupState, ctx: SetupRowsContext): SetupRo
     rows.push({ key, label, valueText, hostOnly, editable: enabled, lockedReason });
   };
 
-  push('mode_id', '模式', state.modeId, true, false, isPlayableMode(state.modeId) ? '' : '即将推出');
+  // Editable like any other host row: a mode can only be chosen when the room
+  // is built, so a host who cannot switch one is stuck with the default. The
+  // cycle runs through the modes the server can actually finish, so "switch"
+  // never lands on a room the battle server would refuse.
+  push(
+    'mode_id',
+    '模式',
+    state.modeId,
+    true,
+    editable,
+    isPlayableMode(state.modeId) ? '' : '即将推出',
+  );
   push('boss_id', 'Boss', state.bossId === '' ? '默认' : state.bossId, true, editable, '');
   push('stage_id', 'Stage', state.stageId === '' ? '默认' : state.stageId, false, editable, '');
   if (state.modeId === 'coop_boss') {
@@ -282,9 +301,25 @@ export function setupRows(state: RoomSetupState, ctx: SetupRowsContext): SetupRo
  * 时长按 5 秒一档、血量翻倍，都是为了让面板点几下就能到常用值，而不是让玩家从
  * 最小值一路按到想要的地方。
  */
-export function nextSetupValue(state: RoomSetupState, key: string): RoomSetupState {
+export function nextSetupValue(
+  state: RoomSetupState,
+  key: string,
+  ctx?: SetupRowsContext,
+): RoomSetupState {
   const out: RoomSetupState = { ...state };
   switch (key) {
+    case 'mode_id': {
+      // Only the modes the server can finish are offered. The declared-but-
+      // unplayable ones are still worth displaying ("即将推出"), but cycling
+      // onto one would build a room that cannot start.
+      const options = resolvePlayableModes(ctx?.serverModeIds);
+      if (options.length === 0) {
+        return state;
+      }
+      const index = options.indexOf(state.modeId);
+      out.modeId = options[(index + 1) % options.length];
+      return out;
+    }
     case 'boss_id': {
       const options = ['', 'tian', 'hui'];
       out.bossId = options[(options.indexOf(state.bossId) + 1) % options.length];

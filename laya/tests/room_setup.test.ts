@@ -181,7 +181,32 @@ test('an unbuilt mode is shown as coming soon, not hidden', () => {
   const rows = setupRows(defaultRoomSetup('world_boss'), { isHost: true, roomStatus: 'waiting' });
   expectEqual(rows[0].key, 'mode_id', 'the mode row is present');
   expectEqual(rows[0].lockedReason, '即将推出', 'and it says why it cannot be picked');
-  expect(!rows[0].editable, 'it is not selectable');
+  // Selectable all the same: an unplayable mode is exactly the one a host needs
+  // to be able to leave. What must not happen is switching *onto* one, which
+  // the cycle below prevents.
+  expect(rows[0].editable, 'the host can switch away from it');
+});
+
+test('the mode cycle only offers modes the server can finish', () => {
+  const state = defaultRoomSetup('mvp_boss_race');
+  const ctx = { isHost: true, roomStatus: 'waiting', serverModeIds: ['mvp_boss_race', 'coop_boss'] };
+  const seen = new Set<string>();
+  let current = state;
+  for (let i = 0; i < 4; i += 1) {
+    current = nextSetupValue(current, 'mode_id', ctx);
+    seen.add(current.modeId);
+  }
+  expectEqual(seen.has('mvp_boss_race'), true, 'a playable mode comes up');
+  expectEqual(seen.has('coop_boss'), true, 'and so does the other');
+  expectEqual(seen.has('world_boss'), false, 'but an unplayable one never does');
+  expectEqual(current.modeId, state.modeId, 'and the cycle returns to where it began');
+});
+
+test('a mode the server cannot run is never cycled onto', () => {
+  // The room is in an unplayable mode; one switch must land somewhere playable.
+  const ctx = { isHost: true, roomStatus: 'waiting', serverModeIds: ['mvp_boss_race'] };
+  const moved = nextSetupValue(defaultRoomSetup('world_boss'), 'mode_id', ctx);
+  expectEqual(moved.modeId, 'mvp_boss_race', 'it lands on a mode that can start');
 });
 
 test('nothing is editable unless the host is still waiting', () => {
