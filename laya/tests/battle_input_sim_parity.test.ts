@@ -117,7 +117,14 @@ function assertRoundTrip(value: BattleInput, label: string): void {
 
 /** A two-player race simulation, the shape the battle server runs. */
 function raceSim(config: Partial<BossRaceConfig> = {}): BossRaceSimulation {
-  const sim = new BossRaceSimulation({ ...defaultBossRaceConfig('match-1', 12345), ...config });
+  // 本文件逐字节断言「改动前」的 legacy 行为（合成每 tick 伤害、card_slot
+  // inert、快照形状、服务端 parity）。显式关掉统一「全开」开关走回退路径；
+  // `...config` 放最后，个别用例仍可显式覆盖某个机制开关。
+  const sim = new BossRaceSimulation({
+    ...defaultBossRaceConfig('match-1', 12345),
+    allFeaturesEnabled: false,
+    ...config,
+  });
   sim.addPlayer('p1', -20000, 60000);
   sim.addPlayer('p2', 20000, 60000);
   return sim;

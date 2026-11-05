@@ -31,7 +31,12 @@ import {
 import { expect, expectEqual, suite, test } from './harness';
 
 function makeSim(seed = 0x00010203): BossRaceSimulation {
-  const sim = new BossRaceSimulation(defaultBossRaceConfig('match-mvp-001', seed));
+  // 这些用例断言改动前的 legacy 契约（合成每 tick 伤害、扣到 0 判胜、快照
+  // 形状与状态哈希），显式关掉统一「全开」开关走回退路径。
+  const sim = new BossRaceSimulation({
+    ...defaultBossRaceConfig('match-mvp-001', seed),
+    allFeaturesEnabled: false,
+  });
   sim.addPlayer('p1');
   sim.addPlayer('p2');
   return sim;

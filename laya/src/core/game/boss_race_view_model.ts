@@ -137,6 +137,21 @@ export interface BossEffectRenderItem {
   edgeY: number | null;
 }
 
+/**
+ * §2.8 链状态读数 —— 活跃链的**原样透传**，供 HUD / 调试读数使用。
+ *
+ * `chains[]` 由 `battle_codec` 从 wire 解析后挂在 `BossRaceSnapshot.chains`；
+ * 客户端不重算、不参与补帧（链是权威调度状态，不是插值实体）。逐字段交给
+ * 视图层，保证「解析了但没消费」不再发生。
+ */
+export interface ChainRenderItem {
+  chainId: string;
+  patternIndex: number;
+  nodeId: number;
+  generation: number;
+  rngCursor: number;
+}
+
 export interface BossRaceFrame {
   tick: number;
   state: number;
@@ -146,6 +161,8 @@ export interface BossRaceFrame {
   bullets: BulletRenderItem[];
   /** §2.8/§2.7 特殊机制指示（像素几何）。 */
   bossEffects: BossEffectRenderItem[];
+  /** §2.8 活跃链状态（原样透传，见 {@link ChainRenderItem}）。 */
+  chains: ChainRenderItem[];
   winnerPlayerId: string;
   matchOver: boolean;
   /** Local Boss HP as a 0..1 ratio, for the primary HUD bar. */
@@ -344,6 +361,13 @@ export function buildBossRaceFrame(
     players,
     bullets,
     bossEffects: buildBossEffects(bossWire?.effects ?? [], transform),
+    chains: (snapshot.chains ?? []).map((chain) => ({
+      chainId: chain.chainId,
+      patternIndex: chain.patternIndex,
+      nodeId: chain.nodeId,
+      generation: chain.generation,
+      rngCursor: chain.rngCursor,
+    })),
     winnerPlayerId: snapshot.winnerPlayerId,
     matchOver: snapshot.winnerPlayerId !== '',
     localHpRatio,
@@ -557,4 +581,36 @@ export function interpolateFrames(
       return { ...bullet, position: lerpPoint(before.position, bullet.position) };
     }),
   };
+}
+
+/**
+ * 渲染帧装配：把 {@link interpolateFrames} 真正接进生产渲染路径。
+ *
+ * 当且仅当 `previous` 存在、`current.tick === previous.tick + 1`（相邻两份
+ * 权威快照）且 `frac > 0` 时，用两端的**权威 tick 帧**做端点插值补帧；否则
+ * 原样回退到 {@link buildBossRaceFrame} 的单快照前向外推。
+ *
+ * ★ `frac = 0` 时直接走回退分支，逐像素等于改动前的
+ * `buildBossRaceFrame(current, options)`（`danmaku_client_engine.test.ts`
+ * 的 §4.1 断言不许破坏）。
+ *
+ * ★ 端点帧一律用 `{ previous: null, frac: 0 }` 构造，避免与
+ * `buildBossRaceFrame` 内部的前向外推叠加成二次位移 —— 补帧只由
+ * `interpolateFrames` 做一次线性插值。`chains` 等权威读数由
+ * `{ ...current }` 原样带出，不参与插值。
+ */
+export function buildInterpolatedBossRaceFrame(
+  current: BossRaceSnapshot,
+  options: BossRaceFrameOptions,
+): BossRaceFrame {
+  const frac = normalizeFrac(options.frac ?? 0);
+  const previous = options.previous ?? null;
+  const adjacent = previous !== null && current.tick === previous.tick + 1;
+  if (!adjacent || frac <= 0) {
+    return buildBossRaceFrame(current, options);
+  }
+  const endpoints: BossRaceFrameOptions = { ...options, previous: null, frac: 0 };
+  const previousFrame = buildBossRaceFrame(previous, endpoints);
+  const currentFrame = buildBossRaceFrame(current, endpoints);
+  return interpolateFrames(previousFrame, currentFrame, frac);
 }

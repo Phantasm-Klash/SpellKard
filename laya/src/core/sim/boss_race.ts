@@ -563,8 +563,26 @@ export interface BossRaceConfig {
    *
    * The rules themselves are implemented and unit-tested either way — see
    * `core/sim/card_hand.ts` and `core/sim/card_effects.ts`.
+   *
+   * ★ 显式传入时**以显式值为准**；否则跟随 {@link allFeaturesEnabled}（缺省
+   * `true` → 默认开）。见构造函数的 `config.cardMechanics ?? allFeaturesEnabled`。
    */
   cardMechanics?: boolean;
+  /**
+   * 统一「全开」开关（测试弹幕机制用）。
+   *
+   * - `true`（**缺省默认**）：客户端本地启用**全部**弹幕机制 —— 受击判定 /
+   *   擦弹 / 无敌帧 / 残机 / 炸弹消耗 / 卡牌流水线，不再受票据 ruleset 字符串
+   *   （线上为 `ruleset-local-s0`）门控。
+   * - `false`：**完全回退到本开关引入前的行为** —— 判定机制只由
+   *   {@link usesDanmakuMechanics} 对 ruleset 的判定决定，卡牌缺省关闭。用于
+   *   dem / 结算契约与「legacy 回退路径」的回归测试。
+   *
+   * ★ 只影响**客户端本地模拟的分支开关**，不改 {@link RULESET_DANMAKU_MECHANICS}
+   * 常量、不改 `rulesetVersion` 默认值、不改 wire 快照字段集合的解析契约；服务端
+   * 仍以自己的 ruleset 判定为权威。
+   */
+  allFeaturesEnabled?: boolean;
 }
 
 export interface BossRaceInput {
@@ -817,9 +835,12 @@ export class BossRaceSimulation {
   /** Whether the card pipeline runs — see {@link BossRaceConfig.cardMechanics}. */
   private readonly cardMechanics: boolean;
   /**
-   * Whether the danmaku judgment mechanics run — mirrors the C++
-   * `mechanics_.enabled` flag (`boss_race.cpp:161-162`), i.e. the ruleset is
-   * {@link RULESET_DANMAKU_MECHANICS}. See {@link usesDanmakuMechanics}.
+   * Whether the danmaku judgment mechanics run.
+   *
+   * 改动前它严格镜像 C++ `mechanics_.enabled`（`boss_race.cpp:161-162`），即只认
+   * {@link RULESET_DANMAKU_MECHANICS} 这个 ruleset 字符串。现在由
+   * {@link BossRaceConfig.allFeaturesEnabled} 总开关「或」上该判定：
+   * 默认全开为 `true`；显式 `false` 时逐字节退回原 ruleset 判定。
    */
   private readonly danmakuMechanics: boolean;
   /**
@@ -836,8 +857,12 @@ export class BossRaceSimulation {
 
   constructor(config: BossRaceConfig) {
     this.bossEntry = findBossCatalogEntry(config.bossId ?? '');
-    this.cardMechanics = config.cardMechanics ?? false;
-    this.danmakuMechanics = usesDanmakuMechanics(config.rulesetVersion);
+    // 统一「全开」开关：默认 true = 全部弹幕机制本地启用；显式 false = 逐字节
+    // 回退到本开关引入前的行为（判定只认 ruleset 字符串、卡牌缺省关）。
+    // 注意 `??` 优先级：cardMechanics 显式传入时以显式值为准，否则跟随总开关。
+    const allFeaturesEnabled = config.allFeaturesEnabled ?? true;
+    this.cardMechanics = config.cardMechanics ?? allFeaturesEnabled;
+    this.danmakuMechanics = allFeaturesEnabled || usesDanmakuMechanics(config.rulesetVersion);
     const catalogHp = this.bossEntry === null ? null : this.bossEntry.bossMaxHp;
     this.config = {
       ...config,

@@ -248,7 +248,9 @@ test('the default rulesets run no judgment mechanics at all', () => {
     bossRaceConfigForRuleset('match-default-003', SEED, 'ruleset-local-s0'),
   ];
   for (const config of configs) {
-    const sim = new BossRaceSimulation(config);
+    // 显式走 legacy 回退路径：本用例断言「非 mechanics ruleset 时快照里完全
+    // 不出现判定字段、也不产生判定事件」，正是统一「全开」开关关闭时的行为。
+    const sim = new BossRaceSimulation({ ...config, allFeaturesEnabled: false });
     sim.addPlayer('p1', 0, 0);
     sim.addPlayer('p2', 0, 0);
     injectBullet(sim, 'p1', 0, 0);
@@ -370,14 +372,22 @@ test('bossRaceConfigForRuleset carries the ticket ruleset through', () => {
   expectEqual(usesRealDanmaku(danmaku.rulesetVersion), true, 'and it still runs the real-danmaku path');
   expectEqual(new BossRaceSimulation(danmaku).usesDanmakuMechanics(), true, 'the simulation sees the switch');
 
+  // 下面两条 ruleset 断言的是「全开开关关闭时」的 legacy 回退路径：判定机制
+  // 只由 ruleset 字符串决定。默认全开会让 usesDanmakuMechanics() 恒 true，
+  // 故这里显式关掉总开关（其余用例测纯函数或 danmaku ruleset，不受影响）。
   const local = bossRaceConfigForRuleset('m', 1, 'ruleset-local-s0');
   expectEqual(local.rulesetVersion, 'ruleset-local-s0', 'the ticket string is preserved verbatim');
-  expectEqual(new BossRaceSimulation(local).usesRealDanmaku(), true, 'still the real-danmaku path');
-  expectEqual(new BossRaceSimulation(local).usesDanmakuMechanics(), false, 'but no judgment mechanics');
+  const localLegacy = new BossRaceSimulation({ ...local, allFeaturesEnabled: false });
+  expectEqual(localLegacy.usesRealDanmaku(), true, 'still the real-danmaku path');
+  expectEqual(localLegacy.usesDanmakuMechanics(), false, 'but no judgment mechanics');
 
   const legacy = bossRaceConfigForRuleset('m', 1, 'mvp-boss-race-s0');
   expectEqual(legacy.rulesetVersion, 'mvp-boss-race-s0');
-  expectEqual(new BossRaceSimulation(legacy).usesRealDanmaku(), false, 'the legacy synthetic path is untouched');
+  expectEqual(
+    new BossRaceSimulation({ ...legacy, allFeaturesEnabled: false }).usesRealDanmaku(),
+    false,
+    'the legacy synthetic path is untouched',
+  );
 });
 
 function snapshotWithPlayers(players: BossRaceSnapshot['players']): BossRaceSnapshot {

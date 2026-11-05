@@ -17,7 +17,8 @@ import { BattleConnectionState } from '../../../core/net/battle_client';
 import { pageNumberParam } from '../page_params';
 import type { TimerLike } from '../../../core/net/transport';
 import { battleLayout, type BattleLayout } from '../../../core/game/battle_layout';
-import { buildBossRaceFrame, buildJudgmentHud, type BossEffectRenderItem, type BossRaceFrame, type PlayerRenderItem, type RenderPoint, PlayfieldTransform, bossOriginPixels } from '../../../core/game/boss_race_view_model';
+import { buildInterpolatedBossRaceFrame, buildJudgmentHud, type BossEffectRenderItem, type BossRaceFrame, type PlayerRenderItem, type RenderPoint, PlayfieldTransform, bossOriginPixels } from '../../../core/game/boss_race_view_model';
+import { RenderLoop } from '../../../core/game/render_loop';
 import { buildCoopFrame, coopArenaDirectionBits, coopLocalSeat, type CoopFrame } from '../../../core/game/coop_view_model';
 import { coopBattleLayout } from '../../../core/game/coop_layout';
 import { COOP_MODE_ID, type CoopBossSnapshot } from '../../../core/sim/coop_boss';
@@ -325,6 +326,10 @@ export class BattleScene implements ClientScene {
   private tickHandle = 0;
   private running = false;
   private paused = false;
+  /** 独立显示帧渲染循环（与 64Hz 逻辑 tick 解耦），start 建立、stop 清理。 */
+  private readonly renderLoop: RenderLoop;
+  /** 上一显示帧时刻（ms），给表演层算真实 dtMs；0 = 还没有上一帧。 */
+  private lastRenderAtMs = 0;
   private frame: BossRaceFrame | null = null;
   private matchEnded = false;
   /** Lobby stage id whose BGM is playing (empty until the snapshot arrives). */
@@ -336,6 +341,11 @@ export class BattleScene implements ClientScene {
 
   constructor(options: BattleSceneOptions) {
     this.options = options;
+    // 渲染时钟独立于逻辑 tick：照 display.ts:191/:204 的既有生产用例，用
+    // `Laya.timer.frameLoop(1, caller, method)` / `clear(caller, method)` 驱动
+    // renderFrame；逻辑 tick 仍走 options.timer 的 64Hz 定时器。timer 通过
+    // provider 延迟到 start() 才取值，保证彼时引擎 timer 已初始化。
+    this.renderLoop = new RenderLoop(() => Laya.timer, this);
     const { width, height } = this.stageSize();
     this.geometry = this.computeGeometry(width, height);
     this.root = new Laya.Sprite();
@@ -979,7 +989,7 @@ export class BattleScene implements ClientScene {
     return new Set<string>(ids);
   }
 
-  /** Starts the fixed-tick loop at the battle client's tick rate. */
+  /** Starts the 64Hz logic-tick loop plus the independent display-frame render loop. */
   start(): void {
     if (this.running) {
       return;
@@ -990,6 +1000,11 @@ export class BattleScene implements ClientScene {
       () => this.step(),
       this.options.battle.tickIntervalMs,
     );
+    // 独立的显示帧时钟：Laya.timer.frameLoop(1, this, tick)，与上面的逻辑 tick
+    // 分属两条时钟。start/stop 幂等，setPaused()/onExit 走同一条清理路径，
+    // 不会留下双重回调。
+    this.lastRenderAtMs = 0;
+    this.renderLoop.start(() => this.renderLoopTick());
   }
 
   stop(): void {
@@ -998,6 +1013,7 @@ export class BattleScene implements ClientScene {
     }
     this.running = false;
     this.options.timer.clearInterval(this.tickHandle);
+    this.renderLoop.stop();
   }
 
   /**
@@ -1055,12 +1071,12 @@ export class BattleScene implements ClientScene {
     return pageNumberParam('inputLead', 0);
   }
 
-  /** One simulation tick: read input, send it, advance prediction, render. */
+  /**
+   * One simulation tick: read input, send it, advance prediction.
+   * 渲染（含表演层推进）由独立的显示帧循环 {@link renderLoopTick} 驱动，不再
+   * 挂在这个 64Hz 时钟上 —— 显示帧率不再被逻辑 tick 锁死。
+   */
   step(): void {
-    // The performance overlays animate off this same fixed-tick clock, so they
-    // keep running even while the battle connection is not yet `Running` (the
-    // entrance cutscene must play before the first snapshot arrives).
-    this.updateOverlays(this.options.battle.tickIntervalMs);
     // Mirror the ticket's hand (it may have just arrived) before reading the
     // cast intent, so a click can never fire a slot the bar no longer shows.
     this.syncHand();
@@ -1069,7 +1085,6 @@ export class BattleScene implements ClientScene {
     // packet goes out (a click during a pause must not fire much later).
     const clickedSlot = this.handController.take();
     if (battle.state !== BattleConnectionState.Running) {
-      this.renderFrame();
       return;
     }
     const raw = this.options.input.snapshot();
@@ -1111,10 +1126,24 @@ export class BattleScene implements ClientScene {
     this.options.input.consumeTransient();
     battle.tick();
     this.pruneEffects();
+  }
+
+  /**
+   * 独立显示帧：按真实帧间隔推进表演层并渲染，与 64Hz 逻辑 tick 无关。
+   * 表演层（背景 / 水印 / cutscene / coopView）都按 dtMs 积分，移到显示帧
+   * 时钟后视觉节奏不变；弹幕 / HUD 现在能按显示器刷新率补帧。
+   */
+  private renderLoopTick(): void {
+    const now = Date.now();
+    const dtMs = this.lastRenderAtMs === 0
+      ? this.options.battle.tickIntervalMs
+      : Math.max(0, now - this.lastRenderAtMs);
+    this.lastRenderAtMs = now;
+    this.updateOverlays(dtMs);
     this.renderFrame();
   }
 
-  /** Advances the background, watermark and cutscene by one tick. */
+  /** Advances the background, watermark and cutscene by one display frame (dtMs). */
   private updateOverlays(dtMs: number): void {
     this.stageBackground.update(dtMs);
     this.coopView?.update(dtMs);
@@ -1228,11 +1257,14 @@ export class BattleScene implements ClientScene {
     // the vertical strip on the right. `buildBossRaceFrame` scales the milli-
     // unit arena uniformly from the playfield width, so only the playfield
     // geometry is passed here — the panel is sized in `drawHudBar` instead.
-    let frame = buildBossRaceFrame(source, {
+    // 只有权威快照才补帧：本地预测帧没有「下一份快照」，previous/frac 都置空，
+    // 回退到单快照外推（等价于旧的直显）。相邻两份权威快照由
+    // buildInterpolatedBossRaceFrame 用 interpolateFrames 补出中间帧；frac=0
+    // 或缺前一帧时逐像素等于改动前的行为。
+    let frame = buildInterpolatedBossRaceFrame(source, {
       layout: this.geometry.playfield,
       localPlayerId: this.options.localPlayerId(),
       bossMaxHp: this.options.bossMaxHp,
-      // 只有权威快照才插值：本地预测帧没有「下一份快照」，直显即可。
       previous: this.authoritative === null ? null : this.previousAuthoritative,
       frac: this.authoritative === null
         ? 0

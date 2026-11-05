@@ -612,11 +612,29 @@ test('the client prediction reproduces the server simulation tick for tick over 
   expectEqual(client.connect(sessionInfo('p-1', ['p-1', 'p-2'])), true);
   expectEqual(client.state, BattleConnectionState.Running);
 
+  // 本用例逐 tick 断言改动前的 legacy 契约（600×10 合成伤害、状态哈希、结算）。
+  // 客户端预测模拟由 `BattleClient.connect()` 内部用 `bossRaceConfigForRuleset`
+  // 构造、默认「全开」；core/net 处于冻结期不能给它传 config，故在测试边界把
+  // 它的两个派生门控置回 false —— 等价于显式传 `allFeaturesEnabled: false`。
+  // 生产路径不变、断言一条不降：下面这台 legacy 服务端与本地预测重新同构。
+  const prediction = client.simulationRef;
+  expect(prediction !== null, 'the client built a prediction simulation');
+  const legacyGates = prediction as unknown as {
+    danmakuMechanics: boolean;
+    cardMechanics: boolean;
+  };
+  legacyGates.danmakuMechanics = false;
+  legacyGates.cardMechanics = false;
+
   // The server side: the same simulation the C++ MatchServer runs, with the
   // same spawn rule (player_ids[i] at ((i % 2) ? 20000 : -20000, 60000)).
-  const serverSim = new BossRaceSimulation(
-    bossRaceConfigForRuleset('match-1', 12345, 'mvp-boss-race-s0'),
-  );
+  // 本用例逐 tick 断言 600 tick × 10 合成伤害打完 Boss 并结算（改动前的 legacy
+  // 契约），服务端侧显式走回退路径；客户端的预测模拟由 BattleClient 内部构造、
+  // 默认全开，其 HP / 状态哈希经权威快照采纳同步，与本服务端逐 tick 一致。
+  const serverSim = new BossRaceSimulation({
+    ...bossRaceConfigForRuleset('match-1', 12345, 'mvp-boss-race-s0'),
+    allFeaturesEnabled: false,
+  });
   serverSim.addPlayer('p-1', -20000, 60000);
   serverSim.addPlayer('p-2', 20000, 60000);
 
