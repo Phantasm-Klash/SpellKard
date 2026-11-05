@@ -606,13 +606,17 @@ export class LobbyFlow {
   }
 
   /**
-   * 房主在房间等待界面重配 boss / 自机（任务「boss 选择 + 自机机制」）。
+   * 房主在房间等待界面重配 boss / 自机 / 房间模式（任务「boss 选择 + 自机机制」）。
    *
-   * 服务端把 boss 固定在**建房**时刻（`rooms.create`），没有「改房间 boss」的
-   * RPC，所以这里用「离房 → 以新配置重建」实现。为不打扰已加入的 guest，
+   * 服务端把 boss 和模式固定在**建房**时刻（`rooms.create`），没有「改房间配置」
+   * 的 RPC，所以这里用「离房 → 以新配置重建」实现。为不打扰已加入的 guest，
    * **仅当房主独自一人时**允许；否则返回 false 并给出提示。
+   *
+   * `nextModeId` 非空时用它替换房间当前模式（房主切换模式用）；空串表示沿用
+   * `room.modeId`。可循环的模式值应由调用方限定为服务端可玩模式，见
+   * `core/net/room_setup.ts` 的 `nextSetupValue` / `resolvePlayableModes`。
    */
-  async reconfigureRoom(options: RoomCreateOptions): Promise<boolean> {
+  async reconfigureRoom(options: RoomCreateOptions, nextModeId = ''): Promise<boolean> {
     const room = this.client.room;
     if (room === null) {
       this.fail(t('flow.room.noRoom'));
@@ -623,7 +627,7 @@ export class LobbyFlow {
       return false;
     }
     const code = room.roomCode;
-    const modeId = room.modeId || DEFAULT_MODE_ID;
+    const modeId = nextModeId !== '' ? nextModeId : room.modeId || DEFAULT_MODE_ID;
     this.statusText = t('flow.room.reconfiguring');
     this.notify();
     await this.client.leaveRoom('reconfigure');

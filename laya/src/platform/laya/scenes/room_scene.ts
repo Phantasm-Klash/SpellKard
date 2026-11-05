@@ -14,6 +14,7 @@
 
 import type { LobbyFlow, LobbyFlowSnapshot } from '../../../core/game/lobby_flow';
 import { t } from '../../../core/game/i18n';
+import { defaultRoomSetup, nextSetupValue } from '../../../core/net/room_setup';
 import type { RoomPlayerView, RoomView } from '../../../core/net/lobby_client';
 import * as theme from '../view/theme';
 import {
@@ -92,6 +93,7 @@ export class RoomScene implements ClientScene {
   private readonly readyButton: ButtonHandle;
   private readonly leaveButton: ButtonHandle;
   private readonly setupText: Laya.Text;
+  private readonly modeButton: ButtonHandle;
   private readonly bossButton: ButtonHandle;
   private readonly shotButton: ButtonHandle;
   private readonly bombButton: ButtonHandle;
@@ -147,12 +149,15 @@ export class RoomScene implements ClientScene {
     this.setupText.y = setupY + theme.FONT_SIZE_CAPTION + theme.SPACE_XS;
     this.root.addChild(this.setupText);
     const setupRowY = this.setupText.y + theme.FONT_SIZE_CAPTION + theme.SPACE_XS;
-    const setupButtonWidth = Math.floor((contentWidth - theme.SPACE_SM * 3) / 4);
-    this.bossButton = createButtonEx(t('room.boss'), margin, setupRowY, setupButtonWidth, () => void this.cycleBoss(), 'ghost');
+    const setupButtonWidth = Math.floor((contentWidth - theme.SPACE_SM * 4) / 5);
+    const setupStep = setupButtonWidth + theme.SPACE_SM;
+    this.modeButton = createButtonEx(t('room.mode'), margin, setupRowY, setupButtonWidth, () => void this.cycleMode(), 'ghost');
+    this.root.addChild(this.modeButton.sprite);
+    this.bossButton = createButtonEx(t('room.boss'), margin + setupStep, setupRowY, setupButtonWidth, () => void this.cycleBoss(), 'ghost');
     this.root.addChild(this.bossButton.sprite);
     this.shotButton = createButtonEx(
       t('room.shot'),
-      margin + setupButtonWidth + theme.SPACE_SM,
+      margin + setupStep * 2,
       setupRowY,
       setupButtonWidth,
       () => void this.cycleShot(),
@@ -161,7 +166,7 @@ export class RoomScene implements ClientScene {
     this.root.addChild(this.shotButton.sprite);
     this.bombButton = createButtonEx(
       t('room.bomb'),
-      margin + (setupButtonWidth + theme.SPACE_SM) * 2,
+      margin + setupStep * 3,
       setupRowY,
       setupButtonWidth,
       () => void this.cycleBomb(),
@@ -170,7 +175,7 @@ export class RoomScene implements ClientScene {
     this.root.addChild(this.bombButton.sprite);
     this.coopButton = createButtonEx(
       t('room.coop.players', { count: 2 }),
-      margin + (setupButtonWidth + theme.SPACE_SM) * 3,
+      margin + setupStep * 4,
       setupRowY,
       setupButtonWidth,
       () => void this.cycleCoopPlayers(),
@@ -368,10 +373,21 @@ export class RoomScene implements ClientScene {
   }
 
   private setSetupEnabled(enabled: boolean): void {
+    this.modeButton.setEnabled(enabled);
     this.bossButton.setEnabled(enabled);
     this.shotButton.setEnabled(enabled);
     this.bombButton.setEnabled(enabled);
     this.coopButton.setEnabled(enabled);
+  }
+
+  /** 切换房间模式（房主）：只在服务端可玩的模式之间循环。 */
+  private async cycleMode(): Promise<void> {
+    const room = this.options.flow.snapshot().room;
+    if (room === null) {
+      return;
+    }
+    const next = nextSetupValue(defaultRoomSetup(room.modeId), 'mode_id');
+    await this.reconfigure({ modeId: next.modeId });
   }
 
   /** Cycles the room boss (host only) by re-creating the room with the new id. */
@@ -398,6 +414,7 @@ export class RoomScene implements ClientScene {
 
   /** Applies a host selection by re-creating the room (server fixes boss at create). */
   private async reconfigure(selection: {
+    modeId?: string;
     bossId?: string;
     shotType?: string;
     bombType?: string;
@@ -413,12 +430,15 @@ export class RoomScene implements ClientScene {
     const bombType = selection.bombType ?? me?.bombType ?? '';
     this.busy = true;
     this.applySnapshot(this.options.flow.snapshot());
-    await this.options.flow.reconfigureRoom({
-      bossId,
-      shotType,
-      bombType,
-      coopPlayers: selection.coopPlayers ?? this.coopPlayers,
-    });
+    await this.options.flow.reconfigureRoom(
+      {
+        bossId,
+        shotType,
+        bombType,
+        coopPlayers: selection.coopPlayers ?? this.coopPlayers,
+      },
+      selection.modeId ?? '',
+    );
     this.busy = false;
     this.applySnapshot(this.options.flow.snapshot());
   }

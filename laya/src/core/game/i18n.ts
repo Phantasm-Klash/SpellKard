@@ -121,6 +121,7 @@ export interface Messages {
   'room.boss': string;
   'room.shot': string;
   'room.bomb': string;
+  'room.mode': string;
   'room.default': string;
   'room.boss.default': string;
   'room.boss.tian': string;
@@ -717,6 +718,7 @@ const ZH_HANS: Messages = {
   'room.boss': 'Boss',
   'room.shot': '射击',
   'room.bomb': '炸弹',
+  'room.mode': '模式',
   'room.default': '默认',
   'room.boss.default': '默认',
   'room.boss.tian': '天',
@@ -1256,6 +1258,7 @@ const ZH_HANT: Messages = {
   'room.boss': 'Boss',
   'room.shot': '射擊',
   'room.bomb': '炸彈',
+  'room.mode': '模式',
   'room.default': '預設',
   'room.boss.default': '預設',
   'room.boss.tian': '天',
@@ -1795,6 +1798,7 @@ const JA: Messages = {
   'room.boss': 'ボス',
   'room.shot': 'ショット',
   'room.bomb': 'ボム',
+  'room.mode': 'モード',
   'room.default': 'デフォルト',
   'room.boss.default': 'デフォルト',
   'room.boss.tian': '天',
@@ -2336,6 +2340,7 @@ const EN: Messages = {
   'room.boss': 'Boss',
   'room.shot': 'Shot',
   'room.bomb': 'Bomb',
+  'room.mode': 'Mode',
   'room.default': 'default',
   'room.boss.default': 'Default',
   'room.boss.tian': '天 / tian',
