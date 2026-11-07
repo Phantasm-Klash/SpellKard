@@ -93,6 +93,7 @@ import './render_state_judgment.test';
 import './steam_native.test';
 import './deck_view.test';
 import './danmaku_full_enable.test';
+import './danmaku_progress_reconcile.test';
 
 import { runAll } from './harness';
 

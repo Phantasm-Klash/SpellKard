@@ -137,7 +137,11 @@ class ThrowingDatagram implements DatagramLike {
  * `mvp-boss-race-s0`, so an empty or `ruleset-local-s0` ticket means the
  * real-danmaku path.
  */
-function sessionInfo(playerId: string, playerIds: string[]): BattleSessionInfo {
+function sessionInfo(
+  playerId: string,
+  playerIds: string[],
+  extra: Partial<BattleSessionInfo> = {},
+): BattleSessionInfo {
   return {
     matchId: 'match-1',
     playerId,
@@ -146,6 +150,7 @@ function sessionInfo(playerId: string, playerIds: string[]): BattleSessionInfo {
     rulesetVersion: 'mvp-boss-race-s0',
     endpoint: 'udp://battle:9000',
     serverSeed: bossRaceSeedFromU32(12345),
+    ...extra,
   };
 }
 
@@ -315,7 +320,13 @@ test('the first authoritative snapshot seeds the local prediction', () => {
     timer,
     convOverride: conv,
   });
-  expectEqual(client.connect(sessionInfo('p-1', ['p-1', 'p-2'])), true);
+  // This regression pins the hash/reconcile mechanism itself, so declare the
+  // legacy (state-hash comparable) prediction explicitly instead of relying on
+  // the production all-features default.
+  expectEqual(
+    client.connect(sessionInfo('p-1', ['p-1', 'p-2'], { allFeaturesEnabled: false })),
+    true,
+  );
 
   // Before any server state arrives the prediction sits on `addPlayer`'s default
   // spawn — which is exactly the bug: against a server that spawns at
@@ -356,7 +367,10 @@ test('the first authoritative snapshot seeds the local prediction', () => {
   // client seeds: spawn onto tick 0, replay to the snapshot tick, then adopt the
   // authoritative player state. Feeding the resulting hash back makes the hash
   // leg of `classifyReconcile` meaningful instead of vacuously failing.
-  const reference = new BossRaceSimulation(defaultBossRaceConfig('match-1', 12345));
+  const reference = new BossRaceSimulation({
+    ...defaultBossRaceConfig('match-1', 12345),
+    allFeaturesEnabled: false,
+  });
   reference.addPlayer('p-1');
   reference.addPlayer('p-2');
   reference.adoptAuthoritativeSnapshot({ ...serverState, tick: 0 }, { alignTick: true });

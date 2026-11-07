@@ -1715,20 +1715,19 @@ export class BattleScene implements ClientScene {
 /**
  * The SYNC row's state-hash cell.
  *
- * `hashComparable` counts the snapshots where the local bullet model is expected
- * to reproduce the server's (see `BossRaceSimulation.hashComparable`). Since the
- * real-danmaku library is now the server's own, that is every snapshot on the
- * live ruleset, so the cell normally reports a real ratio. It only says why
- * instead when the simulation was built with a provisional timeline
- * (`config.realDanmakuIsProduction === false`) or is still on the legacy
- * `mvp-boss-race-s0` scheduler — in which case a `0/n` would read as a desync
- * even though the *players* agree exactly.
+ * `stateHashComparable` counts the snapshots where the local model is expected
+ * to reproduce the server's **entire** canonical state (see
+ * `BossRaceSimulation.stateHashComparable`). It is zero for a provisional
+ * danmaku timeline, and also under the live all-features ruleset: the client
+ * does not mirror the server's player-bullet / spell-phase pipeline, so Boss HP
+ * and cleared bullet geometry differ by construction. A `0/n` there would read
+ * as a desync even though the players agree exactly, so the cell explains why.
  */
 function hashCell(metrics: BattleCorrectionMetrics): string {
   if (metrics.hashComparable === 0) {
     // Kept short on purpose: the SYNC strip is narrow and a longer label wraps
     // into a line that still overflows the panel.
-    return 'hash n/a (provisional)';
+    return 'hash n/a (not comparable)';
   }
   return `hash ${metrics.hashMatches}/${metrics.hashComparable}`;
 }

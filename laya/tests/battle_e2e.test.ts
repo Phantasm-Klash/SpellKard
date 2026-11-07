@@ -509,7 +509,11 @@ class ChannelDatagram implements DatagramLike {
 }
 
 /** Session info for the synthetic bullet model (the legacy race ruleset). */
-function sessionInfo(playerId: string, playerIds: string[]): BattleSessionInfo {
+function sessionInfo(
+  playerId: string,
+  playerIds: string[],
+  extra: Partial<BattleSessionInfo> = {},
+): BattleSessionInfo {
   return {
     matchId: 'match-1',
     playerId,
@@ -518,6 +522,7 @@ function sessionInfo(playerId: string, playerIds: string[]): BattleSessionInfo {
     rulesetVersion: 'mvp-boss-race-s0',
     endpoint: 'udp://battle:9000',
     serverSeed: bossRaceSeedFromU32(12345),
+    ...extra,
   };
 }
 
@@ -617,6 +622,11 @@ test('the client prediction reproduces the server simulation tick for tick over 
   // 构造、默认「全开」；core/net 处于冻结期不能给它传 config，故在测试边界把
   // 它的两个派生门控置回 false —— 等价于显式传 `allFeaturesEnabled: false`。
   // 生产路径不变、断言一条不降：下面这台 legacy 服务端与本地预测重新同构。
+  //
+  // ★ 口径提醒：这是 **legacy ↔ legacy** 回归，hash 全绿只证明回退路径同构，
+  // **不能**用来证明「全开后双端 hash 对齐」。全开时服务端走自机弹伤害 +
+  // 符卡清屏、客户端不镜像，`stateHashComparable()` 返回 false，该比较本就
+  // 不适用；要看全开双端判定的证据请用 gateway 的 `phk_danmaku_trace` 同参对照。
   const prediction = client.simulationRef;
   expect(prediction !== null, 'the client built a prediction simulation');
   const legacyGates = prediction as unknown as {
@@ -798,11 +808,17 @@ test('a prediction that drifts is corrected by the snapshot reconciliation', () 
     timer,
     convOverride: conv,
   });
-  expectEqual(client.connect(sessionInfo('p-1', ['p-1', 'p-2'])), true);
-
-  const serverSim = new BossRaceSimulation(
-    bossRaceConfigForRuleset('match-1', 12345, 'mvp-boss-race-s0'),
+  // Hash/reconcile regression: declare the legacy prediction so the state hash
+  // stays comparable (the production default is all-features-on).
+  expectEqual(
+    client.connect(sessionInfo('p-1', ['p-1', 'p-2'], { allFeaturesEnabled: false })),
+    true,
   );
+
+  const serverSim = new BossRaceSimulation({
+    ...bossRaceConfigForRuleset('match-1', 12345, 'mvp-boss-race-s0'),
+    allFeaturesEnabled: false,
+  });
   serverSim.addPlayer('p-1', -20000, 60000);
   serverSim.addPlayer('p-2', 20000, 60000);
 

@@ -1004,6 +1004,30 @@ export class BossRaceSimulation {
     return this.config.realDanmakuIsProduction ?? TNA_TIMELINE_IS_PRODUCTION;
   }
 
+  /**
+   * Whether `canonicalStateHash()` of the local prediction is expected to equal
+   * the server's at the same tick.
+   *
+   * **Deliberately separate from {@link hashComparable}.** That one also gates
+   * whether the client builds a local bullet set at all (`spawnBulletsForTick`),
+   * so returning false there would silently switch off client-side danmaku.
+   * This one only decides whether comparing hashes carries information.
+   *
+   * With the danmaku mechanics enabled the server damages each player's Boss
+   * copy through the player-bullet pipeline and clears bullets on spell-phase
+   * boundaries; the client mirrors neither (no `MyBullet` entity, no
+   * `CheckSpellPhase`). Both `hp`/`dmg` and the cleared bullet geometry are in
+   * `canonicalStateHash`, so every snapshot would mismatch `by construction` and
+   * merely inflate `hashMismatches` — a false desync that no hard snap can fix,
+   * since it produces no position error. Report "not comparable" instead.
+   *
+   * TODO: once the client mirrors the player-bullet / spell-phase pipeline,
+   * remove this guard and let the hash comparison run again.
+   */
+  stateHashComparable(): boolean {
+    return !this.danmakuMechanics && this.hashComparable();
+  }
+
   addPlayer(playerId: string, xMilli = 0, yMilli = 0): boolean {
     if (playerId === '' || this.players.size >= BOSS_RACE_MAX_PLAYERS) {
       return false;
@@ -1208,6 +1232,68 @@ export class BossRaceSimulation {
     // Record the adopted state too, so the very first reconciliation has a hash
     // for the tick the snapshot was taken at.
     this.rememberHash(this.currentTick);
+  }
+
+  /**
+   * Adopts the authoritative **scalar readouts** from a server snapshot without
+   * disturbing the prediction itself.
+   *
+   * With the danmaku mechanics enabled the server moves each player's Boss HP
+   * through the player-bullet pipeline, which this simulation does not mirror.
+   * Without a correction the local `bossCurrentHp` / `damageDealt` freeze at
+   * whatever the last hard snap left behind, and because that drift produces no
+   * position error the `maxError > threshold` branch in `BattleClient` never
+   * fires — so `simulationRef.snapshot()` keeps reporting a stale Boss HP.
+   *
+   * This is the lightweight, per-snapshot correction: copy ONLY the authoritative
+   * scalar readouts. Positions, velocities, the bullet set, the hand, the tick
+   * counter, buffered inputs, match state and the hash history are all left
+   * alone, so prediction keeps running and hard snapping stays position-driven.
+   * Call it before `catchUpPrediction` on every received snapshot.
+   */
+  adoptAuthoritativeProgress(snapshot: BossRaceSnapshot): void {
+    // The legacy path **does** reproduce the server's synthetic Boss damage on
+    // its own. Injecting the authoritative HP before the replay would double
+    // count it (adopt, then tick, then compare against the same snapshot), so
+    // only the mechanics path — which has no local damage source — needs this.
+    if (!this.danmakuMechanics) {
+      return;
+    }
+    for (const serverPlayer of snapshot.players) {
+      const player = this.players.get(serverPlayer.playerId);
+      if (player === undefined) {
+        // Never create players here: that is the hard snap's job.
+        continue;
+      }
+      player.bossCurrentHp = serverPlayer.bossCurrentHp;
+      player.damageDealt = serverPlayer.damageDealt;
+      player.connected = serverPlayer.connected;
+      if (serverPlayer.score !== undefined) {
+        player.score = serverPlayer.score;
+      }
+      if (serverPlayer.hitCount !== undefined) {
+        player.hitCount = serverPlayer.hitCount;
+      }
+      if (serverPlayer.spellGet !== undefined) {
+        player.spellGet = serverPlayer.spellGet;
+      }
+      if (serverPlayer.spellTotal !== undefined) {
+        player.spellTotal = serverPlayer.spellTotal;
+      }
+      if (serverPlayer.lives !== undefined) {
+        player.lives = serverPlayer.lives;
+        player.alive = serverPlayer.lives > 0;
+      }
+      if (serverPlayer.bombs !== undefined) {
+        player.bombs = serverPlayer.bombs;
+      }
+      if (serverPlayer.graze !== undefined) {
+        player.graze = serverPlayer.graze;
+      }
+      if (serverPlayer.invulnerableUntilTick !== undefined) {
+        player.invulnerableUntilTick = serverPlayer.invulnerableUntilTick;
+      }
+    }
   }
 
   /** Mirrors `SubmitInput` validation, including the +/-8 tick input window. */

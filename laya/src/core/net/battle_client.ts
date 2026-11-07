@@ -132,6 +132,14 @@ export interface BattleSessionInfo {
    * the server checks before anything else.
    */
   battleKeyId?: string;
+  /**
+   * Diagnostics / regression hook: override the local prediction's
+   * `allFeaturesEnabled` gate. Undefined follows the production default (all
+   * danmaku mechanics on). Legacy hash / reconciliation regressions set it to
+   * false so `stateHashComparable()` stays true and their per-tick hash
+   * assertions remain meaningful. Never sent over the wire.
+   */
+  allFeaturesEnabled?: boolean;
 }
 
 export interface BattleClientConfig {
@@ -157,12 +165,12 @@ export interface BattleCorrectionMetrics {
   hashMatches: number;
   hashMismatches: number;
   /**
-   * Snapshots whose state hash was worth comparing at all, i.e. where the local
-   * simulation's bullet set is expected to reproduce the server's — see
-   * `BossRaceSimulation.hashComparable`. On the live ruleset this equals
-   * `snapshotsReceived`, because the client's danmaku library is the server's.
-   * It is only zero for a build shipping a provisional timeline, where the hash
-   * numbers would say nothing about a desync.
+   * Snapshots whose state hash was worth comparing at all — see
+   * `BossRaceSimulation.stateHashComparable`. Zero when the local model cannot
+   * reproduce the server's whole canonical state: a provisional danmaku
+   * timeline, or the live all-features ruleset where the client does not mirror
+   * the player-bullet / spell-phase pipeline. In those cases a `0/n` would read
+   * as a desync even though positions agree exactly.
    */
   hashComparable: number;
   hardSnaps: number;
@@ -339,8 +347,15 @@ export class BattleClient {
     // the legacy `mvp-boss-race-s0`, and the lobby signs tickets with
     // `ruleset-local-s0`. Building the MVP synthetic model here put the two
     // sides on different bullet sets, so the state hash could never agree.
+    const predictionConfig = bossRaceConfigForRuleset(
+      info.matchId,
+      info.serverSeed,
+      info.rulesetVersion,
+    );
     this.simulation = new BossRaceSimulation(
-      bossRaceConfigForRuleset(info.matchId, info.serverSeed, info.rulesetVersion),
+      info.allFeaturesEnabled === undefined
+        ? predictionConfig
+        : { ...predictionConfig, allFeaturesEnabled: info.allFeaturesEnabled },
     );
     // The prediction starts with no server state, so the first snapshot must
     // seed it (tick + roster positions) before any error is measured.
@@ -706,6 +721,13 @@ export class BattleClient {
         this.adoptedAuthoritative = true;
         this.seedPrediction(local, snapshot);
       } else {
+        // Keep the local scalar readouts (Boss HP / damage / score / judgment
+        // counters) on the authoritative track. With the danmaku mechanics on,
+        // the server's Boss damage comes from a player-bullet pipeline the client
+        // does not mirror, so without this the local HP freezes at the last hard
+        // snap — and since that drift has no position error, the snap below can
+        // never fire. Do it BEFORE the replay so catch-up ticks see the right HP.
+        local.adoptAuthoritativeProgress(snapshot);
         // Every later snapshot closes whatever tick gap the local loop has
         // accumulated, so the prediction stays in step with the server.
         this.catchUpPrediction(local, snapshot);
@@ -736,13 +758,16 @@ export class BattleClient {
     // (measured 584/584 on a live match). The simulation keeps a short per-tick
     // history so the comparison uses the hash it produced *at* that tick.
     //
-    // The comparison is only counted when the local bullet set is expected to
-    // reproduce the server's — see `BossRaceSimulation.hashComparable`. On the
-    // live ruleset that is every snapshot, because the client's danmaku library
-    // is the server's own; a build that ships a provisional timeline instead
-    // skips the count rather than reporting a permanent "0/n" that says nothing
-    // about player sync.
-    const comparable = local !== null && local.hashComparable();
+    // The comparison is only counted when the local simulation is expected to
+    // reproduce the server's *whole* canonical state — see
+    // `BossRaceSimulation.stateHashComparable`. That is deliberately narrower
+    // than `hashComparable` (which also gates building the local bullet set):
+    // with the danmaku mechanics on, the server's Boss damage and spell-phase
+    // clears are not mirrored locally, so hp/dmg and bullet geometry differ by
+    // construction. Counting those as mismatches produced a permanent false
+    // desync that no position-driven hard snap could ever clear. A provisional
+    // timeline is the other case where the comparison says nothing at all.
+    const comparable = local !== null && local.stateHashComparable();
     const localHash = comparable ? local.hashAtTick(snapshot.tick) : null;
     const hashMatch = comparable && localHash !== null && localHash === snapshot.stateHash;
     const reconcile = classifyReconcile(maxError, hashMatch);
