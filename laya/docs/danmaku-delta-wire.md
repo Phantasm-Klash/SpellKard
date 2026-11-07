@@ -149,3 +149,68 @@ S_i(t) = G_{g_i}(t) ∘ [ F_i(t; σ_i, C[0..t], E[0..t]) + Δ_i(t) ]
   手写 JSON，协议仓只是长期契约草案）。
 - 改 `CanonicalStateHash` material、result/dem 校验、`Gensoulkyo/`。
 - 客户端补帧擦弹**不做权威计数**：不计 graze、不扣 lives、不上报、不改快照。
+
+## 10. 第二阶段：事件溯源式重建（2026-11-07）
+
+### 10.1 Δ 的精确定义
+
+```
+Δ_i(t) = S_i(t) − Update(S_i(t−1), C(t−1), R_i(t))
+Update  = updateBulletMotion(·, C(t−1), RNG(s, t, p_i, q_i)) + pos += v + t += 1
+```
+
+即 Δ 是「本 tick 原始运动函数解释不了的部分」——正是「离散弹幕只传和原始
+运动函数的偏移」的严格形式。**服务端不需要影子状态**：`Update` 的输入就是
+上一 tick 的权威状态，服务端本来就有。
+
+★ 关键观察：服务端权威轨迹本来就是 `Update` 产生的；所有权威扰动
+（符卡清屏 `vanish_tick`、卡牌 `bullet_purge`、出界 `erase`、func31 分裂）
+都是**增删弹**，不修改存活弹的 `motion`。因此稳态下 **`Δ ≡ 0`**，差量通道
+退化为：
+
+- 每 tick 新生弹 → `bullet_spawns[]`（完整 `BulletMotion` 模板 + `(p,q)`）
+- 每 tick 消失弹 → `bullet_despawns[]`（`bullet_id` + 原因）
+- `bullet_deviations[]` 保留为纠偏/校验通道，正常为空数组
+
+### 10.2 服务端事件收集
+
+- `BossRaceSimulation` 新增每 tick 容器 `tick_spawns_` / `tick_despawns_`，
+  在 `SpawnBulletsForTick` 三条路径、`AdvanceBullets`（出界 / 清屏 / 分裂）、
+  `ApplyCardBulletDeltas` 里登记；`Tick()` 开头清空（与 `tick_events_` 同构）。
+- `BossRaceSnapshot` 带出；`EncodeBossRaceSnapshotPayload` 在
+  `delta_wire_enabled=true` 时 **省略 `bullets[]`**，只发
+  `wire_cap` + spawns/despawns/deviations/group_motion。
+- spawn 模板逐字段与 `danmaku::BulletMotion` 一致（`phk_motion_diff` 已证
+  TS 侧同构）；`(p,q)` = `(pattern_index, spawn_index)` 必须真下发。
+- 保留 `delta_wire_enabled=false`（默认）逐字节不变的全量路径作为回退。
+
+### 10.3 客户端重建器
+
+`BulletReconstructor` 维护 `Map<bullet_id, BulletMotion>`：
+
+1. spawn → `createBulletMotion(template)`，记下 `(p,q)` 与 `ownerPlayerId`；
+2. 每 tick：`new DeterministicRng(s,t,p,q)` → `updateBulletMotion(m, C(t), rng)`
+   → `m.x += m.vx; m.y += m.vy; m.t += 1`；
+3. deviation ≠ 0 → 把 `(dx,dy,dvx,dvy)` 叠加到 milli 派生值；
+4. despawn → 删除；出界 → 复用 `keepsBullet` 删除；
+5. 输出 `BossRaceBullet[]`：`toMilli(m.x − SCREEN_CENTER_X_PX)` 等
+   （与 `snapshot()` 同一换算，禁止另写一套）。
+
+`C(t)`（`MotionTargets`）由 `players[]` / `boss` 重建：`my_ship_x/y` 取本地
+玩家像素坐标，`enemy_x/y` 取 Boss 发射点（`bossOffsetForTick`）。任一输入
+异常 → 返回 `null` → 回落全量（若存在）。
+
+### 10.4 真实弹幕验收（硬性，不许用合成数据代替）
+
+用 §7 / `tests/fixtures/danmaku_real_*.json` 的三组 C++ 权威 trace：
+
+1. 同参生成 **delta trace**（省略 `bullets[]`，只带事件流）；
+2. 客户端重建器从 spawn 递推，逐 tick 与全量 golden 的
+   `(bullet_id, x_milli, y_milli, bullet_kind, motion_func)` **逐位相等**；
+3. `state_hash` 逐 tick 相等；
+4. 任何一 tick 不等 → **不允许**去掉全量 `bullets[]`，回到骨架模式；
+5. 带宽对照：全量 2.5 MB / 300 tick vs delta 字节数。
+
+RNG 分叉预案：6 个消耗 RNG 的 func（7/52/62/70/71/76）若在第 2 步出现
+逐位偏差，先检查 `rng_cursor` 消耗次数，必要时整颗并入 `deviation`，
+不得靠放宽断言蒙混。
