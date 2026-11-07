@@ -18,6 +18,7 @@ import { pageNumberParam } from '../page_params';
 import type { TimerLike } from '../../../core/net/transport';
 import { battleLayout, type BattleLayout } from '../../../core/game/battle_layout';
 import { buildInterpolatedBossRaceFrame, buildJudgmentHud, type BossEffectRenderItem, type BossRaceFrame, type PlayerRenderItem, type RenderPoint, PlayfieldTransform, bossOriginPixels } from '../../../core/game/boss_race_view_model';
+import { computeInterpolatedGrazes } from '../../../core/game/graze_feedback';
 import { RenderLoop } from '../../../core/game/render_loop';
 import { buildCoopFrame, coopArenaDirectionBits, coopLocalSeat, type CoopFrame } from '../../../core/game/coop_view_model';
 import { coopBattleLayout } from '../../../core/game/coop_layout';
@@ -331,6 +332,11 @@ export class BattleScene implements ClientScene {
   /** 上一显示帧时刻（ms），给表演层算真实 dtMs；0 = 还没有上一帧。 */
   private lastRenderAtMs = 0;
   private frame: BossRaceFrame | null = null;
+  /**
+   * 补帧擦弹即时反馈的跨帧去重集合（bulletId）。每个显示帧由
+   * `computeInterpolatedGrazes` 回灌；`stop()` / `onExit()` 清空，避免跨局串音。
+   */
+  private grazeSeen = new Set<string>();
   private matchEnded = false;
   /** Lobby stage id whose BGM is playing (empty until the snapshot arrives). */
   private stageId = '';
@@ -549,6 +555,7 @@ export class BattleScene implements ClientScene {
     this.resetOverlays();
     // Nothing should bleed across screens.
     this.audio.stopAll();
+    this.grazeSeen.clear();
     this.options.onPerformanceExit?.();
     this.stop();
   }
@@ -1008,6 +1015,8 @@ export class BattleScene implements ClientScene {
   }
 
   stop(): void {
+    // 补帧擦弹去重状态不跨生命周期保留（离场 / 暂停 / 重进都从干净状态起）。
+    this.grazeSeen.clear();
     if (!this.running) {
       return;
     }
@@ -1278,6 +1287,31 @@ export class BattleScene implements ClientScene {
       frame = { ...frame, bullets: frame.bullets.filter((bullet) => !hidden.has(bullet.bulletId)) };
     }
     this.frame = frame;
+    // 补帧擦弹即时音效：本地按 bulletId 判「本显示帧新进入擦弹圈」的弹，直连
+    // 播放 —— 渲染帧与逻辑 tick 已解耦，这里随每个显示帧重算，frac 已体现在
+    // frame 的像素几何里，故音效能在两帧之间即时触发。
+    // ★ 非权威即时反馈：不计 graze、不扣 lives、不发事件、不改快照、不上报；
+    //   权威计数只归服务端（danmaku-delta-wire.md §5 / §8）。
+    // ★ 只绕过 REST poller 的 500ms 轮询链（`battle_event_poller.ts`
+    //   `DEFAULT_INTERVAL_MS=500`）：改成每显示帧同步直连，及时性 ≈16ms。
+    //   `audio.playSfx('graze')` 内部既有的 `SfxThrottle`（5 帧 / 83.3ms，
+    //   spec §2.0 `ExeSoundEffect`）**仍生效**，密集擦弹仍按 83ms 合并——这是
+    //   播放层节流，与 `computeInterpolatedGrazes` 的逻辑层节流（seen 按
+    //   bulletId 去重 + maxPerFrame=4）职责不同、不冲突；不改音频管理器、
+    //   不加不节流入口，也不在此叠加任何全局时间窗口。
+    // ★ 无敌帧抑制由纯函数读 frame.players 里 view model 已用
+    //   `snapshot.tick <= invulnerableUntilTick` 推导好的 `invulnerable` 布尔，
+    //   与服务端 tick 轴同步，接线无需额外传参（不把 tick 数当布尔用）；
+    //   coop 路径在上方已 return，不在此处理。
+    const graze = computeInterpolatedGrazes(frame, {
+      localPlayerId: this.options.localPlayerId(),
+      seen: this.grazeSeen,
+    });
+    this.grazeSeen = graze.seen;
+    for (let i = 0; i < graze.ids.length; i += 1) {
+      // 每个新擦弹 bulletId 对应一次即时音效；调用是同步的 playSound。
+      this.audio.playSfx('graze');
+    }
     this.view.render(frame, this.hudLines(source, frame), this.hudState(source), this.judgmentState(frame));
     this.drawCardEffects(frame, source);
     this.drawGiftLayer(frame);

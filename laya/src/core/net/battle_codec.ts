@@ -46,8 +46,17 @@ import type {
 } from '../protocol/types';
 import { BattlePayloadType, emptyVersionStamp } from '../protocol/types';
 import { codec } from '../protocol/codec';
-import type { BossRaceBullet, BossRaceSnapshot, BossRaceState } from '../sim/boss_race';
+import type {
+  BossRaceBullet,
+  BossRaceBulletDespawn,
+  BossRaceBulletDeviation,
+  BossRaceBulletSpawn,
+  BossRaceGroupMotion,
+  BossRaceSnapshot,
+  BossRaceState,
+} from '../sim/boss_race';
 import { BossRaceState as BossRaceStateEnum } from '../sim/boss_race';
+import { bulletsEqual, rebuildBulletsFromDelta } from './bullet_delta';
 import type { CoopBossBullet, CoopBossPlayerSnapshot, CoopBossSnapshot } from '../sim/coop_boss';
 import { CoopBossState as CoopBossStateEnum } from '../sim/coop_boss';
 
@@ -486,7 +495,50 @@ export function decodeBossRaceSnapshot(payload: Uint8Array): BossRaceSnapshot | 
   }
   const source = parsed as Record<string, unknown>;
   const players = Array.isArray(source.players) ? source.players : [];
-  const bullets = Array.isArray(source.bullets) ? source.bullets : [];
+  const bulletsSource = Array.isArray(source.bullets) ? source.bullets : [];
+  const fullBullets: BossRaceBullet[] = bulletsSource.filter(isRecord).map(
+    (bullet): BossRaceBullet => ({
+      bulletId: stringAt(bullet, 'bullet_id'),
+      ownerPlayerId: stringAt(bullet, 'owner_player_id'),
+      xMilli: numberAt(bullet, 'x_milli'),
+      yMilli: numberAt(bullet, 'y_milli'),
+      vxMilli: numberAt(bullet, 'vx_milli'),
+      vyMilli: numberAt(bullet, 'vy_milli'),
+      radiusMilli: numberAt(bullet, 'radius_milli'),
+      patternId: stringAt(bullet, 'pattern_id'),
+      // ★ The reverse-engineered danmaku extensions. Without these the renderer
+      // can only draw a generic bullet — `describeBulletKind` needs the
+      // `kEnemyBullet` value to pick the real atlas frame, and the motion func
+      // number to pick the orientation family.
+      bulletKind: optionalNumberAt(bullet, 'bullet_kind'),
+      motionFunc: optionalNumberAt(bullet, 'motion_func'),
+      // §2.8 chain/hidden extensions.
+      chainId: optionalWireStringAt(bullet, 'chain_id'),
+      generation: optionalNumberAt(bullet, 'generation'),
+      hidden: optionalBoolAt(bullet, 'hidden'),
+    }),
+  );
+
+  // §4 delta wire（可选、可回退）：全部走 optional* / 宽松解析，缺省 = undefined。
+  const wireCap = optionalNumberAt(source, 'wire_cap');
+  const spawns = parseBulletSpawns(source.bullet_spawns);
+  const deviations = parseBulletDeviations(source.bullet_deviations);
+  const despawns = parseBulletDespawns(source.bullet_despawns);
+  const groupMotion = parseGroupMotion(source.group_motion);
+
+  // 对照校验：wire_cap≠0 且全量 bullets[] 存在时，用「上一 tick 全量 + Δ」的
+  // 骨架基线重建并与全量逐位比较；重建失败或不一致静默回落全量 bullets[]，
+  // 只打一个可选标记供测试断言，渲染永远用权威全量（§4 回退铁律 2）。
+  let deltaRebuildMismatch: boolean | undefined;
+  if (wireCap !== undefined && wireCap !== 0 && Array.isArray(source.bullets)) {
+    const rebuilt = rebuildBulletsFromDelta(
+      spawns, deviations, despawns, groupMotion, fullBullets,
+    );
+    if (rebuilt === null || !bulletsEqual(rebuilt, fullBullets)) {
+      deltaRebuildMismatch = true;
+    }
+  }
+
   return {
     tick: numberAt(source, 'tick'),
     state: parseBossRaceState(stringAt(source, 'state')),
@@ -519,30 +571,84 @@ export function decodeBossRaceSnapshot(payload: Uint8Array): BossRaceSnapshot | 
       spellGet: optionalUint64At(player, 'spell_get') ?? 0,
       spellTotal: optionalUint64At(player, 'spell_total') ?? 0,
     })),
-    bullets: bullets.filter(isRecord).map(
-      (bullet): BossRaceBullet => ({
-        bulletId: stringAt(bullet, 'bullet_id'),
-        ownerPlayerId: stringAt(bullet, 'owner_player_id'),
-        xMilli: numberAt(bullet, 'x_milli'),
-        yMilli: numberAt(bullet, 'y_milli'),
-        vxMilli: numberAt(bullet, 'vx_milli'),
-        vyMilli: numberAt(bullet, 'vy_milli'),
-        radiusMilli: numberAt(bullet, 'radius_milli'),
-        patternId: stringAt(bullet, 'pattern_id'),
-        // ★ The reverse-engineered danmaku extensions. Without these the renderer
-        // can only draw a generic bullet — `describeBulletKind` needs the
-        // `kEnemyBullet` value to pick the real atlas frame, and the motion func
-        // number to pick the orientation family.
-        bulletKind: optionalNumberAt(bullet, 'bullet_kind'),
-        motionFunc: optionalNumberAt(bullet, 'motion_func'),
-        // §2.8 chain/hidden extensions.
-        chainId: optionalWireStringAt(bullet, 'chain_id'),
-        generation: optionalNumberAt(bullet, 'generation'),
-        hidden: optionalBoolAt(bullet, 'hidden'),
-      }),
-    ),
+    bullets: fullBullets,
+    wireCap,
+    bulletSpawns: spawns,
+    bulletDeviations: deviations,
+    bulletDespawns: despawns,
+    groupMotion,
+    deltaRebuildMismatch,
     ...parseSnapshotExtensions(source),
   };
+}
+
+/**
+ * §4 spawn.template：保留 number/boolean 键；非对象 → 空模板（绝不抛）。
+ * 逐字段的合法性由 rebuildBulletsFromDelta 校验，解析阶段只做形状宽松化。
+ */
+function parseBulletTemplate(value: unknown): Record<string, number | boolean> {
+  const out: Record<string, number | boolean> = {};
+  if (!isRecord(value)) {
+    return out;
+  }
+  for (const key of Object.keys(value)) {
+    const item = value[key];
+    if (typeof item === 'number' || typeof item === 'boolean') {
+      out[key] = item;
+    }
+  }
+  return out;
+}
+
+/** §4 可选数组：缺省 / 非数组 → undefined；逐项宽松读取，绝不抛。 */
+function parseBulletSpawns(value: unknown): BossRaceBulletSpawn[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value.filter(isRecord).map((item) => ({
+    bulletId: stringAt(item, 'bullet_id'),
+    ownerPlayerId: stringAt(item, 'owner_player_id'),
+    t0: numberAt(item, 't0'),
+    p: numberAt(item, 'p'),
+    q: numberAt(item, 'q'),
+    groupId: numberAt(item, 'group_id'),
+    template: parseBulletTemplate(item.template),
+  }));
+}
+
+function parseBulletDeviations(value: unknown): BossRaceBulletDeviation[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value.filter(isRecord).map((item) => ({
+    bulletId: stringAt(item, 'bullet_id'),
+    dx: numberAt(item, 'dx'),
+    dy: numberAt(item, 'dy'),
+    dvx: numberAt(item, 'dvx'),
+    dvy: numberAt(item, 'dvy'),
+  }));
+}
+
+function parseBulletDespawns(value: unknown): BossRaceBulletDespawn[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value.filter(isRecord).map((item) => ({
+    bulletId: stringAt(item, 'bullet_id'),
+    reason: stringAt(item, 'reason'),
+  }));
+}
+
+function parseGroupMotion(value: unknown): BossRaceGroupMotion[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value.filter(isRecord).map((item) => ({
+    groupId: numberAt(item, 'group_id'),
+    tx: numberAt(item, 'tx'),
+    ty: numberAt(item, 'ty'),
+    phi: numberAt(item, 'phi'),
+  }));
 }
 
 /**

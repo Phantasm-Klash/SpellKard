@@ -478,6 +478,46 @@ export interface BossRaceEventView {
   data: Record<string, unknown>;
 }
 
+/**
+ * §4 delta wire：新生弹事件。
+ *
+ * `template` 是完整 `BulletMotion` 静态参数集的镜像（服务端
+ * `BulletSpawnWire::tmpl` / `LiveBullet::motion`），像素浮点；客户端只在
+ * 重建 `BossRaceBullet` 的边界处按 ToMilli 转成 milli 整数。
+ */
+export interface BossRaceBulletSpawn {
+  bulletId: string;
+  ownerPlayerId: string;
+  t0: number;
+  p: number;
+  q: number;
+  groupId: number;
+  template: Record<string, number | boolean>;
+}
+
+/** §4 delta wire：Δ≠0 的弹，偏移一律 milli 整数。 */
+export interface BossRaceBulletDeviation {
+  bulletId: string;
+  dx: number;
+  dy: number;
+  dvx: number;
+  dvy: number;
+}
+
+/** §4 delta wire：消亡事件（仅一次）。 */
+export interface BossRaceBulletDespawn {
+  bulletId: string;
+  reason: string;
+}
+
+/** §4 delta wire：group 刚体变换。本版 `G_g ≡ I`，三个参数恒为 0。 */
+export interface BossRaceGroupMotion {
+  groupId: number;
+  tx: number;
+  ty: number;
+  phi: number;
+}
+
 export interface BossRaceSnapshot {
   tick: number;
   state: BossRaceState;
@@ -505,6 +545,22 @@ export interface BossRaceSnapshot {
    * （调用方按「未知」处理，不要伪装成 normal）。
    */
   difficulty?: number;
+  // ---- §4 delta wire（可选、可回退；缺省 = 老服务端全量路径）----------------
+  /** u32 bitmask：1=SPAWN 2=DEVIATION 4=GROUP。缺省 / 0 → 全量 bullets[] 路径。 */
+  wireCap?: number;
+  /** 本 tick 新生弹（仅一次）；缺省 = undefined。 */
+  bulletSpawns?: BossRaceBulletSpawn[];
+  /** 本 tick Δ≠0 的弹（稀疏）；缺省 = undefined。 */
+  bulletDeviations?: BossRaceBulletDeviation[];
+  /** 本 tick 消亡弹（仅一次）；缺省 = undefined。 */
+  bulletDespawns?: BossRaceBulletDespawn[];
+  /** group 刚体变换（本版恒等）；缺省 = undefined。 */
+  groupMotion?: BossRaceGroupMotion[];
+  /**
+   * 对照校验标记：`wire_cap≠0` 且全量 `bullets[]` 存在时，重建失败或与全量
+   * 不一致置 `true`。纯供测试断言，渲染仍用全量 bullets[]，不受影响。
+   */
+  deltaRebuildMismatch?: boolean;
 }
 
 /**

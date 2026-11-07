@@ -94,6 +94,8 @@ import './steam_native.test';
 import './deck_view.test';
 import './danmaku_full_enable.test';
 import './danmaku_progress_reconcile.test';
+import './graze_feedback.test';
+import './battle_codec_delta.test';
 
 import { runAll } from './harness';
 
