@@ -178,10 +178,13 @@ test('with all features on the judgment HUD reports real values, not wire placeh
   const hud = buildJudgmentHud(buildBossRaceFrame(sim.tick(), FRAME_OPTS));
   expect(hud !== null, 'judgment HUD is active once the sim emits the real fields');
   expectEqual(hud!.lives, DANMAKU_DEFAULT_LIVES, 'real lives, not SNAPSHOT_DEFAULT_LIVES');
-  expectEqual(hud!.bombs, DANMAKU_DEFAULT_BOMBS, 'real bombs, not SNAPSHOT_DEFAULT_BOMBS');
+  expectEqual(hud!.bombs, DANMAKU_DEFAULT_BOMBS, 'real bombs readout');
+  // 常量在 TS 里是字面量类型，先拓宽到 number 再比较，避免 TS2367。
+  const realLives: number = DANMAKU_DEFAULT_LIVES;
+  const placeholderLives: number = SNAPSHOT_DEFAULT_LIVES;
   expect(
-    DANMAKU_DEFAULT_LIVES !== SNAPSHOT_DEFAULT_LIVES,
-    'the placeholder differs from the real value, so the assertion is meaningful',
+    realLives !== placeholderLives,
+    'the lives placeholder (1) differs from the real value (3), so the assertion is meaningful',
   );
   // 反向：显式回退时判定字段不下发 → 整块 HUD 不画，占位值不会被当成真实残机。
   const legacy = new BossRaceSimulation({
