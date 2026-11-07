@@ -57,6 +57,7 @@ import type {
 } from '../sim/boss_race';
 import { BossRaceState as BossRaceStateEnum } from '../sim/boss_race';
 import { bulletsEqual, rebuildBulletsFromDelta } from './bullet_delta';
+import { BulletReconstructor, getDefaultBulletReconstructor } from './bullet_reconstructor';
 import type { CoopBossBullet, CoopBossPlayerSnapshot, CoopBossSnapshot } from '../sim/coop_boss';
 import { CoopBossState as CoopBossStateEnum } from '../sim/coop_boss';
 
@@ -480,7 +481,10 @@ function parseBossRaceState(value: string): BossRaceState {
   }
 }
 
-export function decodeBossRaceSnapshot(payload: Uint8Array): BossRaceSnapshot | null {
+export function decodeBossRaceSnapshot(
+  payload: Uint8Array,
+  reconstructor?: BulletReconstructor | null,
+): BossRaceSnapshot | null {
   if (payload.length < 2 || payload[0] !== BattlePayloadType.SNAPSHOT) {
     return null;
   }
@@ -526,11 +530,16 @@ export function decodeBossRaceSnapshot(payload: Uint8Array): BossRaceSnapshot | 
   const despawns = parseBulletDespawns(source.bullet_despawns);
   const groupMotion = parseGroupMotion(source.group_motion);
 
+  // `bullets[]` 是否真的存在（字段是数组即视为存在，即使为空数组）。
+  // delta_wire_enabled=true 时服务端**省略**该字段（§10.2），此时走 §10.3 重建。
+  const bulletsPresent = Array.isArray(source.bullets);
+
   // 对照校验：wire_cap≠0 且全量 bullets[] 存在时，用「上一 tick 全量 + Δ」的
   // 骨架基线重建并与全量逐位比较；重建失败或不一致静默回落全量 bullets[]，
   // 只打一个可选标记供测试断言，渲染永远用权威全量（§4 回退铁律 2）。
+  // ★ bullets[] 存在时这段骨架逻辑保持上一轮原样，不改动。
   let deltaRebuildMismatch: boolean | undefined;
-  if (wireCap !== undefined && wireCap !== 0 && Array.isArray(source.bullets)) {
+  if (wireCap !== undefined && wireCap !== 0 && bulletsPresent) {
     const rebuilt = rebuildBulletsFromDelta(
       spawns, deviations, despawns, groupMotion, fullBullets,
     );
@@ -539,7 +548,7 @@ export function decodeBossRaceSnapshot(payload: Uint8Array): BossRaceSnapshot | 
     }
   }
 
-  return {
+  const snapshot: BossRaceSnapshot = {
     tick: numberAt(source, 'tick'),
     state: parseBossRaceState(stringAt(source, 'state')),
     winnerPlayerId: stringAt(source, 'winner_player_id'),
@@ -580,6 +589,31 @@ export function decodeBossRaceSnapshot(payload: Uint8Array): BossRaceSnapshot | 
     deltaRebuildMismatch,
     ...parseSnapshotExtensions(source),
   };
+
+  // §10.3：wire_cap≠0 且 `bullets[]` **缺席**时，用跨 tick 保持的
+  // `BulletReconstructor` 从 spawn 递推 `F_i` 并填入 bullets。
+  // 实例优先级：显式参数 > 模块级默认（调用方先 configure matchSeed）> 无。
+  // 重建失败 / 无实例 → bullets=[] + deltaRebuildMismatch=true，绝不抛、
+  // 绝不把半重建状态混进权威渲染（§4 回退铁律 2）。
+  if (wireCap !== undefined && wireCap !== 0 && !bulletsPresent) {
+    const rec = reconstructor === undefined ? getDefaultBulletReconstructor() : reconstructor;
+    if (rec === null) {
+      snapshot.bullets = [];
+      snapshot.deltaRebuildMismatch = true;
+    } else {
+      const rebuilt = rec.applyTick(snapshot);
+      if (rebuilt === null) {
+        snapshot.bullets = [];
+        snapshot.deltaRebuildMismatch = true;
+        // 丢弃半重建状态，等全量兜底 / 新局重新 configure。
+        rec.reset();
+      } else {
+        snapshot.bullets = rebuilt;
+      }
+    }
+  }
+
+  return snapshot;
 }
 
 /**

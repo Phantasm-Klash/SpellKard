@@ -97,6 +97,7 @@ import './danmaku_progress_reconcile.test';
 import './graze_feedback.test';
 import './battle_codec_delta.test';
 import './danmaku_real_trace.test';
+import './bullet_reconstructor.test';
 
 import { runAll } from './harness';
 
