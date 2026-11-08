@@ -292,6 +292,10 @@ export class AtlasBulletRenderer implements BulletRenderer {
     scale: number;
     rotation: number;
   }>();
+  /** 同一显示帧内所有弹共享动画 step；按 bulletKind 缓存算出的帧名，
+   *  否则 748 颗弹各跑一次 `animatedFrameFor`（含 species 帧表查表）。 */
+  private frameNameCache = new Map<number, string>();
+  private lastAnimateStep = -1;
 
   /**
    * @param source   atlas frame lookup (Laya-backed in the app, stubbed in tests)
@@ -323,9 +327,22 @@ export class AtlasBulletRenderer implements BulletRenderer {
       this.fallback.draw(sprite, request);
       return;
     }
-    const frameName = request.animate
-      ? animatedFrameFor(request.bulletKind, request.tick) || descriptor.frame
-      : descriptor.frame;
+    let frameName = descriptor.frame;
+    if (request.animate) {
+      // animatedFrameFor 的 fps 默认 8；step 每 7.5 tick 才变一次，
+      // 同一显示帧里 748 颗弹只需按 bulletKind 各算一次。
+      const step = Math.max(0, Math.floor((request.tick * 8) / 60));
+      if (step !== this.lastAnimateStep) {
+        this.frameNameCache.clear();
+        this.lastAnimateStep = step;
+      }
+      let animated = this.frameNameCache.get(request.bulletKind);
+      if (animated === undefined) {
+        animated = animatedFrameFor(request.bulletKind, request.tick) || descriptor.frame;
+        this.frameNameCache.set(request.bulletKind, animated);
+      }
+      frameName = animated;
+    }
     const texture = this.source.frame(descriptor.atlas, frameName);
     if (texture === null || texture === undefined) {
       this.cache.delete(sprite);

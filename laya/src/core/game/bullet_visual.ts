@@ -89,9 +89,18 @@ export function isKnownBulletKind(kind: number): boolean {
   return isBulletKind(kind);
 }
 
+/** species → 该族全部帧名。BULLET_KINDS 有 216 项，每颗弹每帧重算会拖垮渲染。 */
+const SPECIES_FRAMES_CACHE = new Map<string, readonly string[]>();
+
 /** All frame names belonging to a species, in kind order (e.g. `kusabi` → 9 frames). */
 export function speciesFrames(species: string): readonly string[] {
-  return BULLET_KINDS.filter((k) => speciesOfFrame(k.frame) === species).map((k) => k.frame);
+  const cached = SPECIES_FRAMES_CACHE.get(species);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const frames = BULLET_KINDS.filter((k) => speciesOfFrame(k.frame) === species).map((k) => k.frame);
+  SPECIES_FRAMES_CACHE.set(species, frames);
+  return frames;
 }
 
 /**
