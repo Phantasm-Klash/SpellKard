@@ -1511,7 +1511,13 @@ export class LobbyClient {
       modeId: stringField(payload, 'mode_id', 'modeId'),
       battleServerId: stringField(payload, 'battle_server_id', 'battleServerId'),
       endpoint: stringField(payload, 'endpoint'),
-      serverSeedHex: hexField(payload, 'server_seed', 'serverSeed'),
+      // ★ 服务端 `battle.allocation` 给的是 `server_seed_hex`（**字符串**）+
+      //   `server_seed`（**十进制数字**）。只读后者会拿到空 seed（hexField 期望
+      //   hex 文本/字节），客户端预测与服务器 state_hash 必然对不上。
+      //   与 `:3772` 的其它分配解析保持同一优先级。
+      serverSeedHex:
+        stringField(payload, 'server_seed_hex', 'serverSeedHex') ||
+        hexField(payload, 'server_seed', 'serverSeed'),
     };
     return this.allocation;
   }

@@ -533,6 +533,11 @@ export class BattleScene implements ClientScene {
     // A battle always starts live; never carry a previous pause into it.
     this.paused = false;
     this.pauseOverlay.visible = false;
+    // ★ 两张暂停美术牌必须一起复位：`onEnter` 之前若暂停过，`pauseIcon` /
+    //   `pausePlaque` 的 sprite 仍是 visible，进战斗就会看到「PAUSE MENU」压在
+    //   战场中心（只清 `pauseOverlay` 不够，那是文本兜底层）。
+    this.pauseIcon.hide();
+    this.pausePlaque.hide();
     this.clearCardEffects();
     // Mirror whatever opening loadout the ticket has already delivered.
     this.syncHand();
@@ -1279,6 +1284,12 @@ export class BattleScene implements ClientScene {
         ? 0
         : this.renderFrac(this.authoritativeAtMs, this.authoritativeIntervalMs),
     });
+    // ★ 还没收到任何权威快照时（刚进场景 / 对局尚未真正开始），`source` 是
+    //   本地预测快照，它里面有本地模拟跑出来的弹幕。那不是权威内容，会在开战
+    //   前先闪一屏。这里直接不画弹幕与链读数，等第一份权威快照到达再出。
+    if (this.authoritative === null) {
+      frame = { ...frame, bullets: [], chains: [] };
+    }
     // A `bullet_purge` removes its chosen bullets from the *local prediction*:
     // the simulation is untouched (the server stays authoritative), only the
     // rendered frame drops them for the effect's window.

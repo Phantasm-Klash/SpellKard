@@ -201,12 +201,16 @@ export class NativeUdpDatagramFactory implements DatagramFactory {
     if (handle < 0) {
       return new OfflineDatagram();
     }
-    this.module.setNonBlocking(handle, 1);
     const bound = this.module.bind(handle, this.options.bindAddress ?? '0.0.0.0', this.options.bindPort ?? 0);
     if (bound !== 1) {
       this.module.close(handle);
       return new OfflineDatagram();
     }
+    // ★ 非阻塞必须放在 bind **之后**：`spk_udp` 的 bind 会把 socket 复位成阻塞模式。
+    //   放在 bind 之前时，BattleClient 每 5ms 的 recvFrom 会永久阻塞 JS 主线程 ——
+    //   整个客户端「未响应」、CPU 归零、CDP 全部超时，只能杀进程。
+    //   （实机复现两次；bind 后再设立即正常，见 tmp/pk_battle.mjs 的运行时补丁。）
+    this.module.setNonBlocking(handle, 1);
     return new NativeUdpDatagram(this.module, this.timer, target, handle, this.options);
   }
 }

@@ -435,7 +435,11 @@ test('a decoded movement input moves the ship by the server step', () => {
 
 test('a decoded movement input clamps to the arena box, like the server', () => {
   const sim = raceSim();
-  for (let tick = 1; tick <= 45; tick += 1) {
+  // 每 tick 位移 = MOVE_MILLI_PER_TICK(3000)。活动区半宽 300000 ⇒ 至少 100 tick
+  // 才能顶到边缘（旧的 120000 只需 40 tick；边界 2026-11-08 由 ±120px 修正为
+  // ±300px，走动行程也跟着变长）。
+  const ticksToEdge = Math.ceil(ARENA_HALF_WIDTH_MILLI / 3000) + 5;
+  for (let tick = 1; tick <= ticksToEdge; tick += 1) {
     feedDecoded(sim, 'p1', tick, tick, { directionBits: DIR_LEFT });
     sim.tick();
   }

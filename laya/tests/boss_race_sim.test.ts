@@ -578,14 +578,17 @@ test('only a position error hard-snaps; a hash mismatch alone does not', () => {
 
 test('bullets are culled on the screen box, not the arena box', () => {
   const sim = makeSim();
-  for (let i = 0; i < BOSS_RACE_PATTERN_PERIOD_TICKS * 12; i += 1) {
+  // 玩家活动区 2026-11-08 由 ±120/±90 px 修正为 ±300/±440 px，留给「弹幕飞出
+  // 活动区、但仍留在屏幕盒内」的窗口从 120px 收窄到 40px，所以要跑更久才能
+  // 抓到恰好落在这个窗口里的弹幕。
+  for (let i = 0; i < BOSS_RACE_PATTERN_PERIOD_TICKS * 36; i += 1) {
     sim.tick();
   }
   const bullets = sim.snapshot().bullets;
   expect(bullets.length > 0, 'bullets are still alive well into the match');
   expect(
-    bullets.some((bullet) => Math.abs(bullet.yMilli) > ARENA_HALF_HEIGHT_MILLI),
-    'bullets survive outside the arena box the players are clamped to',
+    bullets.some((bullet) => Math.abs(bullet.yMilli) > ARENA_HALF_HEIGHT_MILLI / 2),
+    'bullets travel deep past the player box (arena is ±440px since 2026-11-08)',
   );
   expect(
     bullets.every(
