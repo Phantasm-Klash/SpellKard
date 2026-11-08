@@ -486,7 +486,15 @@ export class BattleScene implements ClientScene {
         this.previousAuthoritative = this.authoritative;
         const gap = now - this.authoritativeAtMs;
         if (gap > 0) {
-          this.authoritativeIntervalMs = gap;
+          // ★ 单次 UDP/KCP 到达间隔抖动很大（实测 1ms~40ms）。直接把它当成
+          //   `renderFrac` 的分母，会让插值比例忽快忽慢 —— 同一份快照在相邻
+          //   显示帧被画到不同位置，视觉上就是「弹幕一顿一顿 / 跳帧」。
+          //   这里用 EWMA 平滑，并以服务端 tick 间隔为锚钳制异常值。
+          const nominal = 1000 / (this.options.tickRateHz ?? BOSS_RACE_TICK_RATE_HZ);
+          const clamped = Math.min(nominal * 3, Math.max(nominal * 0.25, gap));
+          this.authoritativeIntervalMs = this.authoritativeIntervalMs <= 0
+            ? clamped
+            : this.authoritativeIntervalMs * 0.8 + clamped * 0.2;
         }
       }
       this.authoritative = snapshot;

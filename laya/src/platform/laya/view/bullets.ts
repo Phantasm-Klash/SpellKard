@@ -94,8 +94,14 @@ export function drawBullet(
   }
   const angle = Number.isFinite(angleRad) ? angleRad : 0;
   const palette = paletteFor(ownerIsLocal);
+  // `chain:*` 是 ChainNode 表路径的 pattern id，不在 legacy 10 模式映射表里。
+  // 旧实现只要 patternId 非空就走 classifyPattern，未知 id 一律回落 'linear'，
+  // 把 bullet_func_no 的真实运动族覆盖掉 —— 节点链弹幕看起来全成直线弹，
+  // 与原版符卡的曲线/旋转/追踪形态完全不同。这类 id 和空 id 一样按
+  // motionFamily 分类，legacy 10 模式仍走各自的 trajectory class。
+  const legacyPattern = patternId !== '' && !patternId.startsWith('chain:');
   const visualClass: BulletVisualClass =
-    patternId === '' ? motionFamilyVisualClass(family) : classifyPattern(patternId);
+    legacyPattern ? classifyPattern(patternId) : motionFamilyVisualClass(family);
 
   switch (visualClass) {
     case 'curve':

@@ -599,13 +599,25 @@ export function interpolateFrames(
  * `interpolateFrames` 做一次线性插值。`chains` 等权威读数由
  * `{ ...current }` 原样带出，不参与插值。
  */
+/**
+ * 允许补帧的最大 tick 跨度。
+ *
+ * 服务端 64Hz、显示 60FPS，UDP/KCP 到达抖动或帧率上限（如 30FPS）都会让
+ * 客户端一次跳过 2~3 个 tick。旧实现只接受 `previous.tick + 1`，一旦跳 tick
+ * 就整帧回退到单快照直显 —— 弹幕位置从上一显示帧硬跳到新快照，就是卡顿感。
+ * 放宽到 4 tick（64Hz 下 62.5ms）内仍做端点线性插值：`interpolateFrames` 里
+ * `clamp01` 保证 alpha 不会外推过头，端点跨度变大只是过渡稍粗，不会撕裂。
+ */
+const kMaxInterpolationTickGap = 4;
+
 export function buildInterpolatedBossRaceFrame(
   current: BossRaceSnapshot,
   options: BossRaceFrameOptions,
 ): BossRaceFrame {
   const frac = normalizeFrac(options.frac ?? 0);
   const previous = options.previous ?? null;
-  const adjacent = previous !== null && current.tick === previous.tick + 1;
+  const gap = previous === null ? 0 : current.tick - previous.tick;
+  const adjacent = previous !== null && gap > 0 && gap <= kMaxInterpolationTickGap;
   if (!adjacent || frac <= 0) {
     return buildBossRaceFrame(current, options);
   }

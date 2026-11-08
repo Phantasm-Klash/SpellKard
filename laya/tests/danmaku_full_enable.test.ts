@@ -222,12 +222,33 @@ test('a missing previous snapshot falls back to single-frame extrapolation', () 
   expectDeepEqual(noPrevious, single, 'no previous → the old extrapolation path');
 });
 
-test('non-adjacent snapshot ticks fall back to single-frame extrapolation', () => {
+test('large tick gaps fall back to single-frame extrapolation', () => {
   const previous = snap(10, 1000, 2000);
-  const current = snap(13, 5000, 6000); // 13 ≠ 10 + 1
+  const current = snap(18, 5000, 6000); // gap 8 > kMaxInterpolationTickGap (4)
   const fallback = buildInterpolatedBossRaceFrame(current, { ...FRAME_OPTS, previous, frac: 0.5 });
   const single = buildBossRaceFrame(current, { ...FRAME_OPTS, previous, frac: 0.5 });
-  expectDeepEqual(fallback, single, 'a tick gap must not be interpolated');
+  expectDeepEqual(fallback, single, 'a large tick gap must not be interpolated');
+});
+
+test('small tick gaps still interpolate (64Hz snapshots vs 60FPS display)', () => {
+  // 服务端 64Hz、显示 60FPS 时一次跳 2~3 tick 是常态；旧实现要求严格 +1，
+  // 一跳 tick 就整帧直显 → 弹幕位置硬跳。现在 gap<=4 仍做端点插值。
+  const previous = snap(10, 1000, 2000);
+  const current = snap(13, 5000, 6000);
+  const prevFrame = buildBossRaceFrame(previous, { ...FRAME_OPTS, previous: null, frac: 0 });
+  const currFrame = buildBossRaceFrame(current, { ...FRAME_OPTS, previous: null, frac: 0 });
+  const mid = buildInterpolatedBossRaceFrame(current, { ...FRAME_OPTS, previous, frac: 0.5 });
+  const single = buildBossRaceFrame(current, { ...FRAME_OPTS, previous, frac: 0.5 });
+  expect(
+    mid.players[0].position.x !== single.players[0].position.x,
+    'a gap-3 frame is interpolated instead of falling back to direct display',
+  );
+  expectClose(
+    mid.players[0].position.x,
+    (prevFrame.players[0].position.x + currFrame.players[0].position.x) / 2,
+    1e-9,
+    'gap-3 frame is still the midpoint of the two authoritative endpoints',
+  );
 });
 
 test('adjacent snapshots interpolate players and bullets at a mid frac', () => {
