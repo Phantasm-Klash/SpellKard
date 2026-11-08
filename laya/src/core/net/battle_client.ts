@@ -25,6 +25,7 @@ import {
   classifyReconcile,
 } from '../sim/boss_race';
 import type { BattleHandshakeHello, BattleInput, BattlePacketHeader } from '../protocol/types';
+import { configureDefaultBulletReconstructor } from './bullet_reconstructor';
 import { BattlePayloadType, emptyVersionStamp } from '../protocol/types';
 import {
   decodeBattleResult,
@@ -323,6 +324,11 @@ export class BattleClient {
     this.sessionInfo = info;
     this.state = BattleConnectionState.Connecting;
     this.lastError = '';
+    // §10.3：delta wire 省略全量 `bullets[]`，由 `BulletReconstructor` 从
+    //   spawn 模板 + matchSeed 逐 tick 递推。seed 只在会话票据里（`info.serverSeed`），
+    //   所以必须在 connect 时配置 —— 此前没有任何 configure 调用点，delta 快照
+    //   会静默回落成空弹幕。每次新会话重建实例，不沿用上一局残留的弹幕状态。
+    configureDefaultBulletReconstructor({ matchSeed: info.serverSeed });
 
     // Decide the cipher once, so the send and receive paths cannot disagree.
     //
