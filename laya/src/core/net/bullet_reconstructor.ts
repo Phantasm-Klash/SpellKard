@@ -313,8 +313,18 @@ export class BulletReconstructor {
     const despawnIds = new Set<string>();
     for (const raw of despawns as readonly BossRaceBulletDespawn[]) {
       const d = raw as unknown as Record<string, unknown>;
-      if (typeof d.bulletId !== 'string' || !knownIds.has(d.bulletId)) {
-        return null;
+      if (typeof d.bulletId !== 'string') {
+        return null;  // 形状异常（id 不是字符串）仍拒
+      }
+      // ★ 悬空 despawn 必须**幂等忽略**，不能判异常。实机链路里它必然出现：
+      //   - 客户端可能从对局中途接入 / 丢首包，没见过那颗弹；
+      //   - 客户端 `keepsBullet` 与服务端出界剔除可能差一帧，本地已先删掉；
+      //   - 上一次重建失败被 reset 后，服务端仍会补发之前 tick 的删除。
+      //   旧实现在这里 return null → 调用方 reset() → live 恒空 → 下一帧继续
+      //   悬空 → 永久卡死（实机 `authBullets:0 / rebuildMismatch:true`）。
+      //   「删除一个不存在的 id」本就是 no-op，不影响任何权威状态。
+      if (!knownIds.has(d.bulletId)) {
+        continue;
       }
       despawnIds.add(d.bulletId);
     }

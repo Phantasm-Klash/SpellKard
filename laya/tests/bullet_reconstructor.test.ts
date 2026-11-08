@@ -236,12 +236,13 @@ test('applyTick returns null on any malformed input', () => {
     })),
     null,
   );
-  // c) despawn 引用不存在。
-  expectEqual(
+  // c) 悬空 despawn 是幂等 no-op（2026-11-08 实机修正）：客户端可能中途接入、
+  //    或出界剔除比服务端早一帧，删除一个没见过的 id 不该让整帧回落。
+  expect(
     newReconstructor().applyTick(makeSnapshot({
       bulletDespawns: [{ bulletId: 'ghost', reason: 'erase' }],
-    })),
-    null,
+    })) !== null,
+    'dangling despawn is ignored instead of failing the tick',
   );
   // d) deviation 非有限数。
   expectEqual(
@@ -372,9 +373,15 @@ test('decode falls back safely with no instance or failed rebuild', () => {
   expectEqual(snapA!.bullets.length, 0, 'empty bullets on no instance');
   expectEqual(snapA!.deltaRebuildMismatch, true, 'mismatch flag set');
 
-  // 悬空 despawn → applyTick 返回 null → 回落。
+  // 悬空 despawn 幂等忽略，不触发回落；真正的形状异常（id 非字符串）才回落。
   const rec = newReconstructor();
-  const bad = { ...wireBase(), wire_cap: 1, bullet_despawns: [{ bullet_id: 'ghost', reason: 'erase' }] };
+  const dangling = { ...wireBase(), wire_cap: 1, bullet_despawns: [{ bullet_id: 'ghost', reason: 'erase' }] };
+  const snapOk = decodeBossRaceSnapshot(snapshotPayload(dangling), rec);
+  expect(snapOk !== null, 'dangling despawn frame decodes');
+  expect(snapOk!.deltaRebuildMismatch !== true, 'dangling despawn does not force a fallback');
+
+  // deviation 仍要求引用已知弹（它改的是位置，不能静默丢弃）。
+  const bad = { ...wireBase(), wire_cap: 1, bullet_deviations: [{ bullet_id: 'ghost', dx: 0, dy: 0, dvx: 0, dvy: 0 }] };
   const snapB = decodeBossRaceSnapshot(snapshotPayload(bad), rec);
   expect(snapB !== null, 'malformed frame still decodes');
   expectEqual(snapB!.bullets.length, 0, 'empty bullets on rebuild failure');
