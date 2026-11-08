@@ -285,6 +285,13 @@ export const vectorBulletRenderer = new VectorBulletRenderer();
  */
 export class AtlasBulletRenderer implements BulletRenderer {
   private readonly fallback: BulletRenderer;
+  /** 每个 sprite 上一次写入的美术状态。748 颗弹 × 60FPS 时无条件重设贴图/
+   *  pivot/scale/rotation 是几十万次冗余属性写，实机掉到 19 FPS。 */
+  private readonly cache = new WeakMap<Laya.Sprite, {
+    frame: string;
+    scale: number;
+    rotation: number;
+  }>();
 
   /**
    * @param source   atlas frame lookup (Laya-backed in the app, stubbed in tests)
@@ -311,6 +318,8 @@ export class AtlasBulletRenderer implements BulletRenderer {
   draw(sprite: Laya.Sprite, request: BulletDrawRequest): void {
     const descriptor = request.bulletKind > 0 ? describeBulletKind(request.bulletKind) : null;
     if (descriptor === null) {
+      // 矢量 fallback 会往 graphics 里画东西；下次切回图集必须重新 clear。
+      this.cache.delete(sprite);
       this.fallback.draw(sprite, request);
       return;
     }
@@ -319,22 +328,40 @@ export class AtlasBulletRenderer implements BulletRenderer {
       : descriptor.frame;
     const texture = this.source.frame(descriptor.atlas, frameName);
     if (texture === null || texture === undefined) {
+      this.cache.delete(sprite);
       this.fallback.draw(sprite, request);
       return;
     }
 
-    sprite.graphics.clear();
-    sprite.texture = texture;
-    const sourceW = texture.sourceWidth || texture.width;
-    const sourceH = texture.sourceHeight || texture.height;
-    sprite.pivot(sourceW / 2, sourceH / 2);
-    sprite.scaleX = this.artScale;
-    sprite.scaleY = this.artScale;
+    let cached = this.cache.get(sprite);
+    if (cached === undefined) {
+      // 首次接管（或从 fallback 切回）才清 graphics；图集路径本身不画矢量，
+      // 没必要每帧 clear。
+      sprite.graphics.clear();
+      cached = { frame: '', scale: Number.NaN, rotation: Number.NaN };
+      this.cache.set(sprite, cached);
+    }
+    if (cached.frame !== frameName) {
+      sprite.texture = texture;
+      const sourceW = texture.sourceWidth || texture.width;
+      const sourceH = texture.sourceHeight || texture.height;
+      sprite.pivot(sourceW / 2, sourceH / 2);
+      cached.frame = frameName;
+    }
+    if (cached.scale !== this.artScale) {
+      sprite.scaleX = this.artScale;
+      sprite.scaleY = this.artScale;
+      cached.scale = this.artScale;
+    }
     // Directional species face their heading; round species stay upright.
-    sprite.rotation =
+    const rotation =
       isRotatingSpecies(descriptor.species) && Number.isFinite(request.angleDeg)
         ? spriteRotationDeg(request.angleDeg)
         : 0;
+    if (cached.rotation !== rotation) {
+      sprite.rotation = rotation;
+      cached.rotation = rotation;
+    }
   }
 }
 
