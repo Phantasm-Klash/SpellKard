@@ -214,3 +214,30 @@ Update  = updateBulletMotion(·, C(t−1), RNG(s, t, p_i, q_i)) + pos += v + t +
 RNG 分叉预案：6 个消耗 RNG 的 func（7/52/62/70/71/76）若在第 2 步出现
 逐位偏差，先检查 `rng_cursor` 消耗次数，必要时整颗并入 `deviation`，
 不得靠放宽断言蒙混。
+
+### 10.5 验收结果（2026-11-11）
+
+工具：
+
+- 服务端 `PhK-BattleServer/tools/tna_coverage/run_delta_acceptance.sh` —— 同参
+  生成全量与差量两份真实弹幕 trace，交给客户端重建器递推并逐 tick 逐位比较；
+- 客户端 `laya/dev/delta_replay.mjs` —— 按 `bullet_id` 排序比较
+  `(x_milli, y_milli, vx_milli, vy_milli, radius_milli, bullet_kind,
+  motion_func)`，并核对 `state_hash` 与带宽差；任一不等即失败（§10.4 第 4 条）。
+
+结果（300 tick 真实弹幕，seed 12345，ruleset `tna-1.40-danmaku`）：
+
+| 项 | 结果 |
+|---|---|
+| 逐位重建 | 失败 tick **0** |
+| `state_hash` 逐 tick | 全等（`c8d2a5c5c9d51d46`） |
+| 带宽：全量 | 55,015,358 B |
+| 带宽：差量 | 1,220,396 B（**省 97.8%**） |
+
+⇒ §10.4 的硬性验收**通过**：稳态下 Δ≡0，客户端从事件流重建与全量逐位相等，
+在数据层「去掉全量 `bullets[]`」是安全的。
+
+★ 开关仍按 §10.2 保持 `delta_wire_enabled=false` 默认（全量路径逐字节不变，
+作为回退）。什么时候切到差量由**能力协商**决定：Go 端 `Gensoulkyo` 消费快照
+而不能改，所以不能无条件切。两仓 CI 都已加入这一步（BS `client-parity` job、
+SK `server-parity` job）。
