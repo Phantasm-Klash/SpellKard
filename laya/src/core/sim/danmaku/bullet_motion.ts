@@ -13,13 +13,18 @@
  *  - **字段名与服务端 `struct BulletMotion` 一一对应**（`angle_init` / `spd_init2` /
  *    `xacc_cap`…），便于逐行核对。
  *  - **算术全部走 `core/math/float_lib`**：角度单位=度、`fmod` 归一化、
- *    `llround` 半值远离零。三角用 `sinDeg/cosDeg`（原版 `MyMathUtil::sin/cos`）。
- *  - **分工对齐原版**：`updateBulletMotion` 只做「delay 倒计时 → 角积分 →
- *    `bulletFunc` 分派 → `IntegrateVelocity`」，**不移动位置、不递增 `life`**；
- *    位置积分 `pos += (vx, vy)` 与 `t += 1` 由宿主（`BossRaceSimulation`）完成，
- *    与原版 `EnemyBullet::update` / 服务端 `AdvanceBullets` 的分工一致。
- *    ★ 服务端**从不递增 `life`**（只递增 `t`），客户端以前递增过 —— 这是必须消掉的
- *    差异，否则 `Func14/16/21/22/23/34/35/39/41/42/44/53/74/80/85` 全部走错分支。
+ *    `llround` 半值远离零。三角用 `sinDeg/cosDeg`（原版 `MyMathUtil::sin/cos`），
+ *    少数单精度路径（`Func3/36`）走 `f32` + `sinDegF/cosDegF`。
+ *  - **分工对齐原版（最新版整帧口径）**：`updateBulletMotion` 做
+ *    「delay 倒计时 → 角积分 → `bulletFunc` early 分派 → **共用出口 accel 应用** →
+ *    `bulletFunc` mid 分派（仅 func29）→ 默认 `IntegrateVelocity`（func3/29/47 跳过）→
+ *    `bulletFunc` late 分派（8 个二次分派编号）→ 对 setPosition 族预减位移 →
+ *    帧末 `bullet_life--`」。
+ *    宿主（BossRaceSimulation）紧接着固定做 `pos += (vx,vy)` 与 `t += 1`；
+ *    对 `SkipsPositionIntegration` 的 9 个编号，这里先 `x -= vx; y -= vy`，
+ *    使积分后正好回到 func 用 setPosition 钉下的绝对位置。
+ *  - ★ 服务端**从不递增 `life`**（只递增 `t`）；`bullet_life` 由 `updateBulletMotion`
+ *    在帧末（`>0` 时）自减，决定下一帧是否做角积分夹持。
  *  - **确定性**：`bulletFunc` 本身不含 RNG；只有「分裂/随机角」族经
  *    `DeterministicRng` 引入随机，输入为 `(match_seed, tick, pattern_index,
  *    spawn_index)`，与服务端 `DeterministicRng` 同构，禁用系统时间/帧率。
@@ -34,11 +39,11 @@ import {
   bulletMotionInfo,
   type BulletMotionInfo,
 } from './bullet_motion_table';
-import { BULLET_KIND_MAX, BULLET_KIND_MIN } from './bullet_kind';
 import type { BossRaceSeed } from '../../math/boss_race_seed';
 import {
   angleToPoint,
   cosDeg,
+  f32,
   HALF_H_PX,
   HALF_W_PX,
   normalizeDeg,
@@ -177,7 +182,7 @@ export interface BulletMotion {
   bullet_kind: number;
   /** +0x530 旋转标志。 */
   rotate_flg: number;
-  /** +0x588 `bulletLife` `N`（≠0 才做角积分）。 */
+  /** +0x588 `bulletLife` `N`（≠0 才做角积分；帧末 `>0` 时自减）。 */
   bullet_life: number;
   /** +0x58c `bulletLoop` `LP`。 */
   bullet_loop: number;
@@ -195,14 +200,22 @@ export interface BulletMotion {
   hit_dis: number;
   /** +0x548 碰撞判定开关。 */
   hit_hantei: boolean;
+  /** +0x554 贴图半宽（`Func6/8/62` 的环绕边界），C++ 默认 0.0。 */
+  half_w: number;
+  /** +0x558 贴图半高，C++ 默认 0.0。 */
+  half_h: number;
+  /** 原版 `Node::setOpacity(uint8)`，C++ 默认 255。 */
+  opacity: number;
+  /** 原版 `Sprite::setScale(float)`，C++ 默认 1.0。 */
+  scale: number;
 }
 
 /**
  * 构造一份默认运动状态 —— 逐字段对齐 C++ 结构体的默认成员初始化。
  *
  * ★ 注意 `xacc` / `xacc_cap` 默认 **0.0**（不是 `-1`），`pf1` 默认 **1.0**、
- * `pf2` 默认 **0.0**、`hit_dis` 默认 **0.0**。`Func0` 的 `!= -1` 判定正是靠这些
- * 默认值决定是否覆写，抄错默认值会让整族子弹走错分支。
+ * `pf2` 默认 **0.0**、`hit_dis` 默认 **0.0**，`half_w/half_h` 默认 **0.0**、
+ * `opacity` 默认 **255**、`scale` 默认 **1.0**。抄错默认值会让整族子弹走错分支。
  */
 export function createBulletMotion(overrides: Partial<BulletMotion> = {}): BulletMotion {
   return {
@@ -239,6 +252,10 @@ export function createBulletMotion(overrides: Partial<BulletMotion> = {}): Bulle
     bullet_func_no: 0,
     hit_dis: 0,
     hit_hantei: true,
+    half_w: 0,
+    half_h: 0,
+    opacity: 255,
+    scale: 1,
     ...overrides,
   };
 }
@@ -407,150 +424,197 @@ function distSqToEnemy(b: BulletMotion, tg: MotionTargets): number {
   return dx * dx + dy * dy;
 }
 
-// --- 原版 .rodata 常量 ------------------------------------------------------
+// --- 原版 .rodata 常量 / 共用辅助 -------------------------------------------
 
 const kHalfW = HALF_W_PX; // 320
 const kHalfH = HALF_H_PX; // 480
 const kTop = TOP_MARGIN_PX; // 40
 const kDeg180 = 180;
 const kDeg360 = 360;
-const kNeg1 = -1;
+
+/** 原版边界反弹的指令序列：`d = C - angle; d<0 时 d += 360`。 */
+function mirrorAngle(angle: number, c: number): number {
+  let d = c - angle;
+  if (d < 0) {
+    d += kDeg360;
+  }
+  return d;
+}
+
+// 原版 `MyMathUtil::sin/cos` 走**单精度**：`sinf(deg * π(f) / 180(f))`，
+// 两步都是 float 运算；仅 Func3 / Func36 使用。
+const PI_F = f32(3.14159265358979323846);
+function cosDegF(deg: number): number {
+  const arg = f32(f32(f32(deg) * PI_F) / 180);
+  return f32(Math.cos(arg));
+}
+function sinDegF(deg: number): number {
+  const arg = f32(f32(f32(deg) * PI_F) / 180);
+  return f32(Math.sin(arg));
+}
+
+// C++ `constexpr double kDrift = 0x1.0B9AF72015D87p-6`（位模式
+// 0x3F90B9AF72015D87）。JS 无 C99 十六进制浮点字面量，用 DataView 按位构造。
+const K_DRIFT_VIEW = new DataView(new ArrayBuffer(8));
+K_DRIFT_VIEW.setUint32(0, 0x3f90b9af);
+K_DRIFT_VIEW.setUint32(4, 0x72015d87);
+const K_DRIFT = K_DRIFT_VIEW.getFloat64(0);
 
 // ===========================================================================
 // A 初始化 / 直线
 // ===========================================================================
 
-/** `bulletFunc0` @0x50cdcc —— 基础初始化 + 直线。[实测] */
-function func0(b: BulletMotion): void {
-  if (b.angle_init !== kNeg1) {
-    b.angle = b.angle_init;
-  }
-  if (b.speed_init !== kNeg1) {
-    b.angle_spd = b.speed_init;
-    b.angle_acc = b.f598;
-    b.f56c = b.prev_angle;
-  }
-  if (b.spd_init2 !== kNeg1) {
-    b.speed = b.spd_init2;
-  }
-  if (b.xacc !== kNeg1) {
-    b.accel = b.xacc;
-  }
-  if (b.xacc_cap !== kNeg1) {
-    b.speed_cap = b.xacc_cap;
-  }
-}
+/** `bulletFunc0` —— 完全 no-op：funcNo=0 在 update 跳转表里越界，独立符号是 spawn 初始化。 */
+function func0(): void {}
 
-/** `bulletFunc4` @0x50d238 —— `v = V1`（速度重置）。[实测] */
-function func4(b: BulletMotion): void {
-  b.speed = b.spd_init2;
-}
+/** `bulletFunc4` —— no-op：update 分派入口由 +0x541 标志门控，生产端恒 0。 */
+function func4(): void {}
 
-/** `bulletFunc29` @0x511384 —— 分段重置 + 合成 vx/vy。[实测] */
+/** `bulletFunc29` @0x511384 —— 分段重置 + 合成 vx/vy（mid 阶段执行）。[实测] */
 function func29(b: BulletMotion): void {
   const t = Math.trunc(b.t);
   if (t < b.life) {
     b.vx = b.prev_angle * cosDeg(b.angle);
     b.vy = b.prev_angle * sinDeg(b.angle);
+    return;
   }
-  if (t === b.life) {
-    b.angle = b.angle_init;
+  const resetAt = b.life + b.p1;
+  if (t < resetAt) {
+    // 5113f4：只有 t === life+1 才写 A0；这一段 vx/vy 恒为 0。
+    if (t === b.life + 1) {
+      b.angle = b.angle_init;
+    }
     b.vx = 0;
+    b.vy = 0;
+    return;
   }
-  if (t >= b.life) {
+  if (t === resetAt) {
+    // 51140c：整块复位（angle=A0、{speed,accel}={V1,X}、angleAcc=F98、speedCap=XC）。
     b.angle = b.angle_init;
     b.speed = b.spd_init2;
+    b.accel = b.xacc;
     b.angle_acc = b.f598;
     b.speed_cap = b.xacc_cap;
   }
+  b.vx = b.speed * cosDeg(b.angle);
+  b.vy = b.speed * sinDeg(b.angle);
 }
 
-/** `bulletFunc47` @0x5114a8 —— 每帧重算 vx/vy（直线）。[实测] */
+/** `bulletFunc47` @0x50c9f8 —— 节拍门控制是否合成速度。[实测] */
 function func47(b: BulletMotion): void {
-  if (Math.trunc(b.t) === 0) {
+  const d = Math.trunc(b.t) - b.life;
+  const rem = b.p1 !== 0 ? d % b.p1 : d; // ARM sdiv 0 → 0
+  if (d < 0 || rem !== 0) {
     b.vx = 0;
+    b.vy = 0;
+    return;
   }
+  b.vx = b.speed * cosDeg(b.angle);
+  b.vy = b.speed * sinDeg(b.angle);
 }
 
 // ===========================================================================
 // B 加速 / 减速
 // ===========================================================================
 
-/** `bulletFunc5` @0x50d250 —— `v += X`，夹到 `XC`。[实测] */
-function func5(b: BulletMotion): void {
-  const a = b.xacc;
-  if (a === 0) {
-    return;
-  }
-  if (a > 0) {
-    if (b.speed < b.xacc_cap) {
-      b.speed += a;
-      if (b.speed > b.xacc_cap) {
-        b.speed = b.xacc_cap;
-      }
-    }
-  } else {
-    if (b.speed > b.xacc_cap) {
-      b.speed += a;
-      if (b.speed < b.xacc_cap) {
-        b.speed = b.xacc_cap;
-      }
-    }
-  }
-}
+/** `bulletFunc5` —— no-op：update 分派入口由 +0x541 标志门控，生产端恒 0。 */
+function func5(): void {}
 
 /** `bulletFunc35` @0x50ec24 —— 接近自机 → 指数减速 + 朝自机。[实测/推断阈值] */
 function func35(b: BulletMotion, tg: MotionTargets): void {
-  if (b.p2 !== 1) {
+  const p2 = b.p2;
+  if (p2 === 0) {
     if (distSqToMyShip(b, tg) <= b.life) {
       b.p2 = 1;
     }
+    return;
   }
-  if (b.p2 === 1) {
+  if (p2 === 1) {
     b.speed_cap = 0;
     b.accel = b.speed * -0.1;
+    b.p2 = 2;
+    return;
   }
-  if (Math.trunc(b.t) === b.p1) {
+  if (p2 === b.p1) {
+    b.speed = b.spd_init2;
+    b.accel = b.xacc;
+    b.speed_cap = b.xacc_cap;
     if (b.angle_init > 1) {
       b.angle = angleToMyShip(b, tg);
     }
-    b.speed = b.spd_init2;
-    b.speed_cap = b.xacc_cap;
   }
+  b.p2 = p2 + 1;
 }
 
-/** `bulletFunc39` @0x50ef00 —— 状态机：线性减速 `va = -v/L`。[实测] */
+/** `bulletFunc39` @0x50ef00 —— p2 状态机。[unicorn 逐指令实测] */
 function func39(b: BulletMotion): void {
+  let decel = false;
+  let reset = false;
   if (b.p2 === 0) {
-    return;
+    let mirror = -1;
+    if (b.x > kHalfW || b.x < 0) {
+      mirror = kDeg180;
+    } else if (b.y > kHalfH) {
+      mirror = kDeg360;
+    }
+    if (mirror >= 0) {
+      b.angle = mirrorAngle(b.angle, mirror);
+      b.p2 = 1;
+      decel = true;
+    } else if (b.p2 === b.life) {
+      reset = true;
+    }
+  } else if (b.p2 === 1) {
+    decel = true;
+  } else if (b.p2 === b.life) {
+    reset = true;
   }
-  if (b.p2 === 1) {
+
+  if (decel) {
     b.speed_cap = 0;
+    // 原版 fdiv speed/life，life==0 得到 IEEE ±inf；**不要**加 life!=0 保护。
     b.accel = -(b.speed / b.life);
+  } else if (reset) {
     b.angle = b.angle_init;
+    b.angle_acc = b.f598;
+    b.f56c = b.prev_angle;
+    b.speed = b.spd_init2;
+    b.accel = b.xacc;
+    b.speed_cap = b.xacc_cap;
+    if (b.p1 === 4) {
+      b.bullet_kind = 30;
+    } else if (b.p1 === 3) {
+      b.bullet_kind = 37;
+    } else if (b.p1 === 2) {
+      b.bullet_kind = 42;
+    }
+  }
+  if (b.p2 >= 1) {
+    b.p2 += 1;
   }
 }
 
-/** `bulletFunc43` @0x50f500 —— `v = V1 + X·sin(XC·T)`；`hitDis = pf2·v`。[实测] */
+/** `bulletFunc43` @0x50f500 —— v = V1 + X·sin(XC·(P2−L))；scale=v；hitDis=f32(pf2·v)。[实测] */
 function func43(b: BulletMotion): void {
   if (b.p2 >= b.life) {
-    const s = b.spd_init2 + b.xacc * sinDeg(b.xacc_cap * b.t);
-    b.speed = s;
-    b.hit_dis = b.pf2 * s;
+    const v = b.spd_init2 + b.xacc * sinDeg(b.xacc_cap * (b.p2 - b.life));
+    b.scale = v;
+    b.hit_dis = f32(b.pf2 * v);
   }
+  b.p2 += 1;
 }
 
 // ===========================================================================
 // C 正弦调速 / 正弦角
 // ===========================================================================
 
-/** `bulletFunc25` @0x50e194 —— `v = V1 + XC·sin(A0 + X·T)`。[实测] */
+/** `bulletFunc25` @0x50e194 —— v = V1 + XC·sin(A0 + X·T)。[实测] */
 function func25(b: BulletMotion): void {
   const arg = b.angle_init + b.xacc * b.t;
   b.speed = b.spd_init2 + b.xacc_cap * sinDeg(arg);
 }
 
-/** `bulletFunc40` @0x50f08c —— `aa = A0 + F98·sin(V1 + PA·T)`。[实测] */
+/** `bulletFunc40` @0x50f08c —— aa = A0 + F98·sin(V1 + PA·T)。[实测] */
 function func40(b: BulletMotion): void {
   if (Math.trunc(b.t) < b.life) {
     const arg = b.spd_init2 + b.prev_angle * b.t;
@@ -558,19 +622,26 @@ function func40(b: BulletMotion): void {
   }
 }
 
-/** `bulletFunc73` @0x510bbc —— `pf1 = A0 + F98·sin(V1 + PA·P2)`；`hitDis = pf2·pf1`。[实测] */
+/** `bulletFunc73` @0x510bbc —— pf1 = A0 + F98·sin(V1 + PA·P2)；scale=pf1；hitDis=pf2·pf1。[实测] */
 function func73(b: BulletMotion): void {
-  const arg = b.spd_init2 + b.prev_angle * b.p2;
-  b.pf1 = b.angle_init + b.f598 * sinDeg(arg);
-  b.hit_dis = b.pf2 * b.pf1;
+  // 0x510bcc 全程 s 寄存器（float），末尾 p2++。double 中间量会放大 hit_dis 误差。
+  const arg = f32(f32(b.spd_init2) + f32(f32(b.prev_angle) * f32(b.p2)));
+  const s = sinDegF(arg);
+  const pf1 = f32(f32(b.angle_init) + f32(f32(b.f598) * s));
+  b.pf1 = pf1;
+  b.scale = pf1;
+  b.hit_dis = f32(f32(b.pf2) * pf1);
+  b.p2 += 1;
 }
 
-/** `bulletFunc81` @0x511d48 —— `pf1 = A0 + F98·sin(PA·P2)`；`v = V1 + XC·s`。[实测] */
+/** `bulletFunc81` @0x511d48 —— 极坐标**绝对定位** setPosition；不写 angle/speed/hitDis。[实测] */
 function func81(b: BulletMotion): void {
-  const s = sinDeg(b.prev_angle * b.p2);
-  b.pf1 = b.angle_init + b.f598 * s;
-  b.speed = b.spd_init2 + b.xacc_cap * s;
-  b.hit_dis = b.pf2 * b.pf1;
+  const p2 = b.p2;
+  b.pf1 = b.angle_init + b.f598 * sinDeg(b.prev_angle * p2);
+  const r = b.xacc_cap * p2;
+  b.x = b.spd_init2 + r * cosDeg(b.pf1);
+  b.y = b.xacc + r * sinDeg(b.pf1);
+  b.p2 += 1;
 }
 
 // ===========================================================================
@@ -601,15 +672,16 @@ function rateLimitedTurn(b: BulletMotion, target: number, maxStep: number): void
   b.angle_init = b.angle;
 }
 
-/** `bulletFunc2` @0x50d16c —— 朝自机限速转向，单帧增量 ≤ `aa`。[实测/推断条件] */
+/** `bulletFunc2` @0x50d16c —— 朝自机限速转向，单帧增量 ≤ aa；末尾 life--。[实测/推断条件] */
 function func2(b: BulletMotion, tg: MotionTargets): void {
   if (b.life < 1) {
     return;
   }
   rateLimitedTurn(b, angleToMyShip(b, tg), b.angle_acc);
+  b.life -= 1;
 }
 
-/** `bulletFunc17` @0x50db94 —— 限速追踪（单帧 ≤ `A0`）。[实测] */
+/** `bulletFunc17` @0x50db94 —— 限速追踪（单帧 ≤ A0）。[实测] */
 function func17(b: BulletMotion, tg: MotionTargets): void {
   const target = angleToMyShip(b, tg);
   if (Math.trunc(b.t) === b.life) {
@@ -617,40 +689,65 @@ function func17(b: BulletMotion, tg: MotionTargets): void {
     return;
   }
   if (Math.trunc(b.t) > b.life) {
-    let t = target;
-    const d = t - b.prev_angle;
+    let out = target;
+    const d = out - b.prev_angle;
     if (d > b.angle_init) {
-      t = b.prev_angle + b.angle_init;
+      out = b.prev_angle + b.angle_init;
+    } else if (d < b.angle_init) {
+      out = b.prev_angle - b.angle_init;
     }
-    if (d < -b.angle_init) {
-      t = b.prev_angle - b.angle_init;
-    }
-    b.angle = t;
-    b.prev_angle = b.angle;
+    b.angle = out;
+    b.prev_angle = out;
   }
 }
 
-/** `bulletFunc18` @0x50dc4c —— 同 17，`P2` 作目标选择标记。[推断] */
+/** `bulletFunc18` @0x50dc4c —— 状态机：P2 保存上次瞄准角。[unicorn 逐指令实测] */
 function func18(b: BulletMotion, tg: MotionTargets): void {
-  const target = b.p2 === 2 ? angleToEnemy(b, tg) : angleToMyShip(b, tg);
-  if (Math.trunc(b.t) < b.life) {
-    return;
+  const t = Math.trunc(b.t);
+  if (t === b.life) {
+    b.p2 = Math.trunc(angleToEnemy(b, tg));
   }
-  rateLimitedTurn(b, target, b.angle_init > 0 ? b.angle_init : b.angle_acc);
+  if (t > b.life) {
+    const aim = angleToMyShip(b, tg);
+    b.angle = aim;
+    const lim = b.p1;
+    const d = aim - b.p2;
+    if (d > lim) {
+      b.angle = lim + b.p2;
+    } else if (d < lim) {
+      b.angle = b.p2 - lim;
+    }
+    b.p2 = Math.trunc(b.angle);
+  }
 }
 
-/** `bulletFunc48` @0x50f6c4 —— `T==L` 时瞄准。[实测] */
+/** `bulletFunc48` @0x50f6c4 —— 蓄力 30 帧后一次性复位。[unicorn 逐指令实测] */
 function func48(b: BulletMotion, tg: MotionTargets): void {
-  if (Math.trunc(b.t) < b.life) {
+  const t = Math.trunc(b.t);
+  if (t < b.life) {
     return;
   }
-  if (Math.trunc(b.t) === b.life) {
-    if (b.p2 === 1) {
-      b.angle = b.angle_init;
-    } else {
-      b.angle = angleToMyShip(b, tg);
-    }
-    b.speed_cap = b.xacc_cap;
+  if (t < b.life + 30) {
+    b.speed = 0;
+    return;
+  }
+  if (t !== b.life + 30) {
+    return;
+  }
+  if (b.p2 === 1) {
+    b.angle = b.angle_init;
+  } else if (b.p2 === 0) {
+    b.angle = angleToMyShip(b, tg);
+  }
+  b.angle_acc = b.f598;
+  b.f56c = b.prev_angle;
+  b.speed = b.spd_init2;
+  b.accel = b.xacc;
+  b.speed_cap = b.xacc_cap;
+  if (b.p1 === 1) {
+    b.bullet_kind = 206;
+  } else if (b.p1 === 0) {
+    b.bullet_kind = 37;
   }
 }
 
@@ -658,78 +755,132 @@ function func48(b: BulletMotion, tg: MotionTargets): void {
 // E 周期瞄准 / 出屏转向
 // ===========================================================================
 
-/** `bulletFunc11` @0x50d6e4 —— 出屏后重新瞄准。[实测] */
+/** `bulletFunc11` @0x50bc4c —— 屏内 angle=90；出屏且 p1==1/2 才瞄准并 life--。[实测] */
 function func11(b: BulletMotion, tg: MotionTargets): void {
-  if (b.x > kHalfW || b.x < 0 || b.y > kHalfH) {
-    if (b.p1 === 2) {
-      b.angle = angleToEnemy(b, tg);
-    } else if (b.p1 === 1) {
-      b.angle = angleToMyShip(b, tg);
-    }
+  if (b.life < 1) {
+    return;
   }
+  const out = b.x > kHalfW || b.x < 0 || b.y > kHalfH;
+  if (out && b.p1 === 1) {
+    b.angle = angleToMyShip(b, tg);
+    b.life -= 1;
+    return;
+  }
+  if (out && b.p1 === 2) {
+    b.angle = angleToEnemy(b, tg);
+    b.life -= 1;
+    return;
+  }
+  b.angle = 90;
 }
 
-/** `bulletFunc12` @0x50d7a8 —— 出屏（含 `y<40`）后重新瞄准。[实测] */
+/** `bulletFunc12` @0x50d7a8 —— 出屏（含 y<40）后重新瞄准；p1==1/2 时同时 life--。[实测] */
 function func12(b: BulletMotion, tg: MotionTargets): void {
+  // update 分派入口 0x50bc68：`life < 1` 整段跳过。
+  if (b.life < 1) {
+    return;
+  }
   if (b.x > kHalfW || b.x < 0 || b.y > kHalfH || b.y < kTop) {
     if (b.p1 === 2) {
       b.angle = angleToEnemy(b, tg);
+      b.life -= 1;
     } else if (b.p1 === 1) {
       b.angle = angleToMyShip(b, tg);
+      b.life -= 1;
     }
   }
 }
 
-/** `bulletFunc13` @0x50d860 —— 每帧朝自机瞄准；`P1 ← 0x168`。[推断] */
+/** `bulletFunc13` @0x50d860 —— 近距限速追踪。[unicorn 逐指令实测] */
 function func13(b: BulletMotion, tg: MotionTargets): void {
-  b.angle = angleToMyShip(b, tg);
-  b.p1 = 0x168;
+  if (Math.trunc(b.t) === 0) {
+    b.p1 = Math.trunc(b.angle);
+  }
+  if (!tg.has_my_ship) {
+    return;
+  }
+  const dx = tg.my_ship_x - b.x;
+  const dy = tg.my_ship_y - b.y;
+  const dist2 = dx * dx + dy * dy;
+  const radius2 = b.life * b.life;
+  if (dist2 >= radius2) {
+    return;
+  }
+  const aim = angleToMyShip(b, tg);
+  const d = aim - (b.p1 % 360);
+  b.angle = f32(b.p1 + (d < 2 ? -2 : 2));
+  b.p1 = Math.trunc(b.angle);
 }
 
-/** `bulletFunc14` @0x50d950 —— `pf1` 随 `life` 线性变化；`hitDis = pf2·pf1`。[实测] */
+/** `bulletFunc14` @0x50d950 —— pf1 随 life 线性变化；scale=pf1；hitDis=f32(pf2·pf1)。[实测] */
 function func14(b: BulletMotion): void {
-  const kK = 0.1;
-  if (Math.trunc(b.t) >= 1 && b.p2 !== 0) {
-    const d = (b.life * kK) / b.p1;
-    b.pf1 = (b.pf1 + d) * kK;
+  const t = Math.trunc(b.t);
+  if (t === 0) {
+    b.pf1 = f32(b.life * 0.1);
+  } else if (t >= 1 && b.p2 !== 0) {
+    b.pf1 = f32(b.pf1 + ((b.p2 - b.life) * 0.1) / b.p1);
   }
   if (b.p2 !== 0) {
-    if (b.life < b.p2) {
-      const n = b.pf1 * kK;
-      if (n < b.pf1) {
-        b.pf1 = n;
-      }
+    const target = b.p2 * 0.1;
+    if (b.life < b.p2 && target < b.pf1) {
+      b.pf1 = f32(target);
     }
-    if (b.life > b.p2) {
-      const n = b.pf1 * kK;
-      if (n > b.pf1) {
-        b.pf1 = n;
-      }
+    if (b.life > b.p2 && target > b.pf1) {
+      b.pf1 = f32(target);
     }
   }
-  b.hit_dis = b.pf2 * b.pf1;
+  b.scale = b.pf1;
+  b.hit_dis = f32(b.pf2 * b.pf1);
 }
 
-/** `bulletFunc70` @0x51079c —— 出屏 → 瞄准 + 随机角 + 换皮。[实测/推断] */
+/** `bulletFunc70` @0x51079c —— 三段独立出屏反射（x>320 / x<0 / y>480）。[unicorn 逐指令实测] */
 function func70(b: BulletMotion, tg: MotionTargets, rng: DeterministicRng): void {
-  if (b.x > kHalfW || b.y < 0 || b.y > kHalfH) {
-    const d = kDeg180 - b.angle;
-    b.angle = d + rng.randomInt(0, b.p2);
-    if (b.p1 <= 4) {
-      b.angle = angleToMyShip(b, tg);
+  if (b.life < 1) {
+    return;
+  }
+  const hit = [b.x > kHalfW, b.x < 0, b.y > kHalfH];
+  for (let seg = 0; seg < 3; seg += 1) {
+    if (!hit[seg]) {
+      continue;
+    }
+    const c = seg === 2 ? kDeg360 : kDeg180;
+    let a = c - b.angle + rng.randomInt(-b.p2, b.p2);
+    if (seg !== 2 && a < 0) {
+      a += kDeg360;
+    }
+    b.angle = a;
+    switch (b.p1) {
+      case 0: b.bullet_kind = 160; break;
+      case 1: b.bullet_kind = 161; break;
+      case 2: b.bullet_kind = 150; b.scale = b.angle_init; break;
+      case 3: b.bullet_kind = 17; break;
+      case 4: b.bullet_kind = 214; b.angle = angleToMyShip(b, tg); break;
+      default: break;
     }
     b.speed = b.spd_init2;
+    b.accel = b.xacc;
     b.speed_cap = b.xacc_cap;
+    b.life -= 1;
   }
 }
 
-/** `bulletFunc76` @0x510d30 —— `y>480` → 瞄准 + 换皮。[实测] */
+/** `bulletFunc76` @0x510d30 —— y>480 → 瞄准 + 换皮。[实测] */
 function func76(b: BulletMotion, rng: DeterministicRng): void {
+  // 分派入口 0x50c0fc：`life < 1` 整段跳过。
+  if (b.life < 1) {
+    return;
+  }
   if (b.y > kHalfH) {
-    b.angle = kDeg360 - b.angle;
-    b.angle += rng.randomInt(0, b.p2);
+    // 0x510d78 `s8 = 360-angle`，`s0 = float(random) + s8`，**不归一**。
+    b.angle = kDeg360 - b.angle + rng.randomInt(-b.p2, b.p2);
+    // 0x510d80 8B 拷贝 {spdInit2,xacc}→{speed,accel} + speedCap=XC。
     b.speed = b.spd_init2;
+    b.accel = b.xacc;
     b.speed_cap = b.xacc_cap;
+    if (b.p1 === 0) {
+      b.bullet_kind = 17;
+    }
+    b.life -= 1;
   }
 }
 
@@ -737,93 +888,137 @@ function func76(b: BulletMotion, rng: DeterministicRng): void {
 // F 边界反弹 / 镜像
 // ===========================================================================
 
-/** `bulletFunc1` @0x50ce78 —— 三段边界反弹。[实测] */
+/** `bulletFunc1` @0x50ce78 —— 三段独立边界反弹；不写 speed/speedCap。[unicorn 逐指令实测] */
 function func1(b: BulletMotion): void {
-  let bounce = false;
-  if (b.x > kHalfW || b.x < 0 || b.y > kHalfH) {
-    bounce = true;
-  }
-  if (bounce) {
-    b.angle = kDeg180 - b.angle;
-    if (b.angle < 0) {
-      b.angle += kDeg360;
-    }
-  }
-  b.speed = b.spd_init2;
-  b.speed_cap = b.xacc_cap;
-}
-
-/** `bulletFunc7` @0x50d3b8 —— 同 1，`P1>=1` 叠加随机角。[实测] */
-function func7(b: BulletMotion, rng: DeterministicRng): void {
-  let bounce = false;
-  if (b.x > kHalfW || b.x < 0 || b.y > kHalfH || b.y < kTop) {
-    bounce = true;
-  }
-  if (bounce) {
-    b.angle = kDeg180 - b.angle;
-    if (b.angle < 0) {
-      b.angle += kDeg360;
-    }
-    if (b.p1 >= 1) {
-      b.angle += rng.randomInt(0, 360);
-    }
-  }
-}
-
-/** `bulletFunc20` @0x50dde0 —— 边界分段（80/240/340/320 带）。[推断] */
-function func20(b: BulletMotion): void {
-  if (b.y < kTop) {
-    b.life = 1;
-    b.angle = kDeg180 - b.angle;
-    if (b.angle < 0) {
-      b.angle += kDeg360;
-    }
-  } else if (b.y > kHalfH) {
-    b.life = 2;
-    b.angle = kDeg180 - b.angle;
-    if (b.angle < 0) {
-      b.angle += kDeg360;
-    }
-  } else if (b.x > kHalfW) {
-    b.life = 3;
-    b.angle += 90;
-  } else if (b.x < 0) {
-    b.life = 4;
-    b.angle -= 90;
-  }
-}
-
-/** `bulletFunc32` @0x50ea08 —— 按 `P1` 奇偶镜像角。[实测] */
-function func32(b: BulletMotion): void {
-  if (Math.trunc(b.t) !== 0) {
+  if (b.life < 1) {
     return;
   }
-  const a0 = b.angle_init;
-  b.speed = b.spd_init2;
-  b.speed_cap = b.xacc_cap;
-  if ((b.p1 & 1) !== 0) {
-    b.angle = kDeg360 - (a0 - b.p2) + 90;
-  } else {
-    b.angle = a0 - b.p2;
-  }
-}
-
-/** `bulletFunc38` @0x50edcc —— 条件单次反弹；`a = A0 + a`。[推断] */
-function func38(b: BulletMotion): void {
-  let bounce = false;
-  if (b.y > kHalfH || b.y < kTop || b.x > kHalfW || b.x < 0) {
-    bounce = true;
-  }
-  if (bounce) {
-    b.angle = kDeg180 - b.angle;
-    if (b.angle < 0) {
-      b.angle += kDeg360;
+  let hits = 0;
+  if (b.x > kHalfW) { b.angle = mirrorAngle(b.angle, kDeg180); hits += 1; }
+  if (b.x < 0) { b.angle = mirrorAngle(b.angle, kDeg180); hits += 1; }
+  if (b.y > kHalfH) { b.angle = mirrorAngle(b.angle, kDeg360); hits += 1; }
+  b.life -= hits;
+  if (hits > 0 && b.p1 >= 1 && b.p1 <= 4) {
+    const kKindByP1 = [30, 19, 109, 168];
+    b.bullet_kind = kKindByP1[b.p1 - 1];
+    // 表项 idx1(50cf60) 还会把 spdInit2 写进 speed；
+    // idx3(50cf20) 是 8B 拷贝 {spdInit2,xacc}→{speed,accel} 并 speedCap=XC。
+    if (b.p1 === 2 || b.p1 === 4) {
+      b.speed = b.spd_init2;
+    }
+    if (b.p1 === 4) {
+      b.accel = b.xacc;
+      b.speed_cap = b.xacc_cap;
     }
   }
-  b.angle = b.angle_init + b.angle;
 }
 
-/** `bulletFunc57` @0x50fd84 —— 在 `A0±PA` 之间三角波。[实测] */
+/** `bulletFunc7` @0x50d3b8 —— 四段独立边界反弹，每段 life--；每段命中各叠加一次 random(-p1,p1)。[实测] */
+function func7(b: BulletMotion, rng: DeterministicRng): void {
+  if (b.life < 1) {
+    return;
+  }
+  // 原版四段各自 `bl MyMathUtil::random(-p1,p1)`，不是四段命中后统一加一次；
+  // 调用次数不同会让整条 RNG 流错位。
+  let hits = 0;
+  const bounce = (hit: boolean, c: number): void => {
+    if (!hit) {
+      return;
+    }
+    b.angle = mirrorAngle(b.angle, c);
+    if (b.p1 >= 1) {
+      b.angle += rng.randomInt(-b.p1, b.p1);
+    }
+    hits += 1;
+  };
+  bounce(b.x > kHalfW, kDeg180);
+  bounce(b.x < 0, kDeg180);
+  bounce(b.y > kHalfH, kDeg360);
+  bounce(b.y < kTop, kDeg360);
+  b.life -= hits;
+}
+
+/** `bulletFunc20` @0x50dde0 —— 直接改写位置的四档折返链。[unicorn 逐指令实测] */
+function func20(b: BulletMotion): void {
+  if (b.life < 0) {
+    return;
+  }
+  if (b.life === 0) {
+    if (b.x > 240) {
+      b.x = 320;
+      b.life = 1;
+      b.angle += kDeg180;
+    } else if (b.x < 80) {
+      b.x = 0;
+      b.life = 2;
+      b.angle += kDeg180;
+    }
+    if (b.y > 340) {
+      b.y = 420;
+      b.life = 3;
+      b.angle += kDeg180;
+    } else if (b.y < 180) {
+      b.y = 100;
+      b.life = 4;
+      b.angle += kDeg180;
+    }
+    return;
+  }
+  if (b.x <= 80 || b.x >= 240 || b.y <= 180 || b.y >= 340) {
+    return;
+  }
+  const idx = b.life - 1;
+  if (idx > 3) {
+    return;
+  }
+  // 原版四档跳转表是级联 fallthrough；noFallthroughCasesInSwitch 下用顺序 if 复刻。
+  if (idx <= 0) { b.x = 320; b.life = 2; b.angle += kDeg180; }
+  if (idx <= 1) { b.x = 0; b.life = 3; b.angle += kDeg180; }
+  if (idx <= 2) { b.y = 420; b.life = 4; b.angle += kDeg180; }
+  if (idx <= 3) { b.y = 100; b.life = 5; b.angle += kDeg180; }
+}
+
+/** `bulletFunc32` @0x50ea08 —— 节拍门 t%life==0；按 P1 奇偶镜像角。[实测] */
+function func32(b: BulletMotion): void {
+  const t = Math.trunc(b.t);
+  if (t < 0) {
+    return;
+  }
+  const rem = b.life !== 0 ? t % b.life : t;
+  if (rem !== 0) {
+    return;
+  }
+  const s = b.p2;
+  const a0 = b.angle_init;
+  b.speed = b.spd_init2;
+  b.accel = b.xacc;
+  b.speed_cap = b.xacc_cap;
+  b.angle = (b.p1 & 1) ? a0 + s : s - a0;
+  b.p1 += 1;
+}
+
+/** `bulletFunc38` @0x50edcc —— 节拍折返。[unicorn 逐指令实测] */
+function func38(b: BulletMotion): void {
+  const p2 = b.p2;
+  if (p2 < 1) {
+    return;
+  }
+  const dt = Math.trunc(b.t) - b.life;
+  const onBeat = dt > 0 && b.life !== 0 && dt % b.life === 0;
+  if (!onBeat) {
+    if (p2 === 1 && b.p1 === 1) {
+      b.p1 += 1;
+    }
+    return;
+  }
+  b.p2 = p2 - 1;
+  b.angle = b.angle_init + b.angle;
+  if (p2 - 1 === 1) {
+    b.p1 += 1;
+  }
+}
+
+/** `bulletFunc57` @0x50fd84 —— 在 A0±PA 之间三角波。[实测] */
 function func57(b: BulletMotion, tg: MotionTargets): void {
   if (tg.global_state === 0x17) {
     b.angle += b.f598;
@@ -838,40 +1033,100 @@ function func57(b: BulletMotion, tg: MotionTargets): void {
   }
 }
 
-/** `bulletFunc58` @0x50fe00 —— 折返角。[实测] */
+/** `bulletFunc58` @0x50bfa8 —— 节拍门：p1 偶 → 90+A0；奇 → 90−A0；末尾 p1++。[实测] */
 function func58(b: BulletMotion): void {
-  if (Math.trunc(b.t) !== 0) {
+  const t = Math.trunc(b.t);
+  if (t < 0) {
     return;
   }
-  if ((b.p1 & 1) !== 0) {
+  const rem = b.life !== 0 ? t % b.life : t;
+  if (rem !== 0) {
+    return;
+  }
+  b.angle = (b.p1 & 1) === 0 ? 90 + b.angle_init : 90 - b.angle_init;
+  b.p1 += 1;
+}
+
+/** `bulletFunc59` @0x50c768 —— t<life 每帧 angle+1；否则 prevAngle 与 f598 反号时叠加。[实测] */
+function func59(b: BulletMotion): void {
+  if (Math.trunc(b.t) < b.life) {
+    b.angle += 1;
+    return;
+  }
+  if ((b.prev_angle < 0 && b.f598 > 0) || (b.prev_angle > 0 && b.f598 < 0)) {
+    b.f598 += b.prev_angle;
     b.angle += b.f598;
-  } else {
-    b.angle -= b.f598;
-    b.angle_acc = b.angle_acc - b.f598;
   }
-  b.angle = kDeg360 - b.angle + 90;
 }
 
-/** `bulletFunc62` @0x510088 —— 边界反弹 + 随机角。[推断] */
+/** `bulletFunc62` @0x510088 —— 直接改写位置的四段边界折返。[unicorn 逐指令实测] */
 function func62(b: BulletMotion, rng: DeterministicRng): void {
-  if (b.x > kHalfW || b.x < 0 || b.y > kHalfH || b.y < kTop) {
-    b.angle = kDeg180 - b.angle;
-    if (b.angle < 0) {
-      b.angle += kDeg360;
+  if (b.life < 0) {
+    return;
+  }
+  const cw = 2 * b.half_w;
+  const ch = 2 * b.half_h;
+  if (b.life >= 1) {
+    let nx = b.x;
+    let ny = b.y;
+    if (b.half_w + cw < b.x) {
+      nx = -cw; b.life -= 1; b.bullet_kind = 47;
+    } else if (nx < -cw) {
+      nx = b.half_w + cw; b.life -= 1; b.bullet_kind = 47;
     }
-    b.angle += rng.randomInt(-0x50, 0x50);
+    if (b.half_h + ch < b.y) {
+      ny = kTop - ch; b.life -= 1; b.bullet_kind = 47;
+    } else if (ny < kTop - ch) {
+      ny = b.half_h + ch; b.life -= 1; b.bullet_kind = 47;
+    }
+    b.x = nx;
+    b.y = ny;
+    return;
+  }
+  if (b.half_w + cw < b.x) {
+    b.bullet_kind = 45;
+    b.angle = kDeg180 + rng.randomInt(-80, 80);
+    b.speed = b.xacc; b.life -= 1;
+  }
+  if (-cw > b.x) {
+    b.bullet_kind = 45;
+    b.angle = rng.randomInt(-80, 80);
+    b.speed = b.xacc; b.life -= 1;
+  }
+  if (b.half_h + ch < b.y) {
+    b.bullet_kind = 45;
+    b.angle = 270 + rng.randomInt(-80, 80);
+    b.speed = b.xacc; b.life -= 1;
+  }
+  if (kTop - ch > b.y) {
+    b.bullet_kind = 45;
+    b.angle = 90 + rng.randomInt(-80, 80);
+    b.speed = b.xacc; b.life -= 1;
   }
 }
 
-/** `bulletFunc67` @0x510544 —— 边界反弹（320/480/40）+ 换皮。[推断：忽略特效] */
+/** `bulletFunc67` @0x510544 —— 四段独立反弹 + 尾段换皮复位。[unicorn 逐指令实测] */
 function func67(b: BulletMotion): void {
-  if (b.x > kHalfW || b.y > kHalfH || b.y < kTop) {
-    b.angle = kDeg180 - b.angle;
-    if (b.angle < 0) {
-      b.angle += kDeg360;
-    }
+  if (b.life >= 1) {
+    let hits = 0;
+    if (b.x > kHalfW) { b.angle = mirrorAngle(b.angle, kDeg180); hits += 1; }
+    if (b.x < 0) { b.angle = mirrorAngle(b.angle, kDeg180); hits += 1; }
+    if (b.y > kHalfH) { b.angle = mirrorAngle(b.angle, kDeg360); hits += 1; }
+    if (b.y < kTop) { b.angle = mirrorAngle(b.angle, kDeg360); hits += 1; }
+    b.life -= hits;
+    b.p1 += hits;
   }
-  b.speed_cap = b.xacc_cap;
+  if (b.p1 === 1) {
+    if (b.p2 === 10) {
+      b.bullet_kind = 198;
+      b.angle_acc = b.f598;
+      b.f56c = b.prev_angle;
+      b.speed = b.spd_init2;
+      b.accel = b.xacc;
+      b.speed_cap = b.xacc_cap;
+    }
+    b.p2 += 1;
+  }
 }
 
 /** `bulletFunc77` @0x510dcc —— 状态 `0x21/0x22` → 镜像角。[实测] */
@@ -884,13 +1139,15 @@ function func77(b: BulletMotion, tg: MotionTargets): void {
   }
 }
 
-/** `bulletFunc78` @0x510e88 —— `y<40` → 镜像角。[实测] */
+/** `bulletFunc78` @0x510e88 —— `y<40` → 镜像角（360-angle）+ life--。[实测] */
 function func78(b: BulletMotion): void {
+  // 分派入口 0x50c180：`life < 1` 整段跳过。
+  if (b.life < 1) {
+    return;
+  }
   if (b.y < kTop) {
-    b.angle = kDeg180 - b.angle;
-    if (b.angle < 0) {
-      b.angle += kDeg360;
-    }
+    b.angle = mirrorAngle(b.angle, kDeg360);
+    b.life -= 1;
   }
 }
 
@@ -923,13 +1180,21 @@ function func16(b: BulletMotion, tg: MotionTargets): void {
   }
 }
 
-/** `bulletFunc24` @0x50e100 —— 接近自机 → 重置角/上限。[推断阈值] */
+/** `bulletFunc24` @0x50e100 —— 十字带触发 → 重置角/上限。[实测] */
 function func24(b: BulletMotion, tg: MotionTargets): void {
-  if (distSqToMyShip(b, tg) < b.xacc && b.p2 === 0) {
-    b.angle = b.angle_init;
-    b.p2 = 1;
-    b.speed_cap = b.xacc_cap;
+  const lim = b.life * b.life;
+  const dx = b.x - tg.my_ship_x;
+  const dy = b.y - tg.my_ship_y;
+  const hit = dx * dx < lim || dy * dy < lim;
+  if (!hit || b.p2 !== 0) {
+    return;
   }
+  b.angle = b.angle_init;
+  b.angle_acc = b.f598;
+  b.f56c = b.prev_angle;
+  b.speed = b.spd_init2;
+  b.speed_cap = b.xacc_cap;
+  b.p2 = 1;
 }
 
 /** `bulletFunc34` @0x50eaa4 —— 全局状态 `==7` → 悬停。[实测] */
@@ -986,32 +1251,61 @@ function func42(b: BulletMotion, tg: MotionTargets): void {
   b.speed_cap = b.xacc_cap;
 }
 
-/** `bulletFunc44` @0x50f580 —— `L==1` 且 `dist≤P1` → 重置。[实测] */
-function func44(b: BulletMotion, tg: MotionTargets): void {
-  if (b.p2 === 0 && b.life === 1 && distSqToMyShip(b, tg) <= b.p1) {
-    b.angle = b.angle_init;
-    b.speed_cap = b.xacc_cap;
-    b.p2 = 1;
+/** `bulletFunc44` @0x50f580 —— L==1 且 y<P1 → 16B 复位。[实测] */
+function func44(b: BulletMotion): void {
+  if (b.p2 !== 0) {
+    return;
   }
+  if (b.life !== 1) {
+    return;
+  }
+  if (!(b.y < b.p1)) {
+    return;
+  }
+  b.angle = b.angle_init;
+  b.angle_acc = b.f598;
+  b.f56c = b.prev_angle;
+  b.speed = b.spd_init2;
+  b.accel = b.xacc;
+  b.speed_cap = b.xacc_cap;
+  b.p2 += 1;
 }
 
-/** `bulletFunc45` @0x50f600 —— 触发重置。[推断：调用语义未知] */
+/** `bulletFunc45` @0x50f600 —— 首帧 setOpacity(life)+setScale(V1)。[实测] */
 function func45(b: BulletMotion): void {
-  if (b.p2 === 0) {
-    b.speed = b.spd_init2;
-    b.p2 = 1;
+  if (b.p2 !== 0) {
+    return;
   }
+  b.opacity = b.life;
+  b.scale = b.spd_init2;
+  b.p2 = 1;
 }
 
 /** `bulletFunc53` @0x50fa34 —— 两阶段接近触发。[推断：常量存疑] */
 function func53(b: BulletMotion, tg: MotionTargets): void {
-  if (b.p1 === 0 && distSqToMyShip(b, tg) <= b.life) {
+  if (b.p1 === 0) {
+    if (!(b.y < tg.my_ship_y)) {
+      return;
+    }
     b.p1 = 1;
+    return;
   }
-  if (b.p1 === 1 && b.p2 === b.life) {
+  if (b.p1 !== 1) {
+    return;
+  }
+  if (b.p2 === 0) {
+    b.bullet_kind = 210;
+    b.accel = -0.1;
+    b.speed_cap = 0;
+  } else if (b.p2 === b.life) {
     b.angle = b.angle_init;
+    b.angle_acc = b.f598;
+    b.f56c = b.prev_angle;
+    b.speed = b.spd_init2;
+    b.accel = b.xacc;
     b.speed_cap = b.xacc_cap;
   }
+  b.p2 += 1;
 }
 
 /** `bulletFunc60` @0x50fea8 —— 接近敌机 → 反向角加速。[实测] */
@@ -1026,6 +1320,9 @@ function func60(b: BulletMotion, tg: MotionTargets): void {
 
 /** `bulletFunc74` @0x510c3c —— `LP` 状态机。[推断] */
 function func74(b: BulletMotion, tg: MotionTargets): void {
+  if (b.bullet_loop === 0 && Math.trunc(b.t) === 11) {
+    b.opacity = b.life;
+  }
   if (Math.trunc(b.t) === 0xb) {
     b.bullet_loop = 1;
   }
@@ -1047,29 +1344,29 @@ function func80(b: BulletMotion): void {
 }
 
 /** `bulletFunc84` @0x510ff4 —— 换皮 / 触发。[实测] */
-function func84(b: BulletMotion, tg: MotionTargets): void {
-  if (b.p2 === 1) {
-    let t = b.p1;
-    if (t > 255) {
-      t = 255;
-    }
-    if (t >= BULLET_KIND_MIN && t <= BULLET_KIND_MAX) {
-      b.bullet_kind = t;
-    }
-    if (distSqToMyShip(b, tg) <= b.spd_init2) {
+function func84(b: BulletMotion): void {
+  if (b.p2 === 0) {
+    b.opacity = 0;
+    const dx = b.x - b.spd_init2;
+    const dy = b.y - b.xacc;
+    if (dx * dx + dy * dy > b.life) {
       b.p2 = 1;
     }
+  } else if (b.p2 === 1) {
+    let a = b.p1 << 4;
+    if (a >= 255) {
+      a = 255;
+    }
+    b.opacity = a;
+    b.p1 += 1;
   }
 }
 
-/** `bulletFunc85` @0x5110a4 —— 接近自机 → 换 `hitDis`。[实测] */
+/** `bulletFunc85` @0x5110a4 —— 无条件 hitDis=4.0；距离门命中且 kind==0x25 时 20.0。[实测] */
 function func85(b: BulletMotion, tg: MotionTargets): void {
-  if (distSqToMyShip(b, tg) < b.life) {
-    if (b.bullet_kind === 0x25) {
-      b.hit_dis = 20;
-    } else if (b.bullet_kind === 0x2a) {
-      b.hit_dis = 4;
-    }
+  b.hit_dis = 4;
+  if (distSqToMyShip(b, tg) < b.life && b.bullet_kind === 0x25) {
+    b.hit_dis = 20;
   }
 }
 
@@ -1077,25 +1374,70 @@ function func85(b: BulletMotion, tg: MotionTargets): void {
 // H 分裂 / 召唤（Boss）—— 子子弹生成交宿主，这里只做状态标记
 // ===========================================================================
 
-/** `bulletFunc31` @0x50e498 —— Boss 分裂/召唤。[推断：子子弹生成交宿主] */
+/** `bulletFunc31` @0x50e498 —— t==p1 时按 (life-1) 走 31 档跳转表换皮 + 设半径。[实测] */
 function func31(b: BulletMotion): void {
-  if (Math.trunc(b.t) === b.p1 && b.life <= 0x1e) {
+  const t = Math.trunc(b.t);
+  // 本项目扩展：链式分裂标记与原版 life>=1 门解耦。
+  if (t === b.p1 && b.life <= 0x1e) {
     b.rotate_flg = 2;
-    b.p2 = 1; // 标记「本帧请求分裂」
+    b.p2 = 1;
   }
+  if (t !== b.p1) {
+    return;
+  }
+  const idx = b.life - 1;
+  if (idx < 0 || idx > 30) {
+    return;
+  }
+  const kHitDis = [
+    f32(2.4), 3, 3, 43, f32(2.4), f32(2.4),
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4,
+  ];
+  const kKind = [
+    45, 45, 45, 45, 45, 45,
+    207, 210, 135, 206, 10, 186, 91, 184, 187, 189,
+    184, 189, 189, 175, 150, 169, 217, 218, 199, 211,
+    213, 215, 64, 69, 70,
+  ];
+  b.hit_dis = kHitDis[idx];
+  b.bullet_kind = kKind[idx];
 }
 
-/** `bulletFunc50` @0x50f800 —— Boss 蓄力/阶段。[推断：忽略音效/特效] */
-function func50(b: BulletMotion): void {
-  if (b.life === 0 && (b.x > 280 || b.y < kTop || b.y > 440 || b.x < 80)) {
-    b.life = 1;
-    b.speed = 0;
-    b.speed_cap = 0;
-  } else if (b.life === 1) {
+/** `bulletFunc50` @0x50f800 —— 三阶段蓄力状态机。[unicorn 逐指令实测] */
+function func50(b: BulletMotion, rng: DeterministicRng): void {
+  if (b.life === 0) {
+    if (b.x > 280 || b.x < 40 || b.y > 440 || b.y < 80) {
+      b.life = 1;
+      b.speed = 0;
+      b.accel = 0;
+      b.speed_cap = 0;
+    }
+    return;
+  }
+  if (b.life === 1) {
+    if (b.p1 <= 12 && (b.p1 & 1) === 0) {
+      if (b.p1 === 12) {
+        b.life = 2;
+      } else {
+        rng.randomInt(-5, 5);
+        rng.randomInt(-5, 5);
+      }
+    }
     b.p1 += 1;
-  } else if (b.life === 2 && b.p2 === 0x1e) {
-    b.angle = b.angle_init;
-    b.speed_cap = b.xacc_cap;
+    return;
+  }
+  if (b.life === 2) {
+    if (b.p2 === 30) {
+      b.angle = b.angle_init;
+      b.angle_acc = b.f598;
+      b.f56c = b.prev_angle;
+      b.speed = b.spd_init2;
+      b.accel = b.xacc;
+      b.speed_cap = b.xacc_cap;
+    }
+    b.p2 += 1;
   }
 }
 
@@ -1106,79 +1448,161 @@ function func55(b: BulletMotion, tg: MotionTargets): void {
   }
 }
 
-/** `bulletFunc83` @0x511fcc —— Boss 摆线。[推断：常量 160/260/30/90/40] */
+/** `bulletFunc83` @0x511fcc —— 双谐波参数方程，**绝对定位**；不写 angle/speed。[实测] */
 function func83(b: BulletMotion): void {
-  const n = Math.min(60, b.t);
-  b.angle = 160 + 260 * sinDeg(30 * n + 90) + 40;
+  const d = b.t - b.p2;
+  if (d < 0) {
+    return;
+  }
+  const r = Math.min(f32(0.2 * d), 60);
+  const a = 30 * sinDeg(d);
+  const life = b.life;
+  const p1 = b.p1;
+  b.x = r * cosDeg(d) + 160 + cosDeg(a) * life - sinDeg(a) * p1;
+  b.y = r * sinDeg(d) + 260 + sinDeg(a) * life + cosDeg(a) * p1;
 }
 
 // ===========================================================================
 // I 换皮 / 半径
 // ===========================================================================
 
-/** `bulletFunc30` @0x50e224 —— 按 `bulletType` 换贴图 + `hitDis`。[实测] */
+/** `bulletFunc30` @0x50e224 —— 按 (t-life)%p1 分档换 hitDis（20.0 / 4.0）。[实测] */
 function func30(b: BulletMotion): void {
-  if (Math.trunc(b.t) !== b.p2) {
+  // 0x50e248 逐指令：d = t-life；d<0 → 只做 setRotation（不改状态）。
+  //   rem = d % p1（p1==0 时 ARM sdiv 0 → rem = d）；
+  //   rem==0 → hitDis=20.0；rem==p2-1 → hitDis=4.0；其余只 setRotation。
+  const d = Math.trunc(b.t) - b.life;
+  if (d < 0) {
     return;
   }
-  b.hit_dis = 4;
+  const rem = b.p1 !== 0 ? d % b.p1 : d;
+  if (rem === 0) {
+    b.hit_dis = 20;
+  } else if (rem === b.p2 - 1) {
+    b.hit_dis = 4;
+  }
 }
 
-/** `bulletFunc54` @0x50faf4 —— 按 `life` 阶段换皮。[实测：贴图交宿主] */
+/** `bulletFunc54` @0x50faf4 —— 节拍门 t%p1；按 life 阶段换皮。[实测] */
 function func54(b: BulletMotion): void {
-  if (Math.trunc(b.t) !== 0) {
+  const t = Math.trunc(b.t);
+  const rem = b.p1 !== 0 ? t % b.p1 : t;
+  if (rem !== 0) {
     return;
   }
-  b.speed = b.spd_init2;
-  b.speed_cap = b.xacc_cap;
+  if (b.life === 0) {
+    if (b.p2 === 0) {
+      b.bullet_kind = 0x94;
+    } else if (b.p2 === 1) {
+      b.bullet_kind = 0xcc;
+    }
+  } else if (b.life === 1) {
+    // 字节表 @0xb0a9c7 → kind 163,157,158,159,160,161,162（旧实现写成了逆序）。
+    const kTypeByP2Mod7 = [0xa3, 0x9d, 0x9e, 0x9f, 0xa0, 0xa1, 0xa2];
+    b.bullet_kind = kTypeByP2Mod7[((b.p2 % 7) + 7) % 7];
+  } else if (b.life === 2) {
+    if (b.p2 === 0) {
+      b.bullet_kind = 0x4a;
+    } else if (b.p2 === 1) {
+      b.bullet_kind = 0x26;
+    } else if (b.p2 === 2) {
+      b.bullet_kind = 0x95;
+    } else {
+      b.p2 += 1;
+      return;
+    }
+    b.speed = b.spd_init2;
+    b.speed_cap = b.xacc_cap;
+  }
+  b.p2 += 1;
 }
 
-/** `bulletFunc65` @0x510498 —— 按 `life`/`P2` 换皮。[实测：贴图交宿主] */
+/** `bulletFunc65` @0x510498 —— 节拍门 t%p1；按 life/P2 换皮并重置速度，末尾 life--。[实测] */
 function func65(b: BulletMotion): void {
-  if (Math.trunc(b.t) !== 0) {
+  const t = Math.trunc(b.t);
+  if (t < 0) {
     return;
   }
-  b.speed = b.spd_init2;
-  b.speed_cap = b.xacc_cap;
+  const rem = b.p1 !== 0 ? t % b.p1 : t;
+  if (rem !== 0) {
+    return;
+  }
+  if (b.life === 0) {
+    if (b.p2 === 0) {
+      b.bullet_kind = 0x37;
+    } else if (b.p2 === 1) {
+      b.bullet_kind = 0x3c;
+    }
+    b.speed = b.xacc;
+  } else if (b.life === 1) {
+    if (b.p2 === 0) {
+      b.bullet_kind = 0x2e;
+    } else if (b.p2 === 1) {
+      b.bullet_kind = 0x33;
+    }
+    b.speed = b.spd_init2;
+  }
+  b.life -= 1;
 }
 
 // ===========================================================================
 // J 参数方程 / 摆线
 // ===========================================================================
 
-/** `bulletFunc26` @0x511524 —— `a += XC·sin(XC + X·L)`。[推断] */
+/** `bulletFunc26` @0x511524 —— 参数方程 setPosition（绝对坐标）。[推断] */
 function func26(b: BulletMotion): void {
-  b.angle = b.angle + b.xacc_cap * sinDeg(b.xacc_cap + b.xacc * b.life);
+  const t = b.t;
+  const r = b.p2 * sinDeg(b.xacc * t + b.xacc_cap);
+  const a = b.angle + b.speed * t;
+  b.x = b.life + r * cosDeg(a);
+  b.y = b.p1 + r * sinDeg(a);
 }
 
-/** `bulletFunc33` @0x51160c —— 双正弦参数轨迹。[推断] */
+/** `bulletFunc33` @0x51160c —— 双正弦目标坐标写入 xacc/xaccCap（不写 angle）。[推断] */
 function func33(b: BulletMotion): void {
-  const a = b.angle + b.f598 * b.t;
-  const px = b.speed * b.t * cosDeg(a);
-  const py = b.speed * b.t * sinDeg(a);
-  b.xacc = px;
-  b.xacc_cap = py;
-  b.angle = angleToPoint(0, 0, px, py);
+  // 独立符号 0x51160c 逐指令：只把两个「目标坐标」写进 xacc / xaccCap，
+  // 尾部 atan2f 只用于 setRotation。★ 原版完全不写 angle。
+  const t = b.t;
+  const x = b.angle_init + b.speed * t * cosDeg(b.angle)
+    + b.spd_init2 * cosDeg(b.f598 * t);
+  const y = b.prev_angle + b.speed * t * sinDeg(b.angle)
+    + b.spd_init2 * sinDeg(b.f598 * t);
+  b.xacc = x;
+  b.xacc_cap = y;
 }
 
-/** `bulletFunc66` @0x511ab4 —— 参数方程。[推断] */
+/** `bulletFunc66` @0x511ab4 —— 参数方程 setPosition（绝对坐标）；末尾 p2++。[推断] */
 function func66(b: BulletMotion): void {
-  const c = cosDeg(b.angle_init * b.p2 + b.f598);
-  const s = sinDeg(b.xacc * b.p2 + b.speed_cap);
-  b.angle = kDeg360 - (c + s) + 90;
+  const u = b.angle_init * b.p2;
+  const a = b.xacc * b.p2 + b.speed_cap;
+  b.x = b.prev_angle + u * cosDeg(b.f598) + b.spd_init2 * cosDeg(a);
+  b.y = b.xacc_cap + u * sinDeg(b.f598) + b.spd_init2 * sinDeg(a);
+  b.p2 += 1;
 }
 
-/** `bulletFunc75` @0x511c08 —— 双正弦参数轨迹。[推断] */
+/** `bulletFunc75` @0x511c08 —— 极坐标 setPosition（绝对定位）；末尾 p2++。[推断] */
 function func75(b: BulletMotion): void {
-  const c = cosDeg(b.angle_init + b.f598 * b.p2);
-  const s = sinDeg(b.spd_init2 + b.xacc * b.p2);
-  b.angle = kDeg360 - (c + s) + 90;
+  const p2 = b.p2;
+  const r = b.spd_init2 + b.xacc * p2;
+  const a = b.angle_init + b.f598 * p2;
+  b.x = b.prev_angle + r * cosDeg(a);
+  b.y = b.xacc_cap + r * sinDeg(a);
+  b.p2 += 1;
 }
 
-/** `bulletFunc82` @0x511e48 —— 敌机/自机参数方程。[推断] */
+/** `bulletFunc82` @0x511e48 —— 以自机坐标为基点的极坐标绝对定位；不写 angle/speed。[实测] */
 function func82(b: BulletMotion, tg: MotionTargets): void {
-  const base = b.p1 === 0 ? angleToMyShip(b, tg) : angleToEnemy(b, tg);
-  b.angle = base + b.f598 * sinDeg(b.spd_init2 + b.xacc * b.t);
+  const d = b.t - b.p2;
+  let r = b.spd_init2;
+  if (d >= 0) {
+    r += b.xacc * d;
+  }
+  r = Math.max(r, b.xacc_cap);
+  const ang = b.angle_init + b.f598 * b.t;
+  const ox = tg.has_my_ship ? tg.my_ship_x : 320;
+  const oy = tg.has_my_ship ? tg.my_ship_y : 600;
+  b.x = ox + r * cosDeg(ang);
+  b.y = oy + r * sinDeg(ang);
 }
 
 // ===========================================================================
@@ -1211,7 +1635,7 @@ function func22(b: BulletMotion, tg: MotionTargets): void {
   }
 }
 
-/** `bulletFunc23` @0x50e078 —— 状态 `==5` → `v = L·0.1`（+换皮）。[实测] */
+/** `bulletFunc23` @0x50e078 —— 状态 `==5` → `v = L·0.1`。[实测] */
 function func23(b: BulletMotion, tg: MotionTargets): void {
   if (tg.global_state === 5) {
     b.speed = b.life * 0.1;
@@ -1248,88 +1672,207 @@ function func72(b: BulletMotion, tg: MotionTargets): void {
 }
 
 // ===========================================================================
-// L 辅助（无字段写入）
+// L 辅助（透明度 / 环绕 / 折角 / 节拍）
 // ===========================================================================
 
-/** `bulletFunc3/6/8/28/36/79` —— 边界/着色/取值辅助，无运动字段写入。[实测] */
-function funcNoop(): void {
-  // 空实现：与原版「无字段写入」等价。
+/** `bulletFunc3` @0x51130c —— vx/vy 叠加 0.01633334·(cos life, sin life)（单精度）。[实测] */
+function func3(b: BulletMotion): void {
+  const c = cosDegF(b.life);
+  const s = sinDegF(b.life);
+  b.vx += f32(K_DRIFT * c);
+  b.vy += f32(K_DRIFT * s);
 }
 
-/** `bulletFunc27` @0x50cd54 —— `P1==1` → `hitHantei=0`；否则时间缩放。[推断] */
-function func27(b: BulletMotion): void {
-  if (b.p1 === 1) {
-    b.hit_hantei = false;
+/** `bulletFunc6` @0x50d2e8 —— X 轴环绕：越界换边并 life--。[实测] */
+function func6(b: BulletMotion): void {
+  if (b.life < 1) {
+    return;
+  }
+  const w = b.half_w * 2;
+  if (b.x > b.half_w + w) {
+    b.x = -w;
+    b.life -= 1;
+  }
+  if (b.x < -w) {
+    b.x = b.half_w + w;
+    b.life -= 1;
   }
 }
 
-/** `bulletFunc46` @0x50f654 —— 每 N 帧把角 ±90。[实测] */
+/** `bulletFunc8` @0x50d574 —— X/Y 双轴环绕（Y 下界 40-h）。[实测] */
+function func8(b: BulletMotion): void {
+  if (b.life < 1) {
+    return;
+  }
+  const w = b.half_w * 2;
+  const h = b.half_h * 2;
+  if (b.x > b.half_w + w) {
+    b.x = -w;
+    b.life -= 1;
+  }
+  if (b.x < -w) {
+    b.x = b.half_w + w;
+    b.life -= 1;
+  }
+  if (b.y > b.half_h + h) {
+    b.y = kTop - h;
+    b.life -= 1;
+  }
+  if (b.y < kTop - h) {
+    b.y = b.half_h + h;
+    b.life -= 1;
+  }
+}
+
+/** `bulletFunc28` @0x50e1e8 —— alpha = max(255 - p2·(t-p1), life)，淡出。[实测] */
+function func28(b: BulletMotion): void {
+  const d = Math.trunc(b.t) - b.p1;
+  let a = 0;
+  if (d >= 0) {
+    a = 255 - b.p2 * d;
+    if (a < b.life) {
+      a = b.life;
+    }
+  }
+  b.opacity = a;
+}
+
+/** `bulletFunc79` @0x510ef0 —— alpha = min(p2·(t-p1), life)，淡入。[实测] */
+function func79(b: BulletMotion): void {
+  const d = Math.trunc(b.t) - b.p1;
+  let a = 0;
+  if (d >= 0) {
+    a = b.p2 * d;
+    if (a > b.life) {
+      a = b.life;
+    }
+  }
+  b.opacity = a;
+}
+
+/** `bulletFunc36` @0x50ed50 —— alpha = 128 + 128·sin(p1·(t-life)+90)；hitHantei=alpha>127。[实测] */
+function func36(b: BulletMotion): void {
+  const d = Math.trunc(b.t) - b.life;
+  if (d < 0) {
+    b.opacity = 255;
+    return;
+  }
+  const s = Math.trunc(f32(sinDegF(b.p1 * d + 90) * 128));
+  let a = s + 128;
+  if (a >= 255) {
+    a = 255;
+  }
+  const c = a < 0 ? 0 : a;
+  b.hit_hantei = c > 127;
+  b.opacity = c < 128 ? c : a;
+}
+
+/** `bulletFunc27` —— no-op：update 分派落在共用出口，独立符号不是逐帧路径。 */
+function func27(): void {}
+
+/** `bulletFunc46` @0x50f654 —— 每 N 帧把角赋成 180/0（不是累加）。[实测] */
 function func46(b: BulletMotion): void {
-  if (Math.trunc(b.t) === 0) {
+  const t = Math.trunc(b.t);
+  if (t === 0) {
+    b.bullet_life = b.p1;
+    if (t !== b.p1) {
+      return;
+    }
+  } else if (t !== b.bullet_life) {
     return;
   }
-  if (Math.trunc(b.t) === b.bullet_life) {
-    b.angle += b.life === 0 ? 90 : -90;
-    b.bullet_life = Math.trunc(b.t);
-  }
+  b.angle = 90 + (b.life === 0 ? -90 : 90);
+  b.bullet_loop += 1;
+  b.bullet_life = b.p2 * b.bullet_loop + (b.p1 + t);
 }
 
-/** `bulletFunc52` @0x50f9e4 —— 随机角。[实测] */
+/** `bulletFunc52` @0x50f9e4 —— 节拍门 + `angle = p1 · random(-p2,p2)`。[实测] */
 function func52(b: BulletMotion, rng: DeterministicRng): void {
-  if (Math.trunc(b.t) !== 0) {
+  // 0x50f9f0 逐指令：t>=0 且 t%life==0（life==0 时退化为 t==0）；
+  //   `neg w0,w1` → random(-p2,p2)，结果再乘 p1 写进 angle。
+  const t = Math.trunc(b.t);
+  if (t < 0) {
     return;
   }
-  b.angle = rng.randomInt(0, b.p2);
+  const rem = b.life !== 0 ? t % b.life : t;
+  if (rem !== 0) {
+    return;
+  }
+  b.angle = b.p1 * rng.randomInt(-b.p2, b.p2);
 }
 
-/** `bulletFunc61` @0x50ff78 —— 四方向（0/90/180/270）。[实测] */
+/** `bulletFunc61` @0x50ff78 —— 节拍门 (t-life)%p1==0；X/Y 轴四方向。[实测] */
 function func61(b: BulletMotion, tg: MotionTargets): void {
-  if (Math.trunc(b.t) !== 0) {
+  const d = Math.trunc(b.t) - b.life;
+  if (d < 0) {
     return;
   }
-  const dx = tg.has_my_ship ? b.x - tg.my_ship_x : 0;
-  const dy = tg.has_my_ship ? b.y - tg.my_ship_y : 0;
-  if (dx < 0 && dy < 0) {
-    b.angle = 90;
-  } else if (dx < 0 && dy >= 0) {
-    b.angle = 180;
-  } else if (dx >= 0 && dy >= 0) {
-    b.angle = 270;
+  const rem = b.p1 !== 0 ? d % b.p1 : d;
+  if (rem !== 0) {
+    return;
+  }
+  if ((b.p2 & 1) === 0) {
+    b.angle = b.x < tg.my_ship_x ? 0 : 180;
   } else {
-    b.angle = 0;
+    b.angle = b.y < tg.my_ship_y ? 90 : 270;
   }
+  // 0x510034 是 8B 拷贝 {spdInit2,xacc}→{speed,accel}，漏写 accel 会让同帧共用出口少加一次 xacc。
   b.speed = b.spd_init2;
+  b.accel = b.xacc;
   b.speed_cap = b.xacc_cap;
+  b.p2 += 1;
 }
 
-/** `bulletFunc63` @0x510394 —— `a=A0; aa=-F98`。[实测] */
+/** `bulletFunc63` @0x510394 —— 节拍门；a=A0; aa=-F98; f56c=-PA。[实测] */
 function func63(b: BulletMotion): void {
-  if (Math.trunc(b.t) === 0) {
-    b.angle = b.angle_init;
-    b.angle_acc = -b.f598;
+  const d = Math.trunc(b.t) - b.life;
+  if (d < 0) {
+    return;
   }
+  const rem = b.p1 !== 0 ? d % b.p1 : d;
+  if (rem !== 0) {
+    return;
+  }
+  b.angle = b.angle_init;
+  b.angle_acc = -b.f598;
+  b.f56c = -b.prev_angle;
 }
 
-/** `bulletFunc64` @0x5103d0 —— 分阶段。[实测] */
+/** `bulletFunc64` @0x5103d0 —— 节拍门 t%p1；按 life 分阶段；末尾 life--。[实测] */
 function func64(b: BulletMotion, tg: MotionTargets): void {
+  const t = Math.trunc(b.t);
+  const rem = b.p1 !== 0 ? t % b.p1 : t;
+  if (rem !== 0) {
+    return;
+  }
   if (b.life === 0) {
     b.angle = b.angle_init;
     b.speed = b.spd_init2;
+    b.accel = 0;
+    b.speed_cap = 0;
   } else if (b.life === 1) {
     b.angle = angleToMyShip(b, tg);
     b.speed = b.spd_init2;
+    b.accel = b.xacc;
     b.speed_cap = b.xacc_cap;
   }
+  b.life -= 1;
 }
 
-/** `bulletFunc37` @0x51172c —— 正弦角 `a = 75·sin(L + X·T − 90) + 180`。[推断] */
+/** `bulletFunc37` @0x51172c —— setOpacity + setPosition 绝对坐标 + hitHantei。[推断] */
 function func37(b: BulletMotion): void {
-  b.angle = 75 * sinDeg(b.life + b.xacc * b.t - 90) + 180;
+  const t = b.t;
+  const arg = b.xacc * t + b.life;
+  const s = sinDeg(arg - 90);
+  b.opacity = Math.trunc(75 * s + 180);
+  b.x = b.angle_init + b.xacc_cap * sinDeg(arg);
+  b.y = b.f598 + b.spd_init2 * t;
+  b.hit_hantei = s >= 0;
 }
 
 // --- 分派 -------------------------------------------------------------------
 
-/** `IsKnownBulletFunc`：该编号是否在 79 个已知 `bulletFunc` 集合内。 */
+/** `IsKnownBulletFunc`：该编号是否在已知 `bulletFunc` 集合内。 */
 export function isKnownBulletFunc(funcNo: number): boolean {
   return KNOWN_BULLET_FUNCS.has(funcNo);
 }
@@ -1337,31 +1880,54 @@ export function isKnownBulletFunc(funcNo: number): boolean {
 const KNOWN_BULLET_FUNCS: ReadonlySet<number> = new Set([
   0, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
   24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43,
-  44, 45, 46, 47, 48, 50, 51, 52, 53, 54, 55, 57, 58, 60, 61, 62, 63, 64, 65, 66,
+  44, 45, 46, 47, 48, 50, 51, 52, 53, 54, 55, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66,
   67, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85,
 ]);
 
 /**
- * `ApplyBulletFunc` —— 79 个 `bulletFunc` 的逐帧分派（对应 `EnemyBullet::update`
- * 的间接跳转表）。
- *
- * @returns `true` 表示该编号已实现，`false` 表示未实现（调用者应记录）。
+ * `BulletFuncStage` —— 原版 update 的三段调用时机：
+ *   0 early = 分派入口 / 共用出口内联；
+ *   1 mid   = 仅 func29（共用出口 accel 应用之后、速度合成之前）；
+ *   2 late  = 二次分派的 8 个独立符号（速度合成之后）。
  */
-export function applyBulletFunc(
+function bulletFuncStage(funcNo: number): number {
+  switch (funcNo) {
+    case 29:
+      return 1;
+    case 33: case 37: case 51: case 66:
+    case 75: case 81: case 82: case 83:
+      return 2;
+    default:
+      return 0;
+  }
+}
+
+/**
+ * `ApplyBulletFuncStage` —— `bulletFunc` 的逐帧分派（对应 `EnemyBullet::update`
+ * 的间接跳转表），按 `stage` 拆成 early(0) / mid(1) / late(2) 三个阶段。
+ *
+ * 阶段不匹配的编号不执行但仍视为已知（返回 `true`）；只有匹配阶段的编号才走
+ * switch。未知编号在 early 阶段由 `default` 返回 `false`。
+ */
+function applyBulletFuncStage(
   b: BulletMotion,
   targets: MotionTargets,
   rng: DeterministicRng,
+  stage: number,
 ): boolean {
+  if (bulletFuncStage(b.bullet_func_no) !== stage) {
+    return true;
+  }
   switch (b.bullet_func_no) {
-    case 0: func0(b); break;
+    case 0: func0(); break;
     case 1: func1(b); break;
     case 2: func2(b, targets); break;
-    case 3: funcNoop(); break;
-    case 4: func4(b); break;
-    case 5: func5(b); break;
-    case 6: funcNoop(); break;
+    case 3: func3(b); break;
+    case 4: func4(); break;
+    case 5: func5(); break;
+    case 6: func6(b); break;
     case 7: func7(b, rng); break;
-    case 8: funcNoop(); break;
+    case 8: func8(b); break;
     case 11: func11(b, targets); break;
     case 12: func12(b, targets); break;
     case 13: func13(b, targets); break;
@@ -1378,8 +1944,8 @@ export function applyBulletFunc(
     case 24: func24(b, targets); break;
     case 25: func25(b); break;
     case 26: func26(b); break;
-    case 27: func27(b); break;
-    case 28: funcNoop(); break;
+    case 27: func27(); break;
+    case 28: func28(b); break;
     case 29: func29(b); break;
     case 30: func30(b); break;
     case 31: func31(b); break;
@@ -1387,7 +1953,7 @@ export function applyBulletFunc(
     case 33: func33(b); break;
     case 34: func34(b, targets); break;
     case 35: func35(b, targets); break;
-    case 36: funcNoop(); break;
+    case 36: func36(b); break;
     case 37: func37(b); break;
     case 38: func38(b); break;
     case 39: func39(b); break;
@@ -1395,12 +1961,12 @@ export function applyBulletFunc(
     case 41: func41(b, targets); break;
     case 42: func42(b, targets); break;
     case 43: func43(b); break;
-    case 44: func44(b, targets); break;
+    case 44: func44(b); break;
     case 45: func45(b); break;
     case 46: func46(b); break;
     case 47: func47(b); break;
     case 48: func48(b, targets); break;
-    case 50: func50(b); break;
+    case 50: func50(b, rng); break;
     case 51: func51(b, targets); break;
     case 52: func52(b, rng); break;
     case 53: func53(b, targets); break;
@@ -1408,6 +1974,7 @@ export function applyBulletFunc(
     case 55: func55(b, targets); break;
     case 57: func57(b, targets); break;
     case 58: func58(b); break;
+    case 59: func59(b); break;
     case 60: func60(b, targets); break;
     case 61: func61(b, targets); break;
     case 62: func62(b, rng); break;
@@ -1425,12 +1992,12 @@ export function applyBulletFunc(
     case 76: func76(b, rng); break;
     case 77: func77(b, targets); break;
     case 78: func78(b); break;
-    case 79: funcNoop(); break;
+    case 79: func79(b); break;
     case 80: func80(b); break;
     case 81: func81(b); break;
     case 82: func82(b, targets); break;
     case 83: func83(b); break;
-    case 84: func84(b, targets); break;
+    case 84: func84(b); break;
     case 85: func85(b, targets); break;
     default: return false;
   }
@@ -1438,14 +2005,53 @@ export function applyBulletFunc(
 }
 
 /**
- * 完整单帧更新 —— `UpdateBulletMotion`。
+ * `ApplyBulletFunc` —— 兼容外部调用（`tests/danmaku_motion.test.ts` 的确定性
+ * 覆盖）：一次跑完 early / mid / late 三个阶段，等价于原版 `ApplyBulletFunc`。
+ *
+ * @returns `true` 表示该编号已实现，`false` 表示未实现（调用者应记录）。
+ */
+export function applyBulletFunc(
+  b: BulletMotion,
+  targets: MotionTargets,
+  rng: DeterministicRng,
+): boolean {
+  const known = applyBulletFuncStage(b, targets, rng, 0);
+  applyBulletFuncStage(b, targets, rng, 1);
+  applyBulletFuncStage(b, targets, rng, 2);
+  return known;
+}
+
+/** `SkipsVelocitySynthesis`：func3/29/47 自己合成 vx/vy，跳过默认尾段。 */
+function skipsVelocitySynthesis(funcNo: number): boolean {
+  return funcNo === 3 || funcNo === 29 || funcNo === 47;
+}
+
+/** `SkipsPositionIntegration`：这 9 个编号用 setPosition 绝对定位，宿主固定积分要预减。 */
+function skipsPositionIntegration(funcNo: number): boolean {
+  switch (funcNo) {
+    case 26: case 33: case 37: case 51: case 66:
+    case 75: case 81: case 82: case 83:
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
+ * 完整单帧更新 —— `UpdateBulletMotion`（unicorn 整帧实测口径）。
  *
  * 1. `delay` 倒计时（`>0` 则本帧不运动）；
  * 2. 若 `bullet_life != 0`：`angle += angle_acc`，并按 `f56c` 夹持；
- * 3. `bulletFunc` 分派；
- * 4. `IntegrateVelocity()`。
+ * 3. `bulletFunc` early 阶段分派（stage 0）；
+ * 4. 共用出口 accel 应用：`accel>0 && speed<speed_cap` → `speed=min(speed+accel, speed_cap)`，
+ *    `accel<0 && speed>speed_cap` → `speed=max(speed+accel, speed_cap)`；
+ * 4b. `bulletFunc` mid 阶段分派（stage 1，仅 func29，在 accel 应用之后）；
+ * 5. 默认 `IntegrateVelocity()`（func3/29/47 跳过）；
+ * 5b. `bulletFunc` late 阶段分派（stage 2，8 个二次分派编号，在速度合成之后）；
+ * 6. 对 setPosition 族预减 `x -= vx; y -= vy`（宿主随后固定 `pos += (vx,vy)`）；
+ * 7. 帧末 `bullet_life > 0` 时自减（决定下一帧开头是否做角积分夹持）。
  *
- * ★ **不移动位置、不递增 `life`**：位置积分与 `t += 1` 由宿主完成。
+ * ★ 不递增 `t`（由宿主完成）、不递增 `life`；`bullet_life` 由本函数帧末自减。
  */
 export function updateBulletMotion(
   b: BulletMotion,
@@ -1471,6 +2077,32 @@ export function updateBulletMotion(
       }
     }
   }
-  applyBulletFunc(b, targets, rng);
-  integrateVelocity(b);
+  // 3) early 阶段：分派入口 / 共用出口内联。
+  applyBulletFuncStage(b, targets, rng, 0);
+  // 4) 共用出口 0x50c8f0：spdAcc != 0 时 speed += accel 并夹到 speedCap。
+  if (b.accel > 0 && b.speed < b.speed_cap) {
+    b.speed = Math.min(b.speed + b.accel, b.speed_cap);
+  } else if (b.accel < 0 && b.speed > b.speed_cap) {
+    b.speed = Math.max(b.speed + b.accel, b.speed_cap);
+  }
+  // 4b) mid 阶段：func29（0x50c9ec）。必须在 accel 应用之后，否则它写入的
+  //     accel 会在同帧被应用，speed 多出一个 xacc。
+  applyBulletFuncStage(b, targets, rng, 1);
+  // 5) 默认速度合成；func3/29/47 自己合成 vx/vy，跳过默认段。
+  const fn = b.bullet_func_no;
+  if (!skipsVelocitySynthesis(fn)) {
+    integrateVelocity(b);
+  }
+  // 5b) late 阶段：0x50cafc 二次分派的 8 个 func（速度合成之后）。
+  applyBulletFuncStage(b, targets, rng, 2);
+  // 6) 宿主固定做 pos += (vx,vy)；这 9 个编号原版跳过该积分，预减使积分后回到 setPosition 位置。
+  if (skipsPositionIntegration(fn)) {
+    b.x -= b.vx;
+    b.y -= b.vy;
+  }
+  // 7) 原版 0x50cc84：帧末 bulletLife--（>0 时）。它决定下一帧开头是否做
+  //    angle 累加/夹持；漏掉会让每帧都夹持（p1 档大批发散的根因）。
+  if (b.bullet_life > 0) {
+    b.bullet_life -= 1;
+  }
 }
