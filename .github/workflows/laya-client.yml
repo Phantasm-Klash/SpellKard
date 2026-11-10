@@ -54,3 +54,45 @@ jobs:
 
       - name: Build (browser)
         run: npm run build
+
+  server-parity:
+    name: C++ ↔ TS 运动学对拍
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout client
+        uses: actions/checkout@v4
+
+      - name: Checkout server
+        uses: actions/checkout@v4
+        with:
+          repository: Phantasm-Klash/PhK-BattleServer
+          path: PhK-BattleServer
+
+      - name: Install build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Build the server-side diff runner
+        run: |
+          set -euo pipefail
+          cmake -S PhK-BattleServer -B PhK-BattleServer/build -G Ninja
+          cmake --build PhK-BattleServer/build --target phk_motion_diff
+
+      - name: Install client dependencies
+        working-directory: laya
+        run: npm ci
+
+      - name: Compile the client mirror
+        working-directory: laya
+        run: npx tsc -p tsconfig.test.json
+
+      - name: Compare every tick of every scenario
+        env:
+          BUILD_DIR: ${{ github.workspace }}/PhK-BattleServer/build
+          SK_DIR: ${{ github.workspace }}
+        run: bash PhK-BattleServer/tools/tna_coverage/run_parity.sh
