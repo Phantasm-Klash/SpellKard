@@ -207,6 +207,54 @@ test('reassembles a payload split across multiple segments', () => {
   h.b.close();
 });
 
+test('delivers a boss21-sized snapshot (130KB) without stalling the receive path', () => {
+  // ★ 回归：一次 boss21 的 delta 快照实测 ~130KB（单 tick 216 条 spawn，每条带
+  //   完整 37 字段 BulletMotion 模板 ~518B，加上 chains[] ~12KB）。曾经的实现
+  //   用 `recv(65536)` 取消息，超限时 Kcp.recv 返回 -3，而 drain 循环把 -3
+  //   当成「没东西可读了」直接 break —— 队头那条超限消息永远取不出来，KCP
+  //   接收队列（rcvWnd=128）被顶满，之后的快照全堵在服务端发送窗口后面。
+  //   实机症状：客户端只收到开头两条快照，本地 tick 一路涨、权威 tick 卡死。
+  const h = makeHarness(0);
+  const received: Uint8Array[] = [];
+  h.b.onMessage((payload) => received.push(payload));
+  const big = new Uint8Array(130_436);
+  for (let i = 0; i < big.length; i += 1) {
+    big[i] = i % 251;
+  }
+  h.a.send(big);
+  h.advance(3000);
+  expectEqual(received.length, 1, 'the oversized message must be delivered, not stuck');
+  expectEqual(received[0].length, 130_436);
+  let identical = true;
+  for (let i = 0; i < big.length; i += 1) {
+    if (received[0][i] !== big[i]) {
+      identical = false;
+      break;
+    }
+  }
+  expect(identical, 'the 130KB payload must be byte-identical after reassembly');
+  h.a.close();
+  h.b.close();
+});
+
+test('a message after an oversized one still arrives (the queue does not wedge)', () => {
+  // 上一条的姊妹回归：超限消息卡在队头时，后面的消息也一起收不到。
+  // 修好上限后，这条必须能收到。
+  const h = makeHarness(0);
+  const received: Uint8Array[] = [];
+  h.b.onMessage((payload) => received.push(payload));
+  const big = new Uint8Array(130_436);
+  h.a.send(big);
+  h.advance(3000);
+  const small = new Uint8Array([9, 8, 7]);
+  h.a.send(small);
+  h.advance(500);
+  expectEqual(received.length, 2, 'both messages must be delivered');
+  expectEqual(received[1].length, 3);
+  h.a.close();
+  h.b.close();
+});
+
 test('close() stops the update loop and releases the channel', () => {
   const h = makeHarness(0);
   const received: Uint8Array[] = [];

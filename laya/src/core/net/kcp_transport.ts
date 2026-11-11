@@ -10,6 +10,21 @@ import { IKCP_INTERVAL, IKCP_MTU_DEF, IKCP_OVERHEAD, Kcp } from './ikcp';
 import type { DatagramLike, Logger, TimerLike } from './transport';
 import { nullLogger } from './transport';
 
+/**
+ * Upper bound for one reassembled KCP message.
+ *
+ * A boss21 delta snapshot reaches ~130KB (216 spawns × ~518B of full
+ * BulletMotion template, plus ~12KB of `chains[]`), so a 64KB cap silently
+ * deadlocks the receive path: `Kcp.recv` answers -3, the drain loop treats it
+ * like "nothing more to read", and the oversized head message stays at the
+ * front of the queue forever — the client then stops seeing snapshots while
+ * its local tick keeps advancing.
+ *
+ * 4MB leaves plenty of headroom over any real snapshot while still bounding
+ * the allocation a malformed length field could ask for.
+ */
+export const MAX_MESSAGE_BYTES = 4 * 1024 * 1024;
+
 export interface KcpSessionOptions {
   conv: number;
   /** `ikcp_nodelay` parameters. The battle server defaults to no-delay mode. */
@@ -113,7 +128,16 @@ export class KcpSession {
 
   private drain(): void {
     for (;;) {
-      const message = this.kcp.recv(65536);
+      // ★ 上限必须**大于任何一条合法消息**，否则 recv 返回 -3（too small），
+      //   而 -3 与 -1/-2 一样让下面的循环 break —— 于是队头那条超限消息永远
+      //   取不出来，KCP 接收队列（rcvWnd=128）被它顶满，后续快照全部堵在
+      //   服务端的发送窗口后面：**实机症状是客户端只收到头两条快照就再无进展**
+      //   （本地 tick 一路涨、权威 tick 卡住）。
+      //   一条 boss21 的 delta 快照可达 ~130KB：单 tick 216 条 spawn，每条带
+      //   完整 37 字段 BulletMotion 模板（~518B/条），加上 chains[] 12KB。
+      //   所以这里按「实测最大消息 + 余量」取 4MB，远大于任何真实快照，
+      //   又不至于让一个畸形长度字段把内存吃光。
+      const message = this.kcp.recv(MAX_MESSAGE_BYTES);
       if (typeof message === 'number') {
         // -1 empty, -2 incomplete, -3 too small: stop draining.
         break;
