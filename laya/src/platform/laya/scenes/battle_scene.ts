@@ -499,7 +499,15 @@ export class BattleScene implements ClientScene {
       }
       this.authoritative = snapshot;
       this.authoritativeAtMs = now;
-      if (snapshot.winnerPlayerId !== '' && !this.matchEnded) {
+      // ★ 终局判定：**state == finished** 才是权威信号，winner_player_id 只是
+      //   「谁赢」的附加信息。
+      //   之前只看 winnerPlayerId !== ''，于是「服务端超时结束（--max-ticks）
+      //   / 无胜者」这类终局永远判不出来 —— 客户端收不到收尾信号，本地模拟
+      //   无限空跑（实机：本地 tick 12926 vs 权威 7199，帧率 60 → 20）。
+      //   服务端现在会在终局广播一条 state="finished" 的快照（同一编码路径），
+      //   客户端据此收尾。
+      const finished = snapshot.state === BossRaceState.Finished;
+      if ((finished || snapshot.winnerPlayerId !== '') && !this.matchEnded) {
         this.matchEnded = true;
         this.options.onMatchEnd?.(snapshot.winnerPlayerId);
       }
