@@ -492,3 +492,47 @@ test('later snapshots replay the ticks the prediction is missing', () => {
   client.close();
   peer.close();
 });
+
+test('connecting to a different match replaces the running session', () => {
+  // ★ 回归：旧的对局（结束/超时后）没有断开时，`enterBattle` 会被
+  //   `connect()` 的「已在 Running 就复用」早退吞掉 —— 房间的 matchId 已经是
+  //   新的、战斗通道却还连着旧的。实机症状：屏幕上的弹幕永远停在对局结束的
+  //   那一帧，authTick 冻结在旧对局的最后一 tick，新对局一条快照都收不到。
+  const timer = new FakeTimer();
+  const inboxA: Uint8Array[] = [];
+  const inboxB: Uint8Array[] = [];
+  const datagramA = new ChannelDatagram(inboxA, inboxB);
+  const datagramB = new ChannelDatagram(inboxB, inboxA);
+  const conv = 4242;
+
+  const client = new BattleClient({
+    datagramFactory: { open: () => datagramA },
+    timer,
+    convOverride: conv,
+  });
+  expectEqual(client.connect(sessionInfo('p-1', ['p-1', 'p-2'])), true);
+  expectEqual(client.state, 'running', 'the first match is connected');
+  const firstSim = client.simulationRef;
+  expect(firstSim !== null, 'the first match has a local prediction');
+
+  // 同一场对局重复 connect：复用通道，不重开。
+  expectEqual(client.connect(sessionInfo('p-1', ['p-1', 'p-2'])), true);
+  expect(
+    client.simulationRef === firstSim,
+    'the same match keeps the same prediction (the channel is reused)',
+  );
+
+  // 换一场对局：必须换通道（重建本地预测，KCP 会话也重开）。
+  expectEqual(
+    client.connect(sessionInfo('p-1', ['p-1', 'p-2'], { matchId: 'match-2' })),
+    true,
+    'the new match connects',
+  );
+  expect(
+    client.simulationRef !== firstSim,
+    'a different match replaces the prediction instead of reusing the old one',
+  );
+
+  client.close();
+  void datagramB;
+});

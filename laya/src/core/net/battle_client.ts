@@ -319,7 +319,15 @@ export class BattleClient {
    */
   connect(info: BattleSessionInfo): boolean {
     if (this.state === BattleConnectionState.Running) {
-      return true;
+      // ★ 已经在跑：**只有同一场对局**才复用通道。
+      //   旧的对局（尤其是已经结束/超时的）必须先断开，否则 `enterBattle`
+      //   会带着上一局的会话去连新对局：房间的 matchId 已经是新的、战斗通道
+      //   却还连着旧的，实机症状是「屏幕上的弹幕永远停在对局结束那一帧」，
+      //   并且新对局完全收不到快照（authTick 冻结在旧对局的最后一 tick）。
+      if (this.sessionInfo !== null && this.sessionInfo.matchId === info.matchId) {
+        return true;
+      }
+      this.close();
     }
     this.sessionInfo = info;
     this.state = BattleConnectionState.Connecting;
