@@ -37,7 +37,6 @@ import type { BulletMotionFamily } from '../../../core/sim/danmaku/bullet_motion
 import type { BulletFrameSource } from './bullet_atlas';
 import * as theme from './theme';
 import { VectorPainter, fade, type BulletDrawRequest, type BulletRenderer } from './sprites';
-import { bulletArtScaleForKind } from '../../../core/game/bullet_size';
 
 /** Rival bullets whose owner is local vs. remote pick different palettes. */
 interface BulletPalette {
@@ -366,9 +365,14 @@ export class AtlasBulletRenderer implements BulletRenderer {
       sprite.pivot(sourceW / 2, sourceH / 2);
       cached.frame = frameName;
     }
-    // ★ 2026-11-13：原版 `setBulletType` 按弹种写对象 +0x5f0 的美术缩放。
-    // 旧实现所有弹共用 artScale，32x32 的 heart 与 16x16 的 ring 被画成同一大小。
-    const scale = this.artScale * bulletArtScaleForKind(request.bulletKind);
+    // ★ 2026-11-13 复核后回退 per-kind 美术倍乘：
+    //   gateway 上原版图集 ebullet_2.png 的 heart_07 与本地切分逐像素一致，
+    //   原生 32×32（可视 30×30）。`setBulletType` 的 +0x5f0 是**判定/初始化
+    //   系数**（与 hitDis 分组同步），不是 cocos 的渲染 scale；把它乘到
+    //   artScale 上会把弹放大 1.5 倍，实机「大小不对」正是由此而来。
+    //   贴图按各物种原生帧尺寸绘制（heart 32x32 / ring 16x16 / ltama 64x64）
+    //   才是原版口径；此处只保留 playfield 缩放。
+    const scale = this.artScale;
     if (cached.scale !== scale) {
       sprite.scaleX = scale;
       sprite.scaleY = scale;
