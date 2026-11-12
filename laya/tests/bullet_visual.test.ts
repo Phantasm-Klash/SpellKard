@@ -28,6 +28,7 @@ import {
 } from '../src/core/game/bullet_visual';
 import { BULLET_KIND_COUNT } from '../src/core/sim/danmaku/bullet_kind';
 import { expect, expectClose, expectEqual, suite, test } from './harness';
+import { bulletArtScaleForKind, bulletHitDisForKind, BULLET_SIZE_SPECS } from '../src/core/game/bullet_size';
 
 /** width == full arena width ⇒ scale 1.0, so milli-units map 1:1 to pixels. */
 // E1: the render field is the 640×960 **screen box**, so a 1-px-per-milli
@@ -248,4 +249,31 @@ test('buildBossRaceFrame carries the real-danmaku fields through', () => {
   const legacy = byId.get('legacy')!;
   expectEqual(legacy.bulletKind, -1);
   expectEqual(legacy.motionFamily, 'unknown');
+});
+
+
+// --- 原版 per-kind 尺寸（2026-11-13）---------------------------------------
+// 依据：libMyGame.so EnemyBullet::setBulletType @0x512140 的 216 个分支，
+// 公共尾把 hitDis 写对象 +0x54c、把美术缩放写 +0x5f0。
+// 与服务端 include/phk/battle/danmaku/bullet_size.hpp 逐位一致。
+suite('original bullet sizes');
+
+test('all 216 kEnemyBullet kinds have a size spec', () => {
+    for (let kind = 9; kind <= 224; kind += 1) {
+      const h = bulletHitDisForKind(kind);
+      const s = bulletArtScaleForKind(kind);
+      expect(Number.isFinite(h) && Number.isFinite(s), `kind ${kind} has finite size`);
+      expect(s >= 1 && s <= 5, `kind ${kind} artScale in [1,5]`);
+    }
+    expectEqual(BULLET_SIZE_SPECS.length > 0, true, 'spec table is non-empty');
+});
+
+test('heart / knife / ordinary kinds match the original values', () => {
+    expectClose(bulletHitDisForKind(180), 8.0, 1e-6, 'kind 180 hitDis');
+    expectClose(bulletArtScaleForKind(180), 1.5, 1e-6, 'kind 180 artScale');
+    expectClose(bulletArtScaleForKind(189), 2.0, 1e-6, 'kind 189 artScale');
+    expectClose(bulletHitDisForKind(28), 2.4, 1e-6, 'kind 28 hitDis');
+    expectClose(bulletArtScaleForKind(28), 1.0, 1e-6, 'kind 28 artScale');
+    expectClose(bulletHitDisForKind(0), 4.0, 1e-6, 'unknown kind hitDis fallback');
+    expectClose(bulletArtScaleForKind(0), 1.0, 1e-6, 'unknown kind artScale fallback');
 });

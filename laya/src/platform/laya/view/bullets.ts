@@ -37,6 +37,7 @@ import type { BulletMotionFamily } from '../../../core/sim/danmaku/bullet_motion
 import type { BulletFrameSource } from './bullet_atlas';
 import * as theme from './theme';
 import { VectorPainter, fade, type BulletDrawRequest, type BulletRenderer } from './sprites';
+import { bulletArtScaleForKind } from '../../../core/game/bullet_size';
 
 /** Rival bullets whose owner is local vs. remote pick different palettes. */
 interface BulletPalette {
@@ -365,10 +366,13 @@ export class AtlasBulletRenderer implements BulletRenderer {
       sprite.pivot(sourceW / 2, sourceH / 2);
       cached.frame = frameName;
     }
-    if (cached.scale !== this.artScale) {
-      sprite.scaleX = this.artScale;
-      sprite.scaleY = this.artScale;
-      cached.scale = this.artScale;
+    // ★ 2026-11-13：原版 `setBulletType` 按弹种写对象 +0x5f0 的美术缩放。
+    // 旧实现所有弹共用 artScale，32x32 的 heart 与 16x16 的 ring 被画成同一大小。
+    const scale = this.artScale * bulletArtScaleForKind(request.bulletKind);
+    if (cached.scale !== scale) {
+      sprite.scaleX = scale;
+      sprite.scaleY = scale;
+      cached.scale = scale;
     }
     // Directional species face their heading; round species stay upright.
     const rotation =
